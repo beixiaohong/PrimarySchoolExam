@@ -1459,25 +1459,87 @@ def _get_available_types(db, grade, categories, problem_types):
 
 
 def _allocate_counts(types: List[dict], total: int) -> List[Tuple[dict, int]]:
-    """按权重分配题数"""
-    total_weight = sum(t["weight"] for t in types)
-    if total_weight == 0:
-        total_weight = len(types)
+    """
+    全覆盖优先分配策略：
+    - total >= 题型数：每种题型先保底1题，剩余按权重分配
+    - total < 题型数：按大类均匀抽取，确保每个大类都有代表
+    """
+    if not types:
+        return []
+
+    n_types = len(types)
+
+    if total >= n_types:
+        # 全覆盖模式：每种题型至少1题
+        allocation_map = {t["code"]: 1 for t in types}
+        remaining = total - n_types
+
+        if remaining > 0:
+            total_weight = sum(t["weight"] for t in types)
+            if total_weight == 0:
+                total_weight = n_types
+            # 按权重分配剩余
+            distributed = 0
+            for i, t in enumerate(types):
+                if i == n_types - 1:
+                    extra = remaining - distributed
+                else:
+                    extra = round(remaining * t["weight"] / total_weight)
+                    extra = min(extra, remaining - distributed)
+                allocation_map[t["code"]] += max(0, extra)
+                distributed += max(0, extra)
+                if distributed >= remaining:
+                    break
+
+        return [(t, allocation_map[t["code"]]) for t in types]
+
+    else:
+        # 题数不够覆盖所有题型：按大类均匀抽取
+        # 先按大类分组
+        cat_groups: Dict[str, List[dict]] = {}
         for t in types:
-            t["weight"] = 1
+            cat_groups.setdefault(t["category"], []).append(t)
 
-    allocation = []
-    remaining = total
-    for i, t in enumerate(types):
-        if i == len(types) - 1:
-            n = remaining
-        else:
-            n = max(1, round(total * t["weight"] / total_weight))
-            n = min(n, remaining)
-        if n > 0:
-            allocation.append((t, n))
-            remaining -= n
-        if remaining <= 0:
-            break
+        n_cats = len(cat_groups)
+        # 每个大类至少分配1题
+        per_cat = max(1, total // n_cats)
+        remainder = total - per_cat * n_cats
 
-    return allocation
+        selected = []
+        for i, (cat_name, cat_types) in enumerate(cat_groups.items()):
+            cat_quota = per_cat + (1 if i < remainder else 0)
+            if cat_quota <= 0:
+                continue
+            # 大类内按权重选取
+            cat_weight = sum(t["weight"] for t in cat_types)
+            if cat_quota >= len(cat_types):
+                # 大类内全覆盖
+                for t in cat_types:
+                    selected.append((t, 1))
+                extra = cat_quota - len(cat_types)
+                if extra > 0 and cat_weight > 0:
+                    for t in cat_types:
+                        e = round(extra * t["weight"] / cat_weight)
+                        if e > 0:
+                            selected.append((t, e))
+            else:
+                # 大类内按权重抽取部分题型
+                sorted_types = sorted(cat_types, key=lambda x: x["weight"], reverse=True)
+                for t in sorted_types[:cat_quota]:
+                    selected.append((t, 1))
+
+        # 合并同一题型的多条记录
+        merged: Dict[str, Tuple[dict, int]] = {}
+        for t, n in selected:
+            if t["code"] in merged:
+                merged[t["code"]] = (t, merged[t["code"]][1] + n)
+            else:
+                merged[t["code"]] = (t, n)
+
+        result = list(merged.values())
+        # 截断到total
+        actual_total = sum(n for _, n in result)
+        if actual_total > total:
+            result = result[:total]
+            result = [(t, 1) for t, _ in result[:total]]
+        return result
