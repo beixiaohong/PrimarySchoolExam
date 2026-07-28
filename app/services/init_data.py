@@ -30,23 +30,26 @@ def _seed_problem_types(db):
     categories_data = [
         {
             "name": "计算题",
-            "description": "整数、小数、分数、混合运算、方程",
+            "description": "整数、小数、分数、混合运算、方程、单位换算",
             "types": [
                 ("整数四则运算", "calc_int_basic", 1, 5, 1, 6, 15),
                 ("小数运算", "calc_decimal", 1, 5, 3, 6, 12),
                 ("分数四则运算", "calc_fraction", 1, 5, 5, 6, 12),
                 ("混合运算与简便计算", "calc_mixed", 1, 5, 3, 6, 12),
                 ("解方程", "calc_equation", 1, 5, 4, 6, 10),
+                ("单位换算", "unit_conversion", 1, 5, 2, 6, 12),
             ],
         },
         {
             "name": "图形与几何",
-            "description": "面积、体积、周长、图形变换",
+            "description": "面积、体积、周长、图形变换、图形认识、位置方向",
             "types": [
                 ("平面图形面积", "geo_area_plane", 1, 5, 3, 6, 15),
                 ("立体图形体积", "geo_volume", 1, 5, 5, 6, 12),
                 ("周长与面积综合", "geo_perimeter", 1, 5, 3, 6, 10),
                 ("图形变换", "geo_transform", 2, 5, 4, 6, 8),
+                ("图形认识与分类", "geo_recognition", 1, 5, 2, 6, 10),
+                ("位置与方向", "geo_position", 1, 4, 3, 6, 8),
             ],
         },
         {
@@ -60,13 +63,17 @@ def _seed_problem_types(db):
         },
         {
             "name": "应用题",
-            "description": "行程、工程、浓度、利润、分数应用",
+            "description": "行程、工程、浓度、利润、分数、鸡兔同笼、植树、和差倍、按比例分配",
             "types": [
                 ("行程问题", "app_travel", 1, 5, 3, 6, 15),
                 ("工程问题", "app_work", 2, 5, 5, 6, 12),
                 ("浓度问题", "app_concentration", 2, 5, 5, 6, 10),
                 ("利润与折扣", "app_profit", 1, 5, 5, 6, 10),
                 ("分数应用题", "app_fraction", 1, 5, 4, 6, 12),
+                ("鸡兔同笼", "app_chicken_rabbit", 1, 5, 3, 6, 12),
+                ("植树问题", "app_tree_planting", 1, 5, 3, 6, 10),
+                ("和差与和倍差倍", "app_sum_difference", 1, 5, 2, 6, 10),
+                ("按比例分配", "app_proportional_dist", 1, 5, 4, 6, 10),
             ],
         },
         {
@@ -75,23 +82,27 @@ def _seed_problem_types(db):
             "types": [
                 ("平均数与统计", "stat_average", 1, 4, 3, 6, 10),
                 ("可能性与概率", "stat_probability", 1, 4, 4, 6, 8),
+                ("统计图读图分析", "stat_chart", 1, 5, 3, 6, 10),
             ],
         },
         {
             "name": "逻辑与思维",
-            "description": "逻辑推理、找规律、排列组合、奥数思维",
+            "description": "逻辑推理、找规律、排列组合、优化策略",
             "types": [
                 ("逻辑推理", "logic_reasoning", 2, 5, 3, 6, 8),
                 ("找规律与数列", "logic_pattern", 1, 5, 2, 6, 8),
                 ("排列组合与计数", "logic_combinatorics", 2, 5, 4, 6, 6),
+                ("找次品与优化策略", "logic_optimization", 2, 5, 3, 6, 8),
             ],
         },
         {
             "name": "数与代数",
-            "description": "因数倍数、负数、数轴",
+            "description": "因数倍数、整除、数的互化、负数",
             "types": [
                 ("最大公因数与最小公倍数", "number_gcd_lcm", 1, 5, 4, 6, 10),
                 ("负数与数轴", "number_negative", 1, 4, 6, 6, 6),
+                ("整除与分解质因数", "number_divisibility", 1, 5, 4, 6, 10),
+                ("数的互化与比较", "number_conversion", 1, 5, 4, 6, 10),
             ],
         },
     ]

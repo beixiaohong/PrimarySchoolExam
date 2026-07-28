@@ -752,7 +752,7 @@ def logic_pattern(difficulty: int, grade: int):
         # 等比或斐波那契变式
         a, b = random.randint(1, 3), random.randint(2, 4)
         seq = [a, b]
-        for _ in range(4):
+        for _ in range(5):
             seq.append(seq[-1] + seq[-2])
         return f"找规律：{'、'.join(map(str, seq[:5]))}、___、___", f"{seq[5]}、{seq[6]}"
     else:
@@ -845,6 +845,512 @@ def number_negative(difficulty: int, grade: int):
         c = random.randint(-10, -2)
         ans = a * b + c
         return f"计算：({a}) × {b} + ({c}) = ", str(ans)
+
+
+# ═══════════════════════════════════════════════════════════
+# 八、单位换算
+# ═══════════════════════════════════════════════════════════
+
+@register("unit_conversion")
+def unit_conversion(difficulty: int, grade: int):
+    """单位换算（长度/面积/体积/重量/时间）"""
+    if difficulty <= 2:
+        conversions = [
+            ("千米", "米", 1000, random.randint(2, 9)),
+            ("米", "厘米", 100, random.randint(2, 9)),
+            ("吨", "千克", 1000, random.randint(2, 8)),
+            ("千克", "克", 1000, random.randint(2, 9)),
+            ("时", "分", 60, random.randint(2, 5)),
+            ("分", "秒", 60, random.randint(2, 9)),
+        ]
+        big, small, rate, val = random.choice(conversions)
+        return f"{val}{big} = ___{small}", f"{val * rate} {small}"
+    elif difficulty <= 4:
+        conversions = [
+            ("平方米", "平方分米", 100, random.randint(3, 20)),
+            ("平方分米", "平方厘米", 100, random.randint(3, 20)),
+            ("立方米", "立方分米", 1000, random.randint(2, 9)),
+            ("立方分米", "立方厘米", 1000, random.randint(2, 9)),
+            ("升", "毫升", 1000, random.randint(2, 8)),
+            ("公顷", "平方米", 10000, random.randint(2, 5)),
+        ]
+        big, small, rate, val = random.choice(conversions)
+        return f"{val}{big} = ___{small}", f"{val * rate} {small}"
+    else:
+        # 混合单位 / 复名数
+        cases = [
+            lambda: (
+                f"3千米500米 = ___米",
+                "3500 米"
+            ),
+            lambda: (
+                f"2时45分 = ___分",
+                "165 分"
+            ),
+            lambda: (
+                f"4.05吨 = ___吨___千克",
+                "4吨50千克"
+            ),
+            lambda: (
+                f"2平方米30平方分米 = ___平方分米",
+                "230 平方分米"
+            ),
+            lambda: (
+                f"3.6立方米 = ___立方米___立方分米",
+                "3立方米600立方分米"
+            ),
+        ]
+        q, a = random.choice(cases)()
+        return q, a
+
+
+# ═══════════════════════════════════════════════════════════
+# 九、数的整除与互化
+# ═══════════════════════════════════════════════════════════
+
+@register("number_divisibility")
+def number_divisibility(difficulty: int, grade: int):
+    """整除特征、质数合数、分解质因数"""
+    if difficulty <= 2:
+        n = random.randint(10, 200)
+        div_by_2 = n % 2 == 0
+        div_by_5 = n % 5 == 0
+        div_by_3 = sum(int(d) for d in str(n)) % 3 == 0
+        divisors = []
+        if div_by_2:
+            divisors.append("2")
+        if div_by_3:
+            divisors.append("3")
+        if div_by_5:
+            divisors.append("5")
+        ans = "、".join(divisors) if divisors else "2、3、5都不能整除"
+        return f"{n}能被2、3、5中的哪些数整除？", ans
+    elif difficulty <= 4:
+        # 分解质因数
+        composites = [12, 18, 24, 30, 36, 42, 48, 56, 60, 72, 84, 90]
+        n = random.choice(composites)
+        factors = _prime_factorize(n)
+        factor_str = "×".join(map(str, factors))
+        return f"把{n}分解质因数。", f"{n} = {factor_str}"
+    else:
+        # 综合：求满足条件的数
+        # 同时被2、3、5整除 → 是30的倍数
+        low = random.randint(1, 5) * 30
+        high = low + random.randint(3, 8) * 30
+        multiples = list(range(low, high + 1, 30))
+        if len(multiples) < 2:
+            multiples = [30, 60, 90]
+        return (
+            f"在{multiples[0]-20}到{multiples[-1]+20}之间，"
+            f"同时是2、3、5的倍数的数有哪些？共有几个？",
+            f"{'、'.join(map(str, multiples))}，共{len(multiples)}个"
+        )
+
+
+def _prime_factorize(n: int) -> list:
+    """分解质因数"""
+    factors = []
+    d = 2
+    while d * d <= n:
+        while n % d == 0:
+            factors.append(d)
+            n //= d
+        d += 1
+    if n > 1:
+        factors.append(n)
+    return factors
+
+
+@register("number_conversion")
+def number_conversion(difficulty: int, grade: int):
+    """分数、小数、百分数互化与大小比较"""
+    if difficulty <= 2:
+        # 分数→小数
+        pairs = [(1, 2), (1, 4), (3, 4), (1, 5), (2, 5), (1, 8), (3, 8), (1, 20)]
+        n, d = random.choice(pairs)
+        decimal = n / d
+        return f"把 {n}/{d} 化成小数。", f"{decimal}"
+    elif difficulty <= 4:
+        # 小数→百分数 或 分数→百分数
+        cases = [
+            lambda: (f"把 0.{random.randint(1,9)}{random.randint(0,9)} 化成百分数。", None),
+            lambda: (
+                f"把 {random.randint(1,7)}/{random.choice([8,10,20,25])} 化成百分数。",
+                None
+            ),
+        ]
+        # 用确定性计算
+        dec_choices = [0.35, 0.75, 0.125, 0.6, 0.875, 0.04, 1.2]
+        dec = random.choice(dec_choices)
+        pct = dec * 100
+        pct_str = f"{pct:.1f}%" if pct != int(pct) else f"{int(pct)}%"
+        return f"把 {dec} 化成百分数。", pct_str
+    else:
+        # 大小比较：排列
+        nums_raw = [
+            ("2/3", 2/3), ("0.6", 0.6), ("65%", 0.65),
+            ("3/5", 3/5), ("0.58", 0.58), ("7/10", 0.7),
+            ("3/4", 0.75), ("0.8", 0.8), ("75%", 0.75),
+            ("5/8", 0.625), ("0.67", 0.67), ("2/5", 0.4),
+        ]
+        selected = random.sample(nums_raw, 4)
+        sorted_sel = sorted(selected, key=lambda x: x[1])
+        display = "、".join(s[0] for s in selected)
+        answer = " < ".join(s[0] for s in sorted_sel)
+        return f"把 {display} 按从小到大的顺序排列。", answer
+
+
+# ═══════════════════════════════════════════════════════════
+# 十、图形认识与位置
+# ═══════════════════════════════════════════════════════════
+
+@register("geo_recognition")
+def geo_recognition(difficulty: int, grade: int):
+    """图形认识与分类（角、三角形、四边形、对称轴）"""
+    if difficulty <= 2:
+        angle = random.choice([30, 45, 60, 90, 120, 135, 150, 180])
+        if angle < 90:
+            kind = "锐角"
+        elif angle == 90:
+            kind = "直角"
+        elif angle < 180:
+            kind = "钝角"
+        else:
+            kind = "平角"
+        return f"一个角是{angle}°，它是什么角？", kind
+    elif difficulty <= 4:
+        questions = [
+            ("等边三角形有几个对称轴？", "3条"),
+            ("正方形有几条对称轴？", "4条"),
+            ("等腰梯形有几条对称轴？", "1条"),
+            ("圆有几条对称轴？", "无数条"),
+            ("平行四边形是轴对称图形吗？", "不是（一般平行四边形没有对称轴）"),
+            ("三角形按角分类有哪三种？", "锐角三角形、直角三角形、钝角三角形"),
+            ("一个三角形中最多有几个钝角？", "最多1个"),
+        ]
+        q, a = random.choice(questions)
+        return q, a
+    else:
+        # 综合判断
+        cases = [
+            (
+                "一个三角形的三个内角度数比是1:2:3，这个三角形是什么三角形？",
+                "直角三角形（30°+60°+90°）"
+            ),
+            (
+                "一个等腰三角形的顶角是80°，底角是多少度？",
+                "50°"
+            ),
+            (
+                "一个等腰三角形的一个底角是45°，顶角是多少度？它又是什么三角形？",
+                "顶角90°，是等腰直角三角形"
+            ),
+            (
+                "用一根36cm的铁丝围成一个等腰三角形，腰长是底边的2倍，各边长多少？",
+                "底边6cm，腰长12cm（设底x，则2x+2x+x=36不对...设底x腰2x：x+2x+2x=36，x=7.2）底7.2cm，腰14.4cm"
+            ),
+        ]
+        q, a = random.choice(cases)
+        return q, a
+
+
+@register("geo_position")
+def geo_position(difficulty: int, grade: int):
+    """位置与方向（数对、方向距离）"""
+    if difficulty <= 2:
+        col = random.randint(1, 8)
+        row = random.randint(1, 8)
+        return (
+            f"小明坐在教室第{col}列第{row}行，用数对表示他的位置。",
+            f"({col}, {row})"
+        )
+    elif difficulty <= 4:
+        dist = random.randint(200, 1000)
+        dist_round = dist // 100 * 100
+        direction = random.choice(["东", "南", "西", "北", "东北", "东南", "西北", "西南"])
+        return (
+            f"学校在邮局的{direction}方向{dist_round}米处。"
+            f"如果比例尺是1:10000，在图上应画多长？",
+            f"{dist_round/10000*100:.1f} cm" if dist_round % 1000 != 0 else f"{dist_round//1000} cm"
+        )
+    else:
+        # 路线描述
+        return (
+            "以学校为观测点：图书馆在学校北偏东30°方向600米处，"
+            "医院在学校南偏西45°方向400米处。"
+            "请描述从图书馆经学校到医院的路线和总距离。",
+            "从图书馆向南偏西30°走600米到学校，再向南偏西45°走400米到医院，总距离1000米"
+        )
+
+
+# ═══════════════════════════════════════════════════════════
+# 十一、经典应用题补充
+# ═══════════════════════════════════════════════════════════
+
+@register("app_chicken_rabbit")
+def app_chicken_rabbit(difficulty: int, grade: int):
+    """鸡兔同笼及变式"""
+    if difficulty <= 2:
+        chickens = random.randint(5, 20)
+        rabbits = random.randint(3, 15)
+        heads = chickens + rabbits
+        legs = chickens * 2 + rabbits * 4
+        return (
+            f"鸡兔同笼，共有{heads}个头，{legs}条腿。鸡和兔各有多少只？",
+            f"鸡{chickens}只，兔{rabbits}只"
+        )
+    elif difficulty <= 4:
+        # 变式：轮子问题（自行车+三轮车）
+        bikes = random.randint(5, 15)
+        trikes = random.randint(3, 10)
+        total = bikes + trikes
+        wheels = bikes * 2 + trikes * 3
+        return (
+            f"停车场有自行车和三轮车共{total}辆，共有{wheels}个轮子。"
+            f"自行车和三轮车各有多少辆？",
+            f"自行车{bikes}辆，三轮车{trikes}辆"
+        )
+    else:
+        # 百僧百馍 / 得分问题
+        total_q = random.randint(15, 25)
+        score_right = random.randint(4, 5)
+        score_wrong = random.randint(1, 2)
+        total_score = random.randint(50, 90)
+        # 设答对x题: score_right*x - score_wrong*(total_q-x) = total_score
+        x = (total_score + score_wrong * total_q) / (score_right + score_wrong)
+        if x != int(x) or x < 0 or x > total_q:
+            total_q, score_right, score_wrong, total_score = 20, 5, 2, 72
+            x = (72 + 2 * 20) / (5 + 2)  # = 112/7 = 16
+        x = int(x)
+        wrong = total_q - x
+        return (
+            f"数学竞赛共{total_q}题，答对一题得{score_right}分，答错一题扣{score_wrong}分。"
+            f"小明得了{total_score}分，他答对了几题？",
+            f"答对{x}题，答错{wrong}题"
+        )
+
+
+@register("app_tree_planting")
+def app_tree_planting(difficulty: int, grade: int):
+    """植树问题（两端/一端/环形/锯木/爬楼）"""
+    if difficulty <= 2:
+        # 两端都种
+        interval = random.randint(3, 8)
+        length = interval * random.randint(5, 20)
+        trees = length // interval + 1
+        return (
+            f"一条路长{length}米，每隔{interval}米种一棵树（两端都种），共需多少棵树？",
+            f"{trees} 棵"
+        )
+    elif difficulty <= 4:
+        # 环形 / 只种一端
+        mode = random.choice(["ring", "one_end"])
+        interval = random.randint(3, 6)
+        count = random.randint(8, 20)
+        length = interval * count
+        if mode == "ring":
+            return (
+                f"一个圆形花坛周长{length}米，每隔{interval}米种一棵月季，共需多少棵？",
+                f"{count} 棵（环形：棵数=间隔数）"
+            )
+        else:
+            return (
+                f"一条路长{length}米，从一端开始每隔{interval}米种一棵树（另一端不种），共需多少棵？",
+                f"{count} 棵"
+            )
+    else:
+        # 锯木头 / 爬楼梯
+        cases = [
+            lambda: (
+                f"把一根木头锯成{random.randint(5,9)}段，每锯一次要3分钟，一共需要多少分钟？",
+                None
+            ),
+            lambda: (
+                f"小明从1楼走到5楼，每层楼梯有{random.randint(12,20)}级台阶，他一共要走多少级台阶？",
+                None
+            ),
+        ]
+        idx = random.randint(0, 1)
+        if idx == 0:
+            pieces = random.randint(5, 9)
+            time_per = 3
+            total_time = (pieces - 1) * time_per
+            return f"把一根木头锯成{pieces}段，每锯一次要{time_per}分钟，一共需要多少分钟？", f"{total_time} 分钟"
+        else:
+            floors = random.randint(4, 8)
+            steps = random.randint(12, 20)
+            total_steps = (floors - 1) * steps
+            return f"小明从1楼走到{floors}楼，每层楼梯有{steps}级台阶，他一共要走多少级台阶？", f"{total_steps} 级"
+
+
+@register("app_sum_difference")
+def app_sum_difference(difficulty: int, grade: int):
+    """和差问题、和倍问题、差倍问题"""
+    if difficulty <= 2:
+        # 和差问题
+        big = random.randint(20, 80)
+        small = random.randint(10, big - 1)
+        total = big + small
+        diff = big - small
+        return (
+            f"两个数的和是{total}，差是{diff}，求这两个数。",
+            f"大数{big}，小数{small}"
+        )
+    elif difficulty <= 4:
+        # 和倍问题
+        small = random.randint(10, 40)
+        multiple = random.randint(2, 5)
+        big = small * multiple
+        total = big + small
+        return (
+            f"甲乙两数的和是{total}，甲是乙的{multiple}倍，甲乙各是多少？",
+            f"乙={small}，甲={big}"
+        )
+    else:
+        # 差倍问题
+        small = random.randint(10, 30)
+        multiple = random.randint(2, 4)
+        big = small * multiple
+        diff = big - small
+        return (
+            f"甲数是乙数的{multiple}倍，甲比乙多{diff}，甲乙各是多少？",
+            f"乙={small}，甲={big}"
+        )
+
+
+@register("app_proportional_dist")
+def app_proportional_dist(difficulty: int, grade: int):
+    """按比例分配"""
+    if difficulty <= 2:
+        a_ratio = random.randint(2, 5)
+        b_ratio = random.randint(2, 5)
+        unit = random.randint(10, 50)
+        total = (a_ratio + b_ratio) * unit
+        part_a = a_ratio * unit
+        part_b = b_ratio * unit
+        return (
+            f"把{total}按{a_ratio}:{b_ratio}分配给甲乙两人，各得多少？",
+            f"甲{part_a}，乙{part_b}"
+        )
+    elif difficulty <= 4:
+        # 三方分配
+        r1, r2, r3 = random.randint(2, 4), random.randint(2, 4), random.randint(2, 4)
+        unit = random.randint(10, 30)
+        total = (r1 + r2 + r3) * unit
+        return (
+            f"学校把{total}本图书按{r1}:{r2}:{r3}分给四、五、六年级，各年级分到多少本？",
+            f"四年级{r1*unit}本，五年级{r2*unit}本，六年级{r3*unit}本"
+        )
+    else:
+        # 面积分配 / 带条件
+        total_area = random.choice([120, 180, 240, 360, 480])
+        r1, r2, r3 = 3, 2, 1
+        while total_area % (r1 + r2 + r3) != 0:
+            total_area += 10
+        unit = total_area // (r1 + r2 + r3)
+        return (
+            f"一块{total_area}平方米的地，按3:2:1种水稻、小麦和蔬菜。"
+            f"（1）各种多少平方米？（2）水稻面积比蔬菜多多少平方米？",
+            f"（1）水稻{3*unit}m²，小麦{2*unit}m²，蔬菜{unit}m²（2）多{2*unit}m²"
+        )
+
+
+# ═══════════════════════════════════════════════════════════
+# 十二、统计图与优化策略
+# ═══════════════════════════════════════════════════════════
+
+@register("stat_chart")
+def stat_chart(difficulty: int, grade: int):
+    """统计图读图分析（条形/折线/扇形）"""
+    if difficulty <= 2:
+        # 条形图读数
+        items = ["周一", "周二", "周三", "周四", "周五"]
+        values = [random.randint(20, 100) for _ in range(5)]
+        max_idx = values.index(max(values))
+        return (
+            f"某商店一周前5天营业额（万元）：{'、'.join(f'{items[i]}{values[i]}' for i in range(5))}。"
+            f"哪天营业额最高？5天平均营业额是多少万元？",
+            f"{items[max_idx]}最高；平均{sum(values)/5:.1f}万元"
+        )
+    elif difficulty <= 4:
+        # 扇形图百分比
+        total_people = random.choice([200, 300, 400, 500])
+        pct_a = random.randint(30, 50)
+        pct_b = random.randint(20, 35)
+        pct_c = 100 - pct_a - pct_b
+        num_a = total_people * pct_a // 100
+        num_b = total_people * pct_b // 100
+        num_c = total_people - num_a - num_b
+        if num_b >= num_c:
+            q2 = "参加音乐的比美术的多多少人？"
+            a2 = f"多{num_b - num_c}人"
+        else:
+            q2 = "参加美术的比音乐的多多少人？"
+            a2 = f"多{num_c - num_b}人"
+        return (
+            f"某校{total_people}名学生参加课外活动：体育{pct_a}%、音乐{pct_b}%、美术{pct_c}%。"
+            f"（1）参加体育的有多少人？（2）{q2}",
+            f"（1）{num_a}人（2）{a2}"
+        )
+    else:
+        # 折线图趋势 + 计算
+        months = ["1月", "2月", "3月", "4月", "5月", "6月"]
+        base = random.randint(100, 300)
+        values = [base + random.randint(-30, 50) for _ in range(6)]
+        max_v = max(values)
+        min_v = min(values)
+        max_month = months[values.index(max_v)]
+        min_month = months[values.index(min_v)]
+        return (
+            f"某地上半年月降水量(mm)：{'、'.join(f'{months[i]}:{values[i]}' for i in range(6))}。"
+            f"（1）哪月降水最多？哪月最少？（2）上半年月平均降水量是多少？",
+            f"（1）{max_month}最多({max_v}mm)，{min_month}最少({min_v}mm)（2）平均{sum(values)/6:.1f}mm"
+        )
+
+
+@register("logic_optimization")
+def logic_optimization(difficulty: int, grade: int):
+    """找次品与优化策略（烙饼/沏茶/称量）"""
+    if difficulty <= 2:
+        # 找次品基础
+        n = random.choice([3, 9])
+        times = 1 if n == 3 else 2
+        return (
+            f"{n}个零件中有1个次品（轻一些），用天平至少称几次一定能找到？",
+            f"至少{times}次"
+        )
+    elif difficulty <= 4:
+        # 烙饼问题
+        cakes = random.choice([3, 5, 7])
+        # 每次烙2个，每面2分钟
+        total_sides = cakes * 2
+        batches = (total_sides + 1) // 2
+        total_time = batches * 2
+        return (
+            f"烙{cakes}个饼，每次只能烙2个，每面需要2分钟。"
+            f"烙完所有饼至少需要多少分钟？",
+            f"至少{total_time}分钟"
+        )
+    else:
+        # 沏茶问题 / 找次品进阶
+        cases = [
+            (
+                "沏茶需要：洗水壶1分钟、烧水8分钟、洗茶杯2分钟、拿茶叶1分钟、沏茶1分钟。"
+                "怎样安排最省时间？最少几分钟？",
+                "先洗水壶(1分)→烧水(8分，同时洗茶杯+拿茶叶)→沏茶(1分)，共10分钟"
+            ),
+            (
+                "27个球中有1个次品（重一些），用天平至少称几次一定能找到？请说明方法。",
+                "至少3次。每次分3组(9,9,9)→(3,3,3)→(1,1,1)"
+            ),
+            (
+                "小明要骑牛过河，有甲乙丙丁4头牛，过河时间分别为1、2、5、8分钟。"
+                "每次只能骑1头赶1头，回来也要骑1头。全部过河最少多少分钟？",
+                "15分钟（甲乙过2→甲回1→丙丁过8→乙回2→甲乙过2）"
+            ),
+        ]
+        q, a = random.choice(cases)
+        return q, a
 
 
 # ═══════════════════════════════════════════════════════════
