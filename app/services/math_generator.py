@@ -1941,6 +1941,310 @@ def number_conversion(difficulty: int, grade: int):
 
 
 # ═══════════════════════════════════════════════════════════
+# 九、补充题型（8种）
+# ═══════════════════════════════════════════════════════════
+
+@register("number_operation_law")
+def number_operation_law(difficulty: int, grade: int):
+    """运算律辨认与填空"""
+    if difficulty <= 2:
+        a, b = random.randint(2, 50), random.randint(2, 50)
+        variants = [
+            (f"{a}+{b}={b}+{a}，运用了什么运算律？", "加法交换律"),
+            (f"{a}×{b}={b}×{a}，运用了什么运算律？", "乘法交换律"),
+            (f"({a}+{b})+{random.randint(2,30)}={a}+({b}+{random.randint(2,30)})，运用了什么运算律？", "加法结合律"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        a = random.choice([25, 125, 4, 8])
+        b = random.choice([4, 8, 25, 125])
+        c = random.randint(2, 20)
+        variants = [
+            (f"{a}×{b}×{c}怎样简便计算？运用了什么律？", f"{a}×{b}={a*b}，再×{c}={a*b*c}，乘法结合律"),
+            (f"{a}×{c}+{b}×{c}怎样简便计算？", f"({a}+{b})×{c}={a+b}×{c}={ (a+b)*c }，乘法分配律"),
+            (f"({a}+{random.randint(1,9)})×{b}怎样用分配律展开？", f"{a}×{b}+{random.randint(1,9)}×{b}"),
+            (f"99×{random.randint(11,99)}怎样简便计算？", "99=100-1，用乘法分配律：100×n-n"),
+        ]
+        return random.choice(variants)
+    else:
+        n = random.randint(11, 99)
+        variants = [
+            (f"101×{n}怎样简便计算？结果是多少？", f"(100+1)×{n}=100×{n}+{n}={100*n+n}"),
+            (f"{n}×99+{n}怎样简便计算？", f"{n}×(99+1)={n}×100={n*100}，乘法分配律逆用"),
+            (f"25×32×125怎样简便计算？", "25×4×(8×125)=100×1000=100000，结合律拆分"),
+            (f"56×101-56怎样简便计算？", f"56×(101-1)=56×100=5600，分配律逆用"),
+        ]
+        return random.choice(variants)
+
+
+@register("geo_motion")
+def geo_motion(difficulty: int, grade: int):
+    """图形运动：对称、平移、旋转"""
+    if difficulty <= 2:
+        shapes = [
+            ("长方形", 2), ("正方形", 4), ("等边三角形", 3),
+            ("圆", "无数条"), ("等腰三角形", 1), ("平行四边形", 0),
+        ]
+        name, axes = random.choice(shapes)
+        variants = [
+            (f"{name}有几条对称轴？", f"{axes}条" if isinstance(axes, int) else axes),
+            (f"下列图形中，是轴对称图形的是：平行四边形、等腰梯形、普通三角形？", "等腰梯形"),
+            (f"字母\"H\"有几条对称轴？", "2条（水平1条+竖直1条）"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        dx = random.randint(2, 6)
+        dy = random.randint(2, 6)
+        deg = random.choice([90, 180, 270])
+        direction = random.choice(["顺时针", "逆时针"])
+        variants = [
+            (f"将三角形向右平移{dx}格，再向下平移{dy}格，形状大小是否改变？", "不改变，平移不改变形状和大小"),
+            (f"将图形绕点O{direction}旋转{deg}°，形状大小是否改变？", "不改变，旋转不改变形状和大小"),
+            (f"钟面上分针从12转到3，旋转了多少度？方向？", "顺时针旋转90°"),
+            (f"一个图形先向右平移3格，再向左平移3格，最终位置？", "回到原位"),
+        ]
+        return random.choice(variants)
+    else:
+        variants = [
+            ("正方形绕中心旋转多少度后能与自身重合？共有几种？", "旋转90°即可重合，共4种位置(90°/180°/270°/360°)"),
+            ("正六边形绕中心旋转，至少转多少度与自身重合？", "60°"),
+            ("将△ABC绕点A顺时针旋转90°后，AB边与原来哪条边垂直？", "与原来的AC边垂直（旋转90°产生垂直关系）"),
+            ("一个图案由基本图形经过平移得到，如何判断平移方向和距离？", "找对应点，连线方向即平移方向，格数即距离"),
+        ]
+        return random.choice(variants)
+
+
+@register("stat_measure")
+def stat_measure(difficulty: int, grade: int):
+    """统计量选择：平均数/中位数/众数"""
+    if difficulty <= 2:
+        data = sorted([random.randint(60, 100) for _ in range(5)])
+        avg = sum(data) / 5
+        mid = data[2]
+        variants = [
+            (f"数据{data}的平均数是多少？", f"{avg:.1f}"),
+            (f"数据{data}的中位数是多少？", f"{mid}"),
+            (f"数据{data}的中位数是多少？（已排序）", f"{mid}"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        base = random.randint(70, 90)
+        data = [base]*3 + [random.randint(60, 100) for _ in range(4)]
+        random.shuffle(data)
+        mode = base
+        s_data = sorted(data)
+        mid = (s_data[3] + s_data[4]) / 2
+        avg = sum(data) / 7
+        variants = [
+            (f"数据{data}的众数是多少？", f"{mode}"),
+            (f"数据{data}的中位数是多少？", f"{mid}"),
+            (f"7个数据平均数{avg:.1f}，去掉最高最低后平均数会怎样变化？", "可能变大、变小或不变，取决于去掉的值"),
+        ]
+        return random.choice(variants)
+    else:
+        salary_low = [3000, 3000, 3500, 4000, 4000, 4500, 50000]
+        avg_s = sum(salary_low) / 7
+        mid_s = sorted(salary_low)[3]
+        variants = [
+            (f"7名员工月薪(元)：{salary_low}。用平均数还是中位数表示一般水平更合适？", f"中位数{mid_s}元更合适，平均数{avg_s:.0f}被极端值拉高"),
+            ("演讲比赛7位评委打分，为什么要去掉最高分和最低分？", "减少极端值对平均数的影响，使结果更公平"),
+            ("鞋店统计最畅销鞋号来决定进货，应关注平均数、中位数还是众数？", "众数（最畅销的鞋号）"),
+        ]
+        return random.choice(variants)
+
+
+@register("number_large")
+def number_large(difficulty: int, grade: int):
+    """大数认识、读写、改写与近似数"""
+    if difficulty <= 2:
+        n = random.randint(10000, 99999999)
+        variants = [
+            (f"读出这个数：{n}", f"读作：{_read_number(n)}"),
+            (f"{n}是几位数？最高位是什么位？", f"{len(str(n))}位数，最高位是{_place_name(len(str(n)))}"),
+            (f"把{n}改写成用\"万\"作单位的数", f"{n/10000:.1f}万" if n % 10000 != 0 else f"{n//10000}万"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        n = random.randint(100000, 999999999)
+        wan = round(n / 10000)
+        yi = round(n / 100000000)
+        variants = [
+            (f"把{n}四舍五入到万位", f"≈{wan}万"),
+            (f"把{n}改写成用\"万\"作单位的数", f"{n/10000:.1f}万" if n % 10000 != 0 else f"{n//10000}万"),
+            (f"3050006000读作什么？", "三十亿五千万六千"),
+            (f"由3个亿、5个万、6个千组成的数是多少？", "300056000"),
+        ]
+        return random.choice(variants)
+    else:
+        variants = [
+            ("把399500000四舍五入到亿位", "≈4亿"),
+            ("□里最大能填几？ 4□2000000≈4亿", "□最大填4（四舍五入后仍为4亿）"),
+            ("□里最小能填几？ □85000000≈5亿", "□最小填5（五入后为5亿）"),
+            ("一个数四舍五入到万位是30万，这个数最大是多少？最小是多少？", "最大304999，最小295000"),
+        ]
+        return random.choice(variants)
+
+
+def _read_number(n: int) -> str:
+    """简化读数"""
+    s = str(n)
+    if n >= 100000000:
+        yi = n // 100000000
+        rest = n % 100000000
+        return f"{yi}亿{'零' if 0 < rest < 10000000 else ''}{rest if rest else ''}"
+    elif n >= 10000:
+        wan = n // 10000
+        rest = n % 10000
+        return f"{wan}万{'零' if 0 < rest < 1000 else ''}{rest if rest else ''}"
+    return str(n)
+
+
+def _place_name(digits: int) -> str:
+    names = {1:"个",2:"十",3:"百",4:"千",5:"万",6:"十万",7:"百万",8:"千万",9:"亿",10:"十亿"}
+    return names.get(digits, f"第{digits}位")
+
+
+@register("logic_pigeonhole")
+def logic_pigeonhole(difficulty: int, grade: int):
+    """抽屉原理（至少问题）"""
+    if difficulty <= 2:
+        n = random.randint(3, 6)
+        variants = [
+            (f"把{n+1}个苹果放进{n}个抽屉，至少有一个抽屉里有几个苹果？", "至少2个"),
+            (f"{n}只鸽子飞进{n-1}个鸽笼，至少有一个鸽笼里有几只？", "至少2只"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        colors = random.randint(2, 4)
+        n = random.randint(5, 15)
+        at_least = n // colors + 1
+        variants = [
+            (f"袋中有红黄蓝{colors}种球各若干个，至少摸几个才能保证有2个同色？", f"{colors+1}个"),
+            (f"把{n}本书放进{colors}个抽屉，至少有一个抽屉里有几本？", f"至少{at_least}本"),
+            (f"全班{random.randint(30,45)}人，至少有几人生日在同一月份？", f"至少{random.randint(30,45)//12+1}人（抽屉原理：12个月）"),
+        ]
+        return random.choice(variants)
+    else:
+        variants = [
+            ("从1~20中至少取几个数，才能保证其中必有两个数的差是5？", "11个（按差5配对：(1,6)(2,7)...(15,20)共10对+16~20无法配对的归入，取11个必有一对）"),
+            ("一副扑克牌(54张)至少抽几张才能保证有4张同花色？", "15张（最坏：3×4花色+2王=14张，第15张必有4张同花色）"),
+            ("任意5个整数中，必有3个数的和是3的倍数，为什么？", "按除以3余数分3类(抽屉)，5个数放入3类，必有一类≥2个或三类各≥1个，均可凑出3的倍数"),
+        ]
+        return random.choice(variants)
+
+
+@register("logic_period")
+def logic_period(difficulty: int, grade: int):
+    """周期问题"""
+    if difficulty <= 2:
+        period = random.randint(3, 5)
+        items = "○●△□★"[:period]
+        n = random.randint(15, 40)
+        pos = n % period
+        ans_item = items[pos - 1] if pos != 0 else items[-1]
+        variants = [
+            (f"按\"{items}\"的规律重复排列，第{n}个是什么？", f"第{n}个是{ans_item}（周期{period}，{n}÷{period}={n//period}余{pos}）"),
+            (f"一列数按2、0、2、6循环，第{n}个数是几？", f"周期4，{n}÷4余{n%4}，第{n}个是{'2026'[n%4-1] if n%4!=0 else '6'}"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        days = ["一","二","三","四","五","六","日"]
+        start = random.randint(0, 6)
+        offset = random.randint(20, 100)
+        target = (start + offset) % 7
+        variants = [
+            (f"今天是星期{days[start]}，{offset}天后是星期几？", f"星期{days[target]}（{offset}÷7={offset//7}余{offset%7}）"),
+            (f"2026年1月1日是星期四，2026年3月1日是星期几？", "星期四+59天，59÷7=8余3，星期日"),
+            (f"按1、2、3、4、5、4、3、2循环，第{random.randint(30,80)}个数是几？", "周期8，用余数确定位置"),
+        ]
+        return random.choice(variants)
+    else:
+        n = random.randint(50, 200)
+        variants = [
+            (f"按1、1、2、3、5、8...（斐波那契）排列，第{n}个数除以3的余数有周期吗？", "余数序列周期为8（1,1,2,0,2,2,1,0循环）"),
+            (f"一列数：1、3、5、7、9、1、3、5...周期为5，前{n}个数之和是多少？", f"每周期和=25，{n}÷5={n//5}余{n%5}，和={n//5*25}+前{n%5}项和"),
+            ("2026年7月28日是星期二，2027年元旦是星期几？", "7月剩3天+8月31+9月30+10月31+11月30+12月31=156天，156÷7=22余2，星期四"),
+        ]
+        return random.choice(variants)
+
+
+@register("app_surplus_deficit")
+def app_surplus_deficit(difficulty: int, grade: int):
+    """盈亏问题"""
+    if difficulty <= 2:
+        per1 = random.randint(3, 6)
+        per2 = per1 + random.randint(1, 3)
+        surplus = random.randint(5, 15)
+        deficit = random.randint(5, 15)
+        people = (surplus + deficit) // (per2 - per1)
+        total = people * per1 + surplus
+        variants = [
+            (f"分糖果，每人{per1}颗多{surplus}颗，每人{per2}颗少{deficit}颗，几人几颗？",
+             f"人数=({surplus}+{deficit})÷({per2}-{per1})={people}人，糖={total}颗"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        per1 = random.randint(4, 8)
+        per2 = per1 + random.randint(2, 4)
+        people = random.randint(8, 20)
+        total = people * per1 + random.randint(5, 20)
+        surplus = total - people * per1
+        deficit = people * per2 - total
+        variants = [
+            (f"学生搬花盆，每人搬{per1}盆多{surplus}盆，每人搬{per2}盆少{deficit}盆，多少学生？",
+             f"({surplus}+{deficit})÷({per2}-{per1})={people}人"),
+            (f"租车出游，每车坐{per1}人多{surplus}人没座，每车坐{per2}人少{deficit}个空位，几辆车？",
+             f"({surplus}+{deficit})÷({per2}-{per1})={people}辆"),
+            (f"分铅笔，每人{per1}支多{surplus}支，每人{per2}支多{surplus - (per2-per1)*people}支，几人？",
+             f"两次都多（盈盈），人数=({surplus}-{surplus-(per2-per1)*people})÷({per2}-{per1})={people}人"),
+        ]
+        return random.choice(variants)
+    else:
+        variants = [
+            ("宿舍分房间，每间4人多20人，每间8人正好住满，几间房多少人？", "20÷(8-4)=5间，共40人"),
+            ("用绳子量井深，折三折量多2米，折四折量差1米，绳长和井深？", "设井深x：(3x+6)/3绳=(4x-4)/4绳→绳长=3x+6=4x-4→x=10米，绳长36米"),
+            ("工人运花瓶，运一个得5元，碎一个赔10元。运了100个得440元，碎了几个？", "设碎x个：5(100-x)-10x=440→500-15x=440→x=4个"),
+        ]
+        return random.choice(variants)
+
+
+@register("logic_clock")
+def logic_clock(difficulty: int, grade: int):
+    """时钟问题（角度与追及）"""
+    if difficulty <= 2:
+        h = random.randint(1, 12)
+        variants = [
+            (f"{h}时整，时针和分针的夹角是多少度？", f"{min(abs(h-12), h)*30}°" if h != 3 and h != 9 else "90°"),
+            (f"分针走一圈是多少度？时针走一大格是多少度？", "分针360°，时针30°"),
+            (f"6时整，时针和分针成多少度角？", "180°（平角）"),
+        ]
+        return random.choice(variants)
+    elif difficulty <= 4:
+        h = random.randint(1, 11)
+        m = random.choice([0, 15, 30, 45])
+        # 时针角度: h*30 + m*0.5, 分针角度: m*6
+        h_angle = h * 30 + m * 0.5
+        m_angle = m * 6
+        angle = abs(h_angle - m_angle)
+        if angle > 180:
+            angle = 360 - angle
+        variants = [
+            (f"{h}时{m}分，时针和分针的夹角是多少度？", f"{angle}°"),
+            (f"分针每分钟走几度？时针每分钟走几度？", "分针6°/分，时针0.5°/分"),
+            (f"3时多少分时，时针和分针重合？", f"3时{180/5.5:.1f}分≈3时16.4分（分针追时针，差90°，速度差5.5°/分）"),
+        ]
+        return random.choice(variants)
+    else:
+        variants = [
+            ("从12点开始，经过多少分钟时针和分针第一次重合？", f"360÷5.5≈65.5分钟（即1时5.5分）"),
+            ("一昼夜(24小时)时针和分针重合几次？", "22次（每12小时重合11次）"),
+            ("从3点整开始，经过多少分钟时针和分针第一次成直角？", "3点时差90°，分针追时针速度差5.5°/分，90÷5.5≈16.4分钟"),
+            ("某钟慢5分钟/小时，早上8点对准，当钟显示12点时实际几点？", "钟走55分=实际60分，钟走4小时=实际4×60/55≈4.36小时，实际约12时22分"),
+        ]
+        return random.choice(variants)
+
+
+# ═══════════════════════════════════════════════════════════
 # 主生成函数
 # ═══════════════════════════════════════════════════════════
 

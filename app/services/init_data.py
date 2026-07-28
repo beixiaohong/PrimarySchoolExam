@@ -38,6 +38,7 @@ def _seed_problem_types(db):
                 ("混合运算与简便计算", "calc_mixed", 1, 5, 3, 6, 12),
                 ("解方程", "calc_equation", 1, 5, 4, 6, 10),
                 ("单位换算", "unit_conversion", 1, 5, 2, 6, 12),
+                ("运算律与简便计算", "number_operation_law", 1, 5, 3, 6, 10),
             ],
         },
         {
@@ -50,6 +51,7 @@ def _seed_problem_types(db):
                 ("图形变换", "geo_transform", 2, 5, 4, 6, 8),
                 ("图形认识与分类", "geo_recognition", 1, 5, 2, 6, 10),
                 ("位置与方向", "geo_position", 1, 4, 3, 6, 8),
+                ("图形运动(对称/平移/旋转)", "geo_motion", 1, 5, 2, 6, 8),
             ],
         },
         {
@@ -74,6 +76,7 @@ def _seed_problem_types(db):
                 ("植树问题", "app_tree_planting", 1, 5, 3, 6, 10),
                 ("和差与和倍差倍", "app_sum_difference", 1, 5, 2, 6, 10),
                 ("按比例分配", "app_proportional_dist", 1, 5, 4, 6, 10),
+                ("盈亏问题", "app_surplus_deficit", 2, 5, 4, 6, 8),
             ],
         },
         {
@@ -83,6 +86,7 @@ def _seed_problem_types(db):
                 ("平均数与统计", "stat_average", 1, 4, 3, 6, 10),
                 ("可能性与概率", "stat_probability", 1, 4, 4, 6, 8),
                 ("统计图读图分析", "stat_chart", 1, 5, 3, 6, 10),
+                ("统计量选择(中位数/众数)", "stat_measure", 1, 5, 4, 6, 8),
             ],
         },
         {
@@ -93,6 +97,9 @@ def _seed_problem_types(db):
                 ("找规律与数列", "logic_pattern", 1, 5, 2, 6, 8),
                 ("排列组合与计数", "logic_combinatorics", 2, 5, 4, 6, 6),
                 ("找次品与优化策略", "logic_optimization", 2, 5, 3, 6, 8),
+                ("抽屉原理", "logic_pigeonhole", 2, 5, 4, 6, 6),
+                ("周期问题", "logic_period", 1, 5, 3, 6, 8),
+                ("时钟问题", "logic_clock", 2, 5, 4, 6, 6),
             ],
         },
         {
@@ -103,6 +110,7 @@ def _seed_problem_types(db):
                 ("负数与数轴", "number_negative", 1, 4, 6, 6, 6),
                 ("整除与分解质因数", "number_divisibility", 1, 5, 4, 6, 10),
                 ("数的互化与比较", "number_conversion", 1, 5, 4, 6, 10),
+                ("大数认识与近似数", "number_large", 1, 4, 3, 6, 6),
             ],
         },
     ]
