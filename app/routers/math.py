@@ -1,0 +1,120 @@
+"""数学题目 API 路由"""
+from typing import Optional, List
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..models.problem_type import ProblemType, ProblemCategory
+from ..schemas.problem import (
+    ProblemTypeCreate, ProblemTypeOut, CategoryOut,
+    MathGenRequest, MathGenResponse,
+)
+from ..services.math_generator import generate_math_problems
+
+router = APIRouter()
+
+
+# ─── 题型管理 ───────────────────────────────────────────────
+
+@router.get("/categories", response_model=List[CategoryOut], summary="获取所有题目大类及题型")
+def list_categories(db: Session = Depends(get_db)):
+    return db.query(ProblemCategory).filter(ProblemCategory.is_active == True).all()
+
+
+@router.get("/types", response_model=List[ProblemTypeOut], summary="查询题型列表")
+def list_types(
+    category_id: Optional[int] = Query(None),
+    grade: Optional[int] = Query(None, ge=1, le=6),
+    active_only: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    q = db.query(ProblemType)
+    if category_id:
+        q = q.filter(ProblemType.category_id == category_id)
+    if grade:
+        q = q.filter(ProblemType.grade_min <= grade, ProblemType.grade_max >= grade)
+    if active_only:
+        q = q.filter(ProblemType.is_active == True)
+    return q.all()
+
+
+@router.post("/types", response_model=ProblemTypeOut, summary="新增题型")
+def create_type(data: ProblemTypeCreate, db: Session = Depends(get_db)):
+    existing = db.query(ProblemType).filter(ProblemType.code == data.code).first()
+    if existing:
+        raise HTTPException(409, f"题型编码 '{data.code}' 已存在")
+    pt = ProblemType(**data.model_dump())
+    db.add(pt)
+    db.commit()
+    db.refresh(pt)
+    return pt
+
+
+@router.put("/types/{type_id}", response_model=ProblemTypeOut, summary="更新题型")
+def update_type(type_id: int, data: ProblemTypeCreate, db: Session = Depends(get_db)):
+    pt = db.query(ProblemType).get(type_id)
+    if not pt:
+        raise HTTPException(404, "题型不存在")
+    for k, v in data.model_dump().items():
+        setattr(pt, k, v)
+    db.commit()
+    db.refresh(pt)
+    return pt
+
+
+@router.delete("/types/{type_id}", summary="删除题型")
+def delete_type(type_id: int, db: Session = Depends(get_db)):
+    pt = db.query(ProblemType).get(type_id)
+    if not pt:
+        raise HTTPException(404, "题型不存在")
+    db.delete(pt)
+    db.commit()
+    return {"message": "已删除"}
+
+
+# ─── 题目生成 ───────────────────────────────────────────────
+
+@router.post("/generate", response_model=MathGenResponse, summary="生成数学题")
+def generate(req: MathGenRequest, db: Session = Depends(get_db)):
+    """
+    根据年级、难度、题型配置生成数学题目。
+    难度说明：基础(1-2步) / 提高(2-3步) / 拔高(3-4步) / 综合(混合)
+    """
+    problems = generate_math_problems(
+        grade=req.grade,
+        difficulty=req.difficulty,
+        categories=req.categories,
+        problem_types=req.problem_types,
+        count=req.count,
+        include_answer=req.include_answer,
+        db=db,
+    )
+    return MathGenResponse(
+        total=len(problems),
+        difficulty=req.difficulty,
+        grade=req.grade,
+        problems=problems,
+    )
+
+
+@router.post("/generate/docx", summary="生成数学题并导出Word")
+def generate_docx(req: MathGenRequest, db: Session = Depends(get_db)):
+    """生成数学题并返回Word文档下载"""
+    from ..services.docx_service import build_math_docx
+    problems = generate_math_problems(
+        grade=req.grade,
+        difficulty=req.difficulty,
+        categories=req.categories,
+        problem_types=req.problem_types,
+        count=req.count,
+        include_answer=True,
+        db=db,
+    )
+    filepath = build_math_docx(problems, req.grade, req.difficulty)
+    return FileResponse(
+        filepath,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"数学练习_{req.grade}年级_{req.difficulty}.docx",
+    )
