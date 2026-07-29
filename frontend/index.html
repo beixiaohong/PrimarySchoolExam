@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小学练习系统</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f0f2f5; min-height: 100vh; }
+.container { max-width: 900px; margin: 0 auto; padding: 20px; }
+.card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+h1 { text-align: center; color: #1a1a2e; margin-bottom: 8px; font-size: 28px; }
+.subtitle { text-align: center; color: #666; margin-bottom: 24px; font-size: 14px; }
+.btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all .2s; }
+.btn-primary { background: #4361ee; color: #fff; }
+.btn-primary:hover { background: #3a56d4; }
+.btn-success { background: #2ec4b6; color: #fff; }
+.btn-success:hover { background: #28b0a3; }
+.btn-warning { background: #ff9f1c; color: #fff; }
+.btn-warning:hover { background: #e8900f; }
+.btn-danger { background: #e71d36; color: #fff; }
+.btn-danger:hover { background: #cf1a30; }
+.btn-outline { background: #fff; color: #4361ee; border: 1px solid #4361ee; }
+.btn-outline:hover { background: #f0f4ff; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+input, select { padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; width: 100%; }
+input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 0 0 3px rgba(67,97,238,.1); }
+.form-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
+.form-row > * { flex: 1; }
+.form-row label { flex: 0 0 70px; font-size: 14px; color: #555; text-align: right; }
+.nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+.nav .btn { flex: 1; min-width: 100px; text-align: center; }
+.nav .btn.active { box-shadow: 0 0 0 2px #4361ee; }
+.user-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #4361ee; color: #fff; border-radius: 12px; margin-bottom: 16px; }
+.user-bar span { font-size: 15px; }
+.user-bar .btn { background: rgba(255,255,255,.2); color: #fff; }
+.question-item { border: 1px solid #eee; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.question-item.correct { border-color: #2ec4b6; background: #f0fdf9; }
+.question-item.wrong { border-color: #e71d36; background: #fef2f2; }
+.q-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.q-type { font-size: 12px; color: #888; background: #f5f5f5; padding: 2px 8px; border-radius: 4px; }
+.q-text { font-size: 15px; margin-bottom: 10px; line-height: 1.6; }
+.q-options { margin: 8px 0; }
+.q-options div { padding: 6px 12px; margin: 4px 0; border-radius: 6px; cursor: pointer; border: 1px solid #eee; }
+.q-options div:hover { background: #f0f4ff; }
+.q-options div.selected { background: #4361ee; color: #fff; border-color: #4361ee; }
+.q-answer { margin-top: 8px; font-size: 13px; color: #2ec4b6; }
+.q-answer.wrong-ans { color: #e71d36; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-box { text-align: center; padding: 16px; background: #f8f9fa; border-radius: 8px; }
+.stat-box .num { font-size: 28px; font-weight: bold; color: #4361ee; }
+.stat-box .label { font-size: 12px; color: #888; margin-top: 4px; }
+.bar-row { display: flex; align-items: center; margin-bottom: 8px; }
+.bar-label { width: 120px; font-size: 13px; color: #555; text-align: right; padding-right: 10px; }
+.bar-track { flex: 1; height: 20px; background: #eee; border-radius: 10px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 10px; background: #4361ee; transition: width .3s; }
+.bar-fill.mastered { background: #2ec4b6; }
+.score-display { text-align: center; padding: 20px; }
+.score-display .score { font-size: 48px; font-weight: bold; color: #4361ee; }
+.empty { text-align: center; color: #999; padding: 40px; }
+.loading { text-align: center; color: #666; padding: 20px; }
+.mt-12 { margin-top: 12px; }
+.mb-12 { margin-bottom: 12px; }
+.text-center { text-align: center; }
+</style>
+</head>
+<body>
+<div id="app" class="container">
+  <!-- 登录页 -->
+  <div v-if="!user">
+    <h1>小学练习系统</h1>
+    <p class="subtitle">数学 · 英语 · 在线做题 · 错题本</p>
+    <div class="card">
+      <div class="form-row">
+        <label>用户名</label>
+        <input v-model="username" placeholder="输入你的名字，如：小明" @keyup.enter="login">
+      </div>
+      <div class="form-row">
+        <label>科目</label>
+        <select v-model="subject">
+          <option value="数学">数学</option>
+          <option value="英语">英语</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>年级</label>
+        <select v-model="grade">
+          <option v-for="g in [3,4,5,6]" :value="g">{{g}}年级</option>
+        </select>
+      </div>
+      <div class="text-center mt-12">
+        <button class="btn btn-primary" @click="login" :disabled="!username.trim()">进入系统</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div v-else>
+    <div class="user-bar">
+      <span>{{user}} · {{subject}} · {{grade}}年级</span>
+      <button class="btn btn-sm" @click="logout">切换用户</button>
+    </div>
+
+    <div class="nav">
+      <button class="btn btn-outline" :class="{active: tab==='generate'}" @click="tab='generate'">生成试卷</button>
+      <button class="btn btn-outline" :class="{active: tab==='practice'}" @click="tab='practice'; loadExams()">做题</button>
+      <button class="btn btn-outline" :class="{active: tab==='records'}" @click="tab='records'; loadExams()">做题记录</button>
+      <button class="btn btn-outline" :class="{active: tab==='analysis'}" @click="tab='analysis'; loadStats()">错题分析</button>
+      <button class="btn btn-outline" :class="{active: tab==='wrong'}" @click="tab='wrong'; loadWrong()">错题练习</button>
+    </div>
+
+    <!-- 生成试卷 -->
+    <div v-if="tab==='generate'" class="card">
+      <h3 class="mb-12">生成新试卷</h3>
+      <div class="form-row">
+        <label>难度</label>
+        <select v-model="genDifficulty">
+          <option>基础</option><option>提高</option><option>拔高</option><option>综合</option>
+        </select>
+      </div>
+      <div class="form-row" v-if="subject==='数学'">
+        <label>题数</label>
+        <input type="number" v-model.number="genCount" min="5" max="100">
+      </div>
+      <div class="form-row" v-if="subject==='英语'">
+        <label>每类题数</label>
+        <input type="number" v-model.number="genEngCount" min="3" max="20">
+      </div>
+      <div class="text-center mt-12">
+        <button class="btn btn-primary" @click="generateExam" :disabled="generating">
+          {{generating ? '生成中...' : '生成并开始做题'}}
+        </button>
+      </div>
+    </div>
+
+    <!-- 做题 -->
+    <div v-if="tab==='practice'">
+      <div v-if="!currentExam" class="card">
+        <h3 class="mb-12">选择试卷</h3>
+        <div v-if="exams.length===0" class="empty">暂无试卷，请先生成</div>
+        <div v-for="e in exams" :key="e.id" class="question-item" style="cursor:pointer" @click="startExam(e)">
+          <div class="q-header">
+            <strong>{{e.title}}</strong>
+            <span class="q-type">{{e.question_count}}题</span>
+          </div>
+          <div style="font-size:13px;color:#888">{{e.created_at}}</div>
+        </div>
+      </div>
+
+      <div v-else>
+        <div class="card" v-if="!submitted">
+          <div class="q-header mb-12">
+            <h3>{{currentExam.title}}</h3>
+            <button class="btn btn-sm btn-outline" @click="currentExam=null">返回</button>
+          </div>
+          <div v-for="(q, idx) in questions" :key="q.id" class="question-item">
+            <div class="q-header">
+              <span class="q-type">{{q.type_name}}</span>
+              <span style="font-size:12px;color:#aaa">第{{idx+1}}题</span>
+            </div>
+            <div class="q-text">{{q.question}}</div>
+            <!-- 选择题 -->
+            <div v-if="q.options && q.options.length" class="q-options">
+              <div v-for="(opt, oi) in q.options" :key="oi"
+                   :class="{selected: userAnswers[q.id]===opt.charAt(0)}"
+                   @click="userAnswers[q.id]=opt.charAt(0)">
+                {{opt}}
+              </div>
+            </div>
+            <!-- 填空题 -->
+            <input v-else v-model="userAnswers[q.id]" placeholder="输入答案" style="margin-top:8px">
+          </div>
+          <div class="text-center mt-12">
+            <button class="btn btn-success" @click="submitExam" :disabled="submitting">
+              {{submitting ? '提交中...' : '提交答案'}}
+            </button>
+          </div>
+        </div>
+
+        <!-- 结果 -->
+        <div v-else class="card">
+          <div class="score-display">
+            <div class="score">{{result.score}}分</div>
+            <p>共{{result.total}}题，对{{result.correct}}题，错{{result.wrong}}题</p>
+          </div>
+          <div v-for="r in result.results" :key="r.question_id" class="question-item" :class="r.is_correct?'correct':'wrong'">
+            <div class="q-text">{{r.seq}}. {{r.question}}</div>
+            <div class="q-answer" :class="{'wrong-ans': !r.is_correct}">
+              <span v-if="r.is_correct">✓ 正确</span>
+              <span v-else>✗ 你的答案：{{r.user_answer || '（未作答）'}} → 正确答案：{{r.correct_answer}}</span>
+            </div>
+          </div>
+          <div class="text-center mt-12">
+            <button class="btn btn-primary" @click="currentExam=null;submitted=false">返回</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 做题记录 -->
+    <div v-if="tab==='records'" class="card">
+      <h3 class="mb-12">试卷列表</h3>
+      <div v-if="exams.length===0" class="empty">暂无记录</div>
+      <div v-for="e in exams" :key="e.id" class="question-item">
+        <div class="q-header">
+          <strong>{{e.title}}</strong>
+          <span class="q-type">{{e.subject}} · {{e.question_count}}题</span>
+        </div>
+        <div style="font-size:13px;color:#888">{{e.created_at}} · {{e.difficulty}}</div>
+        <div class="mt-12">
+          <button class="btn btn-sm btn-primary" @click="startExam(e); tab='practice'">去做题</button>
+          <a class="btn btn-sm btn-outline" :href="'/api/exam/download/'+e.id" style="margin-left:8px;text-decoration:none">下载Word</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 错题分析 -->
+    <div v-if="tab==='analysis'" class="card">
+      <h3 class="mb-12">错题分析</h3>
+      <div v-if="!stats" class="loading">加载中...</div>
+      <div v-else-if="stats.total_wrong===0 && stats.total_mastered===0" class="empty">暂无错题，继续加油！</div>
+      <div v-else>
+        <div class="stat-grid">
+          <div class="stat-box"><div class="num">{{stats.total_wrong}}</div><div class="label">待巩固</div></div>
+          <div class="stat-box"><div class="num" style="color:#2ec4b6">{{stats.total_mastered}}</div><div class="label">已掌握</div></div>
+          <div class="stat-box"><div class="num" style="color:#ff9f1c">{{stats.by_type.length}}</div><div class="label">薄弱题型</div></div>
+        </div>
+        <h4 class="mb-12">按题型分布</h4>
+        <div v-for="t in stats.by_type" :key="t.type_code" class="bar-row">
+          <div class="bar-label">{{t.type_name}}</div>
+          <div class="bar-track">
+            <div class="bar-fill" :style="{width: barWidth(t.wrong_count)}"></div>
+          </div>
+          <span style="width:60px;text-align:right;font-size:13px;color:#555">{{t.wrong_count}}题</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 错题练习 -->
+    <div v-if="tab==='wrong'" class="card">
+      <h3 class="mb-12">错题本</h3>
+      <div v-if="wrongList===null" class="loading">加载中...</div>
+      <div v-else-if="wrongList.length===0" class="empty">暂无错题</div>
+      <div v-else>
+        <div class="mb-12">
+          <button class="btn btn-sm btn-success" @click="downloadPractice">导出错题练习Word</button>
+          <button class="btn btn-sm btn-warning" style="margin-left:8px" @click="startWrongPractice">在线错题练习</button>
+        </div>
+        <div v-for="w in wrongList" :key="w.id" class="question-item">
+          <div class="q-header">
+            <span class="q-type">{{w.type_name}} · 练习{{w.practice_count}}次</span>
+            <button class="btn btn-sm btn-success" @click="markMastered(w)">标记掌握</button>
+          </div>
+          <div class="q-text">{{w.question}}</div>
+          <div class="q-answer">答案：{{w.answer}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, reactive } = Vue;
+createApp({
+  setup() {
+    const user = ref('');
+    const username = ref('');
+    const subject = ref('数学');
+    const grade = ref(6);
+    const tab = ref('generate');
+
+    // 生成
+    const genDifficulty = ref('综合');
+    const genCount = ref(10);
+    const genEngCount = ref(5);
+    const generating = ref(false);
+
+    // 试卷列表
+    const exams = ref([]);
+    const currentExam = ref(null);
+    const questions = ref([]);
+    const userAnswers = reactive({});
+    const submitting = ref(false);
+    const submitted = ref(false);
+    const result = ref({});
+
+    // 错题
+    const stats = ref(null);
+    const wrongList = ref(null);
+
+    function login() {
+      if (!username.value.trim()) return;
+      user.value = username.value.trim();
+    }
+    function logout() {
+      user.value = '';
+      currentExam.value = null;
+      submitted.value = false;
+    }
+
+    async function generateExam() {
+      generating.value = true;
+      try {
+        const body = { subject: subject.value, grade: grade.value, difficulty: genDifficulty.value };
+        if (subject.value === '数学') {
+          body.math_count = genCount.value;
+        } else {
+          body.english_count_per_type = genEngCount.value;
+        }
+        const res = await fetch('/api/exam/generate', {
+          method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+        });
+        // 返回的是文件流，我们需要获取最新试卷ID
+        await res.blob();
+        // 查最新记录
+        const recRes = await fetch('/api/exam/records?page=1&page_size=1');
+        const recs = await recRes.json();
+        if (recs.length) {
+          await startExam(recs[0]);
+          tab.value = 'practice';
+        }
+      } catch(e) { alert('生成失败: ' + e.message); }
+      generating.value = false;
+    }
+
+    async function loadExams() {
+      const res = await fetch(`/api/exam/records?subject=${encodeURIComponent(subject.value)}&page_size=50`);
+      exams.value = await res.json();
+    }
+
+    async function startExam(e) {
+      currentExam.value = e;
+      submitted.value = false;
+      const res = await fetch(`/api/exam/${e.id}/questions`);
+      const qs = await res.json();
+      questions.value = qs.map(q => {
+        if (q.options_json) {
+          try { q.options = JSON.parse(q.options_json); } catch { q.options = null; }
+        }
+        return q;
+      });
+      // 清空答案
+      Object.keys(userAnswers).forEach(k => delete userAnswers[k]);
+    }
+
+    async function submitExam() {
+      submitting.value = true;
+      try {
+        const answers = questions.value.map(q => ({
+          question_id: q.id,
+          user_answer: userAnswers[q.id] || ''
+        }));
+        const res = await fetch('/api/exam/submit-answers', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ user_id: user.value, exam_id: currentExam.value.id, answers })
+        });
+        result.value = await res.json();
+        submitted.value = true;
+      } catch(e) { alert('提交失败: ' + e.message); }
+      submitting.value = false;
+    }
+
+    async function loadStats() {
+      const res = await fetch(`/api/exam/wrong/stats?user_id=${encodeURIComponent(user.value)}&subject=${encodeURIComponent(subject.value)}`);
+      stats.value = await res.json();
+    }
+
+    async function loadWrong() {
+      const res = await fetch(`/api/exam/wrong/list?user_id=${encodeURIComponent(user.value)}&subject=${encodeURIComponent(subject.value)}&page_size=100`);
+      wrongList.value = await res.json();
+    }
+
+    async function markMastered(w) {
+      await fetch(`/api/exam/${w.exam_id}/master`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id: user.value, question_ids: [w.question_id] })
+      });
+      loadWrong();
+    }
+
+    function downloadPractice() {
+      fetch('/api/exam/wrong/practice', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id: user.value, subject: subject.value, count: 30, include_answer: true })
+      }).then(r => r.blob()).then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = '错题练习.docx'; a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    function startWrongPractice() {
+      if (!wrongList.value || !wrongList.value.length) return;
+      // 用错题构造一个虚拟试卷来在线做
+      currentExam.value = { id: 0, title: '错题练习', question_count: wrongList.value.length };
+      questions.value = wrongList.value.map((w, i) => ({
+        id: w.question_id, seq: i+1, question: w.question, type_name: w.type_name,
+        options_json: w.options_json,
+        options: w.options_json ? JSON.parse(w.options_json) : null,
+      }));
+      Object.keys(userAnswers).forEach(k => delete userAnswers[k]);
+      submitted.value = false;
+      tab.value = 'practice';
+    }
+
+    function barWidth(count) {
+      if (!stats.value || !stats.value.by_type.length) return '0%';
+      const max = Math.max(...stats.value.by_type.map(t => t.wrong_count));
+      return Math.round(count / max * 100) + '%';
+    }
+
+    return {
+      user, username, subject, grade, tab, login, logout,
+      genDifficulty, genCount, genEngCount, generating, generateExam,
+      exams, currentExam, questions, userAnswers, submitting, submitted, result,
+      loadExams, startExam, submitExam,
+      stats, loadStats, barWidth,
+      wrongList, loadWrong, markMastered, downloadPractice, startWrongPractice,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

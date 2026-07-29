@@ -292,6 +292,169 @@ def wrong_practice(req: WrongPracticeRequest, db: Session = Depends(get_db)):
 
 
 # ═══════════════════════════════════════════════════════════
+# 在线做题
+# ═══════════════════════════════════════════════════════════
+
+@router.post("/submit-answers", summary="提交答案（在线做题判分）")
+def submit_answers(req: dict, db: Session = Depends(get_db)):
+    """
+    在线做题提交。
+    请求体: {
+        "user_id": "小明",
+        "exam_id": 1,
+        "answers": [{"question_id": 1, "user_answer": "xxx"}, ...]
+    }
+    返回: 每题对错 + 总分 + 自动将错题加入错题本
+    """
+    user_id = req.get("user_id", "")
+    exam_id = req.get("exam_id")
+    answers = req.get("answers", [])
+
+    if not user_id or not exam_id or not answers:
+        raise HTTPException(400, "缺少 user_id / exam_id / answers")
+
+    record = db.query(ExamRecord).get(exam_id)
+    if not record:
+        raise HTTPException(404, "试卷不存在")
+
+    now = datetime.now()
+    results = []
+    correct_count = 0
+    wrong_seqs = []
+
+    for item in answers:
+        qid = item.get("question_id")
+        user_ans = str(item.get("user_answer", "")).strip()
+        q = db.query(Question).filter(Question.id == qid, Question.exam_id == exam_id).first()
+        if not q:
+            continue
+
+        # 判分：选择题精确匹配，其他去空格后包含匹配
+        correct_ans = q.answer.strip()
+        is_correct = _check_answer(user_ans, correct_ans, q.options_json)
+
+        if is_correct:
+            correct_count += 1
+        else:
+            wrong_seqs.append(q.seq)
+            # 自动加入错题本
+            existing = db.query(WrongRecord).filter(
+                WrongRecord.user_id == user_id,
+                WrongRecord.question_id == q.id,
+            ).first()
+            if existing:
+                existing.is_mastered = False
+                existing.mastered_at = None
+                existing.wrong_at = now
+            else:
+                db.add(WrongRecord(user_id=user_id, question_id=q.id, wrong_at=now))
+
+        results.append({
+            "question_id": q.id,
+            "seq": q.seq,
+            "question": q.question,
+            "correct_answer": correct_ans,
+            "user_answer": user_ans,
+            "is_correct": is_correct,
+        })
+
+    db.commit()
+
+    total = len(results)
+    score = round(correct_count / total * 100, 1) if total > 0 else 0
+    return {
+        "exam_id": exam_id,
+        "user_id": user_id,
+        "total": total,
+        "correct": correct_count,
+        "wrong": total - correct_count,
+        "score": score,
+        "results": results,
+    }
+
+
+@router.get("/wrong/stats", summary="错题分析（按题型统计）")
+def wrong_stats(
+    user_id: str = Query(..., description="用户标识"),
+    subject: str = Query(None, description="学科筛选"),
+    db: Session = Depends(get_db),
+):
+    """
+    错题分析：按题型分组统计错题数量、已掌握数量、练习次数。
+    """
+    q = db.query(WrongRecord).filter(WrongRecord.user_id == user_id).join(Question)
+    if subject:
+        q = q.filter(Question.subject == subject)
+
+    records = q.all()
+    if not records:
+        return {"total_wrong": 0, "total_mastered": 0, "by_type": []}
+
+    # 按 type_code 分组
+    from collections import defaultdict
+    groups = defaultdict(lambda: {"wrong": 0, "mastered": 0, "practice_total": 0, "type_name": "", "subject": ""})
+    for wr in records:
+        qc = wr.question.type_code or "unknown"
+        g = groups[qc]
+        g["type_name"] = wr.question.type_name or qc
+        g["subject"] = wr.question.subject
+        g["practice_total"] += wr.practice_count
+        if wr.is_mastered:
+            g["mastered"] += 1
+        else:
+            g["wrong"] += 1
+
+    by_type = []
+    for code, g in sorted(groups.items(), key=lambda x: -x[1]["wrong"]):
+        by_type.append({
+            "type_code": code,
+            "type_name": g["type_name"],
+            "subject": g["subject"],
+            "wrong_count": g["wrong"],
+            "mastered_count": g["mastered"],
+            "practice_total": g["practice_total"],
+        })
+
+    total_wrong = sum(g["wrong"] for g in groups.values())
+    total_mastered = sum(g["mastered"] for g in groups.values())
+    return {"total_wrong": total_wrong, "total_mastered": total_mastered, "by_type": by_type}
+
+
+def _check_answer(user_ans: str, correct_ans: str, options_json: str) -> bool:
+    """判断答案是否正确"""
+    if not user_ans:
+        return False
+    ua = user_ans.strip().lower()
+    ca = correct_ans.strip().lower()
+
+    # 选择题：用户可能只输入了字母 A/B/C/D
+    if options_json:
+        # 正确答案可能是 "A" 或 "B" 等
+        if len(ca) == 1 and ca in "abcd":
+            return ua == ca or ua == ca.upper()
+        # 选项里匹配
+        if ua == ca:
+            return True
+
+    # 精确匹配
+    if ua == ca:
+        return True
+
+    # 数字答案：提取数字比较
+    import re
+    ua_nums = re.findall(r'-?\d+\.?\d*', ua)
+    ca_nums = re.findall(r'-?\d+\.?\d*', ca)
+    if ca_nums and ua_nums:
+        # 如果正确答案只有一个核心数字，用户答案包含即可
+        if len(ca_nums) == 1 and ca_nums[0] in ua_nums:
+            return True
+        if ua_nums == ca_nums:
+            return True
+
+    return False
+
+
+# ═══════════════════════════════════════════════════════════
 # 内部工具函数
 # ═══════════════════════════════════════════════════════════
 
