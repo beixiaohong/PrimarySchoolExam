@@ -99,10 +99,13 @@ def generate(req: MathGenRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/generate/docx", summary="生成数学题并导出Word")
+@router.post("/generate/docx", summary="生成数学题并导出Word（题目自动入库）")
 def generate_docx(req: MathGenRequest, db: Session = Depends(get_db)):
-    """生成数学题并返回Word文档下载"""
+    """生成数学题并返回Word文档下载，同时将所有题目保存到数据库"""
+    import json
     from ..services.docx_service import build_math_docx
+    from ..models.exam import ExamRecord, Question
+
     problems = generate_math_problems(
         grade=req.grade,
         difficulty=req.difficulty,
@@ -113,8 +116,38 @@ def generate_docx(req: MathGenRequest, db: Session = Depends(get_db)):
         db=db,
     )
     filepath = build_math_docx(problems, req.grade, req.difficulty)
+
+    # 试卷记录入库（公共，不绑定用户）
+    title = f"{req.grade}年级数学练习_{req.difficulty}"
+    record = ExamRecord(
+        subject="数学",
+        title=title,
+        grade=req.grade,
+        difficulty=req.difficulty,
+        config_json=json.dumps(req.model_dump(), ensure_ascii=False),
+        file_path=filepath,
+        question_count=len(problems),
+    )
+    db.add(record)
+    db.flush()
+
+    # 逐题入库
+    for i, p in enumerate(problems, 1):
+        db.add(Question(
+            exam_id=record.id,
+            seq=i,
+            subject="数学",
+            category=p.category,
+            type_code=p.type_code,
+            type_name=p.type_name,
+            question=p.question,
+            answer=p.answer,
+            difficulty=p.difficulty,
+        ))
+    db.commit()
+
     return FileResponse(
         filepath,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"数学练习_{req.grade}年级_{req.difficulty}.docx",
+        filename=f"{title}.docx",
     )
