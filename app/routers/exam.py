@@ -539,13 +539,18 @@ def _generate_math_exam(req: ExamCreateRequest, db: Session):
 
 def _generate_english_exam(req: ExamCreateRequest, db: Session):
     """生成英语试卷，返回 (文件路径, 题目数据列表)"""
-    from ..services.english_generator import generate_english_exam, TYPE_NAMES
+    from ..services.english_generator import generate_english_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
     from ..services.docx_service import build_english_docx
+
+    # 确定实际使用的题型列表
+    types_used = req.english_types if req.english_types else ALL_EXERCISE_TYPES[:]
+    # 总题数均分到各题型
+    count_per_type = max(3, req.english_count // len(types_used))
 
     exercises = generate_english_exam(
         grade=req.grade,
         book_ids=req.english_book_ids,
-        count_per_type=req.english_count_per_type,
+        count_per_type=count_per_type,
         exercise_types=req.english_types,
         db=db,
     )

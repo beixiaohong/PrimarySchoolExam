@@ -15,8 +15,9 @@ class ExamCreateRequest(BaseModel):
     math_categories: Optional[List[str]] = Field(None, description="数学大类筛选")
 
     # 英语专用
+    english_count: int = Field(50, ge=5, le=200, description="英语总题数（自动均分到各题型）")
     english_word_count: int = Field(50, ge=10, le=200, description="英语单词题数量(兼容旧接口)")
-    english_count_per_type: int = Field(10, ge=3, le=30, description="每种英语题型数量")
+    english_count_per_type: int = Field(10, ge=3, le=30, description="每种英语题型数量(兼容旧接口)")
     english_book_ids: Optional[List[int]] = Field(None, description="词库ID筛选")
     english_types: Optional[List[str]] = Field(
         None, description="英语题型：word_translation/phrase_translation/sentence_translation/phonetics/grammar_choice/situational/unscramble_sentence/cloze/dictation/choice"

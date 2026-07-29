@@ -100,7 +100,10 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
   <div v-else>
     <div class="user-bar">
       <span>{{user}} · {{subject}} · {{grade}}年级</span>
-      <button class="btn btn-sm" @click="logout">切换用户</button>
+      <span>
+        <button class="btn btn-sm" @click="switchSubject">切换科目</button>
+        <button class="btn btn-sm" style="margin-left:6px" @click="logout">切换用户</button>
+      </span>
     </div>
 
     <div class="nav">
@@ -125,8 +128,8 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
         <input type="number" v-model.number="genCount" min="5" max="100">
       </div>
       <div class="form-row" v-if="subject==='英语'">
-        <label>每类题数</label>
-        <input type="number" v-model.number="genEngCount" min="3" max="20">
+        <label>题数</label>
+        <input type="number" v-model.number="genEngCount" min="10" max="200">
       </div>
       <div class="text-center mt-12">
         <button class="btn btn-primary" @click="generateExam" :disabled="generating">
@@ -274,7 +277,7 @@ createApp({
     // 生成
     const genDifficulty = ref('综合');
     const genCount = ref(10);
-    const genEngCount = ref(5);
+    const genEngCount = ref(50);
     const generating = ref(false);
 
     // 试卷列表
@@ -299,6 +302,16 @@ createApp({
       currentExam.value = null;
       submitted.value = false;
     }
+    function switchSubject() {
+      subject.value = subject.value === '数学' ? '英语' : '数学';
+      currentExam.value = null;
+      submitted.value = false;
+      result.value = null;
+      exams.value = [];
+      wrongList.value = null;
+      stats.value = null;
+      tab.value = 'generate';
+    }
 
     async function generateExam() {
       generating.value = true;
@@ -307,7 +320,7 @@ createApp({
         if (subject.value === '数学') {
           body.math_count = genCount.value;
         } else {
-          body.english_count_per_type = genEngCount.value;
+          body.english_count = genEngCount.value;
         }
         const res = await fetch('/api/exam/generate', {
           method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
@@ -348,16 +361,47 @@ createApp({
     async function submitExam() {
       submitting.value = true;
       try {
-        const answers = questions.value.map(q => ({
-          question_id: q.id,
-          user_answer: userAnswers[q.id] || ''
-        }));
-        const res = await fetch('/api/exam/submit-answers', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ user_id: user.value, exam_id: currentExam.value.id, answers })
-        });
-        result.value = await res.json();
-        submitted.value = true;
+        if (currentExam.value.id === 0) {
+          // 错题练习模式：本地判分 + 标记
+          const results = [];
+          let correct = 0;
+          const wrongIds = [];
+          for (const q of questions.value) {
+            const ua = (userAnswers[q.id] || '').trim();
+            const ca = (q._answer || '').trim();
+            const ok = ua && ca && (ua.toLowerCase() === ca.toLowerCase() || ca.toLowerCase().includes(ua.toLowerCase()));
+            if (ok) correct++;
+            else wrongIds.push(q.id);
+            results.push({ question_id: q.id, seq: q.seq, question: q.question, correct_answer: ca, user_answer: ua, is_correct: ok });
+          }
+          result.value = { total: results.length, correct, wrong: results.length - correct, score: results.length ? Math.round(correct/results.length*1000)/10 : 0, results };
+          // 仍然错的题保持错题状态，答对的可以标记掌握
+          const rightIds = results.filter(r => r.is_correct).map(r => r.question_id);
+          if (rightIds.length) {
+            // 找到对应的exam_id来标记掌握
+            for (const w of wrongList.value || []) {
+              if (rightIds.includes(w.question_id)) {
+                await fetch(`/api/exam/${w.exam_id}/master`, {
+                  method: 'POST', headers: {'Content-Type':'application/json'},
+                  body: JSON.stringify({ user_id: user.value, question_ids: [w.question_id] })
+                });
+              }
+            }
+          }
+          submitted.value = true;
+        } else {
+          // 正常试卷模式
+          const answers = questions.value.map(q => ({
+            question_id: q.id,
+            user_answer: userAnswers[q.id] || ''
+          }));
+          const res = await fetch('/api/exam/submit-answers', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ user_id: user.value, exam_id: currentExam.value.id, answers })
+          });
+          result.value = await res.json();
+          submitted.value = true;
+        }
       } catch(e) { alert('提交失败: ' + e.message); }
       submitting.value = false;
     }
@@ -399,6 +443,7 @@ createApp({
         id: w.question_id, seq: i+1, question: w.question, type_name: w.type_name,
         options_json: w.options_json,
         options: w.options_json ? JSON.parse(w.options_json) : null,
+        _answer: w.answer,
       }));
       Object.keys(userAnswers).forEach(k => delete userAnswers[k]);
       submitted.value = false;
@@ -412,7 +457,7 @@ createApp({
     }
 
     return {
-      user, username, subject, grade, tab, login, logout,
+      user, username, subject, grade, tab, login, logout, switchSubject,
       genDifficulty, genCount, genEngCount, generating, generateExam,
       exams, currentExam, questions, userAnswers, submitting, submitted, result,
       loadExams, startExam, submitExam,
