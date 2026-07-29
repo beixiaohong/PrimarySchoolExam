@@ -1,0 +1,119 @@
+grade,phrase,meaning,type
+3,good morning,早上好,问候
+3,good afternoon,下午好,问候
+3,good night,晚安,问候
+3,thank you,谢谢你,问候
+3,you're welcome,不客气,问候
+3,how are you,你好吗,问候
+3,I'm fine,我很好,问候
+3,nice to meet you,很高兴见到你,问候
+3,see you,再见,问候
+3,excuse me,打扰一下,问候
+3,look at,看,动词词组
+3,open the door,开门,动词词组
+3,close the window,关窗,动词词组
+3,turn on the light,开灯,动词词组
+3,turn off the light,关灯,动词词组
+3,stand up,起立,动词词组
+3,sit down,坐下,动词词组
+3,come in,进来,动词词组
+3,go out,出去,动词词组
+3,how many,多少,疑问词组
+3,how old,几岁,疑问词组
+3,a lot of,许多,数量词组
+3,in the classroom,在教室里,介词词组
+3,on the desk,在桌子上,介词词组
+3,under the chair,在椅子下面,介词词组
+4,get up,起床,动词词组
+4,go to school,去上学,动词词组
+4,go home,回家,动词词组
+4,go to bed,去睡觉,动词词组
+4,have breakfast,吃早餐,动词词组
+4,have lunch,吃午餐,动词词组
+4,have dinner,吃晚餐,动词词组
+4,do homework,做作业,动词词组
+4,watch TV,看电视,动词词组
+4,read a book,看书,动词词组
+4,play football,踢足球,动词词组
+4,play basketball,打篮球,动词词组
+4,listen to music,听音乐,动词词组
+4,clean the room,打扫房间,动词词组
+4,wash clothes,洗衣服,动词词组
+4,take a shower,洗澡,动词词组
+4,brush teeth,刷牙,动词词组
+4,how much,多少钱,疑问词组
+4,how about,怎么样,疑问词组
+4,what time,几点,疑问词组
+4,what colour,什么颜色,疑问词组
+4,what subject,什么科目,疑问词组
+4,in front of,在前面,介词词组
+4,next to,紧挨着,介词词组
+4,far from,远离,介词词组
+4,be good at,擅长,形容词词组
+4,be interested in,对…感兴趣,形容词词组
+5,look for,寻找,动词词组
+5,look after,照顾,动词词组
+5,look like,看起来像,动词词组
+5,find out,查明,动词词组
+5,give up,放弃,动词词组
+5,pick up,捡起；接(人),动词词组
+5,put on,穿上,动词词组
+5,take off,脱下；起飞,动词词组
+5,try on,试穿,动词词组
+5,turn left,向左转,动词词组
+5,turn right,向右转,动词词组
+5,go straight,直走,动词词组
+5,get off,下车,动词词组
+5,get on,上车,动词词组
+5,wake up,醒来,动词词组
+5,make the bed,整理床铺,动词词组
+5,set the table,摆桌子,动词词组
+5,do the dishes,洗碗,动词词组
+5,take pictures,拍照,动词词组
+5,go shopping,去购物,动词词组
+5,go fishing,去钓鱼,动词词组
+5,go hiking,去远足,动词词组
+5,go swimming,去游泳,动词词组
+5,have a cold,感冒,动词词组
+5,have a fever,发烧,动词词组
+5,see a doctor,看医生,动词词组
+5,take medicine,吃药,动词词组
+5,how long,多长(时间),疑问词组
+5,how far,多远,疑问词组
+5,how often,多久一次,疑问词组
+5,what does...do,做什么工作,疑问词组
+5,what's wrong,怎么了,疑问词组
+5,more than,超过,比较词组
+5,less than,少于,比较词组
+5,as...as,和…一样,比较词组
+5,be afraid of,害怕,形容词词组
+5,be proud of,为…骄傲,形容词词组
+5,be full of,充满,形容词词组
+6,come from,来自,动词词组
+6,grow up,长大,动词词组
+6,make friends,交朋友,动词词组
+6,take part in,参加,动词词组
+6,pay attention to,注意,动词词组
+6,be going to,将要,动词词组
+6,used to,过去常常,动词词组
+6,have to,不得不,动词词组
+6,would like,想要,动词词组
+6,be supposed to,应该,动词词组
+6,instead of,代替；而不是,介词词组
+6,because of,因为,介词词组
+6,at least,至少,副词词组
+6,at once,立刻,副词词组
+6,right now,现在,副词词组
+6,so far,到目前为止,副词词组
+6,in time,及时,副词词组
+6,on time,准时,副词词组
+6,by the way,顺便说一下,插入语
+6,in fact,事实上,插入语
+6,of course,当然,插入语
+6,at the same time,同时,副词词组
+6,a number of,许多,数量词组
+6,the number of,…的数量,数量词组
+6,be different from,与…不同,形容词词组
+6,be similar to,与…相似,形容词词组
+6,be famous for,以…闻名,形容词词组
+6,be made of,由…制成,形容词词组

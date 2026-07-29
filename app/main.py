@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .database import init_db
-from .routers import words, math, exam
+from .routers import words, math, exam, phrases
 from .services.init_data import ensure_initial_data
 
 
@@ -24,6 +24,7 @@ app = FastAPI(
 )
 
 app.include_router(words.router, prefix="/api/words", tags=["英语单词"])
+app.include_router(phrases.router, prefix="/api/english", tags=["英语词组与句子"])
 app.include_router(math.router, prefix="/api/math", tags=["数学题目"])
 app.include_router(exam.router, prefix="/api/exam", tags=["试卷生成"])
 

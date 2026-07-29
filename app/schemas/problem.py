@@ -59,6 +59,7 @@ class ProblemItem(BaseModel):
     """单道题目"""
     id: int
     category: str
+    type_code: str = ""
     type_name: str
     difficulty: int
     question: str

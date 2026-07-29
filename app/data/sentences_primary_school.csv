@@ -1,0 +1,78 @@
+grade,sentence_en,sentence_cn,type,grammar_point
+3,Hello! I'm Sarah.,你好！我是萨拉。,自我介绍,be动词
+3,What's your name?,你叫什么名字？,特殊疑问句,what
+3,How are you? I'm fine.,你好吗？我很好。,问候,how
+3,This is my friend.,这是我的朋友。,介绍,this is
+3,I have a ruler.,我有一把尺子。,拥有,have
+3,It's a cat.,它是一只猫。,描述,it is
+3,I can see a bird.,我能看见一只鸟。,能力,can
+3,How many books do you have?,你有多少本书？,数量,how many
+3,I like apples.,我喜欢苹果。,喜好,like
+3,Let's go to school.,我们去上学吧。,建议,let's
+3,Where is my pen?,我的钢笔在哪里？,位置,where
+3,It's on the desk.,它在桌子上。,位置,on
+3,Is this your bag?,这是你的书包吗？,一般疑问句,is
+3,What colour is it?,它是什么颜色？,颜色,what colour
+3,I'm eight years old.,我八岁了。,年龄,how old
+4,What time is it? It's seven o'clock.,几点了？七点了。,时间,what time
+4,It's time for breakfast.,该吃早餐了。,时间,it's time
+4,I get up at six thirty.,我六点半起床。,时间,at+时间
+4,How much is this skirt?,这条裙子多少钱？,价格,how much
+4,Can I help you?,我能帮你吗？,购物,can
+4,I'd like some noodles.,我想要一些面条。,点餐,would like
+4,What would you like?,你想要什么？,点餐,would like
+4,There is a park near my home.,我家附近有一个公园。,存在,there is
+4,Are there any fish in the river?,河里有鱼吗？,存在,there are
+4,My mother is a nurse.,我妈妈是一名护士。,职业,职业表达
+4,What does your father do?,你爸爸做什么工作？,职业,what do
+4,He goes to work by bus.,他坐公交车去上班。,交通,by+交通
+4,How do you go to school?,你怎么去上学？,交通,how
+4,I'm going to visit my grandma.,我要去看望奶奶。,将来,be going to
+4,What are you going to do?,你打算做什么？,将来,be going to
+4,She is taller than me.,她比我高。,比较,比较级
+4,My bag is bigger than yours.,我的包比你的大。,比较,比较级
+5,What's your favourite season?,你最喜欢什么季节？,喜好,favourite
+5,I like spring best.,我最喜欢春天。,喜好,like best
+5,Why do you like summer?,你为什么喜欢夏天？,原因,why
+5,Because I can swim.,因为我可以游泳。,原因,because
+5,When is your birthday?,你的生日是什么时候？,时间,when
+5,My birthday is in October.,我的生日在十月。,时间,in+月份
+5,What are you doing? I'm reading.,你在做什么？我在看书。,进行时,现在进行时
+5,She is cooking dinner.,她正在做晚饭。,进行时,现在进行时
+5,Is he playing football? Yes he is.,他在踢足球吗？是的。,进行时,一般疑问
+5,How do you feel? I'm tired.,你感觉怎样？我累了。,感受,feel
+5,You should see a doctor.,你应该去看医生。,建议,should
+5,Don't be sad.,别伤心。,祈使句,don't
+5,Turn left at the hospital.,在医院左转。,方向,turn left
+5,How can I get there?,我怎么到那里？,方向,how
+5,Where is the cinema?,电影院在哪里？,位置,where
+5,It's next to the bookstore.,它在书店旁边。,位置,next to
+5,What did you do last weekend?,你上周末做了什么？,过去时,what did
+5,I cleaned my room.,我打扫了房间。,过去时,动词过去式
+5,Did you go fishing? No I didn't.,你去钓鱼了吗？没有。,过去时,一般疑问
+5,He is heavier than me.,他比我重。,比较,比较级
+6,I'm going to be a scientist.,我将来要当科学家。,将来,be going to
+6,What does he do? He's a pilot.,他做什么工作？他是飞行员。,职业,what does
+6,Where does he work?,他在哪里工作？,地点,where does
+6,How does he go to work?,他怎么去上班？,交通,how does
+6,He goes to work by plane.,他坐飞机去上班。,交通,by plane
+6,What's your hobby?,你的爱好是什么？,爱好,hobby
+6,I like collecting stamps.,我喜欢集邮。,爱好,like doing
+6,Does she like dancing?,她喜欢跳舞吗？,爱好,does
+6,She lives in Australia.,她住在澳大利亚。,居住,live in
+6,What's the weather like?,天气怎么样？,天气,what like
+6,It's going to rain tomorrow.,明天要下雨。,天气,be going to
+6,You should wear warm clothes.,你应该穿暖和的衣服。,建议,should
+6,The cat is chasing the mouse.,猫在追老鼠。,进行时,现在进行时
+6,I'm going to take a trip.,我要去旅行。,将来,be going to
+6,We're going by plane.,我们坐飞机去。,交通,by plane
+6,How tall are you? I'm 160 cm.,你多高？我160厘米。,身高,how tall
+6,How heavy are you? I'm 48 kg.,你多重？我48公斤。,体重,how heavy
+6,I'm bigger than you.,我比你大。,比较,比较级
+6,What size are your shoes?,你穿多大号的鞋？,尺码,what size
+6,My shoes are size 37.,我穿37号。,尺码,size
+6,Last weekend I stayed at home.,上周末我待在家。,过去时,过去式
+6,I read a book yesterday.,我昨天看了一本书。,过去时,过去式
+6,Did you see a film?,你看了电影吗？,过去时,一般疑问
+6,How was your weekend?,你周末过得怎样？,过去时,how was
+6,It was good.,很好。,过去时,it was

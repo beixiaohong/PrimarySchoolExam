@@ -100,6 +100,8 @@ def build_english_docx(
     title: str = None,
 ) -> str:
     """生成英语试卷Word文档"""
+    from ..services.english_generator import TYPE_NAMES
+
     doc = Document()
 
     section = doc.sections[0]
@@ -121,50 +123,57 @@ def build_english_docx(
 
     doc.add_paragraph()
 
-    section_titles = {
-        "dictation": "一、单词听写（根据中文和音标写出英文单词）",
-        "choice": "二、选择题",
-        "translation": "三、翻译题",
-        "unscramble": "四、字母重排（组成正确单词）",
-    }
+    cn_nums = "一二三四五六七八九十"
+    section_num = 0
+
+    # 有选项的题型
+    choice_types = {"choice", "phonetics", "grammar_choice", "situational", "cloze"}
 
     for key, items in exercises.items():
         if not items:
             continue
+        section_num += 1
+        type_name = TYPE_NAMES.get(key, key)
+        num_label = cn_nums[section_num - 1] if section_num <= 10 else str(section_num)
         sec_title = doc.add_paragraph()
-        run = sec_title.add_run(section_titles.get(key, key))
+        run = sec_title.add_run(f"{num_label}、{type_name}（共{len(items)}题）")
         run.bold = True
         run.font.size = Pt(12)
 
-        if key == "choice":
+        if key in choice_types:
             for item in items:
                 p = doc.add_paragraph()
                 run = p.add_run(f"{item['id']}. {item['question']}")
                 run.font.size = Pt(11)
-                for opt in item["options"]:
-                    op = doc.add_paragraph(f"    {opt}")
-                    op.runs[0].font.size = Pt(11)
+                if item.get("options"):
+                    for opt in item["options"]:
+                        op = doc.add_paragraph(f"    {opt}")
+                        op.runs[0].font.size = Pt(11)
         else:
             for item in items:
                 p = doc.add_paragraph()
                 run = p.add_run(f"{item['id']}. {item['question']}")
                 run.font.size = Pt(11)
-                if key == "dictation":
-                    # 添加下划线答题区
-                    blank = doc.add_paragraph("   ______________________________")
-                    blank.runs[0].font.size = Pt(11)
+                # 答题空间
+                blank = doc.add_paragraph("   ______________________________")
+                blank.runs[0].font.size = Pt(11)
 
     # 答案
     doc.add_page_break()
     ans_title = doc.add_heading("参考答案", level=1)
     ans_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+    section_num = 0
     for key, items in exercises.items():
         if not items:
             continue
+        section_num += 1
+        type_name = TYPE_NAMES.get(key, key)
+        num_label = cn_nums[section_num - 1] if section_num <= 10 else str(section_num)
         sec_p = doc.add_paragraph()
-        run = sec_p.add_run(section_titles.get(key, key).split("（")[0])
+        run = sec_p.add_run(f"{num_label}、{type_name}")
         run.bold = True
+        run.font.size = Pt(10)
         for item in items:
             p = doc.add_paragraph()
             run = p.add_run(f"{item['id']}. {item['answer']}")
@@ -172,6 +181,95 @@ def build_english_docx(
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"英语_{grade}年级_{timestamp}.docx"
+    filepath = os.path.join(OUTPUT_DIR, filename)
+    doc.save(filepath)
+    return filepath
+
+
+def build_wrong_practice_docx(
+    questions: list,
+    include_answer: bool = True,
+) -> str:
+    """生成错题专项练习Word文档"""
+    doc = Document()
+
+    section = doc.sections[0]
+    section.page_width = Cm(21)
+    section.page_height = Cm(29.7)
+    section.top_margin = Cm(2)
+    section.bottom_margin = Cm(2)
+    section.left_margin = Cm(2.5)
+    section.right_margin = Cm(2.5)
+
+    h = doc.add_heading("错题专项练习", level=1)
+    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    info = doc.add_paragraph()
+    info.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = info.add_run("姓名：________    班级：________    得分：________")
+    run.font.size = Pt(11)
+
+    doc.add_paragraph()
+
+    # 按题型分组
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for q in questions:
+        key = f"{q.subject} - {q.type_name or q.type_code}"
+        groups.setdefault(key, []).append(q)
+
+    cn_nums = "一二三四五六七八九十"
+    section_num = 0
+
+    for group_name, items in groups.items():
+        section_num += 1
+        num_label = cn_nums[section_num - 1] if section_num <= 10 else str(section_num)
+        sec_title = doc.add_paragraph()
+        run = sec_title.add_run(f"{num_label}、{group_name}（共{len(items)}题）")
+        run.bold = True
+        run.font.size = Pt(12)
+
+        for idx, q in enumerate(items, 1):
+            p = doc.add_paragraph()
+            run = p.add_run(f"{idx}. {q.question}")
+            run.font.size = Pt(11)
+
+            # 如果有选项
+            if q.options_json:
+                import json
+                try:
+                    opts = json.loads(q.options_json)
+                    if opts:
+                        for opt in opts:
+                            op = doc.add_paragraph(f"    {opt}")
+                            op.runs[0].font.size = Pt(11)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # 答题空间
+            doc.add_paragraph("   ______________________________")
+
+    # 答案部分
+    if include_answer:
+        doc.add_page_break()
+        ans_title = doc.add_heading("参考答案", level=1)
+        ans_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        section_num = 0
+        for group_name, items in groups.items():
+            section_num += 1
+            num_label = cn_nums[section_num - 1] if section_num <= 10 else str(section_num)
+            sec_p = doc.add_paragraph()
+            run = sec_p.add_run(f"{num_label}、{group_name}")
+            run.bold = True
+            run.font.size = Pt(10)
+            for idx, q in enumerate(items, 1):
+                p = doc.add_paragraph()
+                run = p.add_run(f"{idx}. {q.answer}")
+                run.font.size = Pt(10)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"错题练习_{timestamp}.docx"
     filepath = os.path.join(OUTPUT_DIR, filename)
     doc.save(filepath)
     return filepath

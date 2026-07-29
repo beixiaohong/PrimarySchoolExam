@@ -15,10 +15,11 @@ class ExamCreateRequest(BaseModel):
     math_categories: Optional[List[str]] = Field(None, description="数学大类筛选")
 
     # 英语专用
-    english_word_count: int = Field(50, ge=10, le=200, description="英语单词题数量")
+    english_word_count: int = Field(50, ge=10, le=200, description="英语单词题数量(兼容旧接口)")
+    english_count_per_type: int = Field(10, ge=3, le=30, description="每种英语题型数量")
     english_book_ids: Optional[List[int]] = Field(None, description="词库ID筛选")
     english_types: Optional[List[str]] = Field(
-        None, description="英语题型：听写/选择/翻译/词组句"
+        None, description="英语题型：word_translation/phrase_translation/sentence_translation/phonetics/grammar_choice/situational/unscramble_sentence/cloze/dictation/choice"
     )
 
 
@@ -34,3 +35,36 @@ class ExamOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class QuestionOut(BaseModel):
+    id: int
+    exam_id: int
+    seq: int
+    subject: str
+    category: str
+    type_code: str
+    type_name: str
+    question: str
+    answer: str
+    options_json: str
+    difficulty: int
+    is_wrong: bool
+    wrong_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MarkWrongRequest(BaseModel):
+    """标记错题请求"""
+    question_ids: Optional[List[int]] = Field(None, description="题目ID列表（与seqs二选一）")
+    seqs: Optional[List[int]] = Field(None, description="题目序号列表（与question_ids二选一）")
+
+
+class WrongPracticeRequest(BaseModel):
+    """错题专项练习请求"""
+    subject: Optional[str] = Field(None, description="学科筛选：数学/英语，不填则全部")
+    type_code: Optional[str] = Field(None, description="题型代码筛选")
+    count: int = Field(20, ge=5, le=100, description="练习题数量")
+    include_answer: bool = Field(True, description="是否包含答案")

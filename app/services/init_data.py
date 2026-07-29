@@ -1,5 +1,5 @@
 """
-初始化种子数据：题型分类 + 默认词库
+初始化种子数据：题型分类 + 默认词库 + 词组 + 句子
 首次启动时自动执行，已有数据则跳过
 """
 import csv
@@ -8,8 +8,9 @@ from pathlib import Path
 
 from ..database import SessionLocal
 from ..models.word import Word, WordBook
+from ..models.phrase import Phrase, Sentence
 from ..models.problem_type import ProblemType, ProblemCategory
-from ..config import WORD_CSV_PATH
+from ..config import WORD_CSV_PATH, DATA_DIR
 
 
 def ensure_initial_data():
@@ -18,6 +19,8 @@ def ensure_initial_data():
     try:
         _seed_problem_types(db)
         _seed_word_bank(db)
+        _seed_phrases(db)
+        _seed_sentences(db)
     finally:
         db.close()
 
@@ -197,5 +200,60 @@ def _seed_word_bank(db):
     # 更新词库计数（直接用去重集合长度，避免flush时序问题）
     for book_name, book in books_cache.items():
         book.word_count = len(seen_words[book_name])
+
+    db.commit()
+
+
+def _seed_phrases(db):
+    """初始化英语词组（从CSV导入）"""
+    if db.query(Phrase).count() > 0:
+        return
+
+    csv_path = Path(DATA_DIR) / "phrases_primary_school.csv"
+    if not csv_path.exists():
+        return
+
+    seen = set()
+    with open(csv_path, "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            phrase_text = row.get("phrase", "").strip()
+            if not phrase_text or phrase_text.lower() in seen:
+                continue
+            seen.add(phrase_text.lower())
+            db.add(Phrase(
+                grade=int(row.get("grade", 3)),
+                phrase=phrase_text,
+                meaning=row.get("meaning", "").strip(),
+                type=row.get("type", "动词词组").strip(),
+            ))
+
+    db.commit()
+
+
+def _seed_sentences(db):
+    """初始化英语句子（从CSV导入）"""
+    if db.query(Sentence).count() > 0:
+        return
+
+    csv_path = Path(DATA_DIR) / "sentences_primary_school.csv"
+    if not csv_path.exists():
+        return
+
+    seen = set()
+    with open(csv_path, "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            en = row.get("sentence_en", "").strip()
+            if not en or en.lower() in seen:
+                continue
+            seen.add(en.lower())
+            db.add(Sentence(
+                grade=int(row.get("grade", 3)),
+                sentence_en=en,
+                sentence_cn=row.get("sentence_cn", "").strip(),
+                type=row.get("type", "").strip(),
+                grammar_point=row.get("grammar_point", "").strip(),
+            ))
 
     db.commit()

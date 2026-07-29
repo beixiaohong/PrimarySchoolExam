@@ -2287,6 +2287,7 @@ def generate_math_problems(
                 problems.append(ProblemItem(
                     id=pid,
                     category=type_info.get("category", "\u7efc\u5408"),
+                    type_code=code,
                     type_name=type_info.get("name", code),
                     difficulty=diff,
                     question=question,
