@@ -9,11 +9,19 @@ set -e
 
 # ---------- 配置区（按需修改） ----------
 APP_NAME="exam-app"
-APP_DIR="/opt/PrimarySchoolExam"
-APP_USER="www-data"
+APP_DIR="/home/PrimarySchoolExam"
 APP_PORT=8000
 NGINX_PORT=80
 DOMAIN="_"   # 有域名改成你的域名，没有就保持 _ 表示所有
+
+# 自动检测 web 用户（CentOS=nginx, Ubuntu=www-data）
+if id "www-data" &>/dev/null; then
+    APP_USER="www-data"
+elif id "nginx" &>/dev/null; then
+    APP_USER="nginx"
+else
+    APP_USER="root"
+fi
 # ----------------------------------------
 
 RED='\033[0;31m'
