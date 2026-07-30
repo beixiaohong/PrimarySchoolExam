@@ -11,6 +11,8 @@ from .routers import words, math, exam, phrases
 from .services.init_data import ensure_initial_data
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 @asynccontextmanager
@@ -32,6 +34,9 @@ app.include_router(words.router, prefix="/api/words", tags=["英语单词"])
 app.include_router(phrases.router, prefix="/api/english", tags=["英语词组与句子"])
 app.include_router(math.router, prefix="/api/math", tags=["数学题目"])
 app.include_router(exam.router, prefix="/api/exam", tags=["试卷生成"])
+
+# 静态资源（图片、音频）
+app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 
 
 @app.get("/", tags=["系统"], include_in_schema=False)

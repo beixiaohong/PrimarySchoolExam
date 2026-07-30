@@ -568,15 +568,22 @@ def _gen_cloze(sentences: List[dict], words: List[dict], count: int) -> List[dic
 
 
 def _gen_dictation(words: List[dict], count: int) -> List[dict]:
-    """听写：给中文和音标写英文"""
+    """听写：播放音频，学生写英文单词"""
     items = []
     selected = random.sample(words, min(count, len(words)))
     for i, w in enumerate(selected, 1):
+        audio_path = ""
+        try:
+            from .audio_renderer import render_word_audio
+            audio_path = render_word_audio(w["word"])
+        except Exception:
+            pass
         items.append({
             "id": i,
-            "question": f"{w['meaning']}  {w['phonetic']}",
+            "question": f"听音频写单词（提示：{w['meaning']}）",
             "answer": w["word"],
             "options": None,
+            "audio_path": audio_path,
         })
     return items
 

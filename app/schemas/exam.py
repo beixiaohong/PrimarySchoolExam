@@ -7,7 +7,7 @@ class ExamCreateRequest(BaseModel):
     """试卷生成请求（不绑定用户，试卷为公共资源）"""
     subject: str = Field(..., description="学科：数学/英语")
     title: Optional[str] = Field(None, description="试卷标题，不填则自动生成")
-    grade: int = Field(6, ge=1, le=6)
+    grade: int = Field(6, ge=1, le=9)
     difficulty: str = Field("综合", description="基础/提高/拔高/综合")
 
     # 数学专用
@@ -51,6 +51,8 @@ class QuestionOut(BaseModel):
     question: str
     answer: str
     options_json: str
+    image_path: str = ""
+    audio_path: str = ""
     difficulty: int
 
     class Config:

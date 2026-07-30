@@ -82,12 +82,13 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
         <select v-model="subject">
           <option value="数学">数学</option>
           <option value="英语">英语</option>
+          <option value="语文">语文</option>
         </select>
       </div>
       <div class="form-row">
         <label>年级</label>
         <select v-model="grade">
-          <option v-for="g in [3,4,5,6]" :value="g">{{g}}年级</option>
+          <option v-for="g in [3,4,5,6,7,8,9]" :value="g">{{g}}年级</option>
         </select>
       </div>
       <div class="text-center mt-12">
@@ -109,7 +110,7 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
     <div class="nav">
       <button class="btn btn-outline" :class="{active: tab==='generate'}" @click="tab='generate'">生成试卷</button>
       <button class="btn btn-outline" :class="{active: tab==='practice'}" @click="tab='practice'; loadExams()">做题</button>
-      <button class="btn btn-outline" :class="{active: tab==='records'}" @click="tab='records'; loadExams()">做题记录</button>
+      <button class="btn btn-outline" :class="{active: tab==='records'}" @click="tab='records'; loadAttempts()">做题记录</button>
       <button class="btn btn-outline" :class="{active: tab==='analysis'}" @click="tab='analysis'; loadStats()">错题分析</button>
       <button class="btn btn-outline" :class="{active: tab==='wrong'}" @click="tab='wrong'; loadWrong()">错题练习</button>
     </div>
@@ -127,7 +128,15 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
         <label>题数</label>
         <input type="number" v-model.number="genCount" min="5" max="100">
       </div>
-      <div class="form-row" v-if="subject==='英语'">
+      <div v-if="subject==='数学'" style="margin-bottom:12px">
+        <label style="font-size:14px;color:#555;display:block;margin-bottom:6px">题型大类（不选则全部）</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <label v-for="c in mathCategories" :key="c" style="font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" :value="c" v-model="selectedCategories" style="width:auto"> {{c}}
+          </label>
+        </div>
+      </div>
+      <div class="form-row" v-if="subject!=='数学'">
         <label>题数</label>
         <input type="number" v-model.number="genEngCount" min="10" max="200">
       </div>
@@ -164,6 +173,12 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
               <span style="font-size:12px;color:#aaa">第{{idx+1}}题</span>
             </div>
             <div class="q-text">{{q.question}}</div>
+            <div v-if="q.image_path" style="margin:8px 0;text-align:center">
+              <img :src="q.image_path" style="max-width:100%;max-height:240px;border-radius:8px">
+            </div>
+            <div v-if="q.audio_path" style="margin:8px 0">
+              <audio controls :src="q.audio_path" style="width:100%;height:36px"></audio>
+            </div>
             <!-- 选择题 -->
             <div v-if="q.options && q.options.length" class="q-options">
               <div v-for="(opt, oi) in q.options" :key="oi"
@@ -176,6 +191,7 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
             <input v-else v-model="userAnswers[q.id]" placeholder="输入答案" style="margin-top:8px">
           </div>
           <div class="text-center mt-12">
+            <p style="font-size:13px;color:#888;margin-bottom:8px">已答 {{answeredCount}} / {{questions.length}} 题</p>
             <button class="btn btn-success" @click="submitExam" :disabled="submitting">
               {{submitting ? '提交中...' : '提交答案'}}
             </button>
@@ -204,17 +220,16 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
 
     <!-- 做题记录 -->
     <div v-if="tab==='records'" class="card">
-      <h3 class="mb-12">试卷列表</h3>
-      <div v-if="exams.length===0" class="empty">暂无记录</div>
-      <div v-for="e in exams" :key="e.id" class="question-item">
-        <div class="q-header">
-          <strong>{{e.title}}</strong>
-          <span class="q-type">{{e.subject}} · {{e.question_count}}题</span>
-        </div>
-        <div style="font-size:13px;color:#888">{{e.created_at}} · {{e.difficulty}}</div>
-        <div class="mt-12">
-          <button class="btn btn-sm btn-primary" @click="startExam(e); tab='practice'">去做题</button>
-          <a class="btn btn-sm btn-outline" :href="'/api/exam/download/'+e.id" style="margin-left:8px;text-decoration:none">下载Word</a>
+      <h3 class="mb-12">做题记录</h3>
+      <div v-if="attempts===null" class="loading">加载中...</div>
+      <div v-else-if="attempts.length===0" class="empty">暂无做题记录</div>
+      <div v-else>
+        <div v-for="a in attempts" :key="a.id" class="question-item">
+          <div class="q-header">
+            <strong>{{a.exam_title}}</strong>
+            <span class="q-type" :style="{color: a.score>=80?'#2ec4b6':a.score>=60?'#ff9f1c':'#e71d36'}">{{a.score}}分</span>
+          </div>
+          <div style="font-size:13px;color:#888">{{a.created_at}} · 对{{a.correct}}题/共{{a.total}}题</div>
         </div>
       </div>
     </div>
@@ -279,6 +294,8 @@ createApp({
     const genCount = ref(10);
     const genEngCount = ref(50);
     const generating = ref(false);
+    const mathCategories = ['计算题', '图形与几何', '比与比例', '应用题', '统计与概率', '逻辑与思维', '数与代数'];
+    const selectedCategories = ref([]);
 
     // 试卷列表
     const exams = ref([]);
@@ -292,6 +309,7 @@ createApp({
     // 错题
     const stats = ref(null);
     const wrongList = ref(null);
+    const attempts = ref(null);
 
     function login() {
       if (!username.value.trim()) return;
@@ -303,7 +321,9 @@ createApp({
       submitted.value = false;
     }
     function switchSubject() {
-      subject.value = subject.value === '数学' ? '英语' : '数学';
+      const order = ['数学', '英语', '语文'];
+      const idx = order.indexOf(subject.value);
+      subject.value = order[(idx + 1) % order.length];
       currentExam.value = null;
       submitted.value = false;
       result.value = null;
@@ -319,19 +339,27 @@ createApp({
         const body = { subject: subject.value, grade: grade.value, difficulty: genDifficulty.value };
         if (subject.value === '数学') {
           body.math_count = genCount.value;
+          if (selectedCategories.value.length > 0) {
+            body.math_categories = selectedCategories.value;
+          }
         } else {
           body.english_count = genEngCount.value;
         }
         const res = await fetch('/api/exam/generate', {
           method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
         });
-        // 返回的是文件流，我们需要获取最新试卷ID
         await res.blob();
-        // 查最新记录
-        const recRes = await fetch('/api/exam/records?page=1&page_size=1');
-        const recs = await recRes.json();
-        if (recs.length) {
-          await startExam(recs[0]);
+        const examId = res.headers.get('X-Exam-Id');
+        if (examId) {
+          const recRes = await fetch(`/api/exam/${examId}/questions`);
+          const qs = await recRes.json();
+          currentExam.value = { id: parseInt(examId), title: `${grade.value}年级${subject.value}试卷`, question_count: qs.length };
+          questions.value = qs.map(q => {
+            if (q.options_json) { try { q.options = JSON.parse(q.options_json); } catch { q.options = null; } }
+            return q;
+          });
+          Object.keys(userAnswers).forEach(k => delete userAnswers[k]);
+          submitted.value = false;
           tab.value = 'practice';
         }
       } catch(e) { alert('生成失败: ' + e.message); }
@@ -342,6 +370,15 @@ createApp({
       const res = await fetch(`/api/exam/records?subject=${encodeURIComponent(subject.value)}&page_size=50`);
       exams.value = await res.json();
     }
+
+    async function loadAttempts() {
+      const res = await fetch(`/api/exam/attempts/list?user_id=${encodeURIComponent(user.value)}&subject=${encodeURIComponent(subject.value)}&page_size=50`);
+      attempts.value = await res.json();
+    }
+
+    const answeredCount = Vue.computed(() => {
+      return questions.value.filter(q => userAnswers[q.id] && userAnswers[q.id].trim()).length;
+    });
 
     async function startExam(e) {
       currentExam.value = e;
@@ -375,18 +412,13 @@ createApp({
             results.push({ question_id: q.id, seq: q.seq, question: q.question, correct_answer: ca, user_answer: ua, is_correct: ok });
           }
           result.value = { total: results.length, correct, wrong: results.length - correct, score: results.length ? Math.round(correct/results.length*1000)/10 : 0, results };
-          // 仍然错的题保持错题状态，答对的可以标记掌握
+          // 仍然错的题保持错题状态，答对的批量标记掌握
           const rightIds = results.filter(r => r.is_correct).map(r => r.question_id);
           if (rightIds.length) {
-            // 找到对应的exam_id来标记掌握
-            for (const w of wrongList.value || []) {
-              if (rightIds.includes(w.question_id)) {
-                await fetch(`/api/exam/${w.exam_id}/master`, {
-                  method: 'POST', headers: {'Content-Type':'application/json'},
-                  body: JSON.stringify({ user_id: user.value, question_ids: [w.question_id] })
-                });
-              }
-            }
+            await fetch('/api/exam/wrong/batch-master', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ user_id: user.value, question_ids: rightIds })
+            });
           }
           submitted.value = true;
         } else {
@@ -459,8 +491,10 @@ createApp({
     return {
       user, username, subject, grade, tab, login, logout, switchSubject,
       genDifficulty, genCount, genEngCount, generating, generateExam,
+      mathCategories, selectedCategories,
       exams, currentExam, questions, userAnswers, submitting, submitted, result,
-      loadExams, startExam, submitExam,
+      loadExams, startExam, submitExam, answeredCount,
+      attempts, loadAttempts,
       stats, loadStats, barWidth,
       wrongList, loadWrong, markMastered, downloadPractice, startWrongPractice,
     };

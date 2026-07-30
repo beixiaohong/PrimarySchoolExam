@@ -76,6 +76,10 @@ class Question(Base):
                     comment="参考答案")
     options_json = Column(Text, default="",
                           comment="选项JSON数组（选择题有值，非选择题为空串）")
+    image_path = Column(String(500), default="",
+                        comment="题目配图路径（几何图形、统计图等）")
+    audio_path = Column(String(500), default="",
+                        comment="题目音频路径（听写、听力等）")
     difficulty = Column(Integer, default=1,
                         comment="难度等级 1-5")
 
@@ -125,3 +129,52 @@ class WrongRecord(Base):
     def __repr__(self):
         return (f"<WrongRecord user={self.user_id} "
                 f"question={self.question_id} mastered={self.is_mastered}>")
+
+
+class ExamAttempt(Base):
+    """用户做题记录（一次完整的答题过程）"""
+    __tablename__ = "exam_attempts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), nullable=False, index=True,
+                     comment="用户标识")
+    exam_id = Column(Integer, ForeignKey("exam_records.id"), nullable=False,
+                     comment="试卷ID")
+    score = Column(Integer, default=0,
+                   comment="得分(0-100)")
+    total = Column(Integer, default=0,
+                   comment="总题数")
+    correct = Column(Integer, default=0,
+                     comment="正确数")
+    wrong = Column(Integer, default=0,
+                   comment="错误数")
+    duration_sec = Column(Integer, default=0,
+                          comment="答题用时(秒)")
+    created_at = Column(DateTime, default=datetime.now,
+                        comment="提交时间")
+
+    answers = relationship("AttemptAnswer", back_populates="attempt",
+                           cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<ExamAttempt user={self.user_id} exam={self.exam_id} score={self.score}>"
+
+
+class AttemptAnswer(Base):
+    """单次做题中每道题的作答详情"""
+    __tablename__ = "attempt_answers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    attempt_id = Column(Integer, ForeignKey("exam_attempts.id"), nullable=False,
+                        comment="所属做题记录ID")
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False,
+                         comment="题目ID")
+    user_answer = Column(Text, default="",
+                         comment="用户答案")
+    is_correct = Column(Boolean, default=False,
+                        comment="是否正确")
+
+    attempt = relationship("ExamAttempt", back_populates="answers")
+
+    def __repr__(self):
+        return f"<AttemptAnswer attempt={self.attempt_id} q={self.question_id} correct={self.is_correct}>"

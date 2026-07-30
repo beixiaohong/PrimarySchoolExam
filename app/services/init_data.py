@@ -116,6 +116,23 @@ def _seed_problem_types(db):
                 ("大数认识与近似数", "number_large", 1, 4, 3, 6, 6),
             ],
         },
+        {
+            "name": "中学代数",
+            "description": "一元二次方程、一次函数、不等式",
+            "types": [
+                ("一元二次方程", "mid_quadratic_eq", 1, 5, 8, 9, 15),
+                ("一次函数", "mid_linear_func", 1, 5, 8, 9, 15),
+                ("一元一次不等式", "mid_inequality", 1, 5, 7, 9, 12),
+            ],
+        },
+        {
+            "name": "中学几何与概率",
+            "description": "勾股定理、概率统计",
+            "types": [
+                ("勾股定理", "mid_pythagorean", 1, 5, 8, 9, 12),
+                ("概率", "mid_probability", 1, 5, 9, 9, 10),
+            ],
+        },
     ]
 
     for cat_data in categories_data:

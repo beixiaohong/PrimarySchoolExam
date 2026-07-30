@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models.exam import ExamRecord, Question, WrongRecord
+from ..models.exam import ExamRecord, Question, WrongRecord, ExamAttempt, AttemptAnswer
 from ..schemas.exam import (
     ExamCreateRequest, ExamOut, QuestionOut, WrongRecordOut,
     MarkWrongRequest, WrongPracticeRequest,
@@ -45,8 +45,10 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
         filepath, questions_data = _generate_math_exam(req, db)
     elif req.subject == "英语":
         filepath, questions_data = _generate_english_exam(req, db)
+    elif req.subject == "语文":
+        filepath, questions_data = _generate_chinese_exam(req, db)
     else:
-        raise HTTPException(400, "学科仅支持：数学 / 英语")
+        raise HTTPException(400, "学科仅支持：数学 / 英语 / 语文")
 
     title = req.title or f"{req.grade}年级{req.subject}试卷_{req.difficulty}"
     record = ExamRecord(
@@ -73,6 +75,8 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
             question=qd["question"],
             answer=qd.get("answer", ""),
             options_json=json.dumps(qd["options"], ensure_ascii=False) if qd.get("options") else "",
+            image_path=qd.get("image_path", ""),
+            audio_path=qd.get("audio_path", ""),
             difficulty=qd.get("difficulty", 1),
         ))
 
@@ -82,6 +86,7 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
         filepath,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=f"{title}.docx",
+        headers={"X-Exam-Id": str(record.id)},
     )
 
 
@@ -362,8 +367,32 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
 
     total = len(results)
     score = round(correct_count / total * 100, 1) if total > 0 else 0
+
+    # 保存做题记录
+    attempt = ExamAttempt(
+        user_id=user_id,
+        exam_id=exam_id,
+        score=int(score),
+        total=total,
+        correct=correct_count,
+        wrong=total - correct_count,
+        duration_sec=req.get("duration_sec", 0),
+    )
+    db.add(attempt)
+    db.flush()
+
+    for r in results:
+        db.add(AttemptAnswer(
+            attempt_id=attempt.id,
+            question_id=r["question_id"],
+            user_answer=r["user_answer"],
+            is_correct=r["is_correct"],
+        ))
+    db.commit()
+
     return {
         "exam_id": exam_id,
+        "attempt_id": attempt.id,
         "user_id": user_id,
         "total": total,
         "correct": correct_count,
@@ -533,6 +562,7 @@ def _generate_math_exam(req: ExamCreateRequest, db: Session):
             "answer": p.answer,
             "options": None,
             "difficulty": p.difficulty,
+            "image_path": p.image_path,
         })
     return filepath, questions_data
 
@@ -565,6 +595,134 @@ def _generate_english_exam(req: ExamCreateRequest, db: Session):
             questions_data.append({
                 "seq": seq,
                 "category": "英语",
+                "type_code": etype,
+                "type_name": type_name,
+                "question": item["question"],
+                "answer": item["answer"],
+                "options": item.get("options"),
+                "difficulty": 1,
+                "audio_path": item.get("audio_path", ""),
+            })
+    return filepath, questions_data
+
+
+# ═══════════════════════════════════════════════════════════
+# 做题记录查询
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/attempts/list", summary="用户做题记录列表")
+def list_attempts(
+    user_id: str = Query(..., description="用户标识"),
+    subject: str = Query(None, description="学科筛选"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    q = db.query(ExamAttempt).filter(ExamAttempt.user_id == user_id)
+    if subject:
+        q = q.join(ExamRecord).filter(ExamRecord.subject == subject)
+    attempts = q.order_by(ExamAttempt.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return [
+        {
+            "id": a.id,
+            "exam_id": a.exam_id,
+            "score": a.score,
+            "total": a.total,
+            "correct": a.correct,
+            "wrong": a.wrong,
+            "duration_sec": a.duration_sec,
+            "created_at": a.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "exam_title": db.query(ExamRecord).get(a.exam_id).title if a.exam_id else "",
+        }
+        for a in attempts
+    ]
+
+
+@router.get("/attempts/{attempt_id}", summary="单次做题详情")
+def get_attempt_detail(attempt_id: int, db: Session = Depends(get_db)):
+    attempt = db.query(ExamAttempt).get(attempt_id)
+    if not attempt:
+        raise HTTPException(404, "记录不存在")
+    answers = db.query(AttemptAnswer).filter(AttemptAnswer.attempt_id == attempt_id).all()
+    detail = []
+    for aa in answers:
+        q = db.query(Question).get(aa.question_id)
+        detail.append({
+            "question_id": aa.question_id,
+            "user_answer": aa.user_answer,
+            "is_correct": aa.is_correct,
+            "question": q.question if q else "",
+            "correct_answer": q.answer if q else "",
+            "type_name": q.type_name if q else "",
+        })
+    return {
+        "id": attempt.id,
+        "exam_id": attempt.exam_id,
+        "user_id": attempt.user_id,
+        "score": attempt.score,
+        "total": attempt.total,
+        "correct": attempt.correct,
+        "wrong": attempt.wrong,
+        "created_at": attempt.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "answers": detail,
+    }
+
+
+# ═══════════════════════════════════════════════════════════
+# 批量标记掌握（不依赖 exam_id）
+# ═══════════════════════════════════════════════════════════
+
+@router.post("/wrong/batch-master", summary="批量标记错题已掌握")
+def batch_master(req: dict, db: Session = Depends(get_db)):
+    """
+    批量将错题标记为已掌握（不需要 exam_id）。
+    请求体: { "user_id": "xxx", "question_ids": [1, 2, 3] }
+    """
+    user_id = req.get("user_id", "")
+    question_ids = req.get("question_ids", [])
+    if not user_id or not question_ids:
+        raise HTTPException(400, "缺少 user_id 或 question_ids")
+
+    now = datetime.now()
+    mastered = 0
+    for qid in question_ids:
+        wr = db.query(WrongRecord).filter(
+            WrongRecord.user_id == user_id,
+            WrongRecord.question_id == qid,
+        ).first()
+        if wr and not wr.is_mastered:
+            wr.is_mastered = True
+            wr.mastered_at = now
+            mastered += 1
+    db.commit()
+    return {"message": f"已标记 {mastered} 题为已掌握", "mastered_count": mastered}
+
+
+def _generate_chinese_exam(req: ExamCreateRequest, db: Session):
+    """生成语文试卷，返回 (文件路径, 题目数据列表)"""
+    from ..services.chinese_generator import generate_chinese_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
+    from ..services.docx_service import build_english_docx
+
+    types_used = req.english_types if req.english_types else ALL_EXERCISE_TYPES[:]
+    count_per_type = max(3, req.english_count // len(types_used))
+
+    exercises = generate_chinese_exam(
+        grade=req.grade,
+        count_per_type=count_per_type,
+        exercise_types=req.english_types,
+        db=db,
+    )
+    filepath = build_english_docx(exercises, req.grade, title=req.title)
+
+    questions_data = []
+    seq = 0
+    for etype, items in exercises.items():
+        type_name = TYPE_NAMES.get(etype, etype)
+        for item in items:
+            seq += 1
+            questions_data.append({
+                "seq": seq,
+                "category": "语文",
                 "type_code": etype,
                 "type_name": type_name,
                 "question": item["question"],

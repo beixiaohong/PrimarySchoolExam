@@ -46,7 +46,7 @@ class CategoryOut(BaseModel):
 
 class MathGenRequest(BaseModel):
     """数学题生成请求"""
-    grade: int = Field(6, ge=1, le=6, description="年级")
+    grade: int = Field(6, ge=1, le=9, description="年级")
     difficulty: str = Field("综合", description="难度：基础/提高/拔高/综合")
     categories: Optional[List[str]] = Field(None, description="指定大类名称列表，None=全部")
     problem_types: Optional[List[str]] = Field(None, description="指定题型code列表，None=按权重自动")
@@ -64,6 +64,7 @@ class ProblemItem(BaseModel):
     difficulty: int
     question: str
     answer: str = ""
+    image_path: str = ""
 
 
 class MathGenResponse(BaseModel):

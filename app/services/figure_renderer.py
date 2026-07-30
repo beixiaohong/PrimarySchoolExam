@@ -1,0 +1,173 @@
+"""图形渲染服务
+
+用 matplotlib 为几何题生成配图，保存到 output/figures/ 目录。
+返回相对路径（如 /output/figures/xxx.png），前端和 Word 文档均可引用。
+"""
+import os
+import uuid
+import math
+import random
+from pathlib import Path
+
+import matplotlib
+matplotlib.use("Agg")  # 无头模式，不需要显示器
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.patches import FancyArrowPatch
+import numpy as np
+
+# 中文字体设置
+plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
+
+FIGURE_DIR = Path(__file__).resolve().parent.parent.parent / "output" / "figures"
+FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _save_fig(fig) -> str:
+    """保存图片，返回 web 可访问的相对路径"""
+    filename = f"{uuid.uuid4().hex[:12]}.png"
+    filepath = FIGURE_DIR / filename
+    fig.savefig(str(filepath), dpi=120, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    return f"/output/figures/{filename}"
+
+
+def render_triangle(base: float, height: float, labels: dict = None) -> str:
+    """渲染三角形（标注底和高）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    # 三角形顶点
+    A = (0, 0)
+    B = (base, 0)
+    C = (base * random.uniform(0.3, 0.7), height)
+
+    triangle = plt.Polygon([A, B, C], fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(triangle)
+
+    # 标注顶点
+    ax.annotate("A", A, textcoords="offset points", xytext=(-10, -10), fontsize=11)
+    ax.annotate("B", B, textcoords="offset points", xytext=(5, -10), fontsize=11)
+    ax.annotate("C", C, textcoords="offset points", xytext=(0, 8), fontsize=11)
+
+    # 标注底和高
+    ax.annotate("", xy=(base / 2, 0), xytext=(base / 2, -0.3),
+                arrowprops=dict(arrowstyle="<->", color="blue"))
+    ax.text(base / 2, -0.6, f"底={base}", ha="center", fontsize=10, color="blue")
+
+    # 高（虚线）
+    foot_x = C[0]
+    ax.plot([foot_x, foot_x], [0, height], "r--", linewidth=1)
+    ax.text(foot_x + 0.2, height / 2, f"高={height}", fontsize=10, color="red")
+
+    ax.set_xlim(-1, base + 1)
+    ax.set_ylim(-1.5, height + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_rectangle(length: float, width: float) -> str:
+    """渲染长方形（标注长和宽）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    rect = patches.Rectangle((0, 0), length, width, linewidth=1.5,
+                              edgecolor="black", facecolor="none")
+    ax.add_patch(rect)
+
+    ax.text(length / 2, -0.4, f"长={length}", ha="center", fontsize=10, color="blue")
+    ax.text(-0.4, width / 2, f"宽={width}", ha="center", fontsize=10,
+            color="blue", rotation=90)
+
+    ax.set_xlim(-1, length + 1)
+    ax.set_ylim(-1, width + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_circle(radius: float) -> str:
+    """渲染圆（标注半径和圆心）"""
+    fig, ax = plt.subplots(1, 1, figsize=(3.5, 3.5))
+    circle = plt.Circle((0, 0), radius, fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(circle)
+
+    # 圆心
+    ax.plot(0, 0, "ko", markersize=4)
+    ax.text(0.1, 0.1, "O", fontsize=11)
+
+    # 半径
+    angle = random.uniform(0.3, 1.2)
+    rx = radius * math.cos(angle)
+    ry = radius * math.sin(angle)
+    ax.plot([0, rx], [0, ry], "b-", linewidth=1.2)
+    ax.text(rx / 2 + 0.2, ry / 2 + 0.2, f"r={radius}", fontsize=10, color="blue")
+
+    ax.set_xlim(-radius - 1, radius + 1)
+    ax.set_ylim(-radius - 1, radius + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_coordinate(points: list, title: str = "") -> str:
+    """渲染坐标系中标注的点"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+    ax.axhline(y=0, color="black", linewidth=0.8)
+    ax.axvline(x=0, color="black", linewidth=0.8)
+    ax.set_xlabel("x", fontsize=11)
+    ax.set_ylabel("y", fontsize=11)
+
+    labels = "ABCDEFGH"
+    for i, (x, y) in enumerate(points):
+        ax.plot(x, y, "ro", markersize=6)
+        label = labels[i] if i < len(labels) else f"P{i+1}"
+        ax.annotate(f"{label}({x},{y})", (x, y),
+                    textcoords="offset points", xytext=(5, 5), fontsize=9)
+
+    ax.set_xlim(-1, 11)
+    ax.set_ylim(-1, 11)
+    ax.set_xticks(range(0, 11))
+    ax.set_yticks(range(0, 11))
+    ax.grid(True, alpha=0.3)
+    if title:
+        ax.set_title(title, fontsize=11)
+    return _save_fig(fig)
+
+
+def render_bar_chart(categories: list, values: list, title: str = "统计图") -> str:
+    """渲染条形统计图"""
+    fig, ax = plt.subplots(1, 1, figsize=(5, 3.5))
+    colors = ["#4361ee", "#2ec4b6", "#ff9f1c", "#e71d36", "#7209b7", "#3a86a8"]
+    bars = ax.bar(categories, values, color=colors[:len(categories)], width=0.6)
+    ax.set_title(title, fontsize=12)
+    ax.set_ylabel("数量", fontsize=10)
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                str(val), ha="center", fontsize=10)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    return _save_fig(fig)
+
+
+def render_pie_chart(categories: list, values: list, title: str = "占比图") -> str:
+    """渲染扇形统计图"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+    colors = ["#4361ee", "#2ec4b6", "#ff9f1c", "#e71d36", "#7209b7", "#3a86a8"]
+    ax.pie(values, labels=categories, autopct="%1.1f%%",
+           colors=colors[:len(categories)], startangle=90)
+    ax.set_title(title, fontsize=12)
+    return _save_fig(fig)
+
+
+def render_line_graph(x_labels: list, y_values: list, title: str = "折线统计图") -> str:
+    """渲染折线统计图"""
+    fig, ax = plt.subplots(1, 1, figsize=(5, 3.5))
+    ax.plot(x_labels, y_values, "o-", color="#4361ee", linewidth=2, markersize=6)
+    ax.set_title(title, fontsize=12)
+    ax.set_ylabel("数值", fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    for x, y in zip(x_labels, y_values):
+        ax.annotate(str(y), (x, y), textcoords="offset points",
+                    xytext=(0, 8), ha="center", fontsize=9)
+    return _save_fig(fig)
