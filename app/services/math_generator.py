@@ -708,11 +708,21 @@ def _area_triangle():
 
 def _area_parallelogram():
     b, h = random.randint(4, 20), random.randint(3, 15)
-    return f"平行四边形底{b}cm、高{h}cm，面积是多少？", f"{b*h} cm\u00b2"
+    try:
+        from .figure_renderer import render_parallelogram
+        img = render_parallelogram(b, h)
+    except Exception:
+        img = ""
+    return f"平行四边形底{b}cm、高{h}cm，面积是多少？", f"{b*h} cm\u00b2", img
 
 def _area_rect_both():
     l, w = random.randint(5, 25), random.randint(3, 15)
-    return f"长方形长{l}cm、宽{w}cm，面积和周长各是多少？", f"面积{l*w}cm\u00b2，周长{2*(l+w)}cm"
+    try:
+        from .figure_renderer import render_rectangle
+        img = render_rectangle(l, w)
+    except Exception:
+        img = ""
+    return f"长方形长{l}cm、宽{w}cm，面积和周长各是多少？", f"面积{l*w}cm\u00b2，周长{2*(l+w)}cm", img
 
 def _area_reverse_base():
     h = random.randint(3, 12)
@@ -726,7 +736,12 @@ def _area_trapezoid():
     a, b, h = random.randint(4, 12), random.randint(6, 16), random.randint(3, 10)
     area = (a + b) * h / 2
     s = f"{area:.1f}" if area != int(area) else str(int(area))
-    return f"梯形上底{a}cm、下底{b}cm、高{h}cm，面积？", f"{s} cm\u00b2"
+    try:
+        from .figure_renderer import render_trapezoid
+        img = render_trapezoid(a, b, h)
+    except Exception:
+        img = ""
+    return f"梯形上底{a}cm、下底{b}cm、高{h}cm，面积？", f"{s} cm\u00b2", img
 
 def _area_circle():
     r = random.randint(2, 10)
@@ -790,7 +805,12 @@ def geo_volume(difficulty: int, grade: int):
 
 def _vol_cuboid():
     a, b, c = random.randint(3, 12), random.randint(3, 12), random.randint(3, 12)
-    return f"长方体长{a}cm宽{b}cm高{c}cm，体积？", f"{a*b*c} cm\u00b3"
+    try:
+        from .figure_renderer import render_cuboid
+        img = render_cuboid(a, b, c)
+    except Exception:
+        img = ""
+    return f"长方体长{a}cm宽{b}cm高{c}cm，体积？", f"{a*b*c} cm\u00b3", img
 
 def _vol_cube():
     a = random.randint(3, 12)
@@ -811,12 +831,22 @@ def _vol_capacity():
 def _vol_cylinder():
     r, h = random.randint(2, 8), random.randint(5, 20)
     v = round(3.14 * r * r * h, 2)
-    return f"圆柱底面半径{r}cm高{h}cm，体积？（\u03c0取3.14）", f"{v} cm\u00b3"
+    try:
+        from .figure_renderer import render_cylinder
+        img = render_cylinder(r, h)
+    except Exception:
+        img = ""
+    return f"圆柱底面半径{r}cm高{h}cm，体积？（\u03c0取3.14）", f"{v} cm\u00b3", img
 
 def _vol_cone():
     r, h = random.randint(3, 8), random.randint(6, 18)
     v = round(3.14 * r * r * h / 3, 2)
-    return f"圆锥底面半径{r}cm高{h}cm，体积？（\u03c0取3.14）", f"{v} cm\u00b3"
+    try:
+        from .figure_renderer import render_cone
+        img = render_cone(r, h)
+    except Exception:
+        img = ""
+    return f"圆锥底面半径{r}cm高{h}cm，体积？（\u03c0取3.14）", f"{v} cm\u00b3", img
 
 def _vol_equal_bh():
     r, h = random.randint(3, 7), random.randint(6, 15)

@@ -171,3 +171,130 @@ def render_line_graph(x_labels: list, y_values: list, title: str = "折线统计
         ax.annotate(str(y), (x, y), textcoords="offset points",
                     xytext=(0, 8), ha="center", fontsize=9)
     return _save_fig(fig)
+
+
+def render_trapezoid(top: float, bottom: float, height: float) -> str:
+    """渲染梯形（标注上底、下底、高）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4.5, 3))
+    offset = (bottom - top) / 2
+    verts = [(0, 0), (bottom, 0), (offset + top, height), (offset, height)]
+    trap = plt.Polygon(verts, fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(trap)
+
+    ax.text(bottom / 2, -0.5, f"下底={bottom}", ha="center", fontsize=10, color="blue")
+    ax.text(offset + top / 2, height + 0.3, f"上底={top}", ha="center", fontsize=10, color="blue")
+    # 高（虚线）
+    mid_x = bottom / 2
+    ax.plot([mid_x, mid_x], [0, height], "r--", linewidth=1)
+    ax.text(mid_x + 0.3, height / 2, f"高={height}", fontsize=10, color="red")
+
+    ax.set_xlim(-1, bottom + 1)
+    ax.set_ylim(-1.2, height + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_parallelogram(base: float, height: float) -> str:
+    """渲染平行四边形（标注底和高）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4.5, 3))
+    slant = base * 0.3
+    verts = [(0, 0), (base, 0), (base + slant, height), (slant, height)]
+    para = plt.Polygon(verts, fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(para)
+
+    ax.text(base / 2, -0.5, f"底={base}", ha="center", fontsize=10, color="blue")
+    # 高
+    ax.plot([slant, slant], [0, height], "r--", linewidth=1)
+    ax.text(slant - 0.5, height / 2, f"高={height}", fontsize=10, color="red", rotation=90)
+
+    ax.set_xlim(-1, base + slant + 1)
+    ax.set_ylim(-1.2, height + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_cuboid(length: float, width: float, height: float) -> str:
+    """渲染长方体/正方体（3D透视）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 3.5))
+    # 前面
+    front = [(0, 0), (length, 0), (length, height), (0, height)]
+    # 后面偏移
+    dx, dy = width * 0.4, width * 0.3
+    back = [(dx, dy), (length + dx, dy), (length + dx, height + dy), (dx, height + dy)]
+
+    ax.add_patch(plt.Polygon(front, fill=False, edgecolor="black", linewidth=1.5))
+    ax.add_patch(plt.Polygon(back, fill=False, edgecolor="gray", linewidth=1, linestyle="--"))
+    # 连接线
+    for f, b in zip(front, back):
+        ax.plot([f[0], b[0]], [f[1], b[1]], "k-", linewidth=1)
+
+    ax.text(length / 2, -0.5, f"长={length}", ha="center", fontsize=10, color="blue")
+    ax.text(-0.5, height / 2, f"高={height}", ha="center", fontsize=10, color="blue", rotation=90)
+    ax.text(length + dx / 2 + 0.3, -0.2, f"宽={width}", fontsize=10, color="blue")
+
+    ax.set_xlim(-1.5, length + dx + 1)
+    ax.set_ylim(-1.2, height + dy + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_cylinder(radius: float, height: float) -> str:
+    """渲染圆柱体"""
+    fig, ax = plt.subplots(1, 1, figsize=(3.5, 4))
+    # 用椭圆模拟顶底面
+    ellipse_w = radius * 2
+    ellipse_h = radius * 0.5
+
+    # 底面椭圆
+    bottom = patches.Ellipse((radius, 0), ellipse_w, ellipse_h,
+                              fill=False, edgecolor="black", linewidth=1.5)
+    # 顶面椭圆
+    top = patches.Ellipse((radius, height), ellipse_w, ellipse_h,
+                           fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(bottom)
+    ax.add_patch(top)
+    # 两侧母线
+    ax.plot([0, 0], [0, height], "k-", linewidth=1.5)
+    ax.plot([radius * 2, radius * 2], [0, height], "k-", linewidth=1.5)
+
+    # 标注
+    ax.plot([radius, radius * 2], [0, 0], "b-", linewidth=1)
+    ax.text(radius, -0.5, f"r={radius}", ha="center", fontsize=10, color="blue")
+    ax.text(radius * 2 + 0.4, height / 2, f"高={height}", fontsize=10, color="blue", rotation=90)
+
+    ax.set_xlim(-1, radius * 2 + 1.5)
+    ax.set_ylim(-1.2, height + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_cone(radius: float, height: float) -> str:
+    """渲染圆锥体"""
+    fig, ax = plt.subplots(1, 1, figsize=(3.5, 4))
+    ellipse_w = radius * 2
+    ellipse_h = radius * 0.5
+
+    # 底面椭圆
+    bottom = patches.Ellipse((radius, 0), ellipse_w, ellipse_h,
+                              fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(bottom)
+    # 母线
+    ax.plot([0, radius], [0, height], "k-", linewidth=1.5)
+    ax.plot([radius * 2, radius], [0, height], "k-", linewidth=1.5)
+    # 顶点
+    ax.plot(radius, height, "ko", markersize=4)
+
+    # 高（虚线）
+    ax.plot([radius, radius], [0, height], "r--", linewidth=1)
+    ax.text(radius + 0.3, height / 2, f"高={height}", fontsize=10, color="red", rotation=90)
+    ax.text(radius / 2, -0.5, f"r={radius}", ha="center", fontsize=10, color="blue")
+
+    ax.set_xlim(-1, radius * 2 + 1.5)
+    ax.set_ylim(-1.2, height + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
