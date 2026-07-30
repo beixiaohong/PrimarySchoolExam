@@ -690,9 +690,9 @@ def geo_area_plane(difficulty: int, grade: int):
     if difficulty <= 2:
         variants = [_area_triangle, _area_parallelogram, _area_rect_both, _area_reverse_base]
     elif difficulty <= 4:
-        variants = [_area_trapezoid, _area_circle, _area_composite_sub, _area_reverse_height]
+        variants = [_area_trapezoid, _area_circle, _area_composite_sub, _area_reverse_height, _area_house]
     else:
-        variants = [_area_shaded, _area_equal_transform, _area_ratio_2d, _area_inscribed]
+        variants = [_area_shaded, _area_equal_transform, _area_ratio_2d, _area_inscribed, _area_rect_semicircle]
     return random.choice(variants)()
 
 def _area_triangle():
@@ -756,7 +756,12 @@ def _area_circle():
 def _area_composite_sub():
     L, W = random.randint(10, 20), random.randint(8, 15)
     l, w = random.randint(3, L-3), random.randint(3, W-3)
-    return f"L形：外框{L}\u00d7{W}cm，挖去右上角{l}\u00d7{w}cm小长方形，面积？", f"{L*W - l*w} cm\u00b2"
+    try:
+        from .figure_renderer import render_composite_L
+        img = render_composite_L(L, W, l, w)
+    except Exception:
+        img = ""
+    return f"L形：外框{L}\u00d7{W}cm，挖去右上角{l}\u00d7{w}cm小长方形，面积？", f"{L*W - l*w} cm\u00b2", img
 
 def _area_reverse_height():
     a, b = random.randint(5, 12), random.randint(8, 16)
@@ -770,7 +775,12 @@ def _area_shaded():
     r = random.randint(3, 8)
     side = 2 * r
     shadow = round(side * side - 3.14 * r * r, 2)
-    return f"正方形边长{side}cm，内切圆半径{r}cm，阴影面积？（\u03c0取3.14）", f"{shadow} cm\u00b2"
+    try:
+        from .figure_renderer import render_composite_square_circle
+        img = render_composite_square_circle(side, r)
+    except Exception:
+        img = ""
+    return f"正方形边长{side}cm，内切圆半径{r}cm，阴影面积？（\u03c0取3.14）", f"{shadow} cm\u00b2", img
 
 def _area_equal_transform():
     b, h = random.randint(6, 15), random.randint(4, 10)
@@ -791,6 +801,37 @@ def _area_inscribed():
     sq_area = d * d / 2
     return f"圆半径{r}cm，内接正方形面积是多少？", f"{sq_area:.1f} cm\u00b2（对角线=直径{d}cm）"
 
+def _area_house():
+    """长方形+三角形（房屋形组合面积）"""
+    w = random.randint(6, 16)
+    h_rect = random.randint(5, 12)
+    h_tri = random.randint(3, 10)
+    area = w * h_rect + w * h_tri / 2
+    s = f"{area:.1f}" if area != int(area) else str(int(area))
+    try:
+        from .figure_renderer import render_composite_rect_triangle
+        img = render_composite_rect_triangle(w, h_rect, h_tri)
+    except Exception:
+        img = ""
+    return (f"组合图形：下方长方形宽{w}cm高{h_rect}cm，"
+            f"上方三角形高{h_tri}cm（底与长方形同宽），总面积？",
+            f"{s} cm\u00b2", img)
+
+def _area_rect_semicircle():
+    """长方形+半圆（组合面积）"""
+    w = random.choice([6, 8, 10, 12, 14])
+    h = random.randint(5, 15)
+    r = w / 2
+    area = round(w * h + 3.14 * r * r / 2, 2)
+    try:
+        from .figure_renderer import render_composite_rect_semicircle
+        img = render_composite_rect_semicircle(w, h)
+    except Exception:
+        img = ""
+    return (f"组合图形：长方形宽{w}cm高{h}cm，顶部接一个半圆（直径={w}cm），"
+            f"总面积？（\u03c0取3.14）",
+            f"{area} cm\u00b2", img)
+
 
 @register("geo_volume")
 def geo_volume(difficulty: int, grade: int):
@@ -798,9 +839,9 @@ def geo_volume(difficulty: int, grade: int):
     if difficulty <= 2:
         variants = [_vol_cuboid, _vol_cube, _vol_reverse_h, _vol_capacity]
     elif difficulty <= 4:
-        variants = [_vol_cylinder, _vol_cone, _vol_equal_bh, _vol_displacement]
+        variants = [_vol_cylinder, _vol_cone, _vol_equal_bh, _vol_displacement, _vol_cylinder_cone]
     else:
-        variants = [_vol_hollow, _vol_melt, _vol_water_rise, _vol_ratio_3d]
+        variants = [_vol_hollow, _vol_melt, _vol_water_rise, _vol_ratio_3d, _vol_cuboid_hole]
     return random.choice(variants)()
 
 def _vol_cuboid():
@@ -881,6 +922,41 @@ def _vol_water_rise():
 def _vol_ratio_3d():
     a1, a2 = random.randint(2, 4), random.randint(3, 6)
     return f"两正方体棱长比{a1}:{a2}，体积比是多少？", f"{a1**3}:{a2**3}"
+
+def _vol_cylinder_cone():
+    """圆柱+圆锥组合体（如铅笔、塔尖）"""
+    r = random.randint(2, 6)
+    h_cyl = random.randint(6, 15)
+    h_cone = random.randint(3, 10)
+    v_cyl = round(3.14 * r * r * h_cyl, 2)
+    v_cone = round(3.14 * r * r * h_cone / 3, 2)
+    v_total = round(v_cyl + v_cone, 2)
+    try:
+        from .figure_renderer import render_composite_cylinder_cone
+        img = render_composite_cylinder_cone(r, h_cyl, h_cone)
+    except Exception:
+        img = ""
+    return (f"组合体：下方圆柱半径{r}cm高{h_cyl}cm，"
+            f"上方圆锥半径{r}cm高{h_cone}cm，总体积？（\u03c0取3.14）",
+            f"{v_total} cm\u00b3（圆柱{v_cyl}+圆锥{v_cone}）", img)
+
+def _vol_cuboid_hole():
+    """长方体挖去圆柱孔"""
+    a = random.randint(10, 20)
+    b = random.randint(8, 15)
+    c = random.randint(6, 12)
+    r = random.randint(2, min(a, c) // 2 - 1)
+    v_cuboid = a * b * c
+    v_hole = round(3.14 * r * r * b, 2)
+    v_remain = round(v_cuboid - v_hole, 2)
+    try:
+        from .figure_renderer import render_composite_cuboid_hole
+        img = render_composite_cuboid_hole(a, b, c, r)
+    except Exception:
+        img = ""
+    return (f"长方体长{a}cm宽{b}cm高{c}cm，沿宽的方向打一个半径{r}cm的圆柱孔（打穿），"
+            f"剩余体积？（\u03c0取3.14）",
+            f"{v_remain} cm\u00b3（{v_cuboid}-{v_hole}）", img)
 
 
 @register("geo_perimeter")

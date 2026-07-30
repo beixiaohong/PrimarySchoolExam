@@ -298,3 +298,129 @@ def render_cone(radius: float, height: float) -> str:
     ax.set_aspect("equal")
     ax.axis("off")
     return _save_fig(fig)
+
+
+# ═══════════════════════════════════════════════════════════
+# 组合图形（叠加 / 挖空）
+# ═══════════════════════════════════════════════════════════
+
+def render_composite_rect_triangle(w: float, h_rect: float, h_tri: float) -> str:
+    """长方形 + 顶部三角形（房屋形）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 4.5))
+    rect = patches.Rectangle((0, 0), w, h_rect, fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(rect)
+    tri = plt.Polygon([(0, h_rect), (w, h_rect), (w / 2, h_rect + h_tri)],
+                      fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(tri)
+    ax.text(w / 2, -0.8, f"{w}", ha="center", fontsize=10, color="blue")
+    ax.text(-0.8, h_rect / 2, f"{h_rect}", ha="center", va="center", fontsize=10, color="blue", rotation=90)
+    ax.annotate(f"{h_tri}", xy=(w / 2 + 0.3, h_rect + h_tri / 2),
+                fontsize=10, color="red")
+    ax.set_xlim(-1.5, w + 1.5)
+    ax.set_ylim(-1.5, h_rect + h_tri + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_composite_rect_semicircle(w: float, h: float) -> str:
+    """长方形 + 顶部半圆"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 4.5))
+    r = w / 2
+    rect = patches.Rectangle((0, 0), w, h, fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(rect)
+    theta = np.linspace(0, np.pi, 100)
+    xs = r + r * np.cos(theta)
+    ys = h + r * np.sin(theta)
+    ax.plot(xs, ys, "k-", linewidth=1.5)
+    ax.plot([0, w], [h, h], "k--", linewidth=0.8)
+    ax.text(w / 2, -0.8, f"{w}", ha="center", fontsize=10, color="blue")
+    ax.text(-0.8, h / 2, f"{h}", ha="center", va="center", fontsize=10, color="blue", rotation=90)
+    ax.text(w / 2, h + r + 0.5, f"r={r:.1f}", ha="center", fontsize=10, color="red")
+    ax.set_xlim(-1.5, w + 1.5)
+    ax.set_ylim(-1.5, h + r + 1.5)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_composite_L(L: float, W: float, l: float, w: float) -> str:
+    """L形：大长方形挖去右上角小长方形"""
+    fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
+    verts = [(0, 0), (L, 0), (L, W - w), (L - l, W - w), (L - l, W), (0, W), (0, 0)]
+    poly = plt.Polygon(verts, fill=True, facecolor="#e8f4fd", edgecolor="black", linewidth=1.5)
+    ax.add_patch(poly)
+    cut = patches.Rectangle((L - l, W - w), l, w, fill=False,
+                            edgecolor="gray", linewidth=1, linestyle="--")
+    ax.add_patch(cut)
+    ax.text(L / 2, -0.8, f"{L}", ha="center", fontsize=10, color="blue")
+    ax.text(-0.8, W / 2, f"{W}", ha="center", va="center", fontsize=10, color="blue", rotation=90)
+    ax.text(L - l / 2, W + 0.3, f"{l}", ha="center", fontsize=9, color="red")
+    ax.text(L + 0.3, W - w / 2, f"{w}", ha="left", va="center", fontsize=9, color="red", rotation=90)
+    ax.set_xlim(-1.5, L + 1.5)
+    ax.set_ylim(-1.5, W + 1.5)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_composite_square_circle(side: float, r: float) -> str:
+    """正方形内切圆（求阴影面积）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4, 4))
+    sq = patches.Rectangle((0, 0), side, side, fill=True,
+                           facecolor="#fff3cd", edgecolor="black", linewidth=1.5)
+    ax.add_patch(sq)
+    circle = patches.Circle((side / 2, side / 2), r, fill=True,
+                            facecolor="white", edgecolor="black", linewidth=1.5)
+    ax.add_patch(circle)
+    ax.text(side / 2, -0.8, f"边长={side}", ha="center", fontsize=10, color="blue")
+    ax.text(side / 2, side / 2, f"r={r}", ha="center", va="center", fontsize=10, color="red")
+    ax.set_xlim(-1, side + 1)
+    ax.set_ylim(-1.5, side + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_composite_cylinder_cone(r: float, h_cyl: float, h_cone: float) -> str:
+    """圆柱 + 顶部圆锥（组合体）"""
+    fig, ax = plt.subplots(1, 1, figsize=(3.5, 5))
+    ew = r * 2
+    eh = r * 0.5
+    bottom = patches.Ellipse((r, 0), ew, eh, fill=False, edgecolor="black", linewidth=1.5)
+    ax.add_patch(bottom)
+    ax.plot([0, 0], [0, h_cyl], "k-", linewidth=1.5)
+    ax.plot([r * 2, r * 2], [0, h_cyl], "k-", linewidth=1.5)
+    top = patches.Ellipse((r, h_cyl), ew, eh, fill=False, edgecolor="black", linewidth=1.2)
+    ax.add_patch(top)
+    ax.plot([0, r], [h_cyl, h_cyl + h_cone], "k-", linewidth=1.5)
+    ax.plot([r * 2, r], [h_cyl, h_cyl + h_cone], "k-", linewidth=1.5)
+    ax.plot(r, h_cyl + h_cone, "ko", markersize=4)
+    ax.text(-0.8, h_cyl / 2, f"h1={h_cyl}", ha="center", va="center", fontsize=9, color="blue", rotation=90)
+    ax.text(r * 2 + 0.8, h_cyl + h_cone / 2, f"h2={h_cone}", ha="center", va="center", fontsize=9, color="red", rotation=90)
+    ax.text(r, -0.8, f"r={r}", ha="center", fontsize=10, color="blue")
+    ax.set_xlim(-1.5, r * 2 + 2)
+    ax.set_ylim(-1.5, h_cyl + h_cone + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
+
+
+def render_composite_cuboid_hole(a: float, b: float, c: float, r: float) -> str:
+    """长方体中挖去圆柱孔（正视图）"""
+    fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
+    rect = patches.Rectangle((0, 0), a, c, fill=True,
+                             facecolor="#e8f4fd", edgecolor="black", linewidth=1.5)
+    ax.add_patch(rect)
+    circle = patches.Circle((a / 2, c / 2), r, fill=True,
+                            facecolor="white", edgecolor="red", linewidth=1.5, linestyle="--")
+    ax.add_patch(circle)
+    ax.text(a / 2, -0.8, f"长={a}", ha="center", fontsize=10, color="blue")
+    ax.text(-0.8, c / 2, f"高={c}", ha="center", va="center", fontsize=10, color="blue", rotation=90)
+    ax.text(a / 2, c / 2, f"r={r}", ha="center", va="center", fontsize=10, color="red")
+    ax.text(a + 0.3, c / 2, f"宽(深)={b}", ha="left", va="center", fontsize=9, color="green")
+    ax.set_xlim(-1.5, a + 2.5)
+    ax.set_ylim(-1.5, c + 1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return _save_fig(fig)
