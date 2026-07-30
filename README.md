@@ -5,6 +5,10 @@ python --version          # 确认显示 3.12.x
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
+python -m venv .venv
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
 更新：pip freeze > requirements.txt
 
 
