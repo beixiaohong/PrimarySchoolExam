@@ -2,14 +2,29 @@
 import os
 from datetime import datetime
 from typing import List, Dict
+from pathlib import Path
 
 from docx import Document
 from docx.shared import Pt, Cm, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 
-from ..config import OUTPUT_DIR
+from ..config import OUTPUT_DIR, BASE_DIR
 from ..schemas.problem import ProblemItem
+
+
+def _add_image(doc, image_path: str, width_cm: float = 5.5):
+    """将 web 路径图片嵌入 Word 文档（居中）"""
+    if not image_path:
+        return
+    # /output/figures/xxx.png -> 项目根/output/figures/xxx.png
+    abs_path = BASE_DIR / image_path.lstrip("/")
+    if not abs_path.exists():
+        return
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run()
+    run.add_picture(str(abs_path), width=Cm(width_cm))
 
 
 def build_math_docx(
@@ -67,6 +82,10 @@ def build_math_docx(
                 star = p.add_run(f"  {diff_mark}")
                 star.font.size = Pt(9)
                 star.font.color.rgb = RGBColor(200, 50, 50)
+
+            # 嵌入配图
+            if item.image_path:
+                _add_image(doc, item.image_path)
 
             # 答题空间
             doc.add_paragraph("   ")
@@ -245,6 +264,10 @@ def build_wrong_practice_docx(
                             op.runs[0].font.size = Pt(11)
                 except (json.JSONDecodeError, TypeError):
                     pass
+
+            # 嵌入配图
+            if getattr(q, 'image_path', ''):
+                _add_image(doc, q.image_path)
 
             # 答题空间
             doc.add_paragraph("   ______________________________")

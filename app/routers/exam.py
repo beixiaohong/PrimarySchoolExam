@@ -50,7 +50,8 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
     else:
         raise HTTPException(400, "学科仅支持：数学 / 英语 / 语文")
 
-    title = req.title or f"{req.grade}年级{req.subject}试卷_{req.difficulty}"
+    from datetime import datetime as _dt
+    title = req.title or f"{_dt.now().strftime('%y%m%d%H%M%S')}{req.subject}{len(questions_data)}题{req.difficulty}卷"
     record = ExamRecord(
         subject=req.subject,
         title=title,
