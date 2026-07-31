@@ -157,7 +157,10 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
             <strong>{{e.title}}</strong>
             <span class="q-type">{{e.question_count}}题</span>
           </div>
-          <div style="font-size:13px;color:#888">{{e.created_at}}</div>
+          <div style="font-size:13px;color:#888;display:flex;align-items:center;gap:10px">
+            <span>{{e.created_at}}</span>
+            <a :href="'/api/exam/download/'+e.id" @click.stop style="color:#4361ee;font-size:12px;text-decoration:none">下载Word</a>
+          </div>
         </div>
       </div>
 
@@ -165,7 +168,10 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
         <div class="card" v-if="!submitted">
           <div class="q-header mb-12">
             <h3>{{currentExam.title}}</h3>
-            <button class="btn btn-sm btn-outline" @click="currentExam=null">返回</button>
+            <div style="display:flex;gap:8px">
+              <a v-if="currentExam.id>0" :href="'/api/exam/download/'+currentExam.id" class="btn btn-sm btn-outline" style="text-decoration:none;color:#4361ee;border-color:#4361ee">下载Word</a>
+              <button class="btn btn-sm btn-outline" @click="currentExam=null">返回</button>
+            </div>
           </div>
           <div v-for="(q, idx) in questions" :key="q.id" class="question-item">
             <div class="q-header">
@@ -211,7 +217,8 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
               <span v-else>✗ 你的答案：{{r.user_answer || '（未作答）'}} → 正确答案：{{r.correct_answer}}</span>
             </div>
           </div>
-          <div class="text-center mt-12">
+          <div class="text-center mt-12" style="display:flex;gap:10px;justify-content:center">
+            <a v-if="currentExam.id>0" :href="'/api/exam/download/'+currentExam.id" class="btn btn-outline" style="text-decoration:none;color:#4361ee;border-color:#4361ee">下载Word</a>
             <button class="btn btn-primary" @click="currentExam=null;submitted=false">返回</button>
           </div>
         </div>
