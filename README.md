@@ -41,3 +41,8 @@ pip install -r requirements.txt
 cd PrimarySchoolExam
 pip install -r requirements.txt
 python run.py
+
+cd /home/PrimarySchoolExam
+source venv/bin/activate
+systemctl restart exam-app
+
