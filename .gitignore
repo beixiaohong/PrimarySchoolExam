@@ -1,4 +1,4 @@
 *.pyc
 output/
 .venv/
-primary_school.db
+*.db
