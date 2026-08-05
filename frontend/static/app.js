@@ -719,18 +719,15 @@ createApp({
           }).then(() => this.loadAnalysis()).catch(() => {});
         }
       } else if (src && src.mode === 'exam' && !this.quiz.done) {
-        // 中途退出：把已答部分提交保存，避免"做完没有记录"
-        const answered = this.quiz.items.filter(it => it.answered);
-        if (answered.length) {
-          this.api('/api/exam/submit-answers', {
-            method: 'POST',
-            body: JSON.stringify({
-              user_id: this.user, exam_id: src.exam_id,
-              duration_sec: Math.round((Date.now() - (src.startedAt || Date.now())) / 1000),
-              answers: answered.map(it => ({ question_id: it.qid, user_answer: it.userAnswer || '' })),
-            }),
-          }).then(() => { this.loadAttempts(); this.showToast('已保存当前答题进度'); }).catch(() => {});
-        }
+        // 中途退出：全部题目提交，未作答的记为错误，保证一定生成完整做题记录
+        this.api('/api/exam/submit-answers', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: this.user, exam_id: src.exam_id,
+            duration_sec: Math.round((Date.now() - (src.startedAt || Date.now())) / 1000),
+            answers: this.quiz.items.map(it => ({ question_id: it.qid, user_answer: it.answered ? (it.userAnswer || '') : '' })),
+          }),
+        }).then(() => { this.loadAttempts(); this.showToast('已保存：未作答题目记为错误'); }).catch(e => this.showToast('保存失败：' + (e.message || '')));
       }
       this.quiz.active = false;
       this.refreshAll();
