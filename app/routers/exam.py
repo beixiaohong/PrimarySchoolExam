@@ -624,6 +624,12 @@ def list_attempts(
     if subject:
         q = q.join(ExamRecord).filter(ExamRecord.subject == subject)
     attempts = q.order_by(ExamAttempt.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    # 批量取试卷标题与学科，避免 N+1
+    exam_ids = {a.exam_id for a in attempts if a.exam_id}
+    exam_map = {}
+    if exam_ids:
+        for r in db.query(ExamRecord).filter(ExamRecord.id.in_(exam_ids)).all():
+            exam_map[r.id] = r
     return [
         {
             "id": a.id,
@@ -634,7 +640,8 @@ def list_attempts(
             "wrong": a.wrong,
             "duration_sec": a.duration_sec,
             "created_at": a.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "exam_title": db.query(ExamRecord).get(a.exam_id).title if a.exam_id else "",
+            "exam_title": exam_map[a.exam_id].title if a.exam_id in exam_map else "",
+            "subject": exam_map[a.exam_id].subject if a.exam_id in exam_map else "",
         }
         for a in attempts
     ]

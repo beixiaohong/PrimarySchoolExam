@@ -105,8 +105,8 @@ input,select,textarea{font-family:inherit}
 select.pill{appearance:none;padding-right:30px;background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2393A1BD' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
 .filter-bar{display:flex;align-items:center;gap:10px;margin:18px 0 16px;flex-wrap:wrap}
 .sub-tabs{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
-.sub-tabs .pill{box-shadow:none;border:2px solid var(--border);background:var(--card)}
-.sub-tabs .pill.active{border-color:var(--primary);box-shadow:none}
+.sub-tabs .pill{box-shadow:none;border:2px solid var(--border);background:var(--card);color:var(--text-2)}
+.sub-tabs .pill.active{border-color:var(--primary);box-shadow:none;background:var(--primary);color:#fff}
 
 /* ============ A1 今日学习首页 ============ */
 .hero{background:linear-gradient(135deg,#4E7CF6 0%,#7B9DFB 60%,#9DB4FF 100%);border-radius:var(--radius);color:#fff;padding:26px 28px;display:flex;align-items:center;gap:22px;box-shadow:0 10px 30px rgba(78,124,246,.3)}
@@ -305,12 +305,30 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ============ 统计 / 设置 ============ */
-.attempt-item{display:flex;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid var(--border)}
+.attempt-item{display:flex;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:10px}
+.attempt-item:hover{background:rgba(78,124,246,.05)}
 .attempt-item:last-child{border-bottom:none}
 .attempt-item .a-score{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0}
 .attempt-item .a-body{flex:1;min-width:0}
 .attempt-item .a-body b{font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .attempt-item .a-body span{font-size:12px;color:var(--text-3)}
+.attempt-item .a-more{font-size:12px;color:var(--primary);white-space:nowrap;opacity:.75}
+.attempt-item:hover .a-more{opacity:1}
+
+/* 做题记录详情弹窗 */
+.modal-wide{width:680px;max-width:94vw}
+.attempt-detail-list{max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+.ad-item{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:#fff}
+.ad-item.wrong{border-color:rgba(242,96,76,.35);background:rgba(242,96,76,.04)}
+.ad-head{display:flex;align-items:flex-start;gap:10px}
+.ad-flag{width:22px;height:22px;border-radius:50%;background:var(--success);color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.ad-item.wrong .ad-flag{background:var(--danger)}
+.ad-q{flex:1;font-size:13.5px;line-height:1.6;color:var(--text)}
+.ad-head .tag{flex-shrink:0}
+.ad-answers{display:flex;gap:16px;margin-top:8px;padding-left:32px;font-size:12.5px;flex-wrap:wrap}
+.ad-ua{color:var(--text-2)}
+.ad-ua.bad{color:var(--danger)}
+.ad-ca{color:var(--success);font-weight:600}
 .setting-row{display:flex;align-items:center;justify-content:space-between;padding:16px 4px;border-bottom:1px solid var(--border)}
 .setting-row:last-child{border-bottom:none}
 .setting-row b{font-size:14px;display:block}

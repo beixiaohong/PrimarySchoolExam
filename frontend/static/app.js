@@ -23,7 +23,8 @@ createApp({
       grammarQuiz: [], grammarQuizIndex: 0, grammarSubmitted: false, grammarInput: '',
       grammarFeedbackOk: false, grammarCurrentAnswer: '', grammarCurrentExplanation: '',
       grammarResult: null,
-      attempts: null, recentAttempts: [], statsAttempts: 0,
+      attempts: null, attemptSubject: '', recentAttempts: [], statsAttempts: 0,
+      attemptDetail: { show: false, id: 0, title: '', score: 0, correct: 0, total: 0, items: [] },
       // 背诵中心
       reciteSub: 'words',
       vocabToday: { new_words: [], review_words: [], stats: { total_words: 0, learned: 0, mastered: 0, due_today: 0, new_remaining: 0, new_today: 0, streak_days: 0 } },
@@ -287,7 +288,7 @@ createApp({
         .catch(e => { this.generating = false; this.showToast(e.message); });
     },
     loadAttempts() {
-      this.api(`/api/exam/attempts/list?user_id=${encodeURIComponent(this.user)}&page_size=50`)
+      this.api(`/api/exam/attempts/list?user_id=${encodeURIComponent(this.user)}&page_size=50${this.attemptSubject ? '&subject=' + encodeURIComponent(this.attemptSubject) : ''}`)
         .then(list => {
           list = list || [];
           this.attempts = list;
@@ -296,6 +297,17 @@ createApp({
           const scored = list.filter(a => typeof a.score === 'number');
           this.avgScore = scored.length ? Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length) : 0;
         }).catch(() => { this.attempts = []; });
+    },
+    viewAttempt(a) {
+      this.attemptDetail = { show: true, id: a.id, title: a.exam_title || '做题记录', score: a.score, correct: a.correct, total: a.total, items: [] };
+      this.api(`/api/exam/attempts/${a.id}`)
+        .then(d => {
+          if (!d || !d.answers) { this.attemptDetail.show = false; this.showToast('记录详情加载失败'); return; }
+          this.attemptDetail.items = d.answers.map(x => ({
+            question: x.question, type_name: x.type_name || '', user_answer: x.user_answer || '',
+            correct_answer: x.correct_answer || '', is_correct: !!x.is_correct,
+          }));
+        }).catch(e => { this.attemptDetail.show = false; this.showToast(e.message); });
     },
 
     /* ─────────── 语法练习 ─────────── */
@@ -705,6 +717,19 @@ createApp({
             method: 'POST',
             body: JSON.stringify({ user_id: this.user, results: answered.map(it => ({ kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct })) }),
           }).then(() => this.loadAnalysis()).catch(() => {});
+        }
+      } else if (src && src.mode === 'exam' && !this.quiz.done) {
+        // 中途退出：把已答部分提交保存，避免"做完没有记录"
+        const answered = this.quiz.items.filter(it => it.answered);
+        if (answered.length) {
+          this.api('/api/exam/submit-answers', {
+            method: 'POST',
+            body: JSON.stringify({
+              user_id: this.user, exam_id: src.exam_id,
+              duration_sec: Math.round((Date.now() - (src.startedAt || Date.now())) / 1000),
+              answers: answered.map(it => ({ question_id: it.qid, user_answer: it.userAnswer || '' })),
+            }),
+          }).then(() => { this.loadAttempts(); this.showToast('已保存当前答题进度'); }).catch(() => {});
         }
       }
       this.quiz.active = false;

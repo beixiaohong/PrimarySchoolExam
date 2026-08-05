@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 <div id="app">
@@ -256,15 +256,22 @@
 
         <!-- 做题记录 -->
         <div v-if="practiceSub==='records'">
+          <div class="filter-bar" style="margin:0 0 14px">
+            <button class="pill" :class="{active: attemptSubject===''}" @click="attemptSubject=''; loadAttempts()">全部学科</button>
+            <button class="pill" :class="{active: attemptSubject==='数学'}" @click="attemptSubject='数学'; loadAttempts()">数学</button>
+            <button class="pill" :class="{active: attemptSubject==='语文'}" @click="attemptSubject='语文'; loadAttempts()">语文</button>
+            <button class="pill" :class="{active: attemptSubject==='英语'}" @click="attemptSubject='英语'; loadAttempts()">英语</button>
+          </div>
           <div class="card">
             <h3 style="font-size:17px;margin-bottom:14px">做题记录</h3>
             <div v-if="attempts===null" class="empty">⏳ 加载中…</div>
-            <div v-else-if="!attempts.length" class="empty"><div class="em">📄</div><h3>暂无做题记录</h3><p>去刷题中心生成试卷开始练习吧</p><button class="btn btn-primary" @click="practiceSub='generate'">去生成试卷</button></div>
+            <div v-else-if="!attempts.length" class="empty"><div class="em">📄</div><h3>暂无做题记录</h3><p>{{attemptSubject ? '切换到「全部学科」可查看其他学科的记录' : '去刷题中心生成试卷开始练习吧'}}</p><button class="btn btn-primary" @click="practiceSub='generate'">去生成试卷</button></div>
             <div v-else>
-              <div v-for="a in attempts" :key="a.id" class="attempt-item">
+              <div v-for="a in attempts" :key="a.id" class="attempt-item" @click="viewAttempt(a)">
                 <div class="a-score" :style="{background: a.score>=80?'var(--success-light)':a.score>=60?'var(--warning-light)':'var(--danger-light)', color: a.score>=80?'var(--success)':a.score>=60?'var(--warning)':'var(--danger)'}">{{a.score}}分</div>
                 <div class="a-body"><b>{{a.exam_title}}</b><span>{{a.created_at}} · 对 {{a.correct}} / 共 {{a.total}} 题 · 用时 {{a.duration_sec}}s</span></div>
                 <span class="tag" :class="a.score>=80?'tag-green':a.score>=60?'tag-orange':'tag-red'">{{a.score>=80?'优秀':a.score>=60?'良好':'待提升'}}</span>
+                <span class="a-more">查看详情 ›</span>
               </div>
             </div>
           </div>
@@ -523,10 +530,11 @@
         <div class="card" style="margin-top:16px">
           <div class="card-head"><b>📄 最近做题</b><button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="goTab('practice'); practiceSub='records'">查看全部</button></div>
           <div v-if="!recentAttempts.length" class="empty" style="padding:26px"><div class="em">📄</div><h3>暂无做题记录</h3><p>完成第一份试卷后这里会展示得分趋势</p></div>
-          <div v-for="a in recentAttempts" :key="a.id" class="attempt-item">
+          <div v-for="a in recentAttempts" :key="a.id" class="attempt-item" @click="viewAttempt(a)">
             <div class="a-score" :style="{background: a.score>=80?'var(--success-light)':a.score>=60?'var(--warning-light)':'var(--danger-light)', color: a.score>=80?'var(--success)':a.score>=60?'var(--warning)':'var(--danger)'}">{{a.score}}分</div>
             <div class="a-body"><b>{{a.exam_title}}</b><span>{{a.created_at}} · 对 {{a.correct}} / 共 {{a.total}} 题 · 用时 {{a.duration_sec}}s</span></div>
             <span class="tag" :class="a.score>=80?'tag-green':a.score>=60?'tag-orange':'tag-red'">{{a.score>=80?'优秀':a.score>=60?'良好':'待提升'}}</span>
+            <span class="a-more">查看详情 ›</span>
           </div>
         </div>
       </div>
@@ -701,9 +709,35 @@
   </div>
 </div>
 
+<!-- ═══════════ 做题记录详情弹窗 ═══════════ -->
+<div class="modal-mask" :class="{on: attemptDetail.show}">
+  <div class="modal modal-wide">
+    <div class="modal-head"><h2>📄 {{attemptDetail.title}}</h2><span class="tag" :class="attemptDetail.score>=80?'tag-green':attemptDetail.score>=60?'tag-orange':'tag-red'">{{attemptDetail.score}}分 · 对 {{attemptDetail.correct}} / 共 {{attemptDetail.total}} 题</span></div>
+    <div class="modal-body">
+      <div v-if="!attemptDetail.items.length" class="empty" style="padding:20px"><div class="em">⏳</div><h3>加载中…</h3></div>
+      <div v-else class="attempt-detail-list">
+        <div v-for="(it, idx) in attemptDetail.items" :key="idx" class="ad-item" :class="{wrong: !it.is_correct}">
+          <div class="ad-head">
+            <span class="ad-flag">{{it.is_correct ? '✓' : '✗'}}</span>
+            <span class="ad-q">{{idx+1}}. {{it.question}}</span>
+            <span class="tag" :class="it.is_correct?'tag-green':'tag-red'">{{it.type_name}}</span>
+          </div>
+          <div class="ad-answers">
+            <span class="ad-ua" :class="{bad: !it.is_correct}">你的答案：{{it.user_answer || '（未作答）'}}</span>
+            <span class="ad-ca" v-if="!it.is_correct">正确答案：{{it.correct_answer}}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" @click="attemptDetail.show=false">关闭</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" :class="{on: toast.show}">{{toast.msg}}</div>
 
 </div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>
