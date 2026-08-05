@@ -2,6 +2,9 @@ from .word import Word, WordBook
 from .phrase import Phrase, Sentence
 from .problem_type import ProblemType, ProblemCategory
 from .exam import ExamRecord, Question, WrongRecord, ExamAttempt, AttemptAnswer
+from .vocab import VocabProgress, VocabDailyLog
+from .classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
+from .grammar import GrammarPoint, GrammarExercise
 
 __all__ = [
     "Word", "WordBook",
@@ -9,4 +12,7 @@ __all__ = [
     "ProblemType", "ProblemCategory",
     "ExamRecord", "Question", "WrongRecord",
     "ExamAttempt", "AttemptAnswer",
+    "VocabProgress", "VocabDailyLog",
+    "ClassicalText", "ClassicalProgress", "ClassicalDailyLog",
+    "GrammarPoint", "GrammarExercise",
 ]

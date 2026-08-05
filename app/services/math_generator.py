@@ -2546,6 +2546,179 @@ def mid_probability(difficulty: int, grade: int):
 
 
 # ═══════════════════════════════════════════════════════════
+# 四、应用题（补充）
+# ═══════════════════════════════════════════════════════════
+
+@register("app_unit_rate")
+def app_unit_rate(difficulty: int, grade: int):
+    """归一问题 — 先求单一量，再求总量"""
+    if difficulty <= 2:
+        n = random.randint(2, 5)
+        total = n * random.randint(3, 12)
+        unit = total // n
+        ask_n = random.randint(1, 6)
+        ans = unit * ask_n
+        return (f"{n}台拖拉机{total}小时耕地完，照这样计算，{ask_n}台同样的拖拉机需要多少小时耕完同样的地？",
+                f"{ans}小时")
+    elif difficulty <= 4:
+        n_items = random.randint(3, 8)
+        cost = n_items * random.randint(5, 15)
+        unit = cost // n_items
+        ask_n = random.randint(2, 10)
+        ans = unit * ask_n
+        return (f"买{n_items}支铅笔花了{cost}元，照这样计算，买{ask_n}支同样的铅笔需要多少钱？",
+                f"{ans}元")
+    else:
+        workers = random.randint(4, 8)
+        days = random.randint(6, 15)
+        total_work = workers * days
+        ask_workers = random.randint(2, 10)
+        ans_days = total_work // ask_workers if total_work % ask_workers == 0 else (total_work + ask_workers - 1) // ask_workers
+        return (f"{workers}个人{days}天可以完成一项工程，照这样计算，如果增加到{ask_workers}个人，几天可以完成？",
+                f"{ans_days}天")
+
+
+@register("app_total_rate")
+def app_total_rate(difficulty: int, grade: int):
+    """归总问题 — 先求总量，再分配"""
+    if difficulty <= 2:
+        per_day = random.randint(3, 8)
+        days = random.randint(3, 7)
+        total = per_day * days
+        new_per = random.randint(1, per_day - 1) if per_day > 1 else 1
+        new_days = (total + new_per - 1) // new_per
+        return (f"小明每天读{per_day}页书，{days}天读完一本书。如果每天只读{new_per}页，需要多少天读完？",
+                f"{new_days}天")
+    elif difficulty <= 4:
+        trucks = random.randint(3, 6)
+        loads = random.randint(4, 8)
+        total = trucks * loads
+        new_trucks = random.randint(2, trucks + 2)
+        new_loads = (total + new_trucks - 1) // new_trucks
+        return (f"{trucks}辆卡车每辆运{loads}吨货物，正好运完。如果改用{new_trucks}辆卡车，每辆要运多少吨？",
+                f"{new_loads}吨")
+    else:
+        cows = random.randint(5, 10)
+        days = random.randint(10, 20)
+        total_grass = cows * days
+        new_cows = random.randint(3, 15)
+        new_days = total_grass // new_cows if total_grass % new_cows == 0 else (total_grass + new_cows - 1) // new_cows
+        return (f"牧场有{cows}头牛，{days}天吃完一片草地的草。如果放{new_cows}头牛，几天可以吃完？",
+                f"{new_days}天")
+
+
+@register("app_ratio_compare")
+def app_ratio_compare(difficulty: int, grade: int):
+    """倍比问题 — 通过倍数关系求解"""
+    if difficulty <= 2:
+        a = random.randint(5, 20)
+        m = random.randint(2, 5)
+        b = a * m
+        ask_m = random.randint(2, 6)
+        ans = a * ask_m
+        return (f"甲数是{a}，乙数是甲的{m}倍。如果丙数是甲的{ask_m}倍，丙数是多少？",
+                f"{ans}")
+    elif difficulty <= 4:
+        a = random.randint(10, 30)
+        b = random.randint(2, 5)
+        total = a * (1 + b)
+        va = a
+        vb = a * b
+        return (f"甲乙两数之和是{total}，乙是甲的{b}倍，甲和乙各是多少？",
+                f"甲{va}，乙{vb}")
+    else:
+        a = random.randint(8, 20)
+        m1 = random.randint(2, 4)
+        m2 = random.randint(2, 4)
+        while m2 == m1:
+            m2 = random.randint(2, 4)
+        b = a * m1
+        c = a * m2
+        return (f"甲是{a}，乙是甲的{m1}倍，丙是甲的{m2}倍。乙是丙的几分之几？",
+                f"{m1}/{m2}" if m1 < m2 else f"{m1}/{m2}")
+
+
+@register("app_boat_stream")
+def app_boat_stream(difficulty: int, grade: int):
+    """流水行船问题"""
+    if difficulty <= 2:
+        boat = random.randint(16, 30)
+        stream = random.randint(2, 6)
+        downstream = boat + stream
+        upstream = boat - stream
+        return (f"一艘船在静水中的速度是每小时{boat}千米，水流速度是每小时{stream}千米。这艘船顺水航行速度是多少？逆水航行速度是多少？",
+                f"顺水{downstream}千米/时，逆水{upstream}千米/时")
+    elif difficulty <= 4:
+        downstream = random.randint(24, 40)
+        upstream = random.randint(12, 22)
+        boat = (downstream + upstream) // 2
+        stream = (downstream - upstream) // 2
+        return (f"一艘船顺水航行速度为每小时{downstream}千米，逆水航行速度为每小时{upstream}千米。求船在静水中的速度和水流速度。",
+                f"船速{boat}千米/时，水速{stream}千米/时")
+    else:
+        boat = random.randint(20, 36)
+        stream = random.randint(2, 6)
+        dist = random.randint(60, 150)
+        down_speed = boat + stream
+        up_speed = boat - stream
+        down_time = dist / down_speed
+        up_time = dist / up_speed
+        total_time = down_time + up_time
+        total_str = f"{total_time:.1f}" if total_time != int(total_time) else str(int(total_time))
+        return (f"一艘船在静水中速度为每小时{boat}千米，水流速度每小时{stream}千米。该船在相距{dist}千米的两个码头间往返一次，共需多少小时？",
+                f"{total_str}小时")
+
+
+@register("app_cow_grazing")
+def app_cow_grazing(difficulty: int, grade: int):
+    """牛吃草问题（牛顿问题）"""
+    if difficulty <= 2:
+        # 简化版：固定草量，不考虑生长
+        grass = random.randint(100, 200)
+        cows1 = random.randint(5, 10)
+        days1 = grass // cows1
+        cows2 = random.randint(cows1 + 1, cows1 + 5)
+        days2 = grass // cows2
+        return (f"一片草地有{grass}份草，{cows1}头牛{days1}天吃完。如果放{cows2}头牛，几天可以吃完？（假设草不生长）",
+                f"{days2}天")
+    elif difficulty <= 4:
+        # 经典简化：已知两组条件求第三组
+        # 设定：原有草量G，每天生长r
+        r = random.randint(1, 3)
+        G = random.randint(80, 150)
+        cows1 = random.randint(10, 20)
+        days1 = random.randint(5, 10)
+        # 验证：cows1 * days1 = G + r * days1
+        actual_G = cows1 * days1 - r * days1
+        cows2 = random.randint(15, 25)
+        # days2 = actual_G / (cows2 - r)
+        denom = cows2 - r
+        if denom <= 0:
+            denom = 1
+        days2 = actual_G // denom if actual_G % denom == 0 else actual_G // denom
+        return (f"牧场上有一片草地，草每天匀速生长。{cows1}头牛{days1}天可以吃完，{cows2}头牛几天可以吃完？",
+                f"{days2}天")
+    else:
+        r = random.randint(2, 5)
+        G = random.randint(100, 200)
+        cows1 = random.randint(20, 30)
+        days1 = random.randint(8, 15)
+        actual_G = cows1 * days1 - r * days1
+        cows2 = random.randint(25, 40)
+        denom = cows2 - r
+        if denom <= 0:
+            denom = 1
+        days2 = actual_G // denom
+        cows3 = random.randint(10, 20)
+        denom3 = cows3 - r
+        if denom3 <= 0:
+            denom3 = 1
+        days3 = actual_G // denom3
+        return (f"牧场草地草每天匀速生长。{cows1}头牛{days1}天吃完，{cows2}头牛{days2}天吃完。如果放{cows3}头牛，几天可以吃完？",
+                f"{days3}天")
+
+
+# ═══════════════════════════════════════════════════════════
 # 主生成函数
 # ═══════════════════════════════════════════════════════════
 

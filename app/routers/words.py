@@ -31,6 +31,9 @@ def create_book(
     publisher: str = Query("人教版PEP"),
     db: Session = Depends(get_db),
 ):
+    existing = db.query(WordBook).filter(WordBook.name == name).first()
+    if existing:
+        raise HTTPException(409, f"词库 '{name}' 已存在")
     book = WordBook(name=name, grade=grade, semester=semester, publisher=publisher)
     db.add(book)
     db.commit()
