@@ -245,6 +245,8 @@ def generate_grammar_quiz(req: GrammarQuizRequest, db: Session = Depends(get_db)
             "exercise_type": e.exercise_type,
             "question": e.question,
             "options": opts,
+            "answer": e.answer,
+            "explanation": e.explanation,
             "difficulty": e.difficulty,
         })
 

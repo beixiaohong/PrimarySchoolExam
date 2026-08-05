@@ -7,7 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .database import init_db
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study
+from .migrations.runner import run_migrations
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user
 from .services.init_data import ensure_initial_data
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -17,8 +18,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时初始化数据库和种子数据"""
+    """启动时初始化：建表 → 执行迁移脚本 → 基础种子数据"""
     init_db()
+    run_migrations()
     ensure_initial_data()
     yield
 
@@ -38,6 +40,10 @@ app.include_router(vocab.router, prefix="/api/vocab", tags=["背单词"])
 app.include_router(classical.router, prefix="/api/classical", tags=["古诗文背诵"])
 app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"])
 app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"])
+app.include_router(user.router, prefix="/api/user", tags=["用户系统"])
+
+# 前端静态资源（样式、脚本）
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
 
 # 静态资源（图片、音频）
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")

@@ -521,6 +521,7 @@ def _wrong_record_to_out(wr: WrongRecord) -> WrongRecordOut:
         question_id=wr.question_id,
         is_mastered=wr.is_mastered,
         practice_count=wr.practice_count,
+        cause=wr.cause or "",
         wrong_at=wr.wrong_at.strftime("%Y-%m-%d %H:%M:%S") if wr.wrong_at else None,
         mastered_at=wr.mastered_at.strftime("%Y-%m-%d %H:%M:%S") if wr.mastered_at else None,
         exam_id=q.exam_id,

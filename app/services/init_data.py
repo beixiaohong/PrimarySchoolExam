@@ -1,5 +1,5 @@
 """
-初始化种子数据：题型分类 + 默认词库 + 词组 + 句子
+初始化种子数据：题型分类 + 默认词库 + 词组 + 句子 + 语法（古诗文种子见 app/migrations/versions/002_classical_seed.py）
 首次启动时自动执行，已有数据则跳过
 """
 import csv
@@ -312,8 +312,7 @@ def _seed_grammar(db):
     if db.query(GrammarPoint).count() > 0:
         return
 
-    import json
-
+    
     grammar_data = [
         {
             "name": "一般现在时", "code": "simple_present", "grade": 3, "category": "时态",

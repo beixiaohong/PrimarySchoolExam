@@ -21,6 +21,8 @@ class ExamRecord(Base):
     __tablename__ = "exam_records"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), default="", index=True,
+                     comment="生成者用户标识（历史遗留列，正式纳入 model 管理，见迁移 001）")
     subject = Column(String(20), nullable=False,
                      comment="学科：数学 / 英语")
     title = Column(String(200), nullable=False,
@@ -117,6 +119,10 @@ class WrongRecord(Base):
                          comment="是否已掌握（掌握后错题练习不再抽取）")
     practice_count = Column(Integer, default=0,
                             comment="该题被纳入错题练习的累计次数")
+    correct_streak = Column(Integer, default=0,
+                            comment="连续答对次数（达3次自动掌握）")
+    cause = Column(String(20), default="",
+                   comment="错因自评：careless(粗心)/concept(概念不清)/method(方法不会)/reading(审题失误)")
 
     # ── 时间记录 ──
     wrong_at = Column(DateTime, default=datetime.now,

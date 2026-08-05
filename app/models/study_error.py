@@ -47,6 +47,10 @@ class StudyError(Base):
                          comment="累计答错次数")
     is_mastered = Column(Boolean, default=False,
                          comment="是否已掌握")
+    correct_streak = Column(Integer, default=0,
+                            comment="连续答对次数（达3次自动掌握）")
+    cause = Column(String(20), default="",
+                   comment="错因自评：careless(粗心)/concept(概念不清)/method(方法不会)/reading(审题失误)")
     wrong_at = Column(DateTime, default=datetime.now,
                       comment="最近一次答错时间")
     mastered_at = Column(DateTime, nullable=True,

@@ -2,3 +2,4 @@
 output/
 .venv/
 *.db
+*.log

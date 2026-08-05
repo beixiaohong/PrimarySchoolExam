@@ -6,6 +6,7 @@ from .vocab import VocabProgress, VocabDailyLog
 from .classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
 from .grammar import GrammarPoint, GrammarExercise
 from .study_error import StudyError
+from .user import User
 
 __all__ = [
     "Word", "WordBook",
@@ -17,4 +18,5 @@ __all__ = [
     "ClassicalText", "ClassicalProgress", "ClassicalDailyLog",
     "GrammarPoint", "GrammarExercise",
     "StudyError",
+    "User",
 ]

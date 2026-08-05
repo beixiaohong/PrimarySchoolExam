@@ -110,6 +110,14 @@ def _get_streak(db: Session, user_id: str) -> int:
     return streak
 
 
+_TRAILING_PUNCT = "，。！？；：、,.!?;:"
+
+
+def _strip_punct(s: str) -> str:
+    """去掉行尾标点，避免与题干模板标点重复"""
+    return s.rstrip(_TRAILING_PUNCT)
+
+
 def _generate_quiz_from_text(text: ClassicalText, count: int = 1) -> list:
     """从一篇古诗文中生成填空题"""
     lines = _parse_lines(text.content)
@@ -120,7 +128,7 @@ def _generate_quiz_from_text(text: ClassicalText, count: int = 1) -> list:
             "title": text.title,
             "author": text.author,
             "question": f"《{text.title}》（{text.author}）：____________。",
-            "answer": lines[0] if lines else text.content,
+            "answer": _strip_punct(lines[0]) if lines else text.content,
             "context": f"请填写《{text.title}》的完整内容",
         }]
 
@@ -140,22 +148,22 @@ def _generate_quiz_from_text(text: ClassicalText, count: int = 1) -> list:
 
         # 根据位置生成不同题型
         if idx == 0:
-            question = f"《{text.title}》（{text.author}）：____________，{lines[idx+1]}。"
+            question = f"《{text.title}》（{text.author}）：____________，{_strip_punct(lines[idx+1])}。"
         elif idx == len(lines) - 1:
-            question = f"《{text.title}》（{text.author}）：{lines[idx-1]}，____________。"
+            question = f"《{text.title}》（{text.author}）：{_strip_punct(lines[idx-1])}，____________。"
         else:
             # 随机给上句或下句
             if random.random() < 0.5:
-                question = f"《{text.title}》（{text.author}）：{lines[idx-1]}，____________。"
+                question = f"《{text.title}》（{text.author}）：{_strip_punct(lines[idx-1])}，____________。"
             else:
-                question = f"《{text.title}》（{text.author}）：____________，{lines[idx+1]}。"
+                question = f"《{text.title}》（{text.author}）：____________，{_strip_punct(lines[idx+1])}。"
 
         questions.append({
             "text_id": text.id,
             "title": text.title,
             "author": text.author,
             "question": question,
-            "answer": line,
+            "answer": _strip_punct(line),
             "context": context,
         })
 
@@ -232,11 +240,15 @@ def get_text(text_id: int, db: Session = Depends(get_db)):
 @router.get("/quiz", summary="随机生成古诗文填空题")
 def generate_quiz(
     grade: int = Query(6, description="年级"),
+    text_id: Optional[int] = Query(None, description="指定篇目ID（不填则随机全库）"),
     count: int = Query(10, description="题目数量", ge=1, le=50),
     db: Session = Depends(get_db),
 ):
     """从数据库中随机抽取篇目，生成上下句填空题"""
-    texts = db.query(ClassicalText).filter(ClassicalText.grade <= grade).all()
+    q = db.query(ClassicalText).filter(ClassicalText.grade <= grade)
+    if text_id:
+        q = q.filter(ClassicalText.id == text_id)
+    texts = q.all()
     if not texts:
         raise HTTPException(404, f"暂无{grade}年级及以下的古诗文数据")
 
