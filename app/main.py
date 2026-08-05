@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .database import init_db
-from .routers import words, math, exam, phrases, vocab, classical, grammar
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study
 from .services.init_data import ensure_initial_data
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -37,6 +37,7 @@ app.include_router(exam.router, prefix="/api/exam", tags=["试卷生成"])
 app.include_router(vocab.router, prefix="/api/vocab", tags=["背单词"])
 app.include_router(classical.router, prefix="/api/classical", tags=["古诗文背诵"])
 app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"])
+app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"])
 
 # 静态资源（图片、音频）
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")

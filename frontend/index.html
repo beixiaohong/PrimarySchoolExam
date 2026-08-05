@@ -7,6 +7,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --primary: #4361ee;
+  --success: #2ec4b6;
+  --warning: #ff9f1c;
+  --danger: #e71d36;
+  --vocab: #4361ee;
+  --classical: #2a9d8f;
+  --grammar: #7209b7;
+  --math: #f77f00;
+  --text: #1a1a2e;
+  --radius: 12px;
+}
 body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f0f2f5; min-height: 100vh; }
 .container { max-width: 900px; margin: 0 auto; padding: 20px; }
 .card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
@@ -30,9 +42,17 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
 .form-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
 .form-row > * { flex: 1; }
 .form-row label { flex: 0 0 70px; font-size: 14px; color: #555; text-align: right; }
-.nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
-.nav .btn { flex: 1; min-width: 100px; text-align: center; }
-.nav .btn.active { box-shadow: 0 0 0 2px #4361ee; }
+.nav { margin-bottom: 16px; }
+.nav > .btn-home { width: 100%; margin-bottom: 12px; font-size: 16px; padding: 12px; }
+.nav-group { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.nav-group-label { flex: 0 0 auto; font-size: 12px; color: #999; letter-spacing: 1px; background: #f5f6fa; padding: 4px 10px; border-radius: 10px; }
+.nav-group .btn { flex: 1; min-width: 84px; text-align: center; white-space: nowrap; }
+.nav-group .btn.active { box-shadow: 0 0 0 2px #4361ee; }
+@media (max-width: 560px) {
+  .nav-group { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .nav-group::-webkit-scrollbar { display: none; }
+  .nav-group .btn { flex: 0 0 auto; min-width: 96px; }
+}
 .user-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background: #4361ee; color: #fff; border-radius: 12px; margin-bottom: 16px; }
 .user-bar span { font-size: 15px; }
 .user-bar .btn { background: rgba(255,255,255,.2); color: #fff; }
@@ -102,6 +122,54 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
 .classical-quiz-answer.hidden { visibility: hidden; }
 .classical-sub-nav { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .classical-sub-nav .btn { font-size: 13px; padding: 6px 16px; }
+
+/* 今日学习首页 */
+.home-hero { background: linear-gradient(135deg, #4361ee, #7209b7); color: #fff; border-radius: 12px; padding: 22px 24px; margin-bottom: 16px; }
+.home-hero .greeting { font-size: 17px; font-weight: bold; }
+.home-hero .todo-line { display: flex; align-items: baseline; gap: 10px; margin-top: 10px; }
+.home-hero .todo-num { font-size: 44px; font-weight: bold; line-height: 1; }
+.home-hero .sub { font-size: 13px; opacity: .85; margin-top: 6px; }
+.home-hero .btn { background: rgba(255,255,255,.22); color: #fff; border: 1px solid rgba(255,255,255,.4); }
+.home-hero .btn:hover { background: rgba(255,255,255,.35); }
+.task-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 10px; background: #fff; transition: all .2s; }
+.task-row:hover { border-color: #4361ee; box-shadow: 0 2px 8px rgba(67,97,238,.1); }
+.task-info { display: flex; align-items: center; gap: 12px; }
+.task-badge { flex: 0 0 auto; width: 6px; height: 36px; border-radius: 3px; }
+.badge-vocab { background: var(--vocab); }
+.badge-classical { background: var(--classical); }
+.badge-grammar { background: var(--grammar); }
+.badge-wrong { background: var(--warning); }
+.task-title { font-weight: bold; font-size: 15px; }
+.task-desc { font-size: 12px; color: #888; margin-top: 3px; }
+.task-count { font-size: 12px; color: #fff; background: var(--danger); border-radius: 10px; padding: 1px 8px; margin-left: 6px; }
+
+/* 模块主题色 */
+.accent-vocab { color: var(--vocab) !important; }
+.accent-classical { color: var(--classical) !important; }
+.accent-grammar { color: var(--grammar) !important; }
+.accent-math { color: var(--math) !important; }
+.fill-vocab { background: linear-gradient(90deg, #4361ee, #2ec4b6) !important; }
+.fill-classical { background: linear-gradient(90deg, #2a9d8f, #2ec4b6) !important; }
+.fill-grammar { background: linear-gradient(90deg, #7209b7, #4361ee) !important; }
+
+/* 来源标签（错题本） */
+.src-badge { font-size: 11px; padding: 2px 8px; border-radius: 8px; color: #fff; }
+.src-exam { background: var(--warning); }
+.src-grammar { background: var(--grammar); }
+.src-classical { background: var(--classical); }
+
+/* 轻提示 Toast */
+.toast-wrap { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 999; pointer-events: none; }
+.toast { background: rgba(26,26,46,.88); color: #fff; padding: 10px 22px; border-radius: 22px; font-size: 14px; margin-bottom: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.18); animation: toast-in .25s ease; white-space: nowrap; }
+.toast.toast-success { background: rgba(46,196,182,.92); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+
+/* 单题模式导航 */
+.quiz-nav { display: flex; justify-content: space-between; align-items: center; margin: 12px 0; }
+.quiz-nav .btn { padding: 6px 14px; font-size: 13px; }
+.quiz-progress { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-bottom: 16px; }
+.quiz-progress-fill { height: 100%; background: linear-gradient(90deg, #4361ee, #2ec4b6); transition: width .3s; }
+.key-hint { font-size: 12px; color: #aaa; text-align: center; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -146,14 +214,96 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
     </div>
 
     <div class="nav">
-      <button class="btn btn-outline" :class="{active: tab==='generate'}" @click="tab='generate'">生成试卷</button>
-      <button class="btn btn-outline" :class="{active: tab==='practice'}" @click="tab='practice'; loadExams()">做题</button>
-      <button class="btn btn-outline" :class="{active: tab==='records'}" @click="tab='records'; loadAttempts()">做题记录</button>
-      <button class="btn btn-outline" :class="{active: tab==='analysis'}" @click="tab='analysis'; loadStats()">错题分析</button>
-      <button class="btn btn-outline" :class="{active: tab==='wrong'}" @click="tab='wrong'; loadWrong()">错题练习</button>
-      <button class="btn btn-outline" :class="{active: tab==='vocab'}" @click="tab='vocab'; loadVocabToday()">背单词</button>
-      <button class="btn btn-outline" :class="{active: tab==='classical'}" @click="tab='classical'; loadClassicalToday()">古诗文</button>
-      <button class="btn btn-outline" :class="{active: tab==='grammar'}" @click="tab='grammar'; loadGrammarPoints()">语法练习</button>
+      <button class="btn btn-primary btn-home" :class="{active: tab==='home'}" @click="tab='home'; loadDashboard()">今日学习</button>
+      <div class="nav-group" v-if="subject==='英语'">
+        <span class="nav-group-label">学习中心</span>
+        <button class="btn btn-outline" :class="{active: tab==='vocab'}" @click="tab='vocab'; loadVocabToday()">背单词</button>
+        <button class="btn btn-outline" :class="{active: tab==='grammar'}" @click="tab='grammar'; loadGrammarPoints()">语法练习</button>
+      </div>
+      <div class="nav-group" v-if="subject==='语文'">
+        <span class="nav-group-label">学习中心</span>
+        <button class="btn btn-outline" :class="{active: tab==='classical'}" @click="tab='classical'; loadClassicalToday()">古诗文</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">测试中心</span>
+        <button class="btn btn-outline" :class="{active: tab==='generate'}" @click="tab='generate'">生成试卷</button>
+        <button class="btn btn-outline" :class="{active: tab==='practice'}" @click="tab='practice'; loadExams()">在线做题</button>
+        <button class="btn btn-outline" :class="{active: tab==='wrong'}" @click="tab='wrong'; loadWrong(); loadStudyErrors()">错题练习</button>
+      </div>
+      <div class="nav-group">
+        <span class="nav-group-label">数据中心</span>
+        <button class="btn btn-outline" :class="{active: tab==='records'}" @click="tab='records'; loadAttempts()">做题记录</button>
+        <button class="btn btn-outline" :class="{active: tab==='analysis'}" @click="tab='analysis'; loadStats()">错题分析</button>
+      </div>
+    </div>
+
+    <!-- 今日学习首页 -->
+    <div v-if="tab==='home'">
+      <div class="home-hero">
+        <div class="greeting">{{user}}，{{grade}}年级 · 今天也要加油！</div>
+        <div class="todo-line">
+          <span class="todo-num">{{dashboard ? dashboard.total_todo : '…'}}</span>
+          <span style="font-size:15px;opacity:.9">项今日任务</span>
+          <button class="btn btn-sm" style="margin-left:auto" @click="startTodayStudy()">开始今日学习 →</button>
+        </div>
+        <div class="sub" v-if="dashboard && subject==='英语'">连续学习：背单词 {{dashboard.vocab.streak_days}} 天</div>
+        <div class="sub" v-if="dashboard && subject==='语文'">连续学习：古诗文 {{dashboard.classical.streak_days}} 天</div>
+        <div class="sub" v-if="dashboard && subject==='数学'">数学暂无背诵类学习模块，可在测试中心生成试卷或巩固错题</div>
+      </div>
+
+      <div v-if="!dashboard" class="loading">加载中...</div>
+      <template v-else>
+        <div class="task-row" v-if="subject==='英语'">
+          <div class="task-info">
+            <span class="task-badge badge-vocab"></span>
+            <div>
+              <div class="task-title">背单词<span v-if="dashboard.vocab.new_words+dashboard.vocab.review_words>0" class="task-count">{{dashboard.vocab.new_words+dashboard.vocab.review_words}}</span></div>
+              <div class="task-desc">新词 {{dashboard.vocab.new_words}} 个 · 待复习 {{dashboard.vocab.review_words}} 个 · 已学 {{dashboard.vocab.learned}}/{{dashboard.vocab.total}} 词</div>
+            </div>
+          </div>
+          <button class="btn btn-sm" :class="dashboard.vocab.new_words+dashboard.vocab.review_words>0?'btn-primary':'btn-outline'" @click="goVocab()">去学习</button>
+        </div>
+        <div class="task-row" v-if="subject==='语文'">
+          <div class="task-info">
+            <span class="task-badge badge-classical"></span>
+            <div>
+              <div class="task-title">古诗文<span v-if="dashboard.classical.new_texts+dashboard.classical.review_texts>0" class="task-count">{{dashboard.classical.new_texts+dashboard.classical.review_texts}}</span></div>
+              <div class="task-desc">新学 {{dashboard.classical.new_texts}} 篇 · 待复习 {{dashboard.classical.review_texts}} 篇 · 已学 {{dashboard.classical.learned}}/{{dashboard.classical.total}} 篇</div>
+            </div>
+          </div>
+          <button class="btn btn-sm" :class="dashboard.classical.new_texts+dashboard.classical.review_texts>0?'btn-primary':'btn-outline'" @click="goClassical()">去背诵</button>
+        </div>
+        <div class="task-row" v-if="subject==='英语'">
+          <div class="task-info">
+            <span class="task-badge badge-grammar"></span>
+            <div>
+              <div class="task-title">英语语法<span v-if="dashboard.grammar.recent_wrong>0" class="task-count">{{dashboard.grammar.recent_wrong}}</span></div>
+              <div class="task-desc">题库 {{dashboard.grammar.total_exercises}} 题 · 待巩固 {{dashboard.grammar.recent_wrong}} 题</div>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline" @click="tab='grammar'; loadGrammarPoints()">去练习</button>
+        </div>
+        <div class="task-row">
+          <div class="task-info">
+            <span class="task-badge badge-wrong"></span>
+            <div>
+              <div class="task-title">错题巩固<span v-if="dashboard.wrong.exam_pending+dashboard.wrong.study_pending>0" class="task-count">{{dashboard.wrong.exam_pending+dashboard.wrong.study_pending}}</span></div>
+              <div class="task-desc">试卷错题 {{dashboard.wrong.exam_pending}} 题 · 学习错题 {{dashboard.wrong.study_pending}} 题</div>
+            </div>
+          </div>
+          <button class="btn btn-sm" :class="dashboard.wrong.exam_pending+dashboard.wrong.study_pending>0?'btn-primary':'btn-outline'" @click="goWrong()">去巩固</button>
+        </div>
+        <div class="task-row" v-if="subject==='数学'" style="border-style:dashed">
+          <div class="task-info">
+            <span class="task-badge badge-wrong" style="background:#94a3b8"></span>
+            <div>
+              <div class="task-title">刷题建议</div>
+              <div class="task-desc">数学没有背诵类模块，直接生成试卷刷题，错题会自动进入下方错题本</div>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-primary" @click="tab='generate'">去生成试卷</button>
+        </div>
+      </template>
     </div>
 
     <!-- 生成试卷 -->
@@ -235,7 +385,7 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
               </div>
             </div>
             <!-- 填空题 -->
-            <input v-else v-model="userAnswers[q.id]" placeholder="输入答案" style="margin-top:8px">
+            <input v-else v-model="userAnswers[q.id]" placeholder="输入答案" style="margin-top:8px" @keyup.enter="submitExam">
           </div>
           <div class="text-center mt-12">
             <p style="font-size:13px;color:#888;margin-bottom:8px">已答 {{answeredCount}} / {{questions.length}} 题</p>
@@ -305,22 +455,41 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
     </div>
 
     <!-- 错题练习 -->
-    <div v-if="tab==='wrong'" class="card">
-      <h3 class="mb-12">错题本</h3>
-      <div v-if="wrongList===null" class="loading">加载中...</div>
-      <div v-else-if="wrongList.length===0" class="empty">暂无错题</div>
-      <div v-else>
-        <div class="mb-12">
-          <button class="btn btn-sm btn-success" @click="downloadPractice">导出错题练习Word</button>
-          <button class="btn btn-sm btn-warning" style="margin-left:8px" @click="startWrongPractice">在线错题练习</button>
+    <div v-if="tab==='wrong'">
+      <div class="card">
+        <h3 class="mb-12">错题本</h3>
+        <div class="mb-12" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-sm" :class="wrongFilter==='all'?'btn-primary':'btn-outline'" @click="wrongFilter='all'">全部 ({{(wrongList?wrongList.length:0)+visibleStudyErrors.length}})</button>
+          <button class="btn btn-sm" :class="wrongFilter==='exam'?'btn-primary':'btn-outline'" @click="wrongFilter='exam'">试卷 ({{wrongList?wrongList.length:0}})</button>
+          <button class="btn btn-sm" :class="wrongFilter==='study'?'btn-primary':'btn-outline'" @click="wrongFilter='study'">学习 ({{visibleStudyErrors.length}})</button>
+          <template v-if="wrongFilter!=='study'">
+            <button class="btn btn-sm btn-success" style="margin-left:auto" @click="downloadPractice">导出练习Word</button>
+            <button class="btn btn-sm btn-warning" @click="startWrongPractice">在线错题练习</button>
+          </template>
         </div>
-        <div v-for="w in wrongList" :key="w.id" class="question-item">
-          <div class="q-header">
-            <span class="q-type">{{w.type_name}} · 练习{{w.practice_count}}次</span>
-            <button class="btn btn-sm btn-success" @click="markMastered(w)">标记掌握</button>
+        <div v-if="wrongList===null || studyErrors===null" class="loading">加载中...</div>
+        <div v-else-if="wrongVisible.length===0" class="empty">暂无错题，继续加油！</div>
+        <div v-else>
+          <div v-for="item in wrongVisible" :key="item._key" class="question-item" :style="item._kind==='exam' ? (item.w.is_mastered ? 'opacity:.55' : '') : (item.s.is_mastered ? 'opacity:.55' : '')">
+            <template v-if="item._kind==='exam'">
+              <div class="q-header">
+                <span class="q-type"><span class="src-badge src-exam">试卷</span> {{item.w.type_name}} · 练习{{item.w.practice_count}}次</span>
+                <button class="btn btn-sm btn-success" @click="markMastered(item.w)">标记掌握</button>
+              </div>
+              <div class="q-text">{{item.w.question}}</div>
+              <div class="q-answer">答案：{{item.w.answer}}</div>
+            </template>
+            <template v-else>
+              <div class="q-header">
+                <span class="q-type"><span class="src-badge" :class="item.s.source_type==='grammar'?'src-grammar':'src-classical'">{{item.s.module_name}}</span> 错{{item.s.error_count}}次 · {{item.s.wrong_at}}</span>
+                <button class="btn btn-sm btn-success" @click="markStudyErrorMastered(item.s)">标记掌握</button>
+              </div>
+              <div class="q-text">{{item.s.question}}</div>
+              <div class="q-answer" style="color:#e71d36">你的答案：{{item.s.user_answer || '（未作答）'}}</div>
+              <div class="q-answer">正确答案：{{item.s.correct_answer}}</div>
+              <div v-if="item.s.explanation" style="font-size:12px;color:#888;margin-top:4px;padding-left:8px;border-left:2px solid #eee">💡 {{item.s.explanation}}</div>
+            </template>
           </div>
-          <div class="q-text">{{w.question}}</div>
-          <div class="q-answer">答案：{{w.answer}}</div>
         </div>
       </div>
     </div>
@@ -333,13 +502,13 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
         <div v-if="!vocabStats" class="loading">加载中...</div>
         <div v-else>
           <div class="stat-grid">
-            <div class="stat-box"><div class="num">{{vocabStats.learned_count}}</div><div class="label">已学习</div></div>
+            <div class="stat-box"><div class="num accent-vocab">{{vocabStats.learned_count}}</div><div class="label">已学习</div></div>
             <div class="stat-box"><div class="num" style="color:#2ec4b6">{{vocabStats.mastered_count}}</div><div class="label">已掌握</div></div>
             <div class="stat-box"><div class="num" style="color:#ff9f1c">{{vocabStats.due_today}}</div><div class="label">今日待复习</div></div>
             <div class="stat-box"><div class="num" style="color:#e71d36">{{vocabStats.streak_days}}</div><div class="label">连续天数</div></div>
           </div>
           <div class="vocab-progress-bar">
-            <div class="vocab-progress-fill" :style="{width: vocabStats.total_words ? (vocabStats.learned_count/vocabStats.total_words*100)+'%' : '0%'}"></div>
+            <div class="vocab-progress-fill fill-vocab" :style="{width: vocabStats.total_words ? (vocabStats.learned_count/vocabStats.total_words*100)+'%' : '0%'}"></div>
           </div>
           <div style="font-size:12px;color:#888;text-align:center">总进度 {{vocabStats.learned_count}} / {{vocabStats.total_words}} 词</div>
         </div>
@@ -372,9 +541,11 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
             <button v-if="!vocabShowMeaning" class="btn btn-outline" @click="vocabShowMeaning=true">显示释义</button>
             <template v-else>
               <button class="btn btn-success" @click="vocabLearnWord(true)">认识</button>
-              <button class="btn btn-outline" @click="vocabLearnWord(true)">下一个</button>
+              <button class="btn btn-danger" @click="vocabLearnWord(false)">不认识</button>
             </template>
           </div>
+          <div class="key-hint" v-if="vocabShowMeaning">回车显示释义 · A=认识 D=不认识</div>
+          <div class="key-hint" v-else>按 回车 显示释义</div>
         </div>
       </div>
 
@@ -401,6 +572,8 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
               <button class="btn btn-danger" @click="vocabReviewWord(false)">不认识</button>
             </template>
           </div>
+          <div class="key-hint" v-if="vocabReviewShowMeaning">A=认识 D=不认识</div>
+          <div class="key-hint" v-else>按 回车 显示释义</div>
         </div>
       </div>
 
@@ -460,13 +633,13 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
         <div v-if="!classicalStats" class="loading">加载中...</div>
         <div v-else>
           <div class="stat-grid">
-            <div class="stat-box"><div class="num">{{classicalStats.learned}}</div><div class="label">已学篇目</div></div>
+            <div class="stat-box"><div class="num accent-classical">{{classicalStats.learned}}</div><div class="label">已学篇目</div></div>
             <div class="stat-box"><div class="num" style="color:#2ec4b6">{{classicalStats.mastered}}</div><div class="label">已掌握</div></div>
             <div class="stat-box"><div class="num" style="color:#ff9f1c">{{classicalStats.due_today}}</div><div class="label">今日待复习</div></div>
             <div class="stat-box"><div class="num" style="color:#e71d36">{{classicalStats.streak_days}}</div><div class="label">连续天数</div></div>
           </div>
           <div class="vocab-progress-bar">
-            <div class="vocab-progress-fill" :style="{width: classicalStats.total ? (classicalStats.learned/classicalStats.total*100)+'%' : '0%'}"></div>
+            <div class="vocab-progress-fill fill-classical" :style="{width: classicalStats.total ? (classicalStats.learned/classicalStats.total*100)+'%' : '0%'}"></div>
           </div>
           <div style="font-size:12px;color:#888;text-align:center">总进度 {{classicalStats.learned}} / {{classicalStats.total}} 篇</div>
         </div>
@@ -539,8 +712,8 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
             <div style="margin-top:12px;display:flex;gap:10px;justify-content:center">
               <button v-if="!classicalShowQuizAnswer" class="btn btn-outline" @click="classicalShowQuizAnswer=true">显示答案</button>
               <template v-else>
-                <button class="btn btn-success" @click="classicalNextQuiz">答对了 →</button>
-                <button class="btn btn-danger" @click="classicalNextQuiz">答错了 →</button>
+                <button class="btn btn-success" @click="classicalNextQuiz(true)">答对了 →</button>
+                <button class="btn btn-danger" @click="classicalNextQuiz(false)">答错了 →</button>
               </template>
             </div>
           </div>
@@ -691,28 +864,35 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
           <div class="card" v-if="!grammarSubmitted">
             <div class="q-header mb-12">
               <h3>语法练习</h3>
-              <span class="q-type">{{grammarQuizIndex+1}} / {{grammarQuiz.length}}</span>
+              <span class="q-type">第 {{grammarQuizIndex+1}} / {{grammarQuiz.length}} 题</span>
             </div>
-            <div v-for="(q, idx) in grammarQuiz" :key="q.exercise_id" class="question-item">
+            <div class="quiz-progress">
+              <div class="quiz-progress-fill" :style="{width: ((grammarQuizIndex+1)/grammarQuiz.length*100)+'%'}"></div>
+            </div>
+            <div v-if="grammarQuiz[grammarQuizIndex]" :key="grammarQuiz[grammarQuizIndex].exercise_id" class="question-item">
               <div class="q-header">
-                <span class="q-type">{{q.grammar_point_name}} · {{typeLabel(q.exercise_type)}}</span>
-                <span style="font-size:12px;color:#aaa">第{{idx+1}}题</span>
+                <span class="q-type">{{grammarQuiz[grammarQuizIndex].grammar_point_name}} · {{typeLabel(grammarQuiz[grammarQuizIndex].exercise_type)}}</span>
+                <span style="font-size:12px;color:#aaa">{{grammarQuiz[grammarQuizIndex].exercise_type==='choice' ? '按 A/B/C/D 选择' : '输入答案'}}</span>
               </div>
-              <div class="q-text">{{q.question}}</div>
+              <div class="q-text">{{grammarQuiz[grammarQuizIndex].question}}</div>
               <!-- 选择题 -->
-              <div v-if="q.exercise_type==='choice' && q.options && q.options.length" class="q-options">
-                <div v-for="(opt, oi) in q.options" :key="oi"
-                     :class="{selected: grammarAnswers[q.exercise_id]===opt.charAt(0)}"
-                     @click="grammarAnswers[q.exercise_id]=opt.charAt(0)">
+              <div v-if="grammarQuiz[grammarQuizIndex].exercise_type==='choice' && grammarQuiz[grammarQuizIndex].options && grammarQuiz[grammarQuizIndex].options.length" class="q-options">
+                <div v-for="(opt, oi) in grammarQuiz[grammarQuizIndex].options" :key="oi"
+                     :class="{selected: grammarAnswers[grammarQuiz[grammarQuizIndex].exercise_id]===opt.charAt(0)}"
+                     @click="grammarAnswers[grammarQuiz[grammarQuizIndex].exercise_id]=opt.charAt(0)">
                   {{opt}}
                 </div>
               </div>
               <!-- 填空/改写题 -->
-              <input v-else v-model="grammarAnswers[q.exercise_id]" placeholder="输入答案" style="margin-top:8px">
+              <input v-else v-model="grammarAnswers[grammarQuiz[grammarQuizIndex].exercise_id]" placeholder="输入答案" style="margin-top:8px" @keyup.enter="grammarNextQuiz()">
+            </div>
+            <div class="quiz-nav">
+              <button class="btn btn-outline" :disabled="grammarQuizIndex===0" @click="grammarQuizIndex--">← 上一题</button>
+              <button class="btn btn-success" @click="grammarNextQuiz()">下一题 →</button>
             </div>
             <div class="text-center mt-12">
               <p style="font-size:13px;color:#888;margin-bottom:8px">已答 {{grammarAnsweredCount}} / {{grammarQuiz.length}} 题</p>
-              <button class="btn btn-success" @click="submitGrammarQuiz" :disabled="grammarSubmitting">
+              <button class="btn btn-primary" @click="submitGrammarQuiz" :disabled="grammarSubmitting">
                 {{grammarSubmitting ? '提交中...' : '提交答案'}}
               </button>
             </div>
@@ -724,7 +904,10 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
               <div class="score">{{grammarResult.score}}分</div>
               <p>共{{grammarResult.total}}题，对{{grammarResult.correct}}题，错{{grammarResult.wrong}}题</p>
             </div>
-            <div v-for="r in grammarResult.results" :key="r.exercise_id" class="question-item" :class="r.correct?'correct':'wrong'">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#555;cursor:pointer;margin-bottom:12px;justify-content:center">
+              <input type="checkbox" v-model="grammarShowWrongOnly" style="width:auto"> 只看错题（{{grammarResult.wrong}}题）
+            </label>
+            <div v-for="r in grammarVisibleResults" :key="r.exercise_id" class="question-item" :class="r.correct?'correct':'wrong'">
               <div class="q-text">{{r.question}}</div>
               <div class="q-answer" :class="{'wrong-ans': !r.correct}">
                 <span v-if="r.correct">✓ 正确</span>
@@ -735,7 +918,7 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
               </div>
             </div>
             <div class="text-center mt-12">
-              <button class="btn btn-primary" @click="grammarQuiz=[];grammarSubmitted=false;grammarResult=null">再来一组</button>
+              <button class="btn btn-primary" @click="grammarQuiz=[];grammarSubmitted=false;grammarResult=null;grammarShowWrongOnly=false">再来一组</button>
             </div>
           </div>
         </div>
@@ -747,7 +930,10 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
           <div class="score">{{grammarResult.score}}分</div>
           <p>共{{grammarResult.total}}题，对{{grammarResult.correct}}题</p>
         </div>
-        <div v-for="r in grammarResult.results" :key="r.exercise_id" class="question-item" :class="r.correct?'correct':'wrong'">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#555;cursor:pointer;margin-bottom:12px;justify-content:center">
+          <input type="checkbox" v-model="grammarShowWrongOnly" style="width:auto"> 只看错题（{{grammarResult.wrong}}题）
+        </label>
+        <div v-for="r in grammarVisibleResults" :key="r.exercise_id" class="question-item" :class="r.correct?'correct':'wrong'">
           <div class="q-text">{{r.question}}</div>
           <div class="q-answer" :class="{'wrong-ans': !r.correct}">
             <span v-if="r.correct">✓ 正确</span>
@@ -759,17 +945,36 @@ input:focus, select:focus { outline: none; border-color: #4361ee; box-shadow: 0 
     </div>
 
   </div>
+
+  <!-- 轻提示 -->
+  <div class="toast-wrap">
+    <div v-if="toastMsg" class="toast" :class="toastType==='success'?'toast-success':''">{{toastMsg}}</div>
+  </div>
 </div>
 
 <script>
-const { createApp, ref, reactive } = Vue;
+const { createApp, ref, reactive, computed, onMounted } = Vue;
 createApp({
   setup() {
     const user = ref('');
     const username = ref('');
     const subject = ref('数学');
     const grade = ref(6);
-    const tab = ref('generate');
+    const tab = ref('home');
+
+    // 今日学习首页
+    const dashboard = ref(null);
+
+    // 轻提示
+    const toastMsg = ref('');
+    const toastType = ref('');
+
+    // 错题本（统一）
+    const wrongFilter = ref('all');
+    const studyErrors = ref(null);
+
+    // 语法练习只看错题
+    const grammarShowWrongOnly = ref(false);
 
     // 生成
     const genDifficulty = ref('综合');
@@ -835,10 +1040,16 @@ createApp({
     const grammarSubmitting = ref(false);
     const grammarResult = ref(null);
     const grammarLoading = ref(false);
+    // 背单词：每个词今天的不认识次数（第2次不认识则跳过）
+    const vocabLearnAttempts = reactive({});
 
     function login() {
       if (!username.value.trim()) return;
       user.value = username.value.trim();
+      tab.value = 'home';
+      dashboard.value = null;
+      Object.keys(vocabLearnAttempts).forEach(k => delete vocabLearnAttempts[k]);
+      loadDashboard();
     }
     function logout() {
       user.value = '';
@@ -855,8 +1066,118 @@ createApp({
       exams.value = [];
       wrongList.value = null;
       stats.value = null;
-      tab.value = 'generate';
+      studyErrors.value = null;
+      tab.value = 'home';
+      dashboard.value = null;
+      loadDashboard();
     }
+
+    // === 今日学习首页 ===
+    function showToast(msg, type = '') {
+      toastMsg.value = msg;
+      toastType.value = type;
+      setTimeout(() => { toastMsg.value = ''; }, 2400);
+    }
+
+    async function loadDashboard() {
+      try {
+        const res = await fetch(`/api/study/dashboard/today?user_id=${encodeURIComponent(user.value)}&grade=${grade.value}&subject=${encodeURIComponent(subject.value)}`);
+        dashboard.value = await res.json();
+      } catch(e) { console.error('加载今日任务失败', e); }
+    }
+
+    function goVocab() { tab.value = 'vocab'; loadVocabToday(); }
+    function goClassical() { tab.value = 'classical'; loadClassicalToday(); }
+    function goWrong() { tab.value = 'wrong'; loadWrong(); loadStudyErrors(); }
+
+    function startTodayStudy() {
+      if (!dashboard.value) return;
+      const d = dashboard.value;
+      if (subject.value === '英语') {
+        if (d.vocab.new_words + d.vocab.review_words > 0) { goVocab(); return; }
+        if (d.wrong.study_pending > 0 || d.wrong.exam_pending > 0) { goWrong(); return; }
+        goVocab();
+      } else if (subject.value === '语文') {
+        if (d.classical.new_texts + d.classical.review_texts > 0) { goClassical(); return; }
+        if (d.wrong.study_pending > 0 || d.wrong.exam_pending > 0) { goWrong(); return; }
+        goClassical();
+      } else {
+        if (d.wrong.exam_pending > 0) { goWrong(); return; }
+        tab.value = 'generate';
+      }
+    }
+
+    // === 学习错题（语法/古诗文） ===
+    async function loadStudyErrors() {
+      studyErrors.value = null;
+      try {
+        const res = await fetch(`/api/study/errors?user_id=${encodeURIComponent(user.value)}`);
+        studyErrors.value = await res.json();
+      } catch(e) { console.error(e); }
+    }
+
+    async function markStudyErrorMastered(s) {
+      try {
+        await fetch('/api/study/errors/master', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ user_id: user.value, error_id: s.id })
+        });
+        showToast('已标记掌握', 'success');
+        loadStudyErrors();
+      } catch(e) { console.error(e); }
+    }
+
+    const visibleStudyErrors = computed(() => {
+      const all = studyErrors.value || [];
+      if (subject.value === '英语') return all.filter(s => s.source_type === 'grammar');
+      if (subject.value === '语文') return all.filter(s => s.source_type === 'classical');
+      return [];
+    });
+
+    const wrongVisible = computed(() => {
+      const examItems = (wrongList.value || []).map(w => ({ _kind: 'exam', _key: 'e' + w.id, w }));
+      const studyItems = visibleStudyErrors.value.map(s => ({ _kind: 'study', _key: 's' + s.id, s }));
+      if (wrongFilter.value === 'exam') return examItems;
+      if (wrongFilter.value === 'study') return studyItems;
+      return [...examItems, ...studyItems];
+    });
+
+    // === 键盘快捷键 ===
+    function onKeydown(e) {
+      if (!user.value) return;
+      const k = e.key.toLowerCase();
+      // 语法练习：A/B/C/D 选答案，←/→ 翻题
+      if (tab.value === 'grammar' && grammarSubTab.value === 'practice'
+          && grammarQuiz.value.length && !grammarSubmitted.value) {
+        const q = grammarQuiz.value[grammarQuizIndex.value];
+        if (q && q.exercise_type === 'choice' && q.options && q.options.length
+            && ['a', 'b', 'c', 'd'].includes(k)) {
+          const letter = k.toUpperCase();
+          if (q.options.some(o => o.charAt(0) === letter)) {
+            grammarAnswers[q.exercise_id] = letter;
+            e.preventDefault();
+          }
+        }
+        if (k === 'arrowright') { grammarNextQuiz(); e.preventDefault(); }
+        if (k === 'arrowleft' && grammarQuizIndex.value > 0) { grammarQuizIndex.value--; e.preventDefault(); }
+      }
+      // 背单词：回车显示释义，A=认识 D=不认识
+      if (tab.value === 'vocab') {
+        if (vocabSubTab.value === 'learn' && vocabToday.value.new_words.length) {
+          if (k === 'enter' && !vocabShowMeaning.value) { vocabShowMeaning.value = true; e.preventDefault(); }
+          else if (vocabShowMeaning.value && k === 'a') { vocabLearnWord(true); e.preventDefault(); }
+          else if (vocabShowMeaning.value && k === 'd') { vocabLearnWord(false); e.preventDefault(); }
+        } else if (vocabSubTab.value === 'review' && vocabToday.value.review_words.length && !vocabReviewFeedback.value) {
+          if (k === 'enter' && !vocabReviewShowMeaning.value) { vocabReviewShowMeaning.value = true; e.preventDefault(); }
+          else if (vocabReviewShowMeaning.value && k === 'a') { vocabReviewWord(true); e.preventDefault(); }
+          else if (vocabReviewShowMeaning.value && k === 'd') { vocabReviewWord(false); e.preventDefault(); }
+        }
+      }
+    }
+
+    onMounted(() => {
+      window.addEventListener('keydown', onKeydown);
+    });
 
     async function generateExam() {
       generating.value = true;
@@ -979,6 +1300,7 @@ createApp({
         body: JSON.stringify({ user_id: user.value, question_ids: [w.question_id] })
       });
       loadWrong();
+      showToast('已标记掌握', 'success');
     }
 
     function downloadPractice() {
@@ -1034,28 +1356,55 @@ createApp({
     async function vocabLearnWord(known) {
       const w = vocabToday.value.new_words[vocabLearnIndex.value];
       if (!w) return;
-      try {
-        await fetch('/api/vocab/learn', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ user_id: user.value, word_ids: [w.word_id] })
-        });
-      } catch(e) { console.error(e); }
+      let skip = false;
+      if (known) {
+        try {
+          await fetch('/api/vocab/learn', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ user_id: user.value, word_ids: [w.word_id] })
+          });
+        } catch(e) { console.error(e); }
+      } else {
+        vocabLearnAttempts[w.word_id] = (vocabLearnAttempts[w.word_id] || 0) + 1;
+        if (vocabLearnAttempts[w.word_id] >= 2) skip = true; // 第2次不认识：跳过，明天再见
+      }
       // 刷新统计
       const statsRes = await fetch(`/api/vocab/stats?user_id=${encodeURIComponent(user.value)}&grade=${grade.value}`);
       vocabStats.value = await statsRes.json();
       // 下一个
       vocabShowMeaning.value = false;
-      if (vocabLearnIndex.value < vocabToday.value.new_words.length - 1) {
-        vocabLearnIndex.value++;
-      } else {
-        // 学完了，重新加载
+      const isLast = vocabLearnIndex.value >= vocabToday.value.new_words.length - 1;
+      if (!known && !skip && !isLast) {
+        // 不认识（第1次）：移到队尾，最后再学一遍
+        vocabToday.value.new_words.splice(vocabLearnIndex.value, 1);
+        vocabToday.value.new_words.push(w);
+        return;
+      }
+      if (!known && !skip && isLast) {
+        // 最后一个且第1次不认识：回队首再走一轮
+        vocabLearnIndex.value = 0;
+        return;
+      }
+      if (known && isLast) {
+        // 全部学完
         const res = await fetch(`/api/vocab/today?user_id=${encodeURIComponent(user.value)}&grade=${grade.value}`);
         vocabToday.value = await res.json();
         vocabLearnIndex.value = 0;
+        showToast('今日新词全部完成，太棒了！', 'success');
+        return;
       }
+      if (skip && isLast) {
+        // 最后一个跳过：重新加载今日任务
+        const res = await fetch(`/api/vocab/today?user_id=${encodeURIComponent(user.value)}&grade=${grade.value}`);
+        vocabToday.value = await res.json();
+        vocabLearnIndex.value = 0;
+        return;
+      }
+      vocabLearnIndex.value++;
     }
 
     async function vocabReviewWord(correct) {
+      if (vocabReviewFeedback.value) return; // 防止连点/连按重复提交
       const w = vocabToday.value.review_words[vocabReviewIndex.value];
       if (!w) return;
       vocabReviewFeedback.value = correct ? 'correct' : 'wrong';
@@ -1078,6 +1427,7 @@ createApp({
           const res = await fetch(`/api/vocab/today?user_id=${encodeURIComponent(user.value)}&grade=${grade.value}`);
           vocabToday.value = await res.json();
           vocabReviewIndex.value = 0;
+          showToast('今日复习完成！', 'success');
         }
       }, 800);
     }
@@ -1128,6 +1478,7 @@ createApp({
         ]);
         classicalToday.value = await todayRes.json();
         classicalStats.value = await statsRes.json();
+        showToast('已标记为已学', 'success');
       } catch(e) { console.error(e); }
     }
 
@@ -1143,6 +1494,7 @@ createApp({
         ]);
         classicalToday.value = await todayRes.json();
         classicalStats.value = await statsRes.json();
+        showToast(correct ? '背熟了，太棒了！' : '没关系，明天再复习一次');
       } catch(e) { console.error(e); }
     }
 
@@ -1161,7 +1513,27 @@ createApp({
       classicalShowQuizAnswer.value = true;
     }
 
-    function classicalNextQuiz() {
+    function classicalNextQuiz(correct) {
+      if (correct === false) {
+        // 答错：记入统一错题本
+        const cur = classicalQuizList.value[classicalQuizIndex.value];
+        if (cur && cur.answer) {
+          try {
+            fetch('/api/study/errors', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ user_id: user.value, items: [{
+                source_type: 'classical',
+                source_id: cur.text_id || 0,
+                module_name: '古诗文默写',
+                question: cur.question || `《${cur.title}》默写`,
+                user_answer: classicalQuizAnswer.value || '',
+                correct_answer: cur.answer,
+                explanation: '',
+              }]})
+            });
+          } catch(e) { console.error(e); }
+        }
+      }
       classicalShowQuizAnswer.value = false;
       classicalQuizAnswer.value = '';
       if (classicalQuizIndex.value < classicalQuizList.value.length - 1) {
@@ -1265,16 +1637,54 @@ createApp({
         });
         grammarResult.value = await res.json();
         grammarSubmitted.value = true;
+        // 答错的题记入统一错题本
+        const wrongItems = (grammarResult.value.results || []).filter(r => !r.correct).map(r => ({
+          source_type: 'grammar',
+          source_id: r.exercise_id,
+          module_name: '语法练习',
+          question: r.question,
+          user_answer: r.user_answer || '',
+          correct_answer: r.correct_answer,
+          explanation: r.explanation || '',
+        }));
+        if (wrongItems.length) {
+          try {
+            await fetch('/api/study/errors', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ user_id: user.value, items: wrongItems })
+            });
+          } catch(e) { console.error(e); }
+        }
+        showToast(
+          wrongItems.length
+            ? `得分 ${grammarResult.value.score} 分，${wrongItems.length} 道错题已记入错题本`
+            : `满分 ${grammarResult.value.score} 分，太棒了！`,
+          'success'
+        );
       } catch(e) { console.error('提交失败', e); }
       grammarSubmitting.value = false;
     }
+
+    function grammarNextQuiz() {
+      if (grammarQuizIndex.value < grammarQuiz.value.length - 1) {
+        grammarQuizIndex.value++;
+      } else {
+        submitGrammarQuiz();
+      }
+    }
+
+    const grammarVisibleResults = computed(() => {
+      if (!grammarResult.value) return [];
+      const rs = grammarResult.value.results || [];
+      return grammarShowWrongOnly.value ? rs.filter(r => !r.correct) : rs;
+    });
 
     function typeLabel(t) {
       const map = { choice: '选择题', fill: '填空题', transform: '改写题', correct: '改错题' };
       return map[t] || t;
     }
 
-    const grammarAnsweredCount = Vue.computed(() => {
+    const grammarAnsweredCount = computed(() => {
       return grammarQuiz.value.filter(q => {
         const a = grammarAnswers[q.exercise_id];
         return a !== undefined && a !== null && a.toString().trim() !== '';
@@ -1304,9 +1714,14 @@ createApp({
       grammarSelectedPoint, grammarPracticePointId, grammarPracticeCount,
       grammarPracticeTypes, grammarQuiz, grammarQuizIndex, grammarAnswers,
       grammarSubmitted, grammarSubmitting, grammarResult, grammarLoading,
-      grammarAnsweredCount,
+      grammarAnsweredCount, grammarVisibleResults, grammarShowWrongOnly,
+      grammarNextQuiz,
       loadGrammarPoints, loadGrammarStats, selectGrammarPoint,
       startGrammarPractice, submitGrammarQuiz, typeLabel,
+      dashboard, loadDashboard, startTodayStudy,
+      toastMsg, toastType, goVocab, goClassical, goWrong,
+      wrongFilter, studyErrors, visibleStudyErrors, wrongVisible,
+      loadStudyErrors, markStudyErrorMastered,
     };
   }
 }).mount('#app');
