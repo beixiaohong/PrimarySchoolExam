@@ -3,11 +3,12 @@
 提供商（配置优先级：系统环境变量 > 项目根目录 .env 文件）：
 - zhipu（免费）：智谱 GLM，ZHIPU_API_KEY；AI_MODEL / AI_BASE_URL 可覆盖
   - 主模型 glm-4.7-flash，无有效输出（限流/报错/空响应）时自动回退 glm-4.7 标准版
-- deepseek（付费）：DeepSeek，DEEPSEEK_API_KEY，接口 https://api.deepseek.com，模型 deepseek-chat
+- deepseek（付费）：DeepSeek，DEEPSEEK_API_KEY，接口 https://api.deepseek.com，模型 deepseek-v4-flash
 
 路由规则：
 - 所有用户：免费链 [zhipu]（flash 失败自动切 glm-4.7 标准版）
-- VIP 用户（VIP_USERS 硬编码名单）：免费链全部失败后再尝试付费链 [deepseek]
+- VIP 用户（名单存数据库 vip_users 表，按 user_id 精确匹配）：免费链全部失败后再尝试付费链 [deepseek]
+- 付费链按 user_id 独立限频（PAID_DAILY_LIMIT 次/天），防止单个用户刷爆付费 API
 - 未配置 Key 的提供商直接跳过；全链失败返回 None，由路由层降级为本地模板
 
 降级约定：所有对外函数在不可用时返回 None / {"degraded": True, ...}，
@@ -16,6 +17,7 @@
 import json
 import logging
 import os
+import sqlite3
 import time
 import urllib.error
 import urllib.request
@@ -26,10 +28,42 @@ logger = logging.getLogger("ai")
 
 TIMEOUT_SEC = 10  # 默认超时；提供商可覆盖（cfg["timeout"]）
 
-# ── VIP 名单：暂时在此硬编码（暂无管理后台，防止付费 API 被刷） ──
-# 例：VIP_USERS = {"朵朵", "小帅"} —— 付费链（deepseek）只对名单内用户开放
-# 按登录用户名精确匹配（user_id in VIP_USERS）
-VIP_USERS: set = {"诗文", "橙子"}
+# ── VIP 名单（数据库 vip_users 表，按 user_id 隔离付费链） ──
+# 增删 VIP：直接操作 primary_school.db 的 vip_users 表（INSERT/DELETE），
+# 服务层最多 60 秒后自动生效（内存缓存 TTL），无需重启。
+VIP_CACHE_TTL = 60          # VIP 名单内存缓存秒数
+PAID_DAILY_LIMIT = 100      # 付费链：每个 VIP user_id 每天最多调用次数（防刷）
+
+
+def _vip_db_path() -> Path:
+    """VIP 名单数据库路径（项目根 primary_school.db）"""
+    return Path(__file__).resolve().parent.parent.parent / "primary_school.db"
+
+
+def _load_vip_users() -> set:
+    """从 vip_users 表读取名单；失败返回空集（不阻断启动/调用）"""
+    try:
+        conn = sqlite3.connect(str(_vip_db_path()))
+        try:
+            return {r[0] for r in conn.execute("SELECT user_id FROM vip_users")}
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("读取 VIP 名单失败: %s", e)
+        return set()
+
+
+_vip_cache: set = set()
+_vip_cache_ts: float = 0.0
+
+
+def _is_vip(user_id: str) -> bool:
+    """VIP 判定：内存缓存（VIP_CACHE_TTL 秒）→ 数据库 vip_users 表"""
+    global _vip_cache, _vip_cache_ts
+    if time.time() - _vip_cache_ts > VIP_CACHE_TTL:
+        _vip_cache = _load_vip_users()
+        _vip_cache_ts = time.time()
+    return user_id in _vip_cache
 
 # ── 提供商注册表 ──
 # tier: free=免费链（所有用户），paid=付费链（仅 VIP）
@@ -48,7 +82,7 @@ PROVIDERS: dict = {
         "label": "DeepSeek",
         "tier": "paid",
         "base_url": "https://api.deepseek.com",
-        "model": "deepseek-chat",
+        "model": "deepseek-v4-flash",
     },
 }
 
@@ -57,9 +91,9 @@ PAID_CHAIN = ["deepseek"]
 
 
 def _chain_for(user_id: str) -> list:
-    """返回该用户的调用链：免费链 +（VIP 时）付费链"""
+    """返回该用户的调用链：免费链 +（VIP 时）付费链（名单存数据库）"""
     chain = list(FREE_CHAIN)
-    if user_id in VIP_USERS:
+    if _is_vip(user_id):
         chain.extend(PAID_CHAIN)
     return chain
 
@@ -214,7 +248,8 @@ def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Opt
     """按用户调用链取 AI 结果。
 
     - 免费链（zhipu）对所有用户开放：glm-4.7-flash 无有效输出自动回退 glm-4.7 标准版
-    - VIP 用户（VIP_USERS）在免费链全部失败后追加付费链（deepseek）
+    - VIP 用户（数据库 vip_users 表，按 user_id 判定）在免费链全部失败后追加付费链（deepseek）
+    - 付费链按 user_id 独立日配额（PAID_DAILY_LIMIT），配额用尽直接返回 None（防刷）
     - 未配置 Key 的提供商跳过；全链失败返回 None（路由层降级模板）
 
     成功返回 {"text", "prompt_tokens", "completion_tokens", "model", "provider"}。
@@ -222,6 +257,9 @@ def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Opt
     chain = _chain_for(user_id)
     tried: list = []
     for name in chain:
+        if name in PAID_CHAIN and not rate_limit(f"paid:{user_id}", PAID_DAILY_LIMIT, 86400):
+            logger.warning("AI 付费链日配额用尽（user=%s, limit=%d），降级模板", user_id, PAID_DAILY_LIMIT)
+            return None
         cfg = _config_provider(name)
         if not cfg["api_key"]:
             continue
