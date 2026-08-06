@@ -179,6 +179,8 @@ def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
         "temperature": 0.7,
         "stream": False,
     }
+    # 提供商附加参数（如 glm-4.7 关闭思考：{"thinking": {"type": "disabled"}}）
+    payload.update(cfg.get("extra_params", {}) or {})
     req = urllib.request.Request(
         cfg["base_url"] + "/chat/completions",
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -209,6 +211,10 @@ def _call_provider(name: str, cfg: dict, system: str, user: str,
     if fb and fb != cfg["model"]:
         fb_cfg = dict(cfg)
         fb_cfg["model"] = fb
+        # glm-4.7 标准版是推理模型，思考阶段常超 20s（实测 6-60s）导致超时；
+        # 关闭思考后实测 2.2s 稳定返回，且生成内容不受影响
+        if fb == "glm-4.7":
+            fb_cfg["extra_params"] = {"thinking": {"type": "disabled"}}
         logger.info("AI[%s] 主模型 %s 无有效输出，自动回退 %s",
                     name, cfg["model"], fb)
         return _call_model(fb_cfg, system, user, max_tokens)
