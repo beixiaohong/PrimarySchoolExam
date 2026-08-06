@@ -65,6 +65,10 @@ CONFIGURABLE_CODES = ["math_exam", "math_fix", "chi_exam", "chi_classical",
                       "eng_exam", "eng_vocab"]
 MIN_TARGET, MAX_TARGET = 1, 50
 
+# 练习类任务（math_exam / chi_exam / eng_exam）的完成门槛：
+# 只有正确率 ≥60% 的提交才计入完成进度（与家长确认：当日任务完成需正确率达标，直接提交不行）
+TASK_PASS_SCORE = 60
+
 
 def _default_target(code: str) -> int:
     for subj, pool in TASK_POOLS.items():
@@ -197,10 +201,15 @@ def _today_start() -> datetime:
 
 
 def _today_attempts(db: Session, user_id: str, subject: str) -> int:
-    """今天完成某学科练习（提交过试卷）的次数"""
+    """今天正确率 ≥TASK_PASS_SCORE 的练习提交次数。
+
+    低于门槛的提交（正确率不够）不推进任务进度——做题记录照常保存
+    （错题本、学习统计仍依赖它），只是不算"完成任务"。
+    """
     return db.query(ExamAttempt).join(ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
         ExamAttempt.user_id == user_id,
         ExamRecord.subject == subject,
+        ExamAttempt.score >= TASK_PASS_SCORE,
         ExamAttempt.created_at >= _today_start(),
     ).count()
 

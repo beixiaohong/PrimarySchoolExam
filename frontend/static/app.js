@@ -1276,6 +1276,10 @@ createApp({
           }),
         }).then(r => {
           this.loadAttempts();
+          // 正确率不足 60%：任务不推进，明确告诉孩子/家长为什么任务还没完成
+          if (typeof r.score === 'number' && r.score < 60) {
+            this.showToast(`正确率 ${r.score}%，要 60% 以上才算完成今日任务哦，再练一套吧！`);
+          }
           // 答题中自评的错因：提交后批量落库
           const causes = this.quiz.items.filter(it => !it.correct && it.cause && r.wrong_ids && r.wrong_ids[it.qid])
             .map(it => ({ question_id: it.qid, cause: it.cause }));
