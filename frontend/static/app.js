@@ -38,8 +38,7 @@ createApp({
       wrongAnalysis: { total: 0, pending: 0, mastered: 0, mastery_rate: 0, by_cause: [], by_subject: [] },
       wrongScreen: 'list', wrongKind: 'all', wrongStatus: 'pending',
       wrongItems: [], curWrong: null,
-      // AI 错题讲解（Sprint 2）
-      explain: { show: false, loading: false, text: '', question: '', degraded: false },
+      // AI 错题讲解（Sprint 2）：内联展示，状态挂在 quiz 题目项 / curWrong 上
       // 心情打卡（Sprint 2）
       moodTrend: null, moodNote: '', moodPicking: false,
       // 奖励闭环 + 成长周报（Sprint 3）
@@ -49,6 +48,8 @@ createApp({
       wishOverlay: { show: false, title: '', target: 5 },
       weeklyOverlay: { show: false }, weeklyLoading: false, weekly: null,
       shareImg: '', parentNote: '',
+      // 每日任务目标数量（家长设置）
+      taskSettings: { items: [] },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
@@ -155,15 +156,6 @@ createApp({
       if (c.delta > 0) return `古诗文比昨天多学 ${c.delta} 篇 📜`;
       if (c.delta < 0) return `昨天学了 ${c.yesterday} 篇，今天再加把劲`;
       return c.today ? `今天已学 ${c.today} 篇古诗文` : '';
-    },
-    // AI 讲解三段式：按【错在哪】【怎么做】【再来一道】切分
-    explainSections() {
-      const t = this.explain.text || '';
-      const segs = [];
-      const rex = /【(错在哪|怎么做|再来一道)】([\s\S]*?)(?=【|$)/g;
-      let m;
-      while ((m = rex.exec(t)) !== null) segs.push({ title: m[1], body: m[2].trim() });
-      return segs.length ? segs : [{ title: '', body: t }];
     },
     moodOptions() {
       return [
@@ -660,58 +652,63 @@ createApp({
         }).catch(e => this.showToast(e.message));
     },
     openWrongDetail(w) { this.curWrong = w; this.wrongScreen = 'detail'; },
-    /* ─────────── AI 错题讲解（Sprint 2） ─────────── */
-    openExplain(w) {
-      if (w.kind !== 'exam' || !w.question_id) { this.showToast('这道题暂不支持 AI 讲解'); return; }
-      this.explain = { show: true, loading: true, text: '', question: w.question, degraded: false };
-      this.api('/api/ai/explain', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: this.user, question_id: w.question_id }),
-      }).then(d => {
-        this.explain.loading = false;
-        this.explain.text = d.text || '';
-        this.explain.degraded = !!d.degraded;
-        this.explain.question = d.question || w.question;
-      }).catch(e => {
-        this.explain.loading = false;
-        this.explain.text = '';
-        this.showToast(e.message);
-        setTimeout(() => { this.explain.show = false; }, 1200);
+    /* ─────────── AI 错题讲解（Sprint 2，内联展示） ─────────── */
+    // 讲解文本三段式：按【错在哪】【怎么做】【再来一道】切分
+    explainSectionsOf(t) {
+      const segs = [];
+      const rex = /【(错在哪|怎么做|再来一道)】([\s\S]*?)(?=【|$)/g;
+      let m;
+      while ((m = rex.exec(t || '')) !== null) segs.push({ title: m[1], body: m[2].trim() });
+      return segs.length ? segs : [{ title: '', body: t || '' }];
+    },
+    // 统一带超时的讲解请求：25s 未返回自动解除锁定并提示，避免"点了没反应"
+    explainFetch(path, payload) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('讲解生成超时，请稍后重试')), 25000);
+        this.api(path, { method: 'POST', body: JSON.stringify(payload) })
+          .then(d => { clearTimeout(timer); resolve(d); })
+          .catch(e => { clearTimeout(timer); reject(e); });
       });
     },
-    closeExplain() { this.explain.show = false; },
-    /* 作答页「AI 讲解」：一键标记错题（错因=ai）并弹讲解 */
+    openExplain(w) {
+      if (w.kind !== 'exam' || !w.question_id) { this.showToast('这道题暂不支持 AI 讲解'); return; }
+      if (w.explaining) return; // 防重复点击
+      w.explaining = true; w.aiText = ''; w.aiError = ''; w.aiDegraded = false;
+      this.explainFetch('/api/ai/explain', { user_id: this.user, question_id: w.question_id })
+        .then(d => {
+          w.explaining = false;
+          w.aiText = d.text || '';
+          w.aiDegraded = !!d.degraded;
+        }).catch(e => {
+          w.explaining = false;
+          w.aiError = e.message || '讲解生成失败，请稍后重试';
+          this.showToast(w.aiError);
+        });
+    },
+    /* 作答页「AI 讲解」：一键标记错题（错因=ai）并在题目下方内联展示讲解 */
     askQuizExplain() {
       const it = this.quiz.items[this.quiz.i];
       if (!it || !it.qid) { this.showToast('这道题暂不支持 AI 讲解'); return; }
-      this.explain = { show: true, loading: true, text: '', question: it.question, degraded: false };
-      this.api('/api/ai/explain-mark', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: this.user, question_id: it.qid }),
-      }).then(d => {
-        this.explain.loading = false;
-        this.explain.text = d.text || '';
-        this.explain.degraded = !!d.degraded;
-        this.explain.question = d.question || it.question;
-        if (d.marked) {
-          it.cause = 'ai';
-          this.showToast('已标记为做错了（AI 讲解），讲解后可以点「这次会了」');
-        }
-        // 供讲解弹窗内「这次会了 / 变式重练」复用（record_id 来自服务端新标记）
-        if (d.record_id && (!this.curWrong || this.curWrong.question_id !== it.qid)) {
-          this.curWrong = { kind: 'exam', record_id: d.record_id, question_id: it.qid, question: d.question || it.question, mastered: false };
-        }
-      }).catch(e => {
-        this.explain.loading = false;
-        this.explain.text = '';
-        this.showToast(e.message);
-        setTimeout(() => { this.explain.show = false; }, 1200);
-      });
-    },
-    explainMastered() {
-      this.closeExplain();
-      this.showToast('这次会了！已记入成长记录 🎉');
-      if (this.curWrong) this.markWrongMastered(this.curWrong);
+      if (it.explaining) return; // 防重复点击
+      it.explaining = true; it.aiText = ''; it.aiError = ''; it.aiDegraded = false;
+      this.explainFetch('/api/ai/explain-mark', { user_id: this.user, question_id: it.qid })
+        .then(d => {
+          it.explaining = false;
+          it.aiText = d.text || '';
+          it.aiDegraded = !!d.degraded;
+          if (d.marked) {
+            it.cause = 'ai';
+            this.showToast('已标记为做错了（AI 讲解），讲解后可以点「这次会了」');
+          }
+          // 供内联讲解下方「这次会了 / 变式重练」复用（record_id 来自服务端新标记）
+          if (d.record_id && (!this.curWrong || this.curWrong.question_id !== it.qid)) {
+            this.curWrong = { kind: 'exam', record_id: d.record_id, question_id: it.qid, question: d.question || it.question, mastered: false };
+          }
+        }).catch(e => {
+          it.explaining = false;
+          it.aiError = e.message || '讲解生成失败，请稍后重试';
+          this.showToast(it.aiError);
+        });
     },
     /* ─────────── 心情打卡（Sprint 2） ─────────── */
     moodFace(c) { const m = this.moodOptions.find(x => x.code === c); return m ? m.face : ''; },
@@ -762,6 +759,29 @@ createApp({
           this.allCoupons = (d && d.coupons) || [];
           this.pendingWishes = (d && d.wishes) || [];
         }).catch(() => { this.allCoupons = []; this.pendingWishes = []; });
+      this.loadTaskSettings();
+    },
+    loadTaskSettings() {
+      this.api(`/api/tasks/settings?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.taskSettings = d || { items: [] }; })
+        .catch(() => { this.taskSettings = { items: [] }; });
+    },
+    saveTaskSettings() {
+      // 每次保存提交全部 6 项，保证"改回默认值"也能生效
+      const changed = {};
+      for (const it of this.taskSettings.items || []) {
+        const v = Number(it.target);
+        if (!Number.isInteger(v) || v < 1 || v > 50) return this.showToast(`「${it.title}」的数量需为 1-50 的整数`);
+        changed[it.code] = v;
+      }
+      this.api('/api/tasks/settings', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, settings: changed }),
+      }).then(d => {
+        this.taskSettings = d || { items: [] };
+        this.loadDailyTasks(); // 立即刷新今日任务，家长能马上看到效果
+        this.showToast('每日任务数量已保存 ✅');
+      }).catch(e => this.showToast(e.message));
     },
     createCoupon() {
       const title = (this.newCoupon.title || '').trim();
@@ -1227,10 +1247,15 @@ createApp({
       this.showToast(this.turbo ? '极速模式已开启（动画加速）' : '极速模式已关闭');
     },
     quizNext() {
+      // AI 讲解生成中禁止进入下一题（防止讲解被跳过/重复点击）
+      const it = this.quiz.items[this.quiz.i];
+      if (it && it.explaining) return;
       if (this.quiz.i < this.quiz.items.length - 1) { this.quiz.i++; this.quiz.fillText = ''; }
       else this.finishQuiz();
     },
     finishQuiz() {
+      // 防重复提交：done 已为 true 说明本次已提交过（双击"查看结果"/重复点击），直接忽略
+      if (this.quiz.done) return;
       const total = this.quiz.items.length;
       this.quiz.score = total ? Math.round(this.quiz.correct / total * 100) : 0;
       this.quiz.done = true;
@@ -1258,6 +1283,9 @@ createApp({
             method: 'POST',
             body: JSON.stringify({ user_id: this.user, question_id: c.question_id, cause: c.cause }),
           }).catch(() => {}));
+          // 提交完成后再刷新每日任务：避免与提交并发读到旧进度，
+          // 导致"任务已完成"提示延迟到下次刷新（如切换学科）才弹出
+          this.loadDailyTasks();
         }).catch(e => this.showToast(e.message));
       } else if (src.mode === 'retry') {
         this.api('/api/study/practice-submit', {
@@ -1266,7 +1294,10 @@ createApp({
             user_id: this.user,
             results: this.quiz.items.map(it => ({ kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct })),
           }),
-        }).then(() => this.loadAnalysis()).catch(e => this.showToast(e.message));
+        }).then(() => {
+          this.loadAnalysis();
+          this.loadDailyTasks();
+        }).catch(e => this.showToast(e.message));
       } else if (src.mode === 'classical') {
         const wrongs = this.quiz.items.filter(it => !it.correct && it.userAnswer)
           .map(it => ({
@@ -1274,22 +1305,24 @@ createApp({
             question: it.question, user_answer: it.userAnswer, correct_answer: it.answer,
             explanation: it.sub || '',
           }));
-        if (wrongs.length) {
-          this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: wrongs }) })
-            .then(() => this.loadAnalysis()).catch(() => {});
-        }
+        const p = wrongs.length
+          ? this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: wrongs }) })
+          : Promise.resolve();
+        // 提交完成后再刷新每日任务：与答题提交竞态同理，避免
+        // "任务已完成"提示延迟到下次刷新（如切换学科）才弹出
+        p.then(() => { this.loadAnalysis(); this.loadDailyTasks(); }).catch(() => {});
       }
       this.refreshAll();
     },
     closeQuiz() {
       const src = this.quiz.source;
-      if (src && src.mode === 'retry') {
+      if (src && src.mode === 'retry' && !this.quiz.done) {
         const answered = this.quiz.items.filter(it => it.answered);
         if (answered.length) {
           this.api('/api/study/practice-submit', {
             method: 'POST',
             body: JSON.stringify({ user_id: this.user, results: answered.map(it => ({ kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct })) }),
-          }).then(() => this.loadAnalysis()).catch(() => {});
+          }).then(() => { this.loadAnalysis(); this.loadDailyTasks(); }).catch(() => {});
         }
       } else if (src && src.mode === 'exam' && !this.quiz.done) {
         // 中途退出：全部题目提交，未作答的记为错误，保证一定生成完整做题记录
@@ -1300,7 +1333,7 @@ createApp({
             duration_sec: Math.round((Date.now() - (src.startedAt || Date.now())) / 1000),
             answers: this.quiz.items.map(it => ({ question_id: it.qid, user_answer: it.answered ? (it.userAnswer || '') : '' })),
           }),
-        }).then(() => { this.loadAttempts(); this.showToast('已保存：未作答题目记为错误'); }).catch(e => this.showToast('保存失败：' + (e.message || '')));
+        }).then(() => { this.loadAttempts(); this.loadDailyTasks(); this.showToast('已保存：未作答题目记为错误'); }).catch(e => this.showToast('保存失败：' + (e.message || '')));
       }
       this.quiz.active = false;
       this.refreshAll();

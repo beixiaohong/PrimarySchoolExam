@@ -88,6 +88,10 @@ def save_record(req: RecordReq, db: Session = Depends(get_db)):
     from ..models.sprint4 import ChallengeRecord
     if req.kind not in ("math", "word"):
         raise HTTPException(400, "kind 只能是 math/word")
+    if req.correct < 0 or req.total < 0:
+        raise HTTPException(400, "成绩不能为负数")
+    if req.correct > req.total:
+        raise HTTPException(400, "答对数不能超过总题数")
     correct = max(0, min(200, req.correct))
     total = max(0, min(200, req.total))
     rec = ChallengeRecord(user_id=req.user_id, kind=req.kind,

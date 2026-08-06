@@ -31,7 +31,8 @@ TIMEOUT_SEC = 10
 
 # ── VIP 名单：暂时在此硬编码（暂无管理后台，防止付费 API 被刷） ──
 # 例：VIP_USERS = {"朵朵", "小帅"} —— 付费链（deepseek）只对名单内用户开放
-VIP_USERS: set = set()
+# 按登录用户名精确匹配（user_id in VIP_USERS）
+VIP_USERS: set = {"诗文", "橙子"}
 
 # ── 提供商注册表 ──
 # tier: free=免费链（所有用户），paid=付费链（仅 VIP）

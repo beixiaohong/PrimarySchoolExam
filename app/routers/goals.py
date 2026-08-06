@@ -27,11 +27,16 @@ class GoalReq(BaseModel):
     subject: str = ""
 
 
-def _current(db: Session, user_id: str, kind: str) -> int:
+def _current(db: Session, user_id: str, kind: str, subject: str = "") -> int:
     if kind == "score":
         from ..models.exam import ExamAttempt
-        rows = db.query(ExamAttempt).filter(
-            ExamAttempt.user_id == user_id).order_by(ExamAttempt.id.desc()).limit(10).all()
+        from ..models.exam import ExamRecord
+        q = db.query(ExamAttempt).join(
+            ExamRecord, ExamAttempt.exam_id == ExamRecord.id
+        ).filter(ExamAttempt.user_id == user_id)
+        if subject:  # 分数目标按学科统计，避免其他学科做题记录混入
+            q = q.filter(ExamRecord.subject == subject)
+        rows = q.order_by(ExamAttempt.id.desc()).limit(10).all()
         return round(sum(a.score or 0 for a in rows) / len(rows)) if rows else 0
     if kind == "wrong":
         from ..models.exam import WrongRecord
@@ -45,12 +50,13 @@ def _current(db: Session, user_id: str, kind: str) -> int:
         from ..models.classical import ClassicalDailyLog
         rows = db.query(ClassicalDailyLog).filter(
             ClassicalDailyLog.user_id == user_id).all()
-        return sum((r.texts_learned or 0) + (r.texts_reviewed or 0) for r in rows)
+        # 只累计"新背"篇数：复习/重复学习不重复计数，避免进度虚高
+        return sum(r.texts_learned or 0 for r in rows)
     return 0
 
 
 def _goal_out(db: Session, g) -> dict:
-    current = _current(db, g.user_id, g.kind)
+    current = _current(db, g.user_id, g.kind, g.subject)
     days_left = (g.deadline - date.today()).days if g.deadline else None
     return {
         "id": g.id, "kind": g.kind, "kind_label": KINDS.get(g.kind, g.kind),
@@ -103,11 +109,15 @@ def create_goal(req: GoalReq, db: Session = Depends(get_db)):
     return _goal_out(db, g)
 
 
+class GoalActionReq(BaseModel):
+    user_id: str
+
+
 @router.post("/{gid}/done", summary="标记目标达成")
-def done_goal(gid: int, db: Session = Depends(get_db)):
+def done_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
     from ..models.reward import GoalItem
     g = db.query(GoalItem).filter(GoalItem.id == gid).first()
-    if not g:
+    if not g or g.user_id != req.user_id:
         raise HTTPException(404, "目标不存在")
     g.status = "done"
     db.commit()
@@ -115,10 +125,10 @@ def done_goal(gid: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{gid}/archive", summary="移除目标")
-def archive_goal(gid: int, db: Session = Depends(get_db)):
+def archive_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
     from ..models.reward import GoalItem
     g = db.query(GoalItem).filter(GoalItem.id == gid).first()
-    if not g:
+    if not g or g.user_id != req.user_id:
         raise HTTPException(404, "目标不存在")
     g.status = "archived"
     db.commit()

@@ -64,20 +64,25 @@ def record_study_errors(req: StudyErrorRecordRequest, db: Session = Depends(get_
         return {"recorded": 0}
 
     recorded = 0
+    batch: dict = {}  # 批内去重：(source_type, source_id) → 记录对象（含本批新建），避免同批重复键触发唯一约束 500
     for item in req.items:
         if not item.question or not item.correct_answer:
             continue
 
-        existing = db.query(StudyError).filter(
-            StudyError.user_id == req.user_id,
-            StudyError.source_type == item.source_type,
-            StudyError.source_id == item.source_id,
-        ).first()
+        key = (item.source_type, item.source_id)
+        if key not in batch:
+            batch[key] = db.query(StudyError).filter(
+                StudyError.user_id == req.user_id,
+                StudyError.source_type == key[0],
+                StudyError.source_id == key[1],
+            ).first()
+        existing = batch[key]
 
         if existing:
-            # 已掌握后再次答错：重新激活
+            # 已掌握后再次答错：重新激活（连击清零，闭环重新开始）
             existing.is_mastered = False
             existing.mastered_at = None
+            existing.correct_streak = 0
             existing.error_count += 1
             existing.user_answer = item.user_answer
             existing.question = item.question
@@ -89,7 +94,7 @@ def record_study_errors(req: StudyErrorRecordRequest, db: Session = Depends(get_
                 existing.module_name = item.module_name
             existing.wrong_at = date.today()
         else:
-            db.add(StudyError(
+            rec = StudyError(
                 user_id=req.user_id,
                 source_type=item.source_type,
                 source_id=item.source_id,
@@ -101,7 +106,9 @@ def record_study_errors(req: StudyErrorRecordRequest, db: Session = Depends(get_
                 cause=item.cause,
                 error_count=1,
                 wrong_at=date.today(),
-            ))
+            )
+            db.add(rec)
+            batch[key] = rec
         recorded += 1
 
     db.commit()

@@ -258,7 +258,10 @@ def ai_report(req: ReportReq, db: Session = Depends(get_db)):
     existing = db.query(WeeklyReport).filter_by(
         user_id=req.user_id, week_start=date.fromisoformat(week_start)).first()
     if existing:
-        cached = json.loads(existing.content_json)
+        try:
+            cached = json.loads(existing.content_json or "{}")
+        except (ValueError, TypeError):
+            cached = {}
         cached["already_exists"] = True
         return cached
 

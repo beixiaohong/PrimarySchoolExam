@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=15">
+<link rel="stylesheet" href="/static/style.css?v=20">
 </head>
 <body>
 <div id="app">
@@ -510,6 +510,22 @@
             <div v-if="curWrong.explanation" class="feedback ok" style="display:block">
               <h4>📖 解析</h4><p>{{curWrong.explanation}}</p>
             </div>
+            <!-- AI 讲解（内联展示在题目下方，不弹窗） -->
+            <div class="inline-explain" v-if="curWrong.explaining || curWrong.aiText || curWrong.aiError">
+              <div v-if="curWrong.explaining" class="explain-loading">
+                <span class="explain-spin"></span>🤖 老师正在讲解…（通常 3-10 秒，请稍等）
+              </div>
+              <template v-else-if="curWrong.aiText">
+                <div class="explain-seg" v-for="(s,i) in explainSectionsOf(curWrong.aiText)" :key="i" :class="{first: i===0}">
+                  <div class="seg-title" v-if="s.title">【{{s.title}}】</div>
+                  <div class="seg-body">
+                    <p v-for="(line,li) in s.body.split('\n').filter(x=>x.trim())" :key="li">{{line}}</p>
+                  </div>
+                </div>
+                <p class="explain-deg" v-if="curWrong.aiDegraded">（离线讲解版 · 已尽力帮到你了）</p>
+              </template>
+              <p v-else class="explain-err">😵 {{curWrong.aiError}} <button class="btn btn-ghost btn-sm" @click="openExplain(curWrong)">重试</button></p>
+            </div>
             <div class="card-head" style="margin-top:22px"><b>💡 这次错在哪？</b><span class="more">选择后系统会针对性推送变式练习</span></div>
             <div class="cause-grid">
               <button class="cause-item" :class="{selected: curWrong.cause==='careless'}" @click="submitCause('careless')"><span class="ci-ico">😅</span>粗心大意<span class="ci-d">看错数字 / 符号 / 漏字</span></button>
@@ -522,7 +538,7 @@
               <div class="progress"><i style="width:100%;background:var(--success)"></i></div>
             </div>
             <div class="detail-actions">
-              <button class="btn btn-primary" v-if="curWrong.kind==='exam' && curWrong.question_id" @click="openExplain(curWrong)">🤖 AI 讲解</button>
+              <button class="btn btn-primary" v-if="curWrong.kind==='exam' && curWrong.question_id" :disabled="curWrong.explaining" @click="openExplain(curWrong)">{{curWrong.explaining ? '⏳ 讲解中…' : '🤖 AI 讲解'}}</button>
               <button class="btn btn-primary" @click="openTeach(curWrong)">🎓 出题给家长</button>
               <button class="btn btn-primary" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
               <button class="btn btn-success" v-if="!curWrong.mastered" @click="markWrongMastered(curWrong)">✅ 标记已掌握</button>
@@ -695,7 +711,20 @@
 
         <!-- 家长管理（Sprint 3 奖励闭环 + 寄语） -->
         <div class="card parent-card" style="max-width:640px;margin-top:16px">
-          <div class="card-head"><b>👨‍👩‍👧 家长管理</b><span class="more">奖励兑换券 / 心愿确认 / 成长寄语</span></div>
+          <div class="card-head"><b>👨‍👩‍👧 家长管理</b><span class="more">每日任务数量 / 奖励兑换券 / 心愿确认 / 成长寄语</span></div>
+
+          <div class="pc-sec">
+            <div class="pc-title">📋 每日任务题目数量 <span class="more">孩子今天及以后的每日任务目标按此设置</span></div>
+            <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap">
+              <span style="min-width:150px;font-size:13px;color:#3a4a6b">{{ts.subject}} · {{ts.title.replace(/\d+/, '').replace(/\s+/g, ' ').trim()}}</span>
+              <input v-model.number="ts.target" type="number" min="1" max="50" class="fill-input" style="max-width:80px">
+              <span class="more">默认 {{ts.default}}</span>
+            </div>
+            <div class="pc-row" style="margin-top:8px">
+              <button class="btn btn-primary btn-sm" @click="saveTaskSettings()">保存设置</button>
+              <span class="more">范围 1-50，保存后今天的未完成任务立即生效</span>
+            </div>
+          </div>
 
           <div class="pc-sec">
             <div class="pc-title">💌 给孩子写悄悄话</div>
@@ -959,36 +988,6 @@
   </div>
 </div>
 
-<!-- ═══════════ AI 错题讲解浮层 ═══════════ -->
-<div class="quiz-overlay" v-if="explain.show">
-  <div class="quiz-shell explain-shell">
-    <div class="quiz-top">
-      <span class="qname">🤖 AI 错题讲解</span>
-      <button class="icon-btn" @click="closeExplain()" title="关闭">✕</button>
-    </div>
-    <div class="explain-body">
-      <div v-if="explain.loading" class="empty" style="padding:60px 20px">
-        <div class="em">🤖</div><h3>老师正在讲解…</h3><p>通常 3-10 秒，请稍等</p>
-      </div>
-      <template v-else>
-        <p class="explain-q">{{explain.question}}</p>
-        <div class="explain-seg" v-for="(s,i) in explainSections" :key="i" :class="{first: i===0}">
-          <div class="seg-title" v-if="s.title">【{{s.title}}】</div>
-          <div class="seg-body">
-            <p v-for="(line,li) in s.body.split('\n').filter(x=>x.trim())" :key="li">{{line}}</p>
-          </div>
-        </div>
-        <p class="explain-deg" v-if="explain.degraded">（离线讲解版 · 已尽力帮到你了）</p>
-        <div class="explain-actions">
-          <button class="btn btn-primary" @click="explainMastered()">✅ 这次会了</button>
-          <button class="btn btn-ghost" @click="startWrongRetry(curWrong); closeExplain()">🎯 变式重练</button>
-          <button class="btn btn-ghost" @click="closeExplain()">关闭</button>
-        </div>
-      </template>
-    </div>
-  </div>
-</div>
-
 <!-- ═══════════ 全屏答题（通用状态机） ═══════════ -->
 <div class="quiz-overlay" v-if="quiz.active" :class="{turbo}">
   <template v-if="!quiz.done">
@@ -1028,10 +1027,30 @@
               <p v-if="quiz.items[quiz.i].explanation">📖 {{quiz.items[quiz.i].explanation}}</p>
             </template>
           </div>
+          <!-- AI 讲解（内联展示在题目下方，不弹窗） -->
+          <div class="inline-explain" v-if="quiz.items[quiz.i].explaining || quiz.items[quiz.i].aiText || quiz.items[quiz.i].aiError">
+            <div v-if="quiz.items[quiz.i].explaining" class="explain-loading">
+              <span class="explain-spin"></span>🤖 老师正在讲解…（通常 3-10 秒，请稍等）
+            </div>
+            <template v-else-if="quiz.items[quiz.i].aiText">
+              <div class="explain-seg" v-for="(s,i) in explainSectionsOf(quiz.items[quiz.i].aiText)" :key="i" :class="{first: i===0}">
+                <div class="seg-title" v-if="s.title">【{{s.title}}】</div>
+                <div class="seg-body">
+                  <p v-for="(line,li) in s.body.split('\n').filter(x=>x.trim())" :key="li">{{line}}</p>
+                </div>
+              </div>
+              <p class="explain-deg" v-if="quiz.items[quiz.i].aiDegraded">（离线讲解版 · 已尽力帮到你了）</p>
+              <div class="explain-actions" style="justify-content:flex-start" v-if="curWrong && curWrong.question_id===quiz.items[quiz.i].qid">
+                <button class="btn btn-primary btn-sm" @click="markWrongMastered(curWrong)">✅ 这次会了</button>
+                <button class="btn btn-ghost btn-sm" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
+              </div>
+            </template>
+            <p v-else class="explain-err">😵 {{quiz.items[quiz.i].aiError}} <button class="btn btn-ghost btn-sm" @click="askQuizExplain()">重试</button></p>
+          </div>
           <div class="quiz-actions">
-            <button class="btn btn-ghost" v-if="quiz.items[quiz.i].qid" @click="askQuizExplain()" title="标记为做错并生成 AI 讲解">🤖 AI 讲解</button>
+            <button class="btn btn-ghost" v-if="quiz.items[quiz.i].qid" :disabled="quiz.items[quiz.i].explaining" @click="askQuizExplain()" title="标记为做错并生成 AI 讲解">{{quiz.items[quiz.i].explaining ? '⏳ 讲解中…' : '🤖 AI 讲解'}}</button>
             <button class="btn btn-ghost" @click="closeQuiz()">保存退出</button>
-            <button class="btn btn-primary" v-if="quiz.items[quiz.i].answered" @click="quizNext()">{{quiz.i===quiz.items.length-1 ? '查看结果 →' : '下一题 →'}}</button>
+            <button class="btn btn-primary" v-if="quiz.items[quiz.i].answered" :disabled="quiz.items[quiz.i].explaining" @click="quizNext()">{{quiz.i===quiz.items.length-1 ? '查看结果 →' : '下一题 →'}}</button>
           </div>
         </template>
         <div v-else class="empty">⏳ 题目加载中…</div>
@@ -1177,6 +1196,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=15"></script>
+<script src="/static/app.js?v=20"></script>
 </body>
 </html>

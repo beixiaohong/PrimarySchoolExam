@@ -5,13 +5,19 @@
 - 每科有 3 个可选任务，孩子可以"换一个"循环切换
 - 能自动核验的任务（做题/订正/背词/古诗文）由真实学习数据驱动进度，
   达到目标自动完成；需线下完成的任务（讲题/朗读/听写）提供"我完成了"按钮
+- 任务目标数量（如"做几套练习""学几个新词"）由家长在家长面板配置，
+  未配置时使用下方默认值（家长设置明天及以后的任务生效，
+  今天的未完成任务也会同步更新）
 - 连续全勤天数（streak）用于激励展示
 """
+import json
 import logging
+import re
 from datetime import date, datetime, time as dtime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -54,6 +60,127 @@ TASK_POOLS = {
     ],
 }
 
+# 家长可配置目标数量的任务（自动任务；手动任务保持"1 次"语义）
+CONFIGURABLE_CODES = ["math_exam", "math_fix", "chi_exam", "chi_classical",
+                      "eng_exam", "eng_vocab"]
+MIN_TARGET, MAX_TARGET = 1, 50
+
+
+def _default_target(code: str) -> int:
+    for subj, pool in TASK_POOLS.items():
+        for t in pool:
+            if t["code"] == code:
+                return t["target"]
+    return 1
+
+
+# ═══════════════ 家长设置（每日任务题目数量） ═══════════════
+
+def _load_settings(db: Session, user_id: str) -> dict:
+    """读取家长设置：{task_code: target}，只含用户覆盖过的项"""
+    row = db.execute(
+        text("SELECT settings_json FROM parent_task_settings WHERE user_id=:u"),
+        {"u": user_id}).fetchone()
+    if not row:
+        return {}
+    try:
+        data = json.loads(row[0] or "{}")
+        if not isinstance(data, dict):
+            return {}
+        return {k: int(v) for k, v in data.items()
+                if k in CONFIGURABLE_CODES and isinstance(v, (int, float))
+                and MIN_TARGET <= int(v) <= MAX_TARGET}
+    except Exception:
+        return {}
+
+
+def _setting_target(settings: dict, code: str) -> int | None:
+    """设置值（未覆盖返回 None，调用方回落到默认值；浮点/字符串数值统一取整）"""
+    val = settings.get(code)
+    if val is None:
+        return None
+    try:
+        return int(round(float(val)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _display_title(pool_title: str, target: int, default_target: int) -> str:
+    """标题里的数量跟随家长设置：如"完成 1 套数学练习" + 目标 3 → "完成 3 套数学练习" """
+    if target == default_target:
+        return pool_title
+    return re.sub(r"\d+", str(target), pool_title, count=1)
+
+
+class SettingsRequest(BaseModel):
+    user_id: str
+    settings: dict = Field(default_factory=dict,
+                           description='{"task_code": target}，仅需传想修改的项')
+
+
+@router.get("/settings", summary="获取每日任务目标数量（家长可配置项）")
+def get_task_settings(
+    user_id: str = Query(..., description="用户名"),
+    db: Session = Depends(get_db),
+):
+    """返回全部可配置项的当前生效值（家长覆盖或默认值）"""
+    user = _load_settings(db, user_id)
+    items = []
+    for code in CONFIGURABLE_CODES:
+        subj = next(s for s, pool in TASK_POOLS.items()
+                    if any(t["code"] == code for t in pool))
+        item = next(t for t in TASK_POOLS[subj] if t["code"] == code)
+        items.append({
+            "code": code,
+            "subject": subj,
+            "title": item["title"],
+            "default": item["target"],
+            "target": user.get(code, item["target"]),
+        })
+    return {"items": items}
+
+
+@router.post("/settings", summary="保存每日任务目标数量（家长设置）")
+def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
+    """保存家长设置：校验 1-50 整数；同步更新今天未完成任务行的目标数量。
+
+    说明：家长设置优先于任务池默认值；今天的任务行（未完成）会立即
+    更新目标，已完成的不再追溯；明天起的任务按新设置生成。
+    """
+    if not isinstance(req.settings, dict):
+        raise HTTPException(400, "settings 必须为对象")
+    clean = {}
+    for code, val in req.settings.items():
+        if code not in CONFIGURABLE_CODES:
+            raise HTTPException(400, f"不支持的任务类型: {code}")
+        try:
+            v = int(val)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"{code} 的目标数量必须是整数")
+        if not MIN_TARGET <= v <= MAX_TARGET:
+            raise HTTPException(400, f"{code} 的目标数量需在 {MIN_TARGET}-{MAX_TARGET} 之间")
+        clean[code] = v
+    if not clean:
+        return get_task_settings(req.user_id, db)
+
+    # 合并保存（与已有设置合并，保留未修改项）
+    merged = _load_settings(db, req.user_id)
+    merged.update(clean)
+    db.execute(text(
+        "INSERT INTO parent_task_settings (user_id, settings_json, updated_at) "
+        "VALUES (:u, :j, :t) "
+        "ON CONFLICT(user_id) DO UPDATE SET settings_json=:j, updated_at=:t"),
+        {"u": req.user_id, "j": json.dumps(merged), "t": datetime.now()})
+    # 同步更新今天未完成任务行的目标
+    today = date.today()
+    rows = db.query(DailyTask).filter(
+        DailyTask.user_id == req.user_id, DailyTask.task_date == today).all()
+    for r in rows:
+        if r.status != "done" and r.task_code in clean:
+            r.target = clean[r.task_code]
+    db.commit()
+    return get_task_settings(req.user_id, db)
+
 
 class SwapRequest(BaseModel):
     user_id: str
@@ -88,43 +215,45 @@ def _today_mastered(db: Session, user_id: str, subject: str) -> int:
     ).count()
 
 
-def _task_progress(db: Session, user_id: str, subj: str, code: str) -> int:
-    """根据真实学习数据计算自动任务的当前进度"""
+def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int) -> int:
+    """根据真实学习数据计算自动任务的当前进度（封顶为任务目标）"""
     if code == "math_exam":
-        return min(1, _today_attempts(db, user_id, "数学"))
+        return min(target, _today_attempts(db, user_id, "数学"))
     if code == "math_fix":
-        return min(2, _today_mastered(db, user_id, "数学"))
+        return min(target, _today_mastered(db, user_id, "数学"))
     if code == "chi_exam":
-        return min(1, _today_attempts(db, user_id, "语文"))
+        return min(target, _today_attempts(db, user_id, "语文"))
     if code == "chi_classical":
         log = db.query(ClassicalDailyLog).filter(
             ClassicalDailyLog.user_id == user_id,
             ClassicalDailyLog.learn_date == date.today(),
         ).first()
-        v = (log.texts_learned + log.texts_reviewed) if log else 0
-        return min(1, v)
+        v = ((log.texts_learned or 0) + (log.texts_reviewed or 0)) if log else 0
+        return min(target, v)
     if code == "eng_exam":
-        return min(1, _today_attempts(db, user_id, "英语"))
+        return min(target, _today_attempts(db, user_id, "英语"))
     if code == "eng_vocab":
         log = db.query(VocabDailyLog).filter(
             VocabDailyLog.user_id == user_id,
             VocabDailyLog.learn_date == date.today(),
         ).first()
-        return min(5, log.new_words_learned if log else 0)
+        return min(target, (log.new_words_learned or 0) if log else 0)
     return 0
 
 
 def _ensure_today_rows(db: Session, user_id: str) -> dict:
-    """确保今天三科任务行存在（默认取每科第一个任务）"""
+    """确保今天三科任务行存在（默认取每科第一个任务，目标数量应用家长设置）"""
     today = date.today()
     rows = {r.subject: r for r in db.query(DailyTask).filter(
         DailyTask.user_id == user_id, DailyTask.task_date == today).all()}
+    settings = _load_settings(db, user_id)
     for subj in SUBJECTS:
         if subj not in rows:
             t = TASK_POOLS[subj][0]
             row = DailyTask(
                 user_id=user_id, task_date=today, subject=subj,
-                task_code=t["code"], title=t["title"], target=t["target"],
+                task_code=t["code"], title=t["title"],
+                target=_setting_target(settings, t["code"]) or t["target"],
                 progress=0, status="pending", manual=t["manual"],
             )
             db.add(row)
@@ -155,11 +284,23 @@ def _streak(db: Session, user_id: str) -> int:
 def _build_payload(db: Session, user_id: str) -> dict:
     """刷新今日任务：计算进度、自动完成、汇总全勤与连续天数"""
     rows = _ensure_today_rows(db, user_id)
+    settings = _load_settings(db, user_id)
+    # 遗留修复：旧版本写入的 task_code 若已不在任务池（如任务池调整），
+    # 展示与进度都会按池内第一个任务处理，这里同步回写存储，避免永久 pending 卡死
+    for subj, row in rows.items():
+        pool = TASK_POOLS[subj]
+        if not any(t["code"] == row.task_code for t in pool) and row.status != "done":
+            cur = pool[0]
+            row.task_code = cur["code"]
+            row.title = cur["title"]
+            row.target = _setting_target(settings, cur["code"]) or cur["target"]
+            row.manual = cur["manual"]
+            row.progress = 0
     for subj, row in rows.items():
         if row.status == "done":
             continue
         if not row.manual:
-            prog = _task_progress(db, user_id, subj, row.task_code)
+            prog = _task_progress(db, user_id, subj, row.task_code, row.target)
             row.progress = prog
             if prog >= row.target:
                 row.status = "done"
@@ -178,17 +319,18 @@ def _build_payload(db: Session, user_id: str) -> dict:
         idx = next((i for i, t in enumerate(pool) if t["code"] == r.task_code), 0)
         cur = pool[idx]
         nxt = pool[(idx + 1) % len(pool)]
+        nxt_target = _setting_target(settings, nxt["code"]) or nxt["target"]
         tasks.append({
             "subject": subj,
             "task_code": r.task_code,
-            "title": r.title,
+            "title": _display_title(cur["title"], r.target, cur["target"]),
             "target": r.target,
             "progress": r.progress,
             "status": r.status,
             "manual": r.manual,
             "ico": cur["ico"],
             "desc": cur["desc"],
-            "next_title": nxt["title"],
+            "next_title": _display_title(nxt["title"], nxt_target, nxt["target"]),
         })
 
     done_count = sum(1 for r in rows.values() if r.status == "done")
@@ -221,9 +363,10 @@ def swap_task(req: SwapRequest, db: Session = Depends(get_db)):
     pool = TASK_POOLS[req.subject]
     idx = next((i for i, t in enumerate(pool) if t["code"] == row.task_code), 0)
     nxt = pool[(idx + 1) % len(pool)]
+    settings = _load_settings(db, req.user_id)
     row.task_code = nxt["code"]
     row.title = nxt["title"]
-    row.target = nxt["target"]
+    row.target = _setting_target(settings, nxt["code"]) or nxt["target"]
     row.manual = nxt["manual"]
     row.progress = 0
     row.status = "pending"

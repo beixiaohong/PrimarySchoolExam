@@ -172,6 +172,7 @@ def mark_wrong(exam_id: int, req: MarkWrongRequest, db: Session = Depends(get_db
             # 已存在则更新（可能之前标记已掌握，现在重新标错）
             existing.is_mastered = False
             existing.mastered_at = None
+            existing.correct_streak = 0  # 重新标错：连击清零，闭环重新开始
             existing.wrong_at = now
         else:
             db.add(WrongRecord(
@@ -374,6 +375,8 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
     exam_id = req.get("exam_id")
     answers = req.get("answers", [])
 
+    if not isinstance(answers, list):
+        raise HTTPException(400, "answers 必须是数组")
     if not user_id or not exam_id or not answers:
         raise HTTPException(400, "缺少 user_id / exam_id / answers")
 
@@ -410,6 +413,7 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
             if existing:
                 existing.is_mastered = False
                 existing.mastered_at = None
+                existing.correct_streak = 0  # 重新标错：连击清零，闭环重新开始
                 existing.wrong_at = now
                 wrong_ids[q.id] = existing.id
             else:
@@ -834,6 +838,8 @@ def batch_master(req: dict, db: Session = Depends(get_db)):
     """
     user_id = req.get("user_id", "")
     question_ids = req.get("question_ids", [])
+    if not isinstance(question_ids, list) or not all(isinstance(x, int) for x in question_ids):
+        raise HTTPException(400, "question_ids 必须是整数数组")
     if not user_id or not question_ids:
         raise HTTPException(400, "缺少 user_id 或 question_ids")
 
