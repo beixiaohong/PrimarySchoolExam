@@ -2,14 +2,18 @@
 
 提供商（配置优先级：系统环境变量 > 项目根目录 .env 文件）：
 - zhipu（免费）：智谱 GLM，ZHIPU_API_KEY；AI_MODEL / AI_BASE_URL 可覆盖
-  - 主模型 glm-4.7-flash，无有效输出（限流/报错/空响应）时自动回退 glm-4.7 标准版
+  - 付费优先：主模型 glm-4.7 标准版（关闭思考防超时），余额耗尽/无有效输出时自动回退免费版 glm-4.7-flash
+  - 程序内部全局节流（AI_THROTTLE_SEC）控制请求频率，避免超时/限流
 - deepseek（付费）：DeepSeek，DEEPSEEK_API_KEY，接口 https://api.deepseek.com，模型 deepseek-v4-flash
 
 路由规则：
-- 所有用户：免费链 [zhipu]（flash 失败自动切 glm-4.7 标准版）
+- 所有用户：免费链 [zhipu]（glm-4.7 付费优先，余额耗尽自动切免费版 glm-4.7-flash）
 - VIP 用户（名单存数据库 vip_users 表，按 user_id 精确匹配）：免费链全部失败后再尝试付费链 [deepseek]
 - 付费链按 user_id 独立限频（PAID_DAILY_LIMIT 次/天），防止单个用户刷爆付费 API
 - 未配置 Key 的提供商直接跳过；全链失败返回 None，由路由层降级为本地模板
+
+余额耗尽降级：调用付费主模型收到智谱欠费/额度错误码（1113/1308/1310/1311/1316-1321）后，
+标记 PAID_EXHAUSTED_TTL 秒内直接使用免费备用模型，避免每次请求都浪费一次必然失败的调用。
 
 降级约定：所有对外函数在不可用时返回 None / {"degraded": True, ...}，
 由路由层转为本地模板，前端无感。
@@ -18,6 +22,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -72,11 +77,15 @@ PROVIDERS: dict = {
         "label": "智谱 GLM",
         "tier": "free",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "model": "glm-4.7-flash",
-        "fallback_model": "glm-4.7",  # flash 无有效输出时自动回退标准版
+        # 付费优先：主模型用标准版；余额耗尽/无有效输出自动回退免费版 flash
+        "model": "glm-4.7",
+        "fallback_model": "glm-4.7-flash",
         "env_model": "AI_MODEL",
         "env_base": "AI_BASE_URL",
-        "timeout": 20,  # 推理模型响应慢（实测 ≥10s），默认 10s 经常超时
+        # 关闭思考后实测 1.8-2.2s 返回；12s 上限：服务端过载时快速失败回退免费版，避免用户久等
+        "timeout": 12,
+        # 关闭思考：glm-4.7 思考阶段实测 6-60s 经常超时，关闭后 2.2s 稳定返回
+        "extra_params": {"thinking": {"type": "disabled"}},
     },
     "deepseek": {
         "label": "DeepSeek",
@@ -88,6 +97,42 @@ PROVIDERS: dict = {
 
 FREE_CHAIN = ["zhipu"]
 PAID_CHAIN = ["deepseek"]
+
+# ── 付费余额耗尽标记（账户级，全局） ──
+# 智谱错误码（docs.bigmodel.cn/cn/faq/api-code）：1113 账户欠费、1308 使用上限、
+# 1310 免费用户额度用尽、1311 订阅不授予访问权限、1316-1321 上限/余额组合
+FUNDS_ERROR_CODES = {"1113", "1308", "1310", "1311", "1316", "1317", "1318", "1319", "1320", "1321"}
+PAID_EXHAUSTED_TTL = 6 * 3600  # 标记冷却 6 小时：期间不再尝试付费主模型
+PAID_PRIMARY_MODELS = {"glm-4.7"}  # 免费提供商内的付费优先模型（收到额度错误码即标记耗尽）
+
+_paid_exhausted_until: float = 0.0
+
+
+def _mark_paid_exhausted() -> None:
+    """记录付费余额耗尽时刻（账户级：API Key 共享，一个用户触发全体生效）"""
+    global _paid_exhausted_until
+    _paid_exhausted_until = time.time() + PAID_EXHAUSTED_TTL
+    logger.warning("AI 检测到付费余额耗尽，%d 秒内直接使用免费备用模型", PAID_EXHAUSTED_TTL)
+
+
+def _paid_exhausted() -> bool:
+    return time.time() < _paid_exhausted_until
+
+
+# ── 全局节流：并发请求排队，避免打满速率限制/超时 ──
+_throttle_lock = threading.Lock()
+_last_ai_call_ts: float = 0.0
+AI_THROTTLE_SEC = 1.0  # 相邻两次 AI 请求最小间隔（秒）；单元测试中可置 0
+
+
+def _throttle() -> None:
+    """全局互斥节流：并发请求串行化，每次请求至少间隔 AI_THROTTLE_SEC"""
+    global _last_ai_call_ts
+    with _throttle_lock:
+        wait = _last_ai_call_ts + AI_THROTTLE_SEC - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        _last_ai_call_ts = time.time()
 
 
 def _chain_for(user_id: str) -> list:
@@ -142,6 +187,8 @@ def _config_provider(name: str) -> dict:
         cfg["api_key"] = os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if p.get("timeout"):
         cfg["timeout"] = p["timeout"]  # 推理模型需更长超时
+    if p.get("extra_params"):
+        cfg["extra_params"] = p["extra_params"]  # 如关闭思考，避免超时
     return cfg
 
 
@@ -168,7 +215,8 @@ def rate_limit(key: str, max_calls: int, window_sec: int) -> bool:
 
 def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
                _attempt: int = 0) -> dict:
-    """单次 OpenAI 兼容 POST；429 时短暂等待重试一次"""
+    """单次 OpenAI 兼容 POST；429 时短暂等待重试一次；开头全局节流防超时/限流"""
+    _throttle()
     payload = {
         "model": cfg["model"],
         "messages": [
@@ -203,18 +251,22 @@ def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
 
 def _call_provider(name: str, cfg: dict, system: str, user: str,
                    max_tokens: int) -> Optional[dict]:
-    """调用单个提供商：主模型无有效输出时自动回退备用模型（如 glm-4.7 标准版）"""
+    """调用单个提供商：付费主模型无有效输出时自动回退免费备用模型"""
+    fb = cfg.get("fallback_model")
+    # 付费余额已耗尽：跳过必然失败的付费主模型，直接用免费备用
+    if (cfg["model"] in PAID_PRIMARY_MODELS and fb and fb != cfg["model"]
+            and _paid_exhausted()):
+        logger.info("AI[%s] 付费模型 %s 余额已耗尽，直接使用免费备用 %s",
+                    name, cfg["model"], fb)
+        fb_cfg = dict(cfg)
+        fb_cfg["model"] = fb
+        return _call_model(fb_cfg, system, user, max_tokens)
     result = _call_model(cfg, system, user, max_tokens)
     if result and result["text"].strip():
         return result
-    fb = cfg.get("fallback_model")
     if fb and fb != cfg["model"]:
         fb_cfg = dict(cfg)
         fb_cfg["model"] = fb
-        # glm-4.7 标准版是推理模型，思考阶段常超 20s（实测 6-60s）导致超时；
-        # 关闭思考后实测 2.2s 稳定返回，且生成内容不受影响
-        if fb == "glm-4.7":
-            fb_cfg["extra_params"] = {"thinking": {"type": "disabled"}}
         logger.info("AI[%s] 主模型 %s 无有效输出，自动回退 %s",
                     name, cfg["model"], fb)
         return _call_model(fb_cfg, system, user, max_tokens)
@@ -244,6 +296,14 @@ def _call_model(cfg: dict, system: str, user: str,
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
         logger.warning("AI[%s] HTTP %s: %s", cfg["model"], e.code, body)
+        # 付费主模型收到欠费/额度错误码 → 标记余额耗尽，后续直接走免费备用
+        if cfg["model"] in PAID_PRIMARY_MODELS:
+            try:
+                code = str((json.loads(body) or {}).get("error", {}).get("code", ""))
+                if code in FUNDS_ERROR_CODES:
+                    _mark_paid_exhausted()
+            except Exception:
+                pass
         return None
     except Exception as e:  # 超时/连接失败等
         logger.warning("AI[%s] 调用失败: %s", cfg["model"], e)
@@ -253,7 +313,7 @@ def _call_model(cfg: dict, system: str, user: str,
 def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Optional[dict]:
     """按用户调用链取 AI 结果。
 
-    - 免费链（zhipu）对所有用户开放：glm-4.7-flash 无有效输出自动回退 glm-4.7 标准版
+    - 免费链（zhipu）对所有用户开放：glm-4.7 付费优先，余额耗尽/无有效输出自动回退免费版 glm-4.7-flash
     - VIP 用户（数据库 vip_users 表，按 user_id 判定）在免费链全部失败后追加付费链（deepseek）
     - 付费链按 user_id 独立日配额（PAID_DAILY_LIMIT），配额用尽直接返回 None（防刷）
     - 未配置 Key 的提供商跳过；全链失败返回 None（路由层降级模板）
