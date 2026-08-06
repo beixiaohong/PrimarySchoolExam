@@ -1337,7 +1337,16 @@ createApp({
             duration_sec: Math.round((Date.now() - (src.startedAt || Date.now())) / 1000),
             answers: this.quiz.items.map(it => ({ question_id: it.qid, user_answer: it.answered ? (it.userAnswer || '') : '' })),
           }),
-        }).then(() => { this.loadAttempts(); this.loadDailyTasks(); this.showToast('已保存：未作答题目记为错误'); }).catch(e => this.showToast('保存失败：' + (e.message || '')));
+        }).then(r => {
+          this.loadAttempts();
+          this.loadDailyTasks();
+          // 中途退出也算"直接提交"：正确率不足 60% 时同样提示任务不会完成
+          if (typeof r.score === 'number' && r.score < 60) {
+            this.showToast(`正确率 ${r.score}%，要 60% 以上才算完成今日任务哦，再练一套吧！`);
+          } else {
+            this.showToast('已保存：未作答题目记为错误');
+          }
+        }).catch(e => this.showToast('保存失败：' + (e.message || '')));
       }
       this.quiz.active = false;
       this.refreshAll();
