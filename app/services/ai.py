@@ -105,6 +105,7 @@ PROVIDERS: dict = {
         "env_base": "RELAY_BASE_URL",
         "env_model": "RELAY_MODEL",
         "timeout": 20,  # 中转站为套壳转发，链路长，放宽超时
+        "retry_on_timeout": True,  # 实测 gpt-5.5 经中转站约 50% 20s 超时 → 超时后重试一次（成功率 ~75%）
     },
 }
 
@@ -207,6 +208,8 @@ def _config_provider(name: str) -> dict:
         cfg["timeout"] = p["timeout"]  # 推理模型需更长超时
     if p.get("extra_params"):
         cfg["extra_params"] = p["extra_params"]  # 如关闭思考，避免超时
+    if p.get("retry_on_timeout"):
+        cfg["retry_on_timeout"] = True  # 超时后重试一次（中转站链路不稳定）
     return cfg
 
 
@@ -330,6 +333,13 @@ def _call_model(cfg: dict, system: str, user: str,
         return None
     except Exception as e:  # 超时/连接失败等
         logger.warning("AI[%s] 调用失败: %s", cfg["model"], e)
+        # 中转站实测约 50% 20s 超时 → 超时后重试一次（_timeout_retried 标记防递归）
+        if (cfg.get("retry_on_timeout") and not cfg.get("_timeout_retried")
+                and isinstance(e, TimeoutError)):
+            cfg2 = dict(cfg)
+            cfg2["_timeout_retried"] = True
+            logger.warning("AI[%s] 超时，重试一次…", cfg["model"])
+            return _call_model(cfg2, system, user, max_tokens)
         return None
 
 
