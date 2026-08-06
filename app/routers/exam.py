@@ -14,10 +14,12 @@
 import json
 import random
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -266,7 +268,7 @@ def wrong_practice(req: WrongPracticeRequest, db: Session = Depends(get_db)):
 
     q = db.query(WrongRecord).filter(
         WrongRecord.user_id == req.user_id,
-        WrongRecord.is_mastered == False,
+        or_(WrongRecord.is_mastered.is_(None), WrongRecord.is_mastered != True),
     ).join(Question)
 
     if req.subject:
@@ -295,6 +297,62 @@ def wrong_practice(req: WrongPracticeRequest, db: Session = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename="错题专项练习.docx",
     )
+
+
+class WrongPracticeQuizRequest(BaseModel):
+    """错题在线练习抽题（JSON，供前端直接答题）"""
+    user_id: str = Field(..., max_length=64, description="用户标识")
+    subject: Optional[str] = Field(None, description="学科筛选：数学/英语，不填则混合")
+    count: int = Field(10, ge=1, le=50, description="练习题数（默认 10）")
+
+
+def _parse_options_json(options_json: Optional[str]) -> list:
+    """解析选项 JSON 字符串，失败返回空列表"""
+    if not options_json:
+        return []
+    try:
+        data = json.loads(options_json)
+        return data if isinstance(data, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+@router.post("/wrong/practice-quiz", summary="错题在线练习抽题（JSON 直接答题）")
+def wrong_practice_quiz(req: WrongPracticeQuizRequest, db: Session = Depends(get_db)):
+    """从用户未掌握的错题中随机抽 count 道（默认 10），返回可直接答题的 JSON。
+
+    - 范围为错题本中当前学科的错题类型（未掌握记录，含选项/答案/题型）
+    - 每道题带 record_id，前端答完用 /api/study/practice-submit 回写
+      （连续 3 次答对自动掌握，答错重新激活）
+    """
+    q = db.query(WrongRecord).filter(
+        WrongRecord.user_id == req.user_id,
+        or_(WrongRecord.is_mastered.is_(None), WrongRecord.is_mastered != True),
+    ).join(Question)
+
+    if req.subject:
+        q = q.filter(Question.subject == req.subject)
+
+    all_wrong = q.order_by(WrongRecord.wrong_at.desc()).all()
+    if not all_wrong:
+        raise HTTPException(404, "暂无错题可练习（或全部已掌握）")
+
+    selected = random.sample(all_wrong, min(req.count, len(all_wrong)))
+    selected.sort(key=lambda wr: (wr.question.subject, wr.question.type_code, wr.question.seq))
+
+    questions = [{
+        "qid": wr.question_id,
+        "kind": "exam",
+        "record_id": wr.id,
+        "question": wr.question.question,
+        "options": _parse_options_json(wr.question.options_json),
+        "answer": wr.question.answer,
+        "explanation": "",
+        "type_name": wr.question.type_name or "",
+        "subject": wr.question.subject,
+        "exam_id": wr.question.exam_id,
+    } for wr in selected]
+    return {"count": len(questions), "questions": questions}
 
 
 # ═══════════════════════════════════════════════════════════

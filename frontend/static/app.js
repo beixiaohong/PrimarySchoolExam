@@ -680,6 +680,34 @@ createApp({
       });
     },
     closeExplain() { this.explain.show = false; },
+    /* 作答页「AI 讲解」：一键标记错题（错因=ai）并弹讲解 */
+    askQuizExplain() {
+      const it = this.quiz.items[this.quiz.i];
+      if (!it || !it.qid) { this.showToast('这道题暂不支持 AI 讲解'); return; }
+      this.explain = { show: true, loading: true, text: '', question: it.question, degraded: false };
+      this.api('/api/ai/explain-mark', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, question_id: it.qid }),
+      }).then(d => {
+        this.explain.loading = false;
+        this.explain.text = d.text || '';
+        this.explain.degraded = !!d.degraded;
+        this.explain.question = d.question || it.question;
+        if (d.marked) {
+          it.cause = 'ai';
+          this.showToast('已标记为做错了（AI 讲解），讲解后可以点「这次会了」');
+        }
+        // 供讲解弹窗内「这次会了 / 变式重练」复用（record_id 来自服务端新标记）
+        if (d.record_id && (!this.curWrong || this.curWrong.question_id !== it.qid)) {
+          this.curWrong = { kind: 'exam', record_id: d.record_id, question_id: it.qid, question: d.question || it.question, mastered: false };
+        }
+      }).catch(e => {
+        this.explain.loading = false;
+        this.explain.text = '';
+        this.showToast(e.message);
+        setTimeout(() => { this.explain.show = false; }, 1200);
+      });
+    },
     explainMastered() {
       this.closeExplain();
       this.showToast('这次会了！已记入成长记录 🎉');
@@ -1005,7 +1033,7 @@ createApp({
       }).catch(() => {});
     },
     causeLabel(c) {
-      return { careless: '粗心大意', concept: '概念不清', method: '方法不会', reading: '审题失误' }[c] || '';
+      return { careless: '粗心大意', concept: '概念不清', method: '方法不会', reading: '审题失误', ai: 'AI 讲解' }[c] || '';
     },
     submitCause(c) {
       if (!this.curWrong) return;
@@ -1038,7 +1066,7 @@ createApp({
         }).catch(() => {});
     },
     causeColor(c) {
-      return { careless: '#F5A623', concept: '#4E7CF6', method: '#8B7CF6', reading: '#F2604C' }[c] || '#93A1BD';
+      return { careless: '#F5A623', concept: '#4E7CF6', method: '#8B7CF6', reading: '#F2604C', ai: '#34C77B' }[c] || '#93A1BD';
     },
     subjColor(s) {
       return { '数学': '#F5A623', '英语': '#4E7CF6', '语文': '#34C77B' }[s] || '#93A1BD';
@@ -1066,6 +1094,25 @@ createApp({
         this.startQuiz({
           title: '🎯 变式重练 · ' + (r.module_name || '同类题'),
           items, source: { mode: 'retry', retry: { kind: w.kind, record_id: w.record_id } },
+        });
+      }).catch(e => this.showToast(e.message));
+    },
+    /* 错题攻坚页「练习错题」：从错题本（当前学科，未掌握）随机抽 10 题在线练 */
+    startWrongPractice() {
+      this.api('/api/exam/wrong/practice-quiz', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, subject: this.subject, count: 10 }),
+      }).then(r => {
+        const qs = r.questions || [];
+        if (!qs.length) { this.showToast('暂无错题可练习，先去做题积累错题吧'); return; }
+        const items = qs.map(q => ({
+          qid: q.qid, question: q.question, sub: q.type_name || '',
+          options: q.options || [], answer: q.answer, explanation: q.explanation || '',
+          extra: { kind: 'exam', record_id: q.record_id }, text_id: 0,
+        }));
+        this.startQuiz({
+          title: `🎯 错题练习 · ${this.subject}（${qs.length} 题）`,
+          items, source: { mode: 'retry', retry: { kind: 'exam', record_id: 0 } },
         });
       }).catch(e => this.showToast(e.message));
     },

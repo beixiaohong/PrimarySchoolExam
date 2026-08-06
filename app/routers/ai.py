@@ -104,22 +104,9 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
 
 # ═══════════════════ 1. AI 错题讲解 ═══════════════════
 
-@router.post("/explain", summary="错题 AI 讲解（三段式 + 变式题）")
-def ai_explain(req: ExplainReq, db: Session = Depends(get_db)):
-    # 限频：5 次/分钟/用户
-    if not ai_svc.rate_limit(f"explain:{req.user_id}", 5, 60):
-        raise HTTPException(400, "讲解太快啦，休息一下再来吧")
-
-    wrong = db.query(WrongRecord).filter_by(
-        user_id=req.user_id, question_id=req.question_id).first()
-    if not wrong:
-        raise HTTPException(404, "这道题不在错题本里")
-    q = db.query(Question).filter_by(id=req.question_id).first()
-    if not q:
-        raise HTTPException(404, "题目不存在")
-
-    # 24h 缓存
-    key = (req.user_id, req.question_id)
+def _explain_core(db: Session, user_id: str, q: Question, wrong: WrongRecord) -> dict:
+    """讲解核心：24h 缓存 → 多提供商 AI 调用 → 降级模板。返回体不含 marked"""
+    key = (user_id, q.id)
     cached = EXPLAIN_CACHE.get(key)
     if cached and time.time() - cached[0] < CACHE_TTL:
         return {"degraded": False, "cached": True, "text": cached[1],
@@ -142,14 +129,14 @@ def ai_explain(req: ExplainReq, db: Session = Depends(get_db)):
         f"参考答案：{q.answer}\n"
         "请按上面的要求给孩子讲解。"
     )
-    result = ai_svc.chat_for(req.user_id, system, user, max_tokens=900)
+    result = ai_svc.chat_for(user_id, system, user, max_tokens=900)
     if result and result["text"].strip():
         EXPLAIN_CACHE[key] = (time.time(), result["text"])
-        _log_usage(db, req.user_id, "explain", True, result)
+        _log_usage(db, user_id, "explain", True, result)
         return {"degraded": False, "cached": False, "text": result["text"],
                 "question": q.question, "answer": q.answer}
     # 降级：本地解析
-    _log_usage(db, req.user_id, "explain", False, error="AI 不可用，降级模板")
+    _log_usage(db, user_id, "explain", False, error="AI 不可用，降级模板")
     fallback = (
         f"【错在哪】{cause_text}，这道题你选了/写了和答案不一样的内容。\n"
         f"【怎么做】先认真读题，把条件和问题圈出来；按题目类型用学过的步骤一步步算；做完后把答案代回去检查一遍。\n"
@@ -157,6 +144,57 @@ def ai_explain(req: ExplainReq, db: Session = Depends(get_db)):
     )
     return {"degraded": True, "cached": False, "text": fallback,
             "question": q.question, "answer": q.answer}
+
+
+@router.post("/explain", summary="错题 AI 讲解（三段式 + 变式题）")
+def ai_explain(req: ExplainReq, db: Session = Depends(get_db)):
+    # 限频：5 次/分钟/用户
+    if not ai_svc.rate_limit(f"explain:{req.user_id}", 5, 60):
+        raise HTTPException(400, "讲解太快啦，休息一下再来吧")
+
+    wrong = db.query(WrongRecord).filter_by(
+        user_id=req.user_id, question_id=req.question_id).first()
+    if not wrong:
+        raise HTTPException(404, "这道题不在错题本里")
+    q = db.query(Question).filter_by(id=req.question_id).first()
+    if not q:
+        raise HTTPException(404, "题目不存在")
+    return _explain_core(db, req.user_id, q, wrong)
+
+
+@router.post("/explain-mark", summary="标记错题（AI 讲解）并生成讲解")
+def ai_explain_mark(req: ExplainMarkReq, db: Session = Depends(get_db)):
+    """作答页「AI 讲解」按钮：一键把题目标记为做错了（错因=ai）并弹讲解。
+
+    - 题目不在错题本 → 自动创建错题记录（错因标注 ai，展示为「AI 讲解」）
+    - 已在错题本且未自评错因 → 补标 ai；已自评过 → 保留用户自评
+    - 返回体在讲解基础上附加 marked（本次是否新标记）与 record_id（错题记录，供变式重练）
+    """
+    if not ai_svc.rate_limit(f"explain:{req.user_id}", 5, 60):
+        raise HTTPException(400, "讲解太快啦，休息一下再来吧")
+
+    q = db.query(Question).filter_by(id=req.question_id).first()
+    if not q:
+        raise HTTPException(404, "题目不存在")
+    wrong = db.query(WrongRecord).filter_by(
+        user_id=req.user_id, question_id=req.question_id).first()
+    marked = False
+    if not wrong:
+        wrong = WrongRecord(user_id=req.user_id, question_id=req.question_id,
+                            cause="ai", wrong_at=datetime.now())
+        db.add(wrong)
+        db.commit()
+        db.refresh(wrong)
+        marked = True
+    elif not wrong.cause:
+        wrong.cause = "ai"
+        db.commit()
+        marked = True
+
+    out = _explain_core(db, req.user_id, q, wrong)
+    out["marked"] = marked
+    out["record_id"] = wrong.id
+    return out
 
 
 # ═══════════════════ 2. AI 成长周报 ═══════════════════

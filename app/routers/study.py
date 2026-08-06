@@ -435,6 +435,7 @@ CAUSE_LABELS = {
     "concept": "概念不清",
     "method": "方法不会",
     "reading": "审题失误",
+    "ai": "AI 讲解",
 }
 
 
