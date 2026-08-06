@@ -1,7 +1,7 @@
 """AI API：错题讲解 / 成长周报 / 即时鼓励语
 
 约定：
-- 全部调用走 app.services.ai（多提供商：讯飞 Lite 免费 / 智谱免费兜底 / DeepSeek 付费，VIP 用户可享付费链）
+- 全部调用走 app.services.ai（多提供商：智谱 GLM 免费（glm-4.7-flash，失败自动回退 glm-4.7 标准版）/ DeepSeek 付费，VIP 用户可享付费链）
 - 未配置 Key 或全链调用失败 → degraded=true + 本地模板，前端无感
 - 每次调用记录 ai_usage_log（provider/用量/失败原因）
 """

@@ -1,15 +1,12 @@
 """AI 服务层：多提供商路由（免费链 → VIP 付费链），零第三方依赖（urllib）
 
 提供商（配置优先级：系统环境变量 > 项目根目录 .env 文件）：
-- xf（免费）：讯飞星火 Lite
-  - XF_API_PASSWORD（推荐，新版 APIPassword）→ Authorization: Bearer <password>
-  - 或 XF_API_KEY + XF_API_SECRET（老式）→ Authorization: Bearer <key>:<secret>
-  - 接口 https://spark-api-open.xf-yun.com/v1，模型 lite
 - zhipu（免费）：智谱 GLM，ZHIPU_API_KEY；AI_MODEL / AI_BASE_URL 可覆盖
+  - 主模型 glm-4.7-flash，无有效输出（限流/报错/空响应）时自动回退 glm-4.7 标准版
 - deepseek（付费）：DeepSeek，DEEPSEEK_API_KEY，接口 https://api.deepseek.com，模型 deepseek-chat
 
 路由规则：
-- 所有用户：免费链 [xf → zhipu] 逐个尝试，任一成功立即返回
+- 所有用户：免费链 [zhipu]（flash 失败自动切 glm-4.7 标准版）
 - VIP 用户（VIP_USERS 硬编码名单）：免费链全部失败后再尝试付费链 [deepseek]
 - 未配置 Key 的提供商直接跳过；全链失败返回 None，由路由层降级为本地模板
 
@@ -27,7 +24,7 @@ from typing import Optional
 
 logger = logging.getLogger("ai")
 
-TIMEOUT_SEC = 10
+TIMEOUT_SEC = 10  # 默认超时；提供商可覆盖（cfg["timeout"]）
 
 # ── VIP 名单：暂时在此硬编码（暂无管理后台，防止付费 API 被刷） ──
 # 例：VIP_USERS = {"朵朵", "小帅"} —— 付费链（deepseek）只对名单内用户开放
@@ -37,19 +34,15 @@ VIP_USERS: set = {"诗文", "橙子"}
 # ── 提供商注册表 ──
 # tier: free=免费链（所有用户），paid=付费链（仅 VIP）
 PROVIDERS: dict = {
-    "xf": {
-        "label": "讯飞星火 Lite",
-        "tier": "free",
-        "base_url": "https://spark-api-open.xf-yun.com/v1",
-        "model": "lite",
-    },
     "zhipu": {
         "label": "智谱 GLM",
         "tier": "free",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "model": "glm-4.7-flash",
+        "fallback_model": "glm-4.7",  # flash 无有效输出时自动回退标准版
         "env_model": "AI_MODEL",
         "env_base": "AI_BASE_URL",
+        "timeout": 20,  # 推理模型响应慢（实测 ≥10s），默认 10s 经常超时
     },
     "deepseek": {
         "label": "DeepSeek",
@@ -59,7 +52,7 @@ PROVIDERS: dict = {
     },
 }
 
-FREE_CHAIN = ["xf", "zhipu"]
+FREE_CHAIN = ["zhipu"]
 PAID_CHAIN = ["deepseek"]
 
 
@@ -106,23 +99,15 @@ def _config_provider(name: str) -> dict:
         "base_url": p["base_url"],
         "model": p["model"],
     }
-    if name == "xf":
-        pwd = os.environ.get("XF_API_PASSWORD", "").strip()
-        if pwd:
-            cfg["api_key"] = pwd
-            cfg["auth"] = "password"
-        else:
-            key = os.environ.get("XF_API_KEY", "").strip()
-            secret = os.environ.get("XF_API_SECRET", "").strip()
-            if key and secret:
-                cfg["api_key"] = f"{key}:{secret}"
-                cfg["auth"] = "keysecret"
-    elif name == "zhipu":
+    if name == "zhipu":
         cfg["api_key"] = os.environ.get("ZHIPU_API_KEY", "").strip()
         cfg["model"] = os.environ.get("AI_MODEL", p["model"])
         cfg["base_url"] = os.environ.get("AI_BASE_URL", p["base_url"]).rstrip("/")
+        cfg["fallback_model"] = p.get("fallback_model", "")
     elif name == "deepseek":
         cfg["api_key"] = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if p.get("timeout"):
+        cfg["timeout"] = p["timeout"]  # 推理模型需更长超时
     return cfg
 
 
@@ -170,7 +155,7 @@ def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SEC) as resp:
+        with urllib.request.urlopen(req, timeout=cfg.get("timeout", TIMEOUT_SEC)) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         # 免费档易被限流（429）→ 短暂等待重试一次
@@ -182,7 +167,23 @@ def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
 
 def _call_provider(name: str, cfg: dict, system: str, user: str,
                    max_tokens: int) -> Optional[dict]:
-    """调用单个提供商，返回 {"text", ...}；失败/异常返回 None"""
+    """调用单个提供商：主模型无有效输出时自动回退备用模型（如 glm-4.7 标准版）"""
+    result = _call_model(cfg, system, user, max_tokens)
+    if result and result["text"].strip():
+        return result
+    fb = cfg.get("fallback_model")
+    if fb and fb != cfg["model"]:
+        fb_cfg = dict(cfg)
+        fb_cfg["model"] = fb
+        logger.info("AI[%s] 主模型 %s 无有效输出，自动回退 %s",
+                    name, cfg["model"], fb)
+        return _call_model(fb_cfg, system, user, max_tokens)
+    return result
+
+
+def _call_model(cfg: dict, system: str, user: str,
+                max_tokens: int) -> Optional[dict]:
+    """调用单个模型，返回 {"text", ...}；失败/异常返回 None"""
     try:
         data = _http_call(cfg, system, user, max_tokens)
         choice = (data.get("choices") or [{}])[0]
@@ -202,17 +203,17 @@ def _call_provider(name: str, cfg: dict, system: str, user: str,
         }
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:300]
-        logger.warning("AI[%s] HTTP %s: %s", name, e.code, body)
+        logger.warning("AI[%s] HTTP %s: %s", cfg["model"], e.code, body)
         return None
     except Exception as e:  # 超时/连接失败等
-        logger.warning("AI[%s] 调用失败: %s", name, e)
+        logger.warning("AI[%s] 调用失败: %s", cfg["model"], e)
         return None
 
 
 def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Optional[dict]:
     """按用户调用链取 AI 结果。
 
-    - 免费链（xf → zhipu）对所有用户开放，任一成功立即返回
+    - 免费链（zhipu）对所有用户开放：glm-4.7-flash 无有效输出自动回退 glm-4.7 标准版
     - VIP 用户（VIP_USERS）在免费链全部失败后追加付费链（deepseek）
     - 未配置 Key 的提供商跳过；全链失败返回 None（路由层降级模板）
 
