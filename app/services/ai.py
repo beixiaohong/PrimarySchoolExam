@@ -219,6 +219,10 @@ def ai_enabled() -> bool:
 # ── 简单内存限频器 ──
 _rate_buckets: dict = {}
 
+# 部分中转站部署在 Cloudflare 后，无 UA / Python 默认 UA 会被 1010 拦截 → 统一带浏览器 UA
+DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
 
 def rate_limit(key: str, max_calls: int, window_sec: int) -> bool:
     """限频：窗口内超过 max_calls 返回 False（拒绝）"""
@@ -253,6 +257,7 @@ def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {cfg['api_key']}",
+            "User-Agent": DEFAULT_UA,  # 部分中转站 Cloudflare 拦截无 UA 的请求（1010）
         },
         method="POST",
     )
