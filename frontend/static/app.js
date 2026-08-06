@@ -38,8 +38,31 @@ createApp({
       wrongAnalysis: { total: 0, pending: 0, mastered: 0, mastery_rate: 0, by_cause: [], by_subject: [] },
       wrongScreen: 'list', wrongKind: 'all', wrongStatus: 'pending',
       wrongItems: [], curWrong: null,
+      // AI 错题讲解（Sprint 2）
+      explain: { show: false, loading: false, text: '', question: '', degraded: false },
+      // 心情打卡（Sprint 2）
+      moodTrend: null, moodNote: '', moodPicking: false,
+      // 奖励闭环 + 成长周报（Sprint 3）
+      rewards: null,
+      allCoupons: [], pendingWishes: [],
+      newCoupon: { title: '', kind: 'custom' },
+      wishOverlay: { show: false, title: '', target: 5 },
+      weeklyOverlay: { show: false }, weeklyLoading: false, weekly: null,
+      shareImg: '', parentNote: '',
+      // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
+      titleInfo: null, titleBadges: [],
+      chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
+      chalCombo: 0, chalBest: { math: { best: 0 }, word: { best: 0 } },
+      goalOverlay: { show: false, kind: 'score', target: 90, deadline: '', subject: '数学' },
+      goals: [],
+      teachOverlay: { show: false, step: 1, card: null, answerText: '', result: '', hint: '' },
+      teachDue: [], recheckOverlay: { show: false, card: null, answerText: '' },
       // 通用答题状态机
       quiz: { active: false, done: false, title: '', items: [], i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source: null },
+      // 爽感反馈：连击 / 飘字 / 宝箱 / 极速模式 / 自我超越
+      combo: 0, maxCombo: 0,
+      floatFx: { show: false, text: '', ok: true },
+      chestReward: '', turbo: false, selfCompare: null,
       // 试卷中心
       papers: [],
       // 统计
@@ -93,6 +116,72 @@ createApp({
       const causes = (this.wrongAnalysis.by_cause || []).slice().sort((a, b) => (b.pending || 0) - (a.pending || 0));
       return causes.find(c => c.pending > 0) || null;
     },
+    taskPct() {
+      const s = this.dailyTaskStats;
+      return s && s.total ? Math.round((s.done_count / s.total) * 100) : 0;
+    },
+    taskRemain() {
+      const s = this.dailyTaskStats;
+      return s ? Math.max(0, (s.total || 3) - (s.done_count || 0)) : 3;
+    },
+    starCount() {
+      const s = this.quiz.score;
+      if (!this.quiz.done) return 0;
+      return s >= 90 ? 3 : s >= 70 ? 2 : s >= 50 ? 1 : 0;
+    },
+    causeOptions() {
+      return [
+        { code: 'careless', label: '粗心大意' }, { code: 'concept', label: '概念不清' },
+        { code: 'method', label: '方法不会' }, { code: 'reading', label: '审题失误' },
+      ];
+    },
+    attemptDeltaText() {
+      const a = this.selfCompare && this.selfCompare.attempts;
+      if (!a || a.delta_correct === null || a.delta_correct === undefined) return '';
+      if (a.delta_correct > 0) return `比上次多对 ${a.delta_correct} 题，进步啦 🎉`;
+      if (a.delta_correct === 0) return '和上次打平，稳住就是胜利';
+      return `比上次少对 ${-a.delta_correct} 题，别灰心，下次追回来 💪`;
+    },
+    vocabDeltaText() {
+      const v = this.selfCompare && this.selfCompare.vocab;
+      if (!v) return '';
+      if (v.delta > 0) return `今天比昨天多背 ${v.delta} 个单词 🔥`;
+      if (v.delta < 0) return `昨天背了 ${v.yesterday} 个，今天再冲一冲！`;
+      return v.today ? `今天已背 ${v.today} 个单词` : '';
+    },
+    classicalDeltaText() {
+      const c = this.selfCompare && this.selfCompare.classical;
+      if (!c) return '';
+      if (c.delta > 0) return `古诗文比昨天多学 ${c.delta} 篇 📜`;
+      if (c.delta < 0) return `昨天学了 ${c.yesterday} 篇，今天再加把劲`;
+      return c.today ? `今天已学 ${c.today} 篇古诗文` : '';
+    },
+    // AI 讲解三段式：按【错在哪】【怎么做】【再来一道】切分
+    explainSections() {
+      const t = this.explain.text || '';
+      const segs = [];
+      const rex = /【(错在哪|怎么做|再来一道)】([\s\S]*?)(?=【|$)/g;
+      let m;
+      while ((m = rex.exec(t)) !== null) segs.push({ title: m[1], body: m[2].trim() });
+      return segs.length ? segs : [{ title: '', body: t }];
+    },
+    moodOptions() {
+      return [
+        { code: 'great', face: '😄', label: '超开心' },
+        { code: 'happy', face: '😊', label: '开心' },
+        { code: 'ok', face: '😐', label: '一般' },
+        { code: 'blue', face: '😔', label: '有点烦' },
+        { code: 'sad', face: '😢', label: '很难过' },
+      ];
+    },
+    moodTodayStr() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    },
+    curChalQ() {
+      const qs = this.chalOverlay.questions || [];
+      return qs[this.chalOverlay.i] || { q: '', options: [], answer: '' };
+    },
   },
 
   methods: {
@@ -141,9 +230,10 @@ createApp({
       this.tab = t;
       if (t === 'practice') { this.loadMathCategories(); if (this.subject === '英语') this.loadGrammarPoints(); }
       if (t === 'recite') { this.reciteSub === 'words' ? this.loadVocabToday() : this.loadClassicalToday(); this.loadClassicalTexts(); }
-      if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); }
+      if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); this.loadTeachDue(); }
       if (t === 'papers') this.loadPapers();
       if (t === 'stats') this.loadStats();
+      if (t === 'settings') this.loadParentPanel();
     },
     switchSubject(s) {
       this.subject = s;
@@ -181,6 +271,12 @@ createApp({
       this.loadAnalysis();
       this.loadAttempts();
       this.loadPapers();
+      this.loadMood();
+      this.loadRewards();
+      this.loadTitles();
+      this.loadGoals();
+      this.loadChalBest();
+      this.loadTeachDue();
     },
 
     /* ─────────── 首页 ─────────── */
@@ -230,6 +326,7 @@ createApp({
       this.dailyTaskStats = { done_count: (d && d.done_count) || 0, total: (d && d.total) || 3, streak_days: (d && d.streak_days) || 0 };
       if (celebrate && this.dailyTaskStats.total && this.dailyTaskStats.done_count >= this.dailyTaskStats.total && prev < this.dailyTaskStats.total) {
         this.showToast('🎉 三科任务全部完成，今天全勤！');
+        this.remindMoodCheckin();
       }
     },
     _pendingWrong(d) {
@@ -535,8 +632,10 @@ createApp({
 
     /* ─────────── 错题本 ─────────── */
     loadWrongItems() {
-      const q = `user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`;
-      Promise.all([this.api(`/api/exam/wrong/list?${q}`), this.api(`/api/study/errors?${q}`)])
+      const base = `user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`;
+      const examQ = `${base}&include_mastered=${this.wrongStatus === 'pending' ? 0 : 1}`;
+      const studyQ = `${base}&only_pending=${this.wrongStatus === 'pending' ? 1 : 0}`;
+      Promise.all([this.api(`/api/exam/wrong/list?${examQ}`), this.api(`/api/study/errors?${studyQ}`)])
         .then(([examList, studyList]) => {
           const exam = (examList || []).map(w => ({
             key: 'exam-' + w.id, kind: 'exam', id: w.id, record_id: w.id, question_id: w.question_id,
@@ -561,6 +660,350 @@ createApp({
         }).catch(e => this.showToast(e.message));
     },
     openWrongDetail(w) { this.curWrong = w; this.wrongScreen = 'detail'; },
+    /* ─────────── AI 错题讲解（Sprint 2） ─────────── */
+    openExplain(w) {
+      if (w.kind !== 'exam' || !w.question_id) { this.showToast('这道题暂不支持 AI 讲解'); return; }
+      this.explain = { show: true, loading: true, text: '', question: w.question, degraded: false };
+      this.api('/api/ai/explain', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, question_id: w.question_id }),
+      }).then(d => {
+        this.explain.loading = false;
+        this.explain.text = d.text || '';
+        this.explain.degraded = !!d.degraded;
+        this.explain.question = d.question || w.question;
+      }).catch(e => {
+        this.explain.loading = false;
+        this.explain.text = '';
+        this.showToast(e.message);
+        setTimeout(() => { this.explain.show = false; }, 1200);
+      });
+    },
+    closeExplain() { this.explain.show = false; },
+    explainMastered() {
+      this.closeExplain();
+      this.showToast('这次会了！已记入成长记录 🎉');
+      if (this.curWrong) this.markWrongMastered(this.curWrong);
+    },
+    /* ─────────── 心情打卡（Sprint 2） ─────────── */
+    moodFace(c) { const m = this.moodOptions.find(x => x.code === c); return m ? m.face : ''; },
+    moodLabel(c) { const m = this.moodOptions.find(x => x.code === c); return m ? m.label : ''; },
+    loadMood() {
+      this.api(`/api/mood/trend?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.moodTrend = d || null; })
+        .catch(() => { this.moodTrend = null; });
+    },
+    doMoodCheckin(mood) {
+      this.api('/api/mood/checkin', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, mood, note: this.moodNote || '' }),
+      }).then(() => {
+        this.moodNote = ''; this.moodPicking = false;
+        this.loadMood();
+        this.showToast('心情已记录，谢谢你告诉我 🧡');
+      }).catch(e => this.showToast(e.message));
+    },
+    resetMoodPick() { this.moodPicking = true; },
+    remindMoodCheckin() {
+      // 全勤后轻提醒打卡：30% 概率不打扰，每个会话最多一次
+      try {
+        if (sessionStorage.getItem('zx_mood_reminded')) return;
+        if (Math.random() < 0.3) return;
+        sessionStorage.setItem('zx_mood_reminded', '1');
+        if (this.moodTrend && this.moodTrend.today_mood) return;
+        this.showToast('🎉 今天全勤！回首页「今日心情」打个卡吧');
+      } catch (e) { /* 隐私模式等异常忽略 */ }
+    },
+    /* ─────────── 奖励闭环 + 成长周报（Sprint 3） ─────────── */
+    wishStatusLabel(s) {
+      return { pending: '待家长确认', active: '进行中', pending_redeem: '达标待兑现', redeemed: '已兑现', archived: '已移除' }[s] || s;
+    },
+    couponIcon(k) {
+      return { cartoon: '📺', snack: '🍪', sticker: '🌟', toy: '🧸', outing: '🎡', custom: '🎫' }[k] || '🎫';
+    },
+    loadRewards() {
+      this.api(`/api/rewards/overview?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.rewards = d || { coupons: [], wish: null }; })
+        .catch(() => { this.rewards = { coupons: [], wish: null }; });
+    },
+    loadParentPanel() {
+      this.api(`/api/rewards/parent-note?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.parentNote = (d && d.note) || ''; }).catch(() => { this.parentNote = ''; });
+      this.api(`/api/rewards/parent-panel?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          this.allCoupons = (d && d.coupons) || [];
+          this.pendingWishes = (d && d.wishes) || [];
+        }).catch(() => { this.allCoupons = []; this.pendingWishes = []; });
+    },
+    createCoupon() {
+      const title = (this.newCoupon.title || '').trim();
+      if (!title) return this.showToast('先写下兑换券内容');
+      this.api('/api/rewards/coupon', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, title, kind: this.newCoupon.kind }),
+      }).then(() => {
+        this.newCoupon.title = '';
+        this.loadParentPanel(); this.loadRewards();
+        this.showToast('兑换券已添加 🎫');
+      }).catch(e => this.showToast(e.message));
+    },
+    toggleCoupon(c) {
+      this.api(`/api/rewards/coupon/${c.id}/toggle`, {
+        method: 'POST', body: JSON.stringify({ user_id: this.user }),
+      }).then(() => {
+        this.loadParentPanel(); this.loadRewards();
+      }).catch(e => this.showToast(e.message));
+    },
+    startWish() { this.wishOverlay.title = ''; this.wishOverlay.show = true; },
+    submitWish() {
+      const title = (this.wishOverlay.title || '').trim();
+      if (!title) return this.showToast('写下你的心愿吧');
+      this.api('/api/rewards/wish', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, title, target: Number(this.wishOverlay.target) || 5 }),
+      }).then(() => {
+        this.wishOverlay.show = false;
+        this.loadRewards(); this.loadParentPanel();
+        this.showToast('心愿已许下，等家长确认 ✨');
+      }).catch(e => this.showToast(e.message));
+    },
+    confirmWish(w) {
+      const url = w.status === 'pending' ? `/api/rewards/wish/${w.id}/confirm` : `/api/rewards/wish/${w.id}/redeem`;
+      this.api(url, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+        .then(() => {
+          this.loadParentPanel(); this.loadRewards();
+          this.showToast(w.status === 'pending' ? '心愿已确认开始，孩子加油 🌟' : '已兑现，太棒了 🎉');
+        }).catch(e => this.showToast(e.message));
+    },
+    archiveWish(w) {
+      this.api(`/api/rewards/wish/${w.id}/archive`, {
+        method: 'POST', body: JSON.stringify({ user_id: this.user }),
+      }).then(() => {
+        this.loadParentPanel(); this.loadRewards();
+        this.showToast('心愿已移除');
+      }).catch(e => this.showToast(e.message));
+    },
+    openWeekly() {
+      this.weeklyOverlay.show = true;
+      this.weeklyLoading = true;
+      this.weekly = null; this.shareImg = '';
+      this.api('/api/ai/report', {
+        method: 'POST', body: JSON.stringify({ user_id: this.user }),
+      }).then(d => {
+        this.weekly = d;
+        // 缓存命中时家长寄语可能后写入，动态补拉最新寄语
+        if (d && d.already_exists) {
+          this.api(`/api/rewards/parent-note?user_id=${encodeURIComponent(this.user)}`)
+            .then(n => { if (n && n.note !== undefined) this.weekly.parent_note = n.note; })
+            .catch(() => {});
+        }
+      }).catch(e => {
+        this.showToast(e.message || '周报生成失败，稍后再试');
+      }).finally(() => { this.weeklyLoading = false; });
+    },
+    shareWeekly() {
+      if (!window.html2canvas) return this.showToast('分享组件未加载，请刷新后重试');
+      const el = document.querySelector('.share-target');
+      if (!el) return;
+      window.html2canvas(el, { scale: 2, backgroundColor: '#fff', useCORS: true })
+        .then(canvas => { this.shareImg = canvas.toDataURL('image/png'); })
+        .catch(() => this.showToast('生成图片失败，可直接截图分享'));
+    },
+    saveParentNote() {
+      this.api('/api/rewards/parent-note', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, note: this.parentNote || '' }),
+      }).then(() => {
+        this.showToast('悄悄话已保存 💌');
+      }).catch(e => this.showToast(e.message));
+    },
+    /* ─────────── 称号系统（Sprint 4） ─────────── */
+    loadTitles() {
+      this.api(`/api/user/titles?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          this.titleInfo = { name: d.main.name, icon: d.main.icon, next: d.next };
+          this.titleBadges = d.badges || [];
+          try {
+            const prev = localStorage.getItem('zx_title');
+            if (prev && prev !== d.main.name) this.showToast(`🎉 称号升级：${d.main.icon} ${d.main.name}！`);
+            localStorage.setItem('zx_title', d.main.name);
+          } catch (e) { /* ignore */ }
+        }).catch(() => {});
+    },
+    /* ─────────── 60 秒挑战赛（Sprint 4） ─────────── */
+    loadChalBest() {
+      this.api(`/api/challenge/records?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.chalBest = d || { math: { best: 0 }, word: { best: 0 } }; })
+        .catch(() => {});
+    },
+    openChal() {
+      this.chalOverlay.show = true;
+      this.chalOverlay.stage = 'pick';
+      this.loadChalBest();
+    },
+    closeChal() {
+      if (this._chalTimer) { clearInterval(this._chalTimer); this._chalTimer = null; }
+      this.chalOverlay.show = false;
+    },
+    startChallenge(kind) {
+      this.api(`/api/challenge/questions?user_id=${encodeURIComponent(this.user)}&kind=${kind}&grade=${this.grade}&count=25`)
+        .then(d => {
+          const qs = (d.questions || []).slice(0, 25);
+          if (!qs.length) { this.showToast('题库暂时为空，换个类别试试'); return; }
+          this.chalOverlay.kind = kind;
+          this.chalOverlay.questions = qs;
+          this.chalOverlay.i = 0; this.chalOverlay.timeLeft = 60;
+          this.chalOverlay.input = ''; this.chalOverlay.correct = 0;
+          this.chalOverlay.total = 0; this.chalOverlay.newBest = false;
+          this.chalCombo = 0;
+          this.chalOverlay.stage = 'run';
+          if (this._chalTimer) clearInterval(this._chalTimer);
+          this._chalTimer = setInterval(() => {
+            this.chalOverlay.timeLeft--;
+            if (this.chalOverlay.timeLeft <= 0) this.endChallenge();
+          }, 1000);
+        }).catch(e => this.showToast(e.message));
+    },
+    chalAnswer(val) {
+      if (this.chalOverlay.stage !== 'run') return;
+      const q = this.curChalQ;
+      const ua = this.chalOverlay.kind === 'word'
+        ? String(val || '').trim() : String(this.chalOverlay.input || '').trim();
+      if (!ua && this.chalOverlay.kind === 'math') return;
+      const okAns = String(q.answer || '').trim();
+      if (ua === okAns || (this.chalOverlay.kind === 'math' && parseInt(ua, 10) === parseInt(okAns, 10))) {
+        this.chalOverlay.correct++;
+        this.chalCombo++;
+        if (this.chalCombo >= 3) this.showFloat(`🔥 连击 x${this.chalCombo}`, true);
+      } else {
+        this.chalCombo = 0;
+      }
+      this.chalOverlay.total++;
+      this.chalOverlay.i++;
+      this.chalOverlay.input = '';
+      if (this.chalOverlay.i >= this.chalOverlay.questions.length) this.endChallenge();
+    },
+    endChallenge() {
+      if (this._chalTimer) { clearInterval(this._chalTimer); this._chalTimer = null; }
+      const kind = this.chalOverlay.kind;
+      const prevBest = (this.chalBest[kind] || {}).best || 0;
+      this.chalOverlay.newBest = this.chalOverlay.correct > prevBest;
+      this.api('/api/challenge/record', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, kind, correct: this.chalOverlay.correct, total: this.chalOverlay.total }),
+      }).then(d => {
+        this.chalBest[kind] = d;
+        this.chalOverlay.stage = 'done';
+        this.loadTitles();
+      }).catch(() => { this.chalOverlay.stage = 'done'; });
+    },
+    /* ─────────── 学期目标（Sprint 4） ─────────── */
+    loadGoals() {
+      this.api(`/api/goals?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.goals = (d && d.goals) || []; })
+        .catch(() => { this.goals = []; });
+    },
+    submitGoal() {
+      const target = Number(this.goalOverlay.target) || 0;
+      if (target <= 0) return this.showToast('写下目标值（正整数）');
+      if (this.goalOverlay.kind === 'score' && !(this.goalOverlay.subject || '').trim()) return this.showToast('写下学科，如：数学');
+      this.api('/api/goals', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: this.user, kind: this.goalOverlay.kind, target,
+          deadline: this.goalOverlay.deadline || '', subject: this.goalOverlay.subject,
+        }),
+      }).then(() => {
+        this.loadGoals();
+        this.showToast('目标已立下，冲鸭 🎯');
+      }).catch(e => this.showToast(e.message));
+    },
+    doneGoal(g) {
+      this.api(`/api/goals/${g.id}/done`, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+        .then(() => { this.loadGoals(); this.showToast('目标达成，太棒了 🏆'); })
+        .catch(e => this.showToast(e.message));
+    },
+    archiveGoal(g) {
+      this.api(`/api/goals/${g.id}/archive`, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+        .then(() => { this.loadGoals(); })
+        .catch(e => this.showToast(e.message));
+    },
+    /* ─────────── 小老师模式（Sprint 4） ─────────── */
+    openTeach(w) {
+      this.api('/api/teach/create', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, kind: w.kind, record_id: w.id }),
+      }).then(card => {
+        this.teachOverlay = { show: true, step: 1, card, answerText: '', result: '', hint: '' };
+      }).catch(e => this.showToast(e.message));
+    },
+    closeTeach() {
+      this.teachOverlay.show = false;
+      this.loadTeachDue();
+      this.loadTitles();
+    },
+    submitTeachAnswer() {
+      const text = (this.teachOverlay.answerText || '').trim();
+      if (!text) return this.showToast('家长先写下答案吧');
+      this.api('/api/teach/answer', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, card_id: this.teachOverlay.card.id, answer_text: text }),
+      }).then(card => {
+        this.teachOverlay.card = card;
+        this.teachOverlay.step = 3;
+      }).catch(e => this.showToast(e.message));
+    },
+    gradeTeach(ok) {
+      this.api('/api/teach/grade', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, card_id: this.teachOverlay.card.id, is_correct: ok }),
+      }).then(card => {
+        this.teachOverlay.card = card;
+        if (ok) {
+          this.teachOverlay.result = '讲得真棒！🌟';
+          this.teachOverlay.hint = '7 天后系统会帮你复习验证这道题，看看真记住了没';
+          this.teachOverlay.step = 4;
+        } else {
+          this.teachOverlay.step = 1;
+          this.teachOverlay.answerText = '';
+          this.showToast('家长还没明白，再讲一遍吧 💪');
+        }
+      }).catch(e => this.showToast(e.message));
+    },
+    loadTeachDue() {
+      this.api(`/api/teach/due?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.teachDue = (d && d.items) || []; })
+        .catch(() => { this.teachDue = []; });
+    },
+    openRecheck() {
+      if (!this.teachDue.length) return;
+      this.recheckOverlay = { show: true, card: this.teachDue[0], answerText: '' };
+    },
+    submitRecheck() {
+      const text = (this.recheckOverlay.answerText || '').trim();
+      if (!text) return this.showToast('写出你的答案');
+      const card = this.recheckOverlay.card;
+      const isCorrect = String(text).replace(/\s+/g, '') === String(card.answer || '').replace(/\s+/g, '');
+      this.api('/api/teach/recheck', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, card_id: card.id, is_correct: isCorrect }),
+      }).then(() => {
+        this.recheckOverlay.show = false;
+        this.loadTeachDue();
+        this.loadTitles();
+        this.showToast(isCorrect ? '还记得！真的学会啦 🎉' : '有点忘了，去错题本再讲一遍吧 📕');
+      }).catch(e => this.showToast(e.message));
+    },
+    /* ─────────── AI 即时鼓励语（Sprint 4） ─────────── */
+    askEncourage(ctx) {
+      if (!this.user) return;
+      this.api('/api/ai/encourage', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, context: ctx }),
+      }).then(d => {
+        if (d && d.text) this.showFloat('💬 ' + d.text, false, 3000);
+      }).catch(() => {});
+    },
     causeLabel(c) {
       return { careless: '粗心大意', concept: '概念不清', method: '方法不会', reading: '审题失误' }[c] || '';
     },
@@ -652,7 +1095,12 @@ createApp({
     downloadPaper(p) { window.open(`/api/exam/download/${p.id}`, '_blank'); },
 
     /* ─────────── 统计 ─────────── */
-    loadStats() { this.loadVocabStats(); this.loadClassicalStats(); this.loadGrammarStats(); this.loadAttempts(); },
+    loadStats() {
+      this.loadVocabStats(); this.loadClassicalStats(); this.loadGrammarStats(); this.loadAttempts();
+      this.loadMood();
+      this.api(`/api/study/self-compare?user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`)
+        .then(d => { this.selfCompare = d || null; }).catch(() => { this.selfCompare = null; });
+    },
     loadGrammarStats() {
       this.api(`/api/grammar/stats?grade=${this.grade}`)
         .then(r => { this.grammarStats = r || {}; }).catch(() => {});
@@ -663,9 +1111,10 @@ createApp({
     startQuiz({ title, items, source }) {
       this.quiz = {
         active: true, done: false, title,
-        items: items.map(it => ({ ...it, answered: false, correct: false, selected: -1, userAnswer: '' })),
+        items: items.map(it => ({ ...it, answered: false, correct: false, selected: -1, userAnswer: '', cause: '' })),
         i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source,
       };
+      this.combo = 0; this.maxCombo = 0; this.chestReward = '';
     },
     qOptClass(item, oi) {
       if (!item.answered) return '';
@@ -694,13 +1143,41 @@ createApp({
     },
     _afterAnswer(it) {
       it.answered = true;
-      if (it.correct) this.quiz.correct++; else this.quiz.wrongCount++;
+      if (it.correct) {
+        this.quiz.correct++;
+        this.combo++;
+        this.maxCombo = Math.max(this.maxCombo, this.combo);
+        this.showFloat(this.combo >= 2 ? `🔥 连击 x${this.combo}` : '✔ 答对了！', true);
+      } else {
+        const broken = this.combo >= 3;
+        this.quiz.wrongCount++;
+        this.combo = 0;
+        this.showFloat('差一点！', false);
+        // AI 即时鼓励：连击中断或答错时给一句暖心话（3 次/分钟限频，失败自动降级）
+        this.askEncourage(broken ? 'combo_broken' : 'wrong_answer');
+      }
       if (it.correct && this.quiz.source && this.quiz.source.mode === 'retry' && it.extra) {
         this.api('/api/study/practice-submit', {
           method: 'POST',
           body: JSON.stringify({ user_id: this.user, results: [{ kind: it.extra.kind, record_id: it.extra.record_id, correct: true }] }),
         }).then(() => this.loadAnalysis()).catch(() => {});
       }
+    },
+    showFloat(text, ok, ms = 700) {
+      this.floatFx = { show: true, text, ok };
+      clearTimeout(this._ft);
+      this._ft = setTimeout(() => { this.floatFx.show = false; }, ms);
+    },
+    pickCause(c) {
+      const it = this.quiz.items[this.quiz.i];
+      if (!it || !it.answered || it.correct || it.cause) return;
+      it.cause = c;
+      this.showToast('错因已记录，将针对性推送变式练习 ✨');
+    },
+    toggleTurbo() {
+      this.turbo = !this.turbo;
+      localStorage.setItem('zx_turbo', this.turbo ? '1' : '0');
+      this.showToast(this.turbo ? '极速模式已开启（动画加速）' : '极速模式已关闭');
     },
     quizNext() {
       if (this.quiz.i < this.quiz.items.length - 1) { this.quiz.i++; this.quiz.fillText = ''; }
@@ -710,6 +1187,12 @@ createApp({
       const total = this.quiz.items.length;
       this.quiz.score = total ? Math.round(this.quiz.correct / total * 100) : 0;
       this.quiz.done = true;
+      const rewards = [
+        '✨ 获得 20 学习金币', '📖 掉落知识卡：连击纪录刷新了！',
+        '🏅 获得徽章碎片 x1', '💪 勇气值 +10，明天继续挑战！',
+        '🎈 好运气球 +1，集满 7 个有惊喜',
+      ];
+      this.chestReward = rewards[Math.floor(Math.random() * rewards.length)];
       const src = this.quiz.source;
       if (!src) return;
       if (src.mode === 'exam') {
@@ -719,7 +1202,16 @@ createApp({
             user_id: this.user, exam_id: src.exam_id, duration_sec: Math.round((Date.now() - src.startedAt) / 1000),
             answers: this.quiz.items.map(it => ({ question_id: it.qid, user_answer: it.userAnswer || '' })),
           }),
-        }).then(() => this.loadAttempts()).catch(e => this.showToast(e.message));
+        }).then(r => {
+          this.loadAttempts();
+          // 答题中自评的错因：提交后批量落库
+          const causes = this.quiz.items.filter(it => !it.correct && it.cause && r.wrong_ids && r.wrong_ids[it.qid])
+            .map(it => ({ question_id: it.qid, cause: it.cause }));
+          causes.forEach(c => this.api('/api/study/cause-by-question', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: this.user, question_id: c.question_id, cause: c.cause }),
+          }).catch(() => {}));
+        }).catch(e => this.showToast(e.message));
       } else if (src.mode === 'retry') {
         this.api('/api/study/practice-submit', {
           method: 'POST',
@@ -808,6 +1300,7 @@ createApp({
   mounted() {
     this.loadMathCategories();
     this.loadEngTypes();
+    this.turbo = localStorage.getItem('zx_turbo') === '1';
     const saved = JSON.parse(localStorage.getItem('zx_user') || 'null');
     if (saved && saved.user) {
       this.user = saved.user;

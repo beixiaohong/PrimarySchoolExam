@@ -163,6 +163,12 @@ def _build_payload(db: Session, user_id: str) -> dict:
             row.progress = prog
             if prog >= row.target:
                 row.status = "done"
+                # 任务完成 → 进行中心愿进度 +1（Sprint 3 奖励闭环）
+                try:
+                    from .rewards import inc_active_wish_progress
+                    inc_active_wish_progress(db, user_id, 1)
+                except Exception:
+                    pass
     db.commit()
 
     tasks = []
@@ -237,5 +243,11 @@ def claim_task(req: ClaimRequest, db: Session = Depends(get_db)):
         return _build_payload(db, req.user_id)
     row.progress = row.target
     row.status = "done"
+    # 任务完成 → 进行中心愿进度 +1（Sprint 3 奖励闭环）
+    try:
+        from .rewards import inc_active_wish_progress
+        inc_active_wish_progress(db, req.user_id, 1)
+    except Exception:
+        pass
     db.commit()
     return _build_payload(db, req.user_id)

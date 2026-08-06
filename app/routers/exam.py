@@ -110,7 +110,7 @@ def list_records(
         ExamOut(
             id=r.id, subject=r.subject, title=r.title,
             grade=r.grade, difficulty=r.difficulty,
-            question_count=r.question_count, file_path=r.file_path,
+            question_count=r.question_count, file_path=r.file_path or "",
             created_at=r.created_at.strftime("%Y-%m-%d %H:%M:%S"),
         )
         for r in records
@@ -327,6 +327,7 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
     results = []
     correct_count = 0
     wrong_seqs = []
+    wrong_ids: dict = {}
 
     for item in answers:
         qid = item.get("question_id")
@@ -352,8 +353,12 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
                 existing.is_mastered = False
                 existing.mastered_at = None
                 existing.wrong_at = now
+                wrong_ids[q.id] = existing.id
             else:
-                db.add(WrongRecord(user_id=user_id, question_id=q.id, wrong_at=now))
+                rec = WrongRecord(user_id=user_id, question_id=q.id, wrong_at=now)
+                db.add(rec)
+                db.flush()  # 立即取得 id，供前端错因自评
+                wrong_ids[q.id] = rec.id
 
         results.append({
             "question_id": q.id,
@@ -400,6 +405,7 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
         "wrong": total - correct_count,
         "score": score,
         "results": results,
+        "wrong_ids": wrong_ids,
     }
 
 

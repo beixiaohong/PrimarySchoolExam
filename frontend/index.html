@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=9">
+<link rel="stylesheet" href="/static/style.css?v=14">
 </head>
 <body>
 <div id="app">
@@ -81,21 +81,33 @@
       <div v-if="tab==='home'" class="fade-enter">
         <div class="hero">
           <div style="flex:1">
-            <h1>{{greeting}}，{{user}} 👋</h1>
-            <p>今天有 <b>{{totalTodo}}</b> 项任务在等你，点击任务卡即可开始学习</p>
+            <h1>{{greeting}}，{{user}} 👋 <span class="title-badge" v-if="titleInfo" :title="titleInfo.next ? '再做 '+titleInfo.next.need+' 项学习升级' : '已是最高称号'">{{titleInfo.icon}} {{titleInfo.name}}</span></h1>
+            <p v-if="taskRemain>0">今天还差 <b style="color:#fff">{{taskRemain}}</b> 项任务完成全勤<template v-if="dailyTaskStats.streak_days"> · 🔥 已连续 {{dailyTaskStats.streak_days}} 天</template>，点击任务卡即可开始</p>
+            <p v-else>🎉 三科任务全部完成，今天全勤！<template v-if="dailyTaskStats.streak_days">已连续 {{dailyTaskStats.streak_days}} 天 🔥</template></p>
           </div>
           <div class="hero-right">
             <div class="hero-ring">
               <svg width="74" height="74" viewBox="0 0 74 74">
                 <circle cx="37" cy="37" r="32" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="7"/>
-                <circle cx="37" cy="37" r="32" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="201" :style="{strokeDashoffset: 201-(201*heroPct/100)}"/>
+                <circle cx="37" cy="37" r="32" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="201" :style="{strokeDashoffset: 201-(201*taskPct/100)}"/>
               </svg>
-              <div class="num">{{heroPct}}%<small>今日目标</small></div>
+              <div class="num">{{dailyTaskStats.done_count}}/{{dailyTaskStats.total || 3}}<small>今日任务</small></div>
             </div>
             <div class="hero-stats">
               <div><b>{{streakDays}}<small style="font-size:11px">天</small></b><span>连续学习</span></div>
               <div><b>{{avgScore}}%</b><span>平均正确率</span></div>
               <div><b>{{masteredTotal}}</b><span>已掌握错题</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 我的称号（Sprint 4） -->
+        <div class="card title-card" v-if="titleInfo">
+          <div class="card-head"><b>{{titleInfo.icon}} 我的称号：{{titleInfo.name}}</b><span class="more" v-if="titleInfo.next">再完成 {{titleInfo.next.need}} 项学习 → 升级「{{titleInfo.next.icon}} {{titleInfo.next.name}}」</span><span class="more" v-else>👑 已是最高称号！</span></div>
+          <div class="badge-row">
+            <div class="badge-item" v-for="b in titleBadges" :key="b.code" :class="{unlocked: b.unlocked}" :title="b.name">
+              <span class="bi">{{b.unlocked ? b.icon : '🔒'}}</span>
+              <div><b>{{b.name}}</b><i>{{b.unlocked ? '已解锁' : b.progress + ' / ' + b.target}}</i></div>
             </div>
           </div>
         </div>
@@ -153,6 +165,90 @@
             <span class="tag" :class="it.overdue_days>0 ? 'tag-red' : 'tag-orange'" style="flex-shrink:0">{{it.overdue_days>0 ? '已逾期'+it.overdue_days+'天' : '今天到期'}}</span>
           </div>
           <div v-if="!reviewQueue.items.length" class="empty" style="padding:24px"><div class="em">🌱</div><h3>今天没有到期复习</h3><p>记忆保鲜中，明天再来巩固</p></div>
+        </div>
+
+        <!-- 今日心情（Sprint 2） -->
+        <div class="card mood-card" style="margin-top:14px" v-if="moodTrend">
+          <div class="card-head"><b>🌈 今日心情</b><span class="more">打个卡，爸爸妈妈会更懂你</span></div>
+          <div class="mood-7">
+            <div class="mood-day" v-for="d in moodTrend.days" :key="d.date" :class="{today: d.date===moodTodayStr, neg: d.negative}">
+              <span class="md-week">{{d.weekday}}</span>
+              <span class="md-face">{{d.mood ? moodFace(d.mood) : '·'}}</span>
+              <span class="md-note" v-if="d.note">{{d.note}}</span>
+            </div>
+          </div>
+          <template v-if="!moodTrend.today_mood || moodPicking">
+            <div class="mood-pick">
+              <button v-for="m in moodOptions" :key="m.code" class="mood-btn" @click="doMoodCheckin(m.code)">
+                <span class="mf">{{m.face}}</span><b>{{m.label}}</b>
+              </button>
+            </div>
+            <div class="mood-note-row">
+              <input v-model="moodNote" class="fill-input" maxlength="50" placeholder="一句话说说今天的感受（选填，先点上面的表情）" style="max-width:360px">
+            </div>
+          </template>
+          <div v-else class="mood-done">
+            <span class="md-face big">{{moodFace(moodTrend.today_mood)}}</span>
+            <span>今天已打卡：{{moodLabel(moodTrend.today_mood)}}<template v-if="moodTrend.days[6].note"> · {{moodTrend.days[6].note}}</template></span>
+            <button class="btn btn-ghost btn-sm" @click="resetMoodPick()">换个心情</button>
+          </div>
+        </div>
+
+        <!-- 奖励闭环（Sprint 3） -->
+        <div class="card reward-card" style="margin-top:14px" v-if="rewards">
+          <div class="card-head"><b>🎁 奖励小屋</b><span class="more" v-if="rewards.wish && rewards.wish.status==='pending'">心愿待家长确认中</span><span class="more" v-else-if="rewards.wish && rewards.wish.status==='pending_redeem'">心愿达标啦！快找家长兑现</span></div>
+          <div v-if="rewards.wish" class="wish-box">
+            <div class="wish-head">
+              <b>🌟 {{rewards.wish.title}}</b>
+              <span class="tag" :class="rewards.wish.status==='pending' ? 'tag-orange' : (rewards.wish.status==='pending_redeem' ? 'tag-red' : 'tag-blue')">{{wishStatusLabel(rewards.wish.status)}}</span>
+            </div>
+            <div class="progress" style="margin:8px 0"><i :style="{width: Math.min(100, rewards.wish.progress/rewards.wish.target*100)+'%'}"></i></div>
+            <div class="wish-foot">
+              <span>{{rewards.wish.progress}} / {{rewards.wish.target}} · 每完成 1 个每日任务 +1</span>
+              <button v-if="rewards.wish.status==='pending_redeem'" class="btn btn-primary btn-sm" @click="showToast('去找家长兑现吧，家长可在「设置-家长管理」确认 🎉')">找家长兑现 →</button>
+            </div>
+          </div>
+          <div v-else class="wish-box wish-empty">
+            <div class="wish-head"><b>🌟 还没有心愿？</b><button class="btn btn-ghost btn-sm" @click="startWish()">许一个心愿 →</button></div>
+            <p>写下想要的小奖励，完成每日任务就能让它成真</p>
+          </div>
+          <div class="coupon-list" v-if="rewards.coupons.length">
+            <div class="coupon-item" v-for="c in rewards.coupons" :key="c.id">
+              <span class="ci">{{couponIcon(c.kind)}}</span>
+              <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 每月可用 {{c.max_per_month}} 次</span></div>
+              <span class="tag tag-green">可用</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 成长周报入口（Sprint 3） -->
+        <div class="card weekly-entry" style="margin-top:14px" @click="openWeekly()">
+          <div class="w-ico">📮</div>
+          <div class="w-body">
+            <b>上周成长周报</b>
+            <span>AI 为你总结一周亮点，还有家长的悄悄话</span>
+          </div>
+          <span class="btn btn-ghost btn-sm">查看 →</span>
+        </div>
+
+        <!-- 挑战赛 + 学期目标（Sprint 4） -->
+        <div class="grid-2" style="margin-top:14px">
+          <div class="card chal-entry" @click="openChal()">
+            <div class="w-ico">⚡</div>
+            <div class="w-body">
+              <b>60 秒挑战赛</b>
+              <span>口算 / 单词快答，刷新纪录赢徽章</span>
+            </div>
+            <span class="btn btn-ghost btn-sm">开战 →</span>
+          </div>
+          <div class="card goal-entry" @click="goalOverlay.show=true; loadGoals()">
+            <div class="w-ico">🎯</div>
+            <div class="w-body">
+              <b>学期目标</b>
+              <span>分数 / 消灭错题 / 背诵 倒计时</span>
+            </div>
+            <span class="btn btn-ghost btn-sm">查看 →</span>
+          </div>
         </div>
 
         <!-- 学习概览 -->
@@ -375,6 +471,10 @@
             <span class="filter-sep"></span><span class="tag tag-blue">{{subject}}</span>
             <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="loadAnalysis(); wrongScreen='analysis'">📊 错因分析</button>
           </div>
+          <div class="card teach-due" v-if="teachDue.length" @click="openRecheck()">
+            <b>🔁 7 天到啦，考考自己还记得吗？</b>
+            <span>有 {{teachDue.length}} 道讲给家长的题待复习验证，点我开始</span>
+          </div>
           <div class="card">
             <div v-if="!wrongItems.length" class="empty"><div class="em">🎉</div><h3>太棒了，这里没有错题</h3><p>继续保持，或者去刷题中心练练手</p><button class="btn btn-primary" @click="goTab('practice')">去刷题</button></div>
             <div v-for="w in wrongItems" :key="w.key" class="wrong-item" :class="{mastered: w.mastered}" @click="openWrongDetail(w)">
@@ -421,6 +521,8 @@
               <div class="progress"><i style="width:100%;background:var(--success)"></i></div>
             </div>
             <div class="detail-actions">
+              <button class="btn btn-primary" v-if="curWrong.kind==='exam' && curWrong.question_id" @click="openExplain(curWrong)">🤖 AI 讲解</button>
+              <button class="btn btn-primary" @click="openTeach(curWrong)">🎓 出题给家长</button>
               <button class="btn btn-primary" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
               <button class="btn btn-success" v-if="!curWrong.mastered" @click="markWrongMastered(curWrong)">✅ 标记已掌握</button>
               <button class="btn btn-ghost" @click="wrongScreen='list'">返回列表</button>
@@ -495,6 +597,24 @@
       <!-- ═══════════ 学习统计 ═══════════ -->
       <div v-if="tab==='stats'" class="fade-enter">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><h2 style="font-size:19px">学习统计</h2><span class="tag tag-blue">{{subject}}</span></div>
+        <div class="card compare-card" v-if="selfCompare" style="margin-bottom:16px">
+          <div class="card-head"><b>🚀 自我超越</b><span class="tag tag-violet">只和自己比</span></div>
+          <div class="cmp-grid">
+            <div class="cmp-item" v-if="attemptDeltaText"><span class="cmp-ico">📝</span><p>{{attemptDeltaText}}</p></div>
+            <div class="cmp-item" v-if="vocabDeltaText"><span class="cmp-ico">🔤</span><p>{{vocabDeltaText}}</p></div>
+            <div class="cmp-item" v-if="classicalDeltaText"><span class="cmp-ico">📜</span><p>{{classicalDeltaText}}</p></div>
+            <div class="cmp-item" v-if="selfCompare.mastered_7d>0"><span class="cmp-ico">💪</span><p>本周已消灭 {{selfCompare.mastered_7d}} 道错题</p></div>
+            <div class="cmp-item empty" v-if="!attemptDeltaText && !vocabDeltaText && !classicalDeltaText && !(selfCompare.mastered_7d>0)"><span class="cmp-ico">🌱</span><p>完成一次做题或背诵后，这里会出现"和自己比"的记录</p></div>
+          </div>
+        </div>
+        <!-- 心情压力预警（家长视角） -->
+        <div class="card mood-alert" v-if="moodTrend && moodTrend.alert" style="margin-bottom:16px">
+          <div class="alert-ico">🤗</div>
+          <div class="alert-body">
+            <b>给家长的小提示</b>
+            <p>{{moodTrend.alert.text}}</p>
+          </div>
+        </div>
         <div class="grid-4">
           <div class="stat-card highlight"><div class="ico">🔥</div><b>{{streakDays}}</b><span>连续学习天数</span></div>
           <div class="stat-card"><div class="ico">📝</div><b>{{statsAttempts}}</b><span>完成试卷</span></div>
@@ -565,9 +685,55 @@
         </div>
         <div class="card" style="max-width:640px;margin-top:16px">
           <div class="card-head"><b>⚙️ 其他</b></div>
+          <div class="info-row"><span>极速模式（答题动画加速）</span><button class="btn btn-sm" :class="turbo ? 'btn-primary' : 'btn-ghost'" @click="toggleTurbo()">{{turbo ? '已开启' : '已关闭'}}</button></div>
           <div class="detail-actions" style="margin-top:14px">
             <button class="btn btn-ghost" @click="showToast('已是最新版本 v2.0')">检查更新</button>
             <button class="btn btn-danger" @click="logout()">退出登录</button>
+          </div>
+        </div>
+
+        <!-- 家长管理（Sprint 3 奖励闭环 + 寄语） -->
+        <div class="card parent-card" style="max-width:640px;margin-top:16px">
+          <div class="card-head"><b>👨‍👩‍👧 家长管理</b><span class="more">奖励兑换券 / 心愿确认 / 成长寄语</span></div>
+
+          <div class="pc-sec">
+            <div class="pc-title">💌 给孩子写悄悄话</div>
+            <div class="pc-row">
+              <input v-model="parentNote" class="fill-input" maxlength="200" placeholder="写一句鼓励的话，会出现在孩子的成长周报里">
+              <button class="btn btn-primary btn-sm" @click="saveParentNote()">保存</button>
+            </div>
+          </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">🎫 兑换券管理 <span class="more">孩子完成心愿后凭券兑换</span></div>
+            <div class="pc-row">
+              <input v-model="newCoupon.title" class="fill-input" maxlength="30" placeholder="如：周末看动画半小时">
+              <select v-model="newCoupon.kind" class="fill-input" style="max-width:130px">
+                <option value="cartoon">动画时间</option><option value="snack">零食券</option>
+                <option value="sticker">贴纸券</option><option value="toy">玩具券</option>
+                <option value="outing">外出券</option><option value="custom">自定义</option>
+              </select>
+              <button class="btn btn-primary btn-sm" @click="createCoupon()">添加</button>
+            </div>
+            <div class="pc-list" v-if="allCoupons.length">
+              <div class="pc-item" v-for="c in allCoupons" :key="c.id">
+                <span class="ci">{{couponIcon(c.kind)}}</span>
+                <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 月限 {{c.max_per_month}} 次 · 已用 {{c.used_count}}</span></div>
+                <button class="btn btn-sm" :class="c.status==='active' ? 'btn-ghost' : 'btn-primary'" @click="toggleCoupon(c)">{{c.status==='active' ? '停用' : '启用'}}</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">🌟 心愿确认 <span class="more">孩子的心愿需要家长确认才能开始</span></div>
+            <div class="pc-list" v-if="pendingWishes.length">
+              <div class="pc-item" v-for="w in pendingWishes" :key="w.id">
+                <div class="c-body"><b>{{w.title}}</b><span>{{w.status==='pending' ? '待确认' : '已完成，待兑现'}} · 进度 {{w.progress}}/{{w.target}}</span></div>
+                <button class="btn btn-success btn-sm" @click="confirmWish(w)">{{w.status==='pending' ? '确认开始' : '确认兑现'}}</button>
+                <button class="btn btn-ghost btn-sm" @click="archiveWish(w)">移除</button>
+              </div>
+            </div>
+            <p v-else class="pc-empty">没有待处理的心愿</p>
           </div>
         </div>
       </div>
@@ -575,16 +741,265 @@
   </div>
 </div>
 
+<!-- ═══════════ 成长周报浮层（Sprint 3） ═══════════ -->
+<div class="quiz-overlay" v-if="weeklyOverlay.show">
+  <div class="quiz-shell weekly-shell">
+    <div class="quiz-top">
+      <span class="qname">📮 上周成长周报</span>
+      <button class="icon-btn" @click="weeklyOverlay.show=false" title="关闭">✕</button>
+    </div>
+    <div class="weekly-body">
+      <div v-if="weeklyLoading" class="empty" style="padding:60px 20px"><div class="em">📮</div><h3>正在生成周报…</h3><p>AI 正在总结你的一周，通常 3-10 秒</p></div>
+      <template v-else-if="weekly">
+        <div class="share-target">
+          <div class="weekly-head">
+            <div class="wh-title">📮 成长周报</div>
+            <div class="wh-sub">{{weekly.week_start}} ~ {{weekly.week_end}}</div>
+          </div>
+          <div class="weekly-hl">
+            <div class="whl-item" v-for="(h,i) in weekly.highlights" :key="i">✨ {{h}}</div>
+          </div>
+          <div class="weekly-advice">
+            <b>下周小建议</b>
+            <p>{{weekly.advice}}</p>
+          </div>
+          <div class="weekly-stats">
+            <div class="ws"><b>{{weekly.stats.attempts}}</b><span>完成练习</span></div>
+            <div class="ws"><b>{{weekly.stats.avg_score}}%</b><span>平均正确率</span></div>
+            <div class="ws"><b>{{weekly.stats.wrong_mastered}}</b><span>消灭错题</span></div>
+            <div class="ws"><b>{{weekly.stats.new_words}}</b><span>新学单词</span></div>
+            <div class="ws"><b>{{weekly.stats.full_days}}</b><span>全勤天数</span></div>
+          </div>
+          <div class="weekly-note" v-if="weekly.parent_note">
+            <div class="wn-ico">💌</div>
+            <div><b>家长的悄悄话</b><p>{{weekly.parent_note}}</p></div>
+          </div>
+          <div class="weekly-note empty" v-else>
+            <div class="wn-ico">💌</div>
+            <div><b>还没有家长寄语</b><p>家长可在「设置-家长管理」里给孩子写悄悄话</p></div>
+          </div>
+        </div>
+        <div class="weekly-actions">
+          <button class="btn btn-primary" @click="shareWeekly()">📤 生成分享图</button>
+          <button class="btn btn-ghost" @click="weeklyOverlay.show=false">关闭</button>
+        </div>
+        <div class="share-result" v-if="shareImg">
+          <img :src="shareImg" alt="周报分享图">
+          <p>长按图片保存，或截图转发给家人 ✨</p>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 许愿弹窗（Sprint 3） ═══════════ -->
+<div class="quiz-overlay" v-if="wishOverlay.show">
+  <div class="quiz-shell wish-shell">
+    <div class="quiz-top">
+      <span class="qname">🌟 许一个心愿</span>
+      <button class="icon-btn" @click="wishOverlay.show=false" title="关闭">✕</button>
+    </div>
+    <div class="wish-form">
+      <label>心愿内容</label>
+      <input v-model="wishOverlay.title" class="fill-input" maxlength="50" placeholder="例如：想要一套乐高 / 周末去吃冰淇淋">
+      <label style="margin-top:12px">需要完成几个每日任务？</label>
+      <select v-model="wishOverlay.target" class="fill-input" style="max-width:200px">
+        <option v-for="n in [3,5,7,10,14,20,30]" :key="n" :value="n">{{n}} 个任务</option>
+      </select>
+      <div class="wish-tip">心愿会先请家长确认，确认后每完成 1 个每日任务进度 +1</div>
+      <div class="detail-actions" style="margin-top:16px">
+        <button class="btn btn-primary" @click="submitWish()">许下心愿 ✨</button>
+        <button class="btn btn-ghost" @click="wishOverlay.show=false">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 60 秒挑战赛浮层（Sprint 4） ═══════════ -->
+<div class="quiz-overlay" v-if="chalOverlay.show">
+  <div class="quiz-shell chal-shell">
+    <div class="quiz-top">
+      <span class="qname">⚡ 60 秒挑战赛</span>
+      <button class="icon-btn" @click="closeChal()" title="关闭">✕</button>
+    </div>
+    <div class="chal-body">
+      <div v-if="chalOverlay.stage==='pick'">
+        <div class="chal-pick">
+          <button class="btn btn-primary" @click="startChallenge('math')">🧮 口算快答</button>
+          <button class="btn btn-primary" @click="startChallenge('word')">🔤 单词快答</button>
+        </div>
+        <p class="chal-rec">🏆 最佳纪录：口算 {{chalBest.math.best}} 题 · 单词 {{chalBest.word.best}} 题<br><span>60 秒内答对越多越好，全对连击有彩蛋 ✨</span></p>
+      </div>
+      <div v-else-if="chalOverlay.stage==='run'">
+        <div class="chal-timer" :class="{low: chalOverlay.timeLeft<=10}">{{chalOverlay.timeLeft}}<small> 秒</small></div>
+        <div class="chal-score">已答对 <b>{{chalOverlay.correct}}</b> 题 <span class="chal-combo" v-if="chalCombo>=3">🔥 连击 x{{chalCombo}}</span></div>
+        <div class="chal-q">
+          <h3>{{curChalQ.q}}</h3>
+          <div v-if="chalOverlay.kind==='word'" class="chal-options">
+            <button v-for="(o,oi) in curChalQ.options" :key="oi" class="btn btn-ghost" @click="chalAnswer(o)">{{o}}</button>
+          </div>
+          <div v-else class="chal-input-row">
+            <input v-model="chalOverlay.input" class="fill-input" type="number" placeholder="输入答案，回车提交" @keyup.enter="chalAnswer()">
+            <button class="btn btn-primary" @click="chalAnswer()">确定</button>
+          </div>
+        </div>
+      </div>
+      <div v-else>
+        <div class="chal-result">
+          <div class="em">{{chalOverlay.correct>=15?'🏆':(chalOverlay.correct>=8?'🎉':'💪')}}</div>
+          <h3>60 秒答对 {{chalOverlay.correct}} 题！</h3>
+          <p v-if="chalOverlay.newBest">🎊 刷新个人纪录，太厉害啦！</p>
+          <p v-else>最佳纪录 {{chalBest[chalOverlay.kind].best}} 题，再练练超越它</p>
+        </div>
+        <div class="detail-actions">
+          <button class="btn btn-primary" @click="startChallenge(chalOverlay.kind)">再来一局</button>
+          <button class="btn btn-ghost" @click="closeChal()">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 学期目标浮层（Sprint 4） ═══════════ -->
+<div class="quiz-overlay" v-if="goalOverlay.show">
+  <div class="quiz-shell goal-shell">
+    <div class="quiz-top">
+      <span class="qname">🎯 学期目标</span>
+      <button class="icon-btn" @click="goalOverlay.show=false" title="关闭">✕</button>
+    </div>
+    <div class="goal-body">
+      <div class="goal-list" v-if="goals.length">
+        <div class="goal-item" v-for="g in goals" :key="g.id">
+          <div class="g-head"><b>{{g.title}}</b><span class="tag" :class="g.achieved ? 'tag-green' : 'tag-blue'">{{g.achieved ? '已达成 🎉' : g.current + ' / ' + g.target}}</span></div>
+          <div class="progress" style="margin:8px 0"><i :style="{width: g.pct+'%'}"></i></div>
+          <div class="g-foot">
+            <span v-if="g.deadline">⏳ 还剩 {{g.days_left}} 天（{{g.deadline}} 截止）</span>
+            <span v-else>长期目标 · 持续进步中</span>
+            <span v-if="g.achieved && g.status==='active'"><button class="btn btn-success btn-sm" @click="doneGoal(g)">标记达成 🏆</button></span>
+            <button class="btn btn-ghost btn-sm" @click="archiveGoal(g)">移除</button>
+          </div>
+        </div>
+      </div>
+      <p v-else class="pc-empty">还没有目标，立一个吧 👇（最多同时 3 个）</p>
+      <div class="goal-form">
+        <label>立下新目标</label>
+        <div class="pc-row">
+          <select v-model="goalOverlay.kind" class="fill-input" style="max-width:120px">
+            <option value="score">分数</option><option value="wrong">消灭错题</option><option value="recite">背诵</option>
+          </select>
+          <input v-if="goalOverlay.kind==='score'" v-model="goalOverlay.subject" class="fill-input" maxlength="4" placeholder="学科，如：数学">
+          <input v-model.number="goalOverlay.target" class="fill-input" type="number" placeholder="目标值">
+          <input v-model="goalOverlay.deadline" class="fill-input" type="date">
+        </div>
+        <div class="detail-actions" style="margin-top:12px">
+          <button class="btn btn-primary" @click="submitGoal()">立下目标 🎯</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 小老师浮层（Sprint 4） ═══════════ -->
+<div class="quiz-overlay" v-if="teachOverlay.show">
+  <div class="quiz-shell teach-shell">
+    <div class="quiz-top">
+      <span class="qname">🎓 小老师课堂</span>
+      <button class="icon-btn" @click="closeTeach()" title="关闭">✕</button>
+    </div>
+    <div class="teach-body">
+      <div class="teach-step" v-if="teachOverlay.step===1">
+        <div class="ts-tag">第 1 步 · 你来讲</div>
+        <h3 class="ts-q">{{teachOverlay.card.question}}</h3>
+        <details class="ts-answer"><summary>🔍 参考答案</summary><p>{{teachOverlay.card.answer}}</p></details>
+        <p class="ts-hint">把这道题的思路讲给家长听，讲明白了再出题考考 TA 👇</p>
+        <div class="detail-actions"><button class="btn btn-primary" @click="teachOverlay.step=2">讲好啦，考考家长 →</button></div>
+      </div>
+      <div class="teach-step" v-else-if="teachOverlay.step===2">
+        <div class="ts-tag">第 2 步 · 家长作答</div>
+        <h3 class="ts-q">{{teachOverlay.card.question}}</h3>
+        <input v-model="teachOverlay.answerText" class="fill-input" placeholder="家长把答案写在这里" style="margin-top:14px">
+        <div class="detail-actions" style="margin-top:14px"><button class="btn btn-primary" @click="submitTeachAnswer()">提交答案</button></div>
+      </div>
+      <div class="teach-step" v-else-if="teachOverlay.step===3">
+        <div class="ts-tag">第 3 步 · 你来批改</div>
+        <h3 class="ts-q">{{teachOverlay.card.question}}</h3>
+        <div class="ts-pair">
+          <div class="ts-ans-box"><span>家长的答案</span><b>{{teachOverlay.card.answer_text || '（未填写）'}}</b></div>
+          <div class="ts-ans-box right"><span>正确答案</span><b>{{teachOverlay.card.answer}}</b></div>
+        </div>
+        <div class="detail-actions" style="margin-top:14px">
+          <button class="btn btn-success" @click="gradeTeach(true)">✅ 讲对了</button>
+          <button class="btn btn-danger" @click="gradeTeach(false)">❌ 没讲对</button>
+        </div>
+      </div>
+      <div class="teach-step" v-else>
+        <div class="em">🎉</div>
+        <h3>{{teachOverlay.result}}</h3>
+        <p class="ts-hint">{{teachOverlay.hint}}</p>
+        <div class="detail-actions"><button class="btn btn-primary" @click="closeTeach()">完成</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 7 天复习验证浮层（Sprint 4） ═══════════ -->
+<div class="quiz-overlay" v-if="recheckOverlay.show">
+  <div class="quiz-shell teach-shell">
+    <div class="quiz-top">
+      <span class="qname">🔁 复习验证</span>
+      <button class="icon-btn" @click="recheckOverlay.show=false" title="关闭">✕</button>
+    </div>
+    <div class="teach-body">
+      <p class="ts-hint">7 天前讲给家长的题，现在还记得怎么做吗？</p>
+      <h3 class="ts-q">{{recheckOverlay.card.question}}</h3>
+      <input v-model="recheckOverlay.answerText" class="fill-input" placeholder="写出你的答案" style="margin-top:14px">
+      <div class="detail-actions" style="margin-top:14px"><button class="btn btn-primary" @click="submitRecheck()">提交</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ AI 错题讲解浮层 ═══════════ -->
+<div class="quiz-overlay" v-if="explain.show">
+  <div class="quiz-shell explain-shell">
+    <div class="quiz-top">
+      <span class="qname">🤖 AI 错题讲解</span>
+      <button class="icon-btn" @click="closeExplain()" title="关闭">✕</button>
+    </div>
+    <div class="explain-body">
+      <div v-if="explain.loading" class="empty" style="padding:60px 20px">
+        <div class="em">🤖</div><h3>老师正在讲解…</h3><p>通常 3-10 秒，请稍等</p>
+      </div>
+      <template v-else>
+        <p class="explain-q">{{explain.question}}</p>
+        <div class="explain-seg" v-for="(s,i) in explainSections" :key="i" :class="{first: i===0}">
+          <div class="seg-title" v-if="s.title">【{{s.title}}】</div>
+          <div class="seg-body">
+            <p v-for="(line,li) in s.body.split('\n').filter(x=>x.trim())" :key="li">{{line}}</p>
+          </div>
+        </div>
+        <p class="explain-deg" v-if="explain.degraded">（离线讲解版 · 已尽力帮到你了）</p>
+        <div class="explain-actions">
+          <button class="btn btn-primary" @click="explainMastered()">✅ 这次会了</button>
+          <button class="btn btn-ghost" @click="startWrongRetry(curWrong); closeExplain()">🎯 变式重练</button>
+          <button class="btn btn-ghost" @click="closeExplain()">关闭</button>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ 全屏答题（通用状态机） ═══════════ -->
-<div class="quiz-overlay" v-if="quiz.active">
+<div class="quiz-overlay" v-if="quiz.active" :class="{turbo}">
   <template v-if="!quiz.done">
     <div class="quiz-shell">
       <div class="quiz-top">
         <span class="qname">{{quiz.title}}</span>
         <div class="progress"><i :style="{width: quizPct+'%'}"></i></div>
+        <span class="combo-badge" v-if="combo>=2">🔥 {{combo}}</span>
         <span class="qcount">{{quiz.i+1}} / {{quiz.items.length}}</span>
         <button class="icon-btn" @click="closeQuiz()" title="退出">✕</button>
       </div>
+      <div class="float-fx" v-if="floatFx.show" :class="{no: !floatFx.ok}">{{floatFx.text}}</div>
       <div class="quiz-card" style="max-width:760px">
         <template v-if="quiz.items.length">
           <div class="quiz-q">{{quiz.items[quiz.i].question}}</div>
@@ -598,10 +1013,17 @@
             <input v-model="quiz.fillText" class="fill-input" :placeholder="quiz.items[quiz.i].placeholder||'请输入答案'" @keyup.enter="submitFill()" :disabled="quiz.items[quiz.i].answered" style="margin-top:0">
             <button class="btn btn-primary" @click="submitFill()" :disabled="quiz.items[quiz.i].answered">提交</button>
           </div>
-          <div class="feedback" :class="{on: quiz.items[quiz.i].answered, ok: quiz.items[quiz.i].correct, no: quiz.items[quiz.i].answered && !quiz.items[quiz.i].correct}">
+          <div class="feedback" :class="{on: quiz.items[quiz.i].answered, ok: quiz.items[quiz.i].answered && quiz.items[quiz.i].correct, no: quiz.items[quiz.i].answered && !quiz.items[quiz.i].correct}">
             <template v-if="quiz.items[quiz.i].answered">
-              <h4>{{quiz.items[quiz.i].correct ? '✅ 回答正确！' : '❌ 回答错误'}}</h4>
+              <h4 v-if="quiz.items[quiz.i].correct">✔ 回答正确！<span v-if="combo>=2" class="fb-combo">🔥 连击 x{{combo}}</span></h4>
+              <h4 v-else>差一点！没关系</h4>
               <p v-if="!quiz.items[quiz.i].correct">正确答案：<b style="color:var(--success)">{{quiz.items[quiz.i].answer}}</b></p>
+              <p v-if="!quiz.items[quiz.i].correct" class="fb-gentle">每一次错题都是进步的机会，订正一次就多掌握一个知识点 ✨</p>
+              <div class="cause-pills" v-if="!quiz.items[quiz.i].correct && quiz.items[quiz.i].qid && !quiz.items[quiz.i].cause">
+                <span class="pill-label">这次是哪里没弄明白？</span>
+                <button v-for="(c,ci) in causeOptions" :key="ci" class="cause-pill" @click="pickCause(c.code)">{{c.label}}</button>
+              </div>
+              <p v-if="!quiz.items[quiz.i].correct && quiz.items[quiz.i].cause" class="fb-gentle">已记录错因：{{causeLabel(quiz.items[quiz.i].cause)}} · 进步 +1 ✨</p>
               <p v-if="quiz.items[quiz.i].explanation">📖 {{quiz.items[quiz.i].explanation}}</p>
             </template>
           </div>
@@ -615,14 +1037,22 @@
     </div>
   </template>
   <div v-else class="done-wrap">
+    <div class="stars-row">
+      <span v-for="n in 3" :key="n" class="star" :class="{on: n<=starCount}">★</span>
+    </div>
     <div class="done-illus" :class="{no: quiz.score<60}">{{quiz.score>=90?'🏆':quiz.score>=60?'🎉':'💪'}}</div>
     <h2>{{quiz.score>=90?'太棒了！':quiz.score>=60?'继续加油！':'别灰心，再来一次'}}</h2>
-    <p class="sub">{{quiz.title}} · 完成</p>
+    <p class="sub">{{quiz.title}} · 完成<template v-if="maxCombo>=2"> · 最佳连击 🔥 x{{maxCombo}}</template></p>
     <div class="done-grid">
       <div class="done-cell"><b>{{quiz.score}}分</b><span>得分</span></div>
       <div class="done-cell"><b>{{quiz.correct}}/{{quiz.items.length}}</b><span>答对题数</span></div>
       <div class="done-cell"><b>{{quiz.wrongCount}}</b><span>错题（已入错题本）</span></div>
     </div>
+    <div class="chest-box" :class="{locked: quiz.score<60}">
+      <span class="chest">🎁</span>
+      <p>{{quiz.score>=60 ? '宝箱开启：' + chestReward : '得分 60 分以上可开启宝箱，明天再来挑战！'}}</p>
+    </div>
+    <p class="sub next-preview">下一关预告：明天的 3 个新任务等你解锁 🔥</p>
     <div class="done-note" v-if="quiz.wrongCount>0">📝 {{quiz.wrongCount}} 道错题已自动加入错题本，可在「错题本」中复盘错因并变式重练</div>
     <div class="done-actions">
       <button class="btn btn-ghost" @click="quizAgain()">再来一组</button>
@@ -744,6 +1174,7 @@
 <div class="toast" :class="{on: toast.show}">{{toast.msg}}</div>
 
 </div>
-<script src="/static/app.js?v=9"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="/static/app.js?v=14"></script>
 </body>
 </html>

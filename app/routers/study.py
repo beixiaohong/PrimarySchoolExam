@@ -6,7 +6,7 @@
 今日任务：汇总背单词/古诗文/语法/错题四个模块的待办数量，供首页使用。
 """
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models.study_error import StudyError
-from ..models.exam import WrongRecord, Question
+from ..models.exam import WrongRecord, Question, ExamAttempt
 from ..models.vocab import VocabProgress, VocabDailyLog
 from ..models.classical import ClassicalProgress, ClassicalDailyLog
 from ..models.word import Word, WordBook
@@ -470,6 +470,103 @@ def submit_cause(req: CauseRequest, db: Session = Depends(get_db)):
     rec.cause = req.cause
     db.commit()
     return {"ok": True, "cause": req.cause, "cause_label": CAUSE_LABELS[req.cause]}
+
+
+class CauseByQuestionRequest(BaseModel):
+    user_id: str
+    question_id: int
+    cause: str
+
+
+@router.post("/cause-by-question", summary="按题目提交错因自评（答题中自评）")
+def submit_cause_by_question(req: CauseByQuestionRequest, db: Session = Depends(get_db)):
+    """试卷错题按 question_id 提交错因（答题完成后批量调用）"""
+    if req.cause not in CAUSE_LABELS:
+        raise HTTPException(400, f"错因无效，可选：{', '.join(CAUSE_LABELS.keys())}")
+    rec = db.query(WrongRecord).filter(
+        WrongRecord.user_id == req.user_id,
+        WrongRecord.question_id == req.question_id,
+    ).order_by(WrongRecord.id.desc()).first()
+    if not rec:
+        raise HTTPException(404, "该题暂不在错题本中")
+    rec.cause = req.cause
+    db.commit()
+    return {"ok": True, "cause": req.cause, "cause_label": CAUSE_LABELS[req.cause]}
+
+
+# ═══════════════════════════════════════════════════════════
+# 自我超越（统计页 · 只和自己比）
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/self-compare", summary="自我超越：最近两次做题/今昨背诵/本周错题对比")
+def self_compare(
+    user_id: str = Query(..., description="用户名"),
+    subject: Optional[str] = Query(None, description="学科筛选（缺省全部）"),
+    db: Session = Depends(get_db),
+):
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    # 1) 做题对比：最近两次（按提交时间）
+    from ..models.exam import ExamRecord
+    q = db.query(ExamAttempt, ExamRecord.title).join(
+        ExamRecord, ExamAttempt.exam_id == ExamRecord.id)
+    q = q.filter(ExamAttempt.user_id == user_id)
+    if subject:
+        q = q.filter(ExamRecord.subject == subject)
+    rows = q.order_by(ExamAttempt.id.desc()).limit(2).all()
+    attempts_cmp = None
+    if len(rows) >= 2:
+        (last, last_title), (prev, prev_title) = rows[0], rows[1]
+        attempts_cmp = {
+            "last_correct": last.correct, "prev_correct": prev.correct,
+            "delta_correct": last.correct - prev.correct,
+            "last_score": last.score, "prev_score": prev.score,
+            "delta_score": last.score - prev.score,
+            "last_title": last_title or "最近一次",
+        }
+    elif len(rows) == 1:
+        attempts_cmp = {"last_correct": rows[0][0].correct, "prev_correct": None,
+                        "delta_correct": None, "last_score": rows[0][0].score,
+                        "prev_score": None, "delta_score": None,
+                        "last_title": rows[0][1] or "最近一次"}
+
+    # 2) 单词：今天 vs 昨天新学
+    def day_new_words(d):
+        rows = db.query(VocabDailyLog).filter(
+            VocabDailyLog.user_id == user_id,
+            VocabDailyLog.learn_date == d,
+        ).all()
+        return sum(r.new_words_learned or 0 for r in rows)
+
+    new_words_today, new_words_yday = day_new_words(today), day_new_words(yesterday)
+
+    # 3) 古诗文：今天 vs 昨天学习量
+    def day_classical(d):
+        rows = db.query(ClassicalDailyLog).filter(
+            ClassicalDailyLog.user_id == user_id,
+            ClassicalDailyLog.learn_date == d,
+        ).all()
+        return sum((r.texts_learned or 0) + (r.texts_reviewed or 0) for r in rows)
+
+    cls_today, cls_yday = day_classical(today), day_classical(yesterday)
+
+    # 4) 本周消灭错题（7 天内新掌握）
+    week_ago = datetime.combine(today - timedelta(days=7), datetime.min.time())
+    mastered_7d = db.query(WrongRecord).filter(
+        WrongRecord.user_id == user_id,
+        WrongRecord.is_mastered == True,  # noqa: E712
+        WrongRecord.mastered_at >= week_ago,
+    ).count()
+
+    return {
+        "attempts": attempts_cmp,
+        "vocab": {"today": new_words_today, "yesterday": new_words_yday,
+                  "delta": new_words_today - new_words_yday},
+        "classical": {"today": cls_today, "yesterday": cls_yday,
+                      "delta": cls_today - cls_yday},
+        "mastered_7d": mastered_7d,
+    }
 
 
 # ═══════════════════════════════════════════════════════════

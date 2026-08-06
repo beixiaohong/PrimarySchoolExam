@@ -3,3 +3,5 @@ output/
 .venv/
 *.db
 *.log
+.env
+primary_school.db

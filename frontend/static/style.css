@@ -412,3 +412,202 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 /* ============ 响应式 ============ */
 @media (max-width:1180px){.grid-3{grid-template-columns:repeat(2,1fr)}.chart-wrap{grid-template-columns:1fr}}
 @media (max-width:900px){.sidebar{display:none}.main{margin-left:0}.topbar{padding:0 16px}.content{padding:18px}.timeline{grid-template-columns:repeat(2,1fr)}.stat-grid{grid-template-columns:repeat(2,1fr)}.detail-compare{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}}
+
+/* ═══════════ 爽感升级（连击 / 飘字 / 星级 / 宝箱） ═══════════ */
+.combo-badge{display:inline-flex;align-items:center;gap:4px;background:linear-gradient(135deg,#FF8A3D,#FF5E3A);color:#fff;font-size:13px;font-weight:800;padding:4px 12px;border-radius:999px;animation:popIn .25s ease;box-shadow:0 4px 12px rgba(255,94,58,.35);flex-shrink:0}
+.fb-combo{display:inline-block;margin-left:8px;font-size:13px;color:#FF5E3A;font-weight:700;animation:popIn .3s ease}
+.float-fx{position:absolute;top:96px;left:50%;transform:translateX(-50%);font-size:22px;font-weight:800;color:var(--success);text-shadow:0 2px 10px rgba(52,199,123,.35);pointer-events:none;z-index:20;animation:floatUp .7s ease forwards}
+.float-fx.no{color:var(--warning);text-shadow:0 2px 10px rgba(245,166,35,.3)}
+@keyframes floatUp{0%{opacity:0;transform:translate(-50%,18px) scale(.8)}20%{opacity:1;transform:translate(-50%,0) scale(1.12)}100%{opacity:0;transform:translate(-50%,-46px) scale(1)}}
+.stars-row{display:flex;justify-content:center;gap:10px;margin-bottom:12px}
+.star{font-size:42px;line-height:1;color:var(--border);transition:.25s}
+.star.on{color:#F5A623;animation:starPop .55s ease both;text-shadow:0 4px 16px rgba(245,166,35,.5)}
+@keyframes starPop{0%{transform:scale(0) rotate(-40deg);opacity:0}70%{transform:scale(1.28) rotate(10deg);opacity:1}100%{transform:scale(1) rotate(0)}}
+.chest-box{display:flex;align-items:center;gap:14px;justify-content:center;margin:18px auto 0;max-width:440px;padding:14px 18px;border-radius:14px;background:linear-gradient(135deg,#FFF7E6,#FFEFC9);border:2px dashed #F5C76A}
+.chest-box .chest{font-size:34px;animation:chestShake 1.5s ease-in-out infinite}
+.chest-box p{font-size:14px;color:var(--text-2)}
+.chest-box.locked{background:var(--bg);border-color:var(--border)}
+.chest-box.locked .chest{filter:grayscale(.85);animation:none;opacity:.7}
+@keyframes chestShake{0%,100%{transform:rotate(0)}15%{transform:rotate(-12deg) translateY(-2px)}35%{transform:rotate(10deg) translateY(-2px)}55%{transform:rotate(-7deg)}75%{transform:rotate(7deg)}}
+.next-preview{margin-top:8px;font-size:13px;color:var(--text-3)}
+
+/* ═══════════ 温柔错题 + 错因自评 ═══════════ */
+.fb-gentle{font-size:12.5px;color:var(--text-2);font-style:italic}
+.cause-pills{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.pill-label{font-size:12px;color:var(--text-3);margin-right:2px}
+.cause-pill{padding:6px 13px;border-radius:999px;border:1.5px solid var(--border);background:#fff;font-size:13px;color:var(--text-2);cursor:pointer;transition:.15s}
+.cause-pill:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
+
+/* ═══════════ 自我超越（统计页） ═══════════ */
+.cmp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:12px}
+.cmp-item{display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:12px;background:var(--bg);border:1px solid var(--border)}
+.cmp-ico{font-size:20px;flex-shrink:0}
+.cmp-item p{font-size:13.5px;color:var(--text-2);line-height:1.5}
+.cmp-item.empty{grid-column:1/-1;justify-content:center}
+
+/* ═══════════ 极速模式（动画加速） ═══════════ */
+.quiz-overlay.turbo *, .quiz-overlay.turbo *::before, .quiz-overlay.turbo *::after{animation-duration:.12s!important;transition-duration:.12s!important}
+
+/* ═══════════ Sprint 2：AI 错题讲解 ═══════════ */
+.explain-shell{max-width:640px}
+.explain-body{max-height:70vh;overflow-y:auto;padding:4px 2px}
+.explain-q{font-size:15.5px;font-weight:600;color:var(--text-1);background:var(--bg-soft);border:1px dashed var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px;line-height:1.6}
+.explain-seg{border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--bg-soft)}
+.explain-seg.first{background:linear-gradient(135deg,#FFF7E8,#FFF)}
+.seg-title{font-weight:700;font-size:14.5px;color:var(--primary);margin-bottom:6px}
+.seg-body p{margin:4px 0;font-size:14px;line-height:1.75;color:var(--text-2);white-space:pre-wrap;word-break:break-word}
+.explain-deg{font-size:12px;color:var(--text-3);text-align:center;margin:6px 0}
+.explain-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+
+/* ═══════════ Sprint 2：心情打卡 ═══════════ */
+.mood-7{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin:12px 0 14px}
+.mood-day{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;border-radius:12px;background:var(--bg-soft);border:1px solid transparent}
+.mood-day.today{border-color:var(--primary);background:#FFF7E8}
+.mood-day.neg{background:#FDECEC}
+.md-week{font-size:11px;color:var(--text-3)}
+.md-face{font-size:21px;line-height:1.2}
+.mood-day .md-face{font-size:19px}
+.md-note{font-size:10px;color:var(--text-3);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mood-pick{display:flex;gap:8px;flex-wrap:wrap}
+.mood-btn{flex:1;min-width:88px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border-radius:14px;border:1.5px solid var(--border);background:#fff;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s}
+.mood-btn:hover{transform:translateY(-2px);border-color:var(--primary);box-shadow:0 4px 12px rgba(78,124,246,.15)}
+.mood-btn .mf{font-size:24px}
+.mood-btn b{font-size:12.5px;color:var(--text-2);font-weight:600}
+.mood-note-row{margin-top:10px}
+.mood-done{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:linear-gradient(135deg,#F0FFF4,#FFF);font-size:14px;color:var(--text-2)}
+.mood-done .md-face.big{font-size:26px}
+.mood-alert{display:flex;gap:14px;align-items:flex-start;padding:16px;border:1.5px solid #F8C8C0;background:linear-gradient(135deg,#FFF5F3,#FFF)}
+.mood-alert .alert-ico{font-size:30px}
+.mood-alert b{color:#D9543E;font-size:14.5px}
+.mood-alert p{margin:4px 0 0;font-size:13.5px;color:var(--text-2);line-height:1.6}
+
+/* ═══════════ Sprint 3：奖励小屋 + 成长周报 + 家长管理 ═══════════ */
+.reward-card{background:linear-gradient(135deg,#FFF9F0,#FFF);border-color:#F3DFC0}
+.reward-card .card-head{margin-bottom:12px}
+.wish-box{padding:14px 16px;border-radius:14px;background:linear-gradient(135deg,#FFF6E9,#FFF);border:1.5px dashed #F0C98A}
+.wish-empty p{margin:6px 0 0;font-size:13px;color:var(--text-2)}
+.wish-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.wish-head b{font-size:15px;color:#9A6B1F}
+.wish-head .btn{padding:4px 10px}
+.wish-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--text-2)}
+.coupon-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.coupon-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:#FFF}
+.coupon-item .ci{font-size:20px}
+.coupon-item .c-body{display:flex;flex-direction:column;font-size:12.5px}
+.coupon-item .c-body b{font-size:13.5px;color:var(--text-1)}
+.coupon-item .c-body span{color:var(--text-2);font-size:11.5px}
+.weekly-entry{display:flex;align-items:center;gap:14px;cursor:pointer;transition:transform .15s}
+.weekly-entry:hover{transform:translateY(-1px)}
+.weekly-entry .w-ico{font-size:30px;flex-shrink:0}
+.weekly-entry .w-body{flex:1;display:flex;flex-direction:column}
+.weekly-entry .w-body b{font-size:14.5px}
+.weekly-entry .w-body span{font-size:12.5px;color:var(--text-2);margin-top:2px}
+.weekly-shell{max-width:440px;max-height:86vh;overflow-y:auto}
+.weekly-body{padding:18px}
+.share-target{background:#FFF;border:1.5px solid var(--line);border-radius:16px;padding:20px 18px;text-align:center}
+.weekly-head{border-bottom:2px dashed #E8E1F5;padding-bottom:12px}
+.wh-title{font-size:22px;font-weight:800;background:linear-gradient(90deg,#7B5CF6,#4E7CF6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.wh-sub{font-size:12.5px;color:var(--text-2);margin-top:4px}
+.weekly-hl{display:flex;flex-direction:column;gap:8px;margin:16px 0;text-align:left}
+.whl-item{display:flex;gap:8px;align-items:center;padding:9px 12px;border-radius:12px;background:#F6F4FE;font-size:13.5px;color:#4A3F7A}
+.weekly-advice{margin:14px 0;text-align:left;padding:12px 14px;border-radius:12px;background:linear-gradient(135deg,#FFF8EE,#FFF);border:1px solid #F3DFC0}
+.weekly-advice b{font-size:13.5px;color:#9A6B1F}
+.weekly-advice p{margin:6px 0 0;font-size:13.5px;color:var(--text-1);line-height:1.7}
+.weekly-stats{display:flex;justify-content:space-around;gap:6px;margin:16px 0;padding:14px 6px;border-radius:14px;background:#F2F7FF}
+.ws{display:flex;flex-direction:column;align-items:center;min-width:52px}
+.ws b{font-size:19px;color:#2B5BD7}
+.ws span{font-size:11.5px;color:var(--text-2);margin-top:3px}
+.weekly-note{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px;border-radius:14px;background:#FFF6F0;border:1px solid #F8DCCB}
+.weekly-note.empty{background:#FAFAFC;border-color:var(--line)}
+.weekly-note .wn-ico{font-size:26px;flex-shrink:0}
+.weekly-note b{font-size:13.5px;color:#C96B2E}
+.weekly-note p{margin:5px 0 0;font-size:13.5px;color:var(--text-1);line-height:1.7}
+.weekly-actions{display:flex;gap:10px;margin-top:16px}
+.weekly-actions .btn{flex:1;justify-content:center}
+.share-result{margin-top:14px;text-align:center}
+.share-result img{max-width:100%;border-radius:14px;border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.share-result p{margin-top:8px;font-size:12px;color:var(--text-2)}
+.wish-shell{max-width:420px}
+.wish-form{display:flex;flex-direction:column;padding:20px 22px}
+.wish-form label{font-size:13px;font-weight:600;color:var(--text-1);margin-bottom:6px}
+.wish-tip{margin-top:10px;font-size:12.5px;color:var(--text-2);line-height:1.6}
+.parent-card{background:linear-gradient(135deg,#F4F7FF,#FFF)}
+.pc-sec{padding:14px 0;border-top:1px dashed var(--line)}
+.pc-sec:first-of-type{border-top:none}
+.pc-title{font-size:14px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.pc-title .more{font-size:11.5px;font-weight:400;color:var(--text-2)}
+.pc-row{display:flex;gap:8px;align-items:center}
+.fill-input{flex:1;min-width:0;padding:9px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:13.5px;background:#FFF;color:var(--text-1);outline:none;transition:border-color .15s}
+.fill-input:focus{border-color:#4E7CF6}
+.pc-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.pc-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#FFF}
+.pc-item .c-body{flex:1;min-width:0;display:flex;flex-direction:column;font-size:12px}
+.pc-item .c-body b{font-size:13.5px;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-item .c-body span{color:var(--text-2);margin-top:2px;font-size:11.5px}
+.pc-empty{margin-top:10px;font-size:12.5px;color:var(--text-2)}
+
+/* ═══════════ Sprint 4：称号 / 挑战赛 / 目标 / 小老师 ═══════════ */
+.title-badge{display:inline-block;vertical-align:middle;margin-left:6px;padding:3px 12px;border-radius:999px;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);font-size:13px;font-weight:700;letter-spacing:.5px}
+.title-card{background:linear-gradient(135deg,#F2F0FF,#FFF);border-color:#DDD6F8}
+.badge-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.badge-item{display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:12px;background:#FFF;border:1px solid var(--line);min-width:150px}
+.badge-item .bi{font-size:22px}
+.badge-item div{display:flex;flex-direction:column}
+.badge-item b{font-size:13px;color:var(--text-1)}
+.badge-item i{font-size:11.5px;font-style:normal;color:var(--text-2);margin-top:1px}
+.badge-item.unlocked{border-color:#B9E4C4;background:#F4FCF6}
+.badge-item.unlocked b{color:#2E8B57}
+.badge-item:not(.unlocked){opacity:.75}
+.weekly-entry,.chal-entry,.goal-entry{display:flex;align-items:center;gap:14px;cursor:pointer;transition:transform .15s}
+.weekly-entry:hover,.chal-entry:hover,.goal-entry:hover{transform:translateY(-1px)}
+.weekly-entry .w-ico,.chal-entry .w-ico,.goal-entry .w-ico{font-size:30px;flex-shrink:0}
+.weekly-entry .w-body,.chal-entry .w-body,.goal-entry .w-body{flex:1;display:flex;flex-direction:column}
+.weekly-entry .w-body b,.chal-entry .w-body b,.goal-entry .w-body b{font-size:14.5px}
+.weekly-entry .w-body span,.chal-entry .w-body span,.goal-entry .w-body span{font-size:12.5px;color:var(--text-2);margin-top:2px}
+.chal-entry{background:linear-gradient(135deg,#FFF4F4,#FFF);border-color:#F3D3D3}
+.goal-entry{background:linear-gradient(135deg,#F4F8FF,#FFF);border-color:#D3E0F3}
+.chal-shell,.goal-shell,.teach-shell{max-width:460px;max-height:86vh;overflow-y:auto}
+.chal-body,.goal-body,.teach-body{padding:20px 22px}
+.chal-pick{display:flex;gap:12px}
+.chal-pick .btn{flex:1;justify-content:center;padding:18px 10px;font-size:15px}
+.chal-rec{margin:16px 0 0;font-size:13.5px;color:var(--text-1);line-height:1.8;text-align:center}
+.chal-rec span{font-size:12px;color:var(--text-2)}
+.chal-timer{text-align:center;font-size:44px;font-weight:800;color:#2B5BD7;line-height:1.1}
+.chal-timer.low{color:#E0524C;animation:pulse .8s infinite}
+@keyframes pulse{50%{transform:scale(1.06)}}
+.chal-timer small{font-size:16px;font-weight:600}
+.chal-score{text-align:center;font-size:13.5px;color:var(--text-2);margin:6px 0 14px}
+.chal-score b{font-size:18px;color:#2E8B57}
+.chal-combo{color:#F5A623;font-weight:700;margin-left:8px}
+.chal-q{border:1.5px solid var(--line);border-radius:16px;padding:20px 16px;background:#FAFAFF}
+.chal-q h3{font-size:20px;text-align:center;margin-bottom:16px}
+.chal-options{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chal-options .btn{justify-content:center;padding:12px 8px;font-size:14px}
+.chal-input-row{display:flex;gap:10px}
+.chal-input-row .fill-input{font-size:20px;text-align:center}
+.chal-result{text-align:center;padding:10px 0}
+.chal-result .em{font-size:52px}
+.chal-result h3{margin:10px 0 4px;font-size:21px}
+.chal-result p{color:var(--text-2);font-size:13.5px}
+.goal-list{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.goal-item{border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;background:#FFF}
+.g-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.g-head b{font-size:14px}
+.g-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--text-2)}
+.goal-form{border-top:1.5px dashed var(--line);padding-top:16px}
+.goal-form label{font-size:13.5px;font-weight:700;display:block;margin-bottom:8px}
+.teach-step{padding:6px 0}
+.ts-tag{display:inline-block;padding:4px 12px;border-radius:999px;background:#F0EDFF;color:#5A45C8;font-size:12px;font-weight:700;margin-bottom:12px}
+.ts-q{font-size:16.5px;line-height:1.7;margin:0 0 12px}
+.ts-answer{border:1.5px dashed #C9BCF2;border-radius:12px;padding:8px 14px;background:#FBFAFF;margin-bottom:12px}
+.ts-answer summary{cursor:pointer;font-size:13px;font-weight:600;color:#6A55D8}
+.ts-answer p{margin:8px 0 2px;font-size:14px;color:var(--text-1)}
+.ts-hint{font-size:12.5px;color:var(--text-2);line-height:1.6;margin-top:10px}
+.ts-pair{display:flex;gap:10px}
+.ts-ans-box{flex:1;border-radius:12px;padding:12px;background:#FFF5F4;border:1px solid #F3CDCB}
+.ts-ans-box.right{background:#F2FBF5;border-color:#BFE4CB}
+.ts-ans-box span{display:block;font-size:11.5px;color:var(--text-2);margin-bottom:4px}
+.ts-ans-box b{font-size:15px;word-break:break-all}
+.teach-due{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;cursor:pointer;border-color:#F0C98A;background:linear-gradient(135deg,#FFF8EC,#FFF)}
+.teach-due b{font-size:14px;color:#9A6B1F}
+.teach-due span{font-size:12.5px;color:var(--text-2)}
