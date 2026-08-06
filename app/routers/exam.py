@@ -14,7 +14,7 @@
 import json
 import random
 from datetime import datetime
-from typing import List
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -569,6 +569,86 @@ def _generate_math_exam(req: ExamCreateRequest, db: Session):
     return filepath, questions_data
 
 
+def _build_typed_paper(target: int, types_used: List[str], gen_fn) -> Dict[str, list]:
+    """按目标总题数精确生成分题型试卷（英语/语文共用）。
+
+    - target < 题型数：只使用前 target 个题型，每题型 1 题
+    - 否则：带余数均分（前 rem 个题型各多 1 题），保证总数 == target
+    - 生成结果按题目文本去重；不足时向所有题型追加补齐（最多 3 轮）
+    - 超出时从尾部裁剪（每题型至少保留 1 题）；空题型过滤
+    gen_fn(types: List[str], count_per_type: int) -> Dict[str, list]
+    """
+    if target < 1:
+        return {}
+    if len(types_used) > target:
+        types_used = types_used[:target]
+
+    # 带余数均分配额
+    base, rem = divmod(target, len(types_used)) if types_used else (0, 0)
+    quotas = {t: base + (1 if i < rem else 0) for i, t in enumerate(types_used)}
+
+    # 相同配额分组调用，减少生成器调用次数
+    groups = {}
+    for t, q in quotas.items():
+        groups.setdefault(q, []).append(t)
+
+    result: Dict[str, list] = {}
+    seen = {t: set() for t in types_used}
+    for q, types in groups.items():
+        for etype, items in gen_fn(types, q).items():
+            pool = result.setdefault(etype, [])
+            if etype not in seen:
+                seen[etype] = set()
+            for it in items:
+                qtext = it.get("question", "")
+                if qtext and qtext in seen[etype]:
+                    continue
+                if qtext:
+                    seen[etype].add(qtext)
+                pool.append(it)
+
+    # 总数不足：向各题型追加补齐（去重），最多 3 轮
+    total = sum(len(v) for v in result.values())
+    for _ in range(3):
+        if total >= target:
+            break
+        need = target - total
+        added = 0
+        for etype, items in gen_fn(types_used, need).items():
+            pool = result.setdefault(etype, [])
+            if etype not in seen:
+                seen[etype] = set()
+            for it in items:
+                qtext = it.get("question", "")
+                if qtext and qtext in seen[etype]:
+                    continue
+                if qtext:
+                    seen[etype].add(qtext)
+                pool.append(it)
+                added += 1
+                if added >= need:
+                    break
+            if added >= need:
+                break
+        if added == 0:
+            break
+        total += added
+
+    # 总数超出：从尾部裁剪（每题型至少保留 1 题）
+    total = sum(len(v) for v in result.values())
+    if total > target:
+        overflow = total - target
+        for t in reversed(list(result.keys())):
+            if overflow <= 0:
+                break
+            lst = result[t]
+            while len(lst) > 1 and overflow > 0:
+                lst.pop()
+                overflow -= 1
+
+    return {k: v for k, v in result.items() if v}
+
+
 def _generate_english_exam(req: ExamCreateRequest, db: Session):
     """生成英语试卷，返回 (文件路径, 题目数据列表)"""
     from ..services.english_generator import generate_english_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
@@ -576,16 +656,17 @@ def _generate_english_exam(req: ExamCreateRequest, db: Session):
 
     # 确定实际使用的题型列表
     types_used = req.english_types if req.english_types else ALL_EXERCISE_TYPES[:]
-    # 总题数均分到各题型
-    count_per_type = max(3, req.english_count // len(types_used))
 
-    exercises = generate_english_exam(
-        grade=req.grade,
-        book_ids=req.english_book_ids,
-        count_per_type=count_per_type,
-        exercise_types=req.english_types,
-        db=db,
-    )
+    def _gen(types, count):
+        return generate_english_exam(
+            grade=req.grade,
+            book_ids=req.english_book_ids,
+            count_per_type=count,
+            exercise_types=types,
+            db=db,
+        )
+
+    exercises = _build_typed_paper(req.english_count, types_used, _gen)
     filepath = build_english_docx(exercises, req.grade, title=req.title)
 
     questions_data = []
@@ -713,15 +794,20 @@ def _generate_chinese_exam(req: ExamCreateRequest, db: Session):
     from ..services.docx_service import build_english_docx
 
     types_used = req.english_types if req.english_types else ALL_EXERCISE_TYPES[:]
-    count_per_type = max(3, req.english_count // len(types_used))
 
-    exercises = generate_chinese_exam(
-        grade=req.grade,
-        count_per_type=count_per_type,
-        exercise_types=req.english_types,
-        db=db,
+    def _gen(types, count):
+        return generate_chinese_exam(
+            grade=req.grade,
+            count_per_type=count,
+            exercise_types=types,
+            db=db,
+        )
+
+    exercises = _build_typed_paper(req.english_count, types_used, _gen)
+    filepath = build_english_docx(
+        exercises, req.grade, title=req.title,
+        type_names=TYPE_NAMES, filename_prefix="语文",
     )
-    filepath = build_english_docx(exercises, req.grade, title=req.title)
 
     questions_data = []
     seq = 0

@@ -117,9 +117,14 @@ def build_english_docx(
     exercises: Dict[str, list],
     grade: int = 6,
     title: str = None,
+    type_names: Dict[str, str] = None,
+    filename_prefix: str = "英语",
 ) -> str:
-    """生成英语试卷Word文档"""
-    from ..services.english_generator import TYPE_NAMES
+    """生成英语/语文试卷Word文档"""
+    from ..services.english_generator import TYPE_NAMES as EN_TYPE_NAMES
+
+    if type_names is None:
+        type_names = EN_TYPE_NAMES
 
     doc = Document()
 
@@ -152,7 +157,7 @@ def build_english_docx(
         if not items:
             continue
         section_num += 1
-        type_name = TYPE_NAMES.get(key, key)
+        type_name = type_names.get(key, key)
         num_label = cn_nums[section_num - 1] if section_num <= 10 else str(section_num)
         sec_title = doc.add_paragraph()
         run = sec_title.add_run(f"{num_label}、{type_name}（共{len(items)}题）")
@@ -187,7 +192,7 @@ def build_english_docx(
         if not items:
             continue
         section_num += 1
-        type_name = TYPE_NAMES.get(key, key)
+        type_name = type_names.get(key, key)
         num_label = cn_nums[section_num - 1] if section_num <= 10 else str(section_num)
         sec_p = doc.add_paragraph()
         run = sec_p.add_run(f"{num_label}、{type_name}")
@@ -199,7 +204,7 @@ def build_english_docx(
             run.font.size = Pt(10)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"英语_{grade}年级_{timestamp}.docx"
+    filename = f"{filename_prefix}_{grade}年级_{timestamp}.docx"
     filepath = os.path.join(OUTPUT_DIR, filename)
     doc.save(filepath)
     return filepath

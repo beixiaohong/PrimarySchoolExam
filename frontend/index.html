@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=4">
+<link rel="stylesheet" href="/static/style.css?v=9">
 </head>
 <body>
 <div id="app">
@@ -100,6 +100,27 @@
           </div>
         </div>
 
+        <!-- 每科必做：今日任务（每科完成 1 项即全勤，任务可更换） -->
+        <div class="section-title">✅ 每科必做 <span class="more">三科各完成 1 项即今日全勤 · 🔥已连续 {{dailyTaskStats.streak_days}} 天</span></div>
+        <div class="grid-3" v-if="dailyTasks">
+          <div class="card dtask" :class="{done: t.status==='done'}" v-for="t in dailyTasks" :key="t.subject">
+            <div class="dtask-head">
+              <span class="tag" :class="t.subject==='数学' ? 'tag-orange' : (t.subject==='语文' ? 'tag-green' : 'tag-blue')">{{t.subject}}</span>
+              <span class="dtask-state" :class="{ok: t.status==='done'}">{{t.status==='done' ? '✅ 已完成' : t.progress + ' / ' + t.target}}</span>
+            </div>
+            <div class="dtask-ico">{{t.ico}}</div>
+            <b class="dtask-title">{{t.title}}</b>
+            <div class="dtask-desc">{{t.desc}}</div>
+            <div class="dtask-actions">
+              <button class="btn btn-ghost btn-sm" :disabled="t.status==='done'" @click="swapDailyTask(t.subject)">换一个<span v-if="t.next_title" class="next-hint">：{{t.next_title}}</span></button>
+              <button v-if="t.manual && t.status!=='done'" class="btn btn-primary btn-sm" @click="claimDailyTask(t.subject)">我完成了 ✓</button>
+              <span v-else-if="t.status==='done'" class="tag tag-green">全勤 +1</span>
+            </div>
+            <div class="dtask-bar"><div class="dtask-bar-in" :style="{width: (t.target ? Math.min(100, t.progress / t.target * 100) : 0) + '%'}"></div></div>
+          </div>
+        </div>
+        <div v-else class="card"><div class="empty"><div class="em">🎯</div><h3>加载今日任务中…</h3></div></div>
+
         <!-- 今日任务包（点击卡片直接开始，无确认弹窗） -->
         <div class="section-title">🗂️ 今日任务包 <span class="more">点击卡片立即开始，按遗忘曲线自动安排</span></div>
         <div class="grid-3" v-if="dashboard">
@@ -166,7 +187,7 @@
               </div>
               <div class="form-item">
                 <label>题数</label>
-                <input type="number" v-model.number="genCount" :min="subject==='数学'?5:10" :max="subject==='数学'?100:200">
+                <input type="number" v-model.number="genCount" min="1" max="200">
               </div>
               <div class="form-item" v-if="subject==='数学'">
                 <label>题型大类（不选则全部）</label>
@@ -254,18 +275,12 @@
           </div>
         </div>
 
-        <!-- 做题记录 -->
+        <!-- 做题记录（跟随顶部学科，只显示当前学科） -->
         <div v-if="practiceSub==='records'">
-          <div class="filter-bar" style="margin:0 0 14px">
-            <button class="pill" :class="{active: attemptSubject===''}" @click="attemptSubject=''; loadAttempts()">全部学科</button>
-            <button class="pill" :class="{active: attemptSubject==='数学'}" @click="attemptSubject='数学'; loadAttempts()">数学</button>
-            <button class="pill" :class="{active: attemptSubject==='语文'}" @click="attemptSubject='语文'; loadAttempts()">语文</button>
-            <button class="pill" :class="{active: attemptSubject==='英语'}" @click="attemptSubject='英语'; loadAttempts()">英语</button>
-          </div>
           <div class="card">
-            <h3 style="font-size:17px;margin-bottom:14px">做题记录</h3>
+            <h3 style="font-size:17px;margin-bottom:14px">做题记录 · {{subject}}</h3>
             <div v-if="attempts===null" class="empty">⏳ 加载中…</div>
-            <div v-else-if="!attempts.length" class="empty"><div class="em">📄</div><h3>暂无做题记录</h3><p>{{attemptSubject ? '切换到「全部学科」可查看其他学科的记录' : '去刷题中心生成试卷开始练习吧'}}</p><button class="btn btn-primary" @click="practiceSub='generate'">去生成试卷</button></div>
+            <div v-else-if="!attempts.length" class="empty"><div class="em">📄</div><h3>暂无做题记录</h3><p>去刷题中心生成试卷开始练习吧</p><button class="btn btn-primary" @click="practiceSub='generate'">去生成试卷</button></div>
             <div v-else>
               <div v-for="a in attempts" :key="a.id" class="attempt-item" @click="viewAttempt(a)">
                 <div class="a-score" :style="{background: a.score>=80?'var(--success-light)':a.score>=60?'var(--warning-light)':'var(--danger-light)', color: a.score>=80?'var(--success)':a.score>=60?'var(--warning)':'var(--danger)'}">{{a.score}}分</div>
@@ -357,12 +372,7 @@
             <span class="filter-sep"></span>
             <button class="pill" :class="{active: wrongStatus==='pending'}" @click="wrongStatus='pending'; loadWrongItems()">未掌握</button>
             <button class="pill" :class="{active: wrongStatus==='mastered'}" @click="wrongStatus='mastered'; loadWrongItems()">已掌握</button>
-            <select class="pill" v-model="wrongSubject" @change="loadWrongItems()">
-              <option value="">全部学科</option>
-              <option>数学</option>
-              <option>英语</option>
-              <option>语文</option>
-            </select>
+            <span class="filter-sep"></span><span class="tag tag-blue">{{subject}}</span>
             <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="loadAnalysis(); wrongScreen='analysis'">📊 错因分析</button>
           </div>
           <div class="card">
@@ -464,12 +474,7 @@
       <div v-if="tab==='papers'" class="fade-enter">
         <div class="filter-bar">
           <button class="btn btn-primary" @click="goTab('practice')">＋ 生成新试卷</button>
-          <select class="pill" v-model="paperSubject" @change="loadPapers()">
-            <option value="">全部学科</option>
-            <option>数学</option>
-            <option>英语</option>
-            <option>语文</option>
-          </select>
+          <span class="filter-sep"></span><span class="tag tag-blue">{{subject}}</span>
         </div>
         <div class="card">
           <div v-if="!papers.length" class="empty"><div class="em">📄</div><h3>还没有试卷</h3><p>去刷题中心生成第一份试卷吧</p><button class="btn btn-primary" @click="goTab('practice')">去生成</button></div>
@@ -489,6 +494,7 @@
 
       <!-- ═══════════ 学习统计 ═══════════ -->
       <div v-if="tab==='stats'" class="fade-enter">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><h2 style="font-size:19px">学习统计</h2><span class="tag tag-blue">{{subject}}</span></div>
         <div class="grid-4">
           <div class="stat-card highlight"><div class="ico">🔥</div><b>{{streakDays}}</b><span>连续学习天数</span></div>
           <div class="stat-card"><div class="ico">📝</div><b>{{statsAttempts}}</b><span>完成试卷</span></div>
@@ -496,7 +502,7 @@
           <div class="stat-card"><div class="ico">✅</div><b>{{masteredTotal}}</b><span>已掌握错题</span></div>
         </div>
         <div class="grid-3" style="margin-top:16px">
-          <div class="card">
+          <div class="card" v-if="subject==='英语'">
             <div class="card-head"><b>📖 单词</b><span class="tag tag-blue">{{vocabStats.learning_count||0}} 学习中</span></div>
             <div class="big-num">{{vocabStats.learned_count||0}}<span> / {{vocabStats.total_words||0}}</span></div>
             <div class="progress"><i :style="{width: statPct(vocabStats.learned_count, vocabStats.total_words)+'%'}"></i></div>
@@ -506,7 +512,7 @@
               <div><b>{{vocabStats.streak_days||0}}</b><span>连续天数</span></div>
             </div>
           </div>
-          <div class="card">
+          <div class="card" v-if="subject==='语文'">
             <div class="card-head"><b>📜 古诗文</b><span class="tag tag-violet">{{classicalStats.mastered||0}} 已掌握</span></div>
             <div class="big-num">{{classicalStats.learned||0}}<span> / {{classicalStats.total||0}}</span></div>
             <div class="progress"><i :style="{width: statPct(classicalStats.learned, classicalStats.total)+'%'}"></i></div>
@@ -516,7 +522,7 @@
               <div><b>{{classicalStats.streak_days||0}}</b><span>连续天数</span></div>
             </div>
           </div>
-          <div class="card">
+          <div class="card" v-if="subject==='英语'">
             <div class="card-head"><b>📊 语法练习</b><span class="tag tag-orange">{{wrongAnalysis.pending||0}} 待攻克</span></div>
             <div class="big-num">{{grammarStats.total_exercises||0}}<span> 道题库</span></div>
             <p class="card-desc">覆盖 {{grammarStats.total_points||0}} 个语法点</p>
@@ -738,6 +744,6 @@
 <div class="toast" :class="{on: toast.show}">{{toast.msg}}</div>
 
 </div>
-<script src="/static/app.js?v=4"></script>
+<script src="/static/app.js?v=9"></script>
 </body>
 </html>

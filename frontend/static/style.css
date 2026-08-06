@@ -130,6 +130,22 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .task-info .meta{font-size:12px;color:var(--text-3);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
 .task-info .meta .dot{margin:0 -6px}
 .task-btn{flex-shrink:0}
+
+/* 每科必做：任务卡 */
+.dtask{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:16px 18px}
+.dtask.done{opacity:.62;background:#FAFBFE}
+.dtask-head{display:flex;align-items:center;justify-content:space-between;width:100%}
+.dtask-state{font-size:12px;color:var(--text-2);font-weight:600}
+.dtask-state.ok{color:var(--success)}
+.dtask-ico{font-size:26px;line-height:1}
+.dtask-title{font-size:15px;line-height:1.35}
+.dtask-desc{font-size:12px;color:var(--text-3);min-height:32px}
+.dtask-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dtask-actions .next-hint{font-weight:400;opacity:.75}
+.dtask-actions button:disabled{opacity:.5;cursor:not-allowed}
+.dtask-bar{width:100%;height:6px;border-radius:99px;background:#EDF0F7;overflow:hidden;margin-top:2px}
+.dtask-bar-in{height:100%;background:var(--success);border-radius:99px;transition:width .35s ease}
+
 .timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:4px}
 .tl-node{background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:14px;border-top:4px solid var(--border);position:relative;min-height:96px}
 .tl-node.today{border-top-color:var(--primary);background:var(--primary-light)}

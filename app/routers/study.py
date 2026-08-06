@@ -112,10 +112,18 @@ def record_study_errors(req: StudyErrorRecordRequest, db: Session = Depends(get_
 def list_study_errors(
     user_id: str = Query(..., description="用户名"),
     source_type: Optional[str] = Query(None, description="过滤来源: grammar/classical"),
+    subject: Optional[str] = Query(None, description="学科筛选: 英语→语法错题, 语文→古诗文错题, 数学→无学习错题"),
     only_pending: bool = Query(False, description="只看未掌握"),
     db: Session = Depends(get_db),
 ):
     q = db.query(StudyError).filter(StudyError.user_id == user_id)
+    if subject:
+        if subject == "英语":
+            q = q.filter(StudyError.source_type == "grammar")
+        elif subject == "语文":
+            q = q.filter(StudyError.source_type == "classical")
+        else:  # 学习错题仅来自英语语法/语文古诗文，数学学科无学习错题
+            q = q.filter(StudyError.id == -1)
     if source_type:
         q = q.filter(StudyError.source_type == source_type)
     if only_pending:
@@ -471,13 +479,22 @@ def submit_cause(req: CauseRequest, db: Session = Depends(get_db)):
 @router.get("/errors/analysis", summary="错因聚合分析")
 def analyze_errors(
     user_id: str = Query(..., description="用户名"),
+    subject: Optional[str] = Query(None, description="学科筛选（缺省为全部学科）"),
     db: Session = Depends(get_db),
 ):
     """错因四选分布 + 来源分布 + 学科分布 + 掌握情况（双轨合并统计）"""
-    study_errors = db.query(StudyError).filter(StudyError.user_id == user_id).all()
-    wrong_records = db.query(WrongRecord).filter(
-        WrongRecord.user_id == user_id
-    ).join(Question).all()
+    sq = db.query(StudyError).filter(StudyError.user_id == user_id)
+    wrq = db.query(WrongRecord).filter(WrongRecord.user_id == user_id).join(Question)
+    if subject:
+        if subject == "英语":
+            sq = sq.filter(StudyError.source_type == "grammar")
+        elif subject == "语文":
+            sq = sq.filter(StudyError.source_type == "classical")
+        else:  # 数学学科无学习错题
+            sq = sq.filter(StudyError.id == -1)
+        wrq = wrq.filter(Question.subject == subject)
+    study_errors = sq.all()
+    wrong_records = wrq.all()
 
     by_cause = {c: {"count": 0, "mastered": 0, "pending": 0, "label": label}
                 for c, label in CAUSE_LABELS.items()}

@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from .database import init_db
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks
 from .services.init_data import ensure_initial_data
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -41,6 +41,7 @@ app.include_router(classical.router, prefix="/api/classical", tags=["古诗文�
 app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"])
 app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"])
 app.include_router(user.router, prefix="/api/user", tags=["用户系统"])
+app.include_router(tasks.router, prefix="/api/tasks", tags=["每日任务"])
 
 # 前端静态资源（样式、脚本）
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")

@@ -11,13 +11,13 @@ class ExamCreateRequest(BaseModel):
     difficulty: str = Field("综合", description="基础/提高/拔高/综合")
 
     # 数学专用
-    math_count: int = Field(30, ge=5, le=200, description="数学题数量")
+    math_count: int = Field(30, ge=1, le=200, description="数学题数量")
     math_categories: Optional[List[str]] = Field(None, description="数学大类筛选")
 
-    # 英语专用
-    english_count: int = Field(50, ge=5, le=200, description="英语总题数（自动均分到各题型）")
-    english_word_count: int = Field(50, ge=10, le=200, description="英语单词题数量(兼容旧接口)")
-    english_count_per_type: int = Field(10, ge=3, le=30, description="每种英语题型数量(兼容旧接口)")
+    # 英语/语文专用
+    english_count: int = Field(50, ge=1, le=200, description="英语/语文总题数（自动均分到各题型）")
+    english_word_count: int = Field(50, ge=1, le=200, description="英语单词题数量(兼容旧接口)")
+    english_count_per_type: int = Field(10, ge=1, le=30, description="每种英语题型数量(兼容旧接口)")
     english_book_ids: Optional[List[int]] = Field(None, description="词库ID筛选")
     english_types: Optional[List[str]] = Field(
         None, description="英语题型：word_translation/phrase_translation/sentence_translation/phonetics/grammar_choice/situational/unscramble_sentence/cloze/dictation/choice"

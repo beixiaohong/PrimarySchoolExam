@@ -12,6 +12,7 @@ createApp({
       masteredTotal: 0, wrongBadge: 0,
       // 首页
       dashboard: null, todayTasks: [],
+      dailyTasks: null, dailyTaskStats: { done_count: 0, total: 3, streak_days: 0 },
       reviewQueue: { items: [] },
       queueToday: 0, queueTodayNames: '', queueTomorrow: 0, queueDayAfter: 0, queueLater: 0,
       vocabTotal: 0, vocabLearned: 0,
@@ -23,7 +24,7 @@ createApp({
       grammarQuiz: [], grammarQuizIndex: 0, grammarSubmitted: false, grammarInput: '',
       grammarFeedbackOk: false, grammarCurrentAnswer: '', grammarCurrentExplanation: '',
       grammarResult: null,
-      attempts: null, attemptSubject: '', recentAttempts: [], statsAttempts: 0,
+      attempts: null, recentAttempts: [], statsAttempts: 0,
       attemptDetail: { show: false, id: 0, title: '', score: 0, correct: 0, total: 0, items: [] },
       // 背诵中心
       reciteSub: 'words',
@@ -35,12 +36,12 @@ createApp({
       textDetail: { show: false, id: 0, title: '', author: '', dynasty: '', grade: 0, text_type: '', content: '' },
       // 错题本
       wrongAnalysis: { total: 0, pending: 0, mastered: 0, mastery_rate: 0, by_cause: [], by_subject: [] },
-      wrongScreen: 'list', wrongKind: 'all', wrongStatus: 'pending', wrongSubject: '',
+      wrongScreen: 'list', wrongKind: 'all', wrongStatus: 'pending',
       wrongItems: [], curWrong: null,
       // 通用答题状态机
       quiz: { active: false, done: false, title: '', items: [], i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source: null },
       // 试卷中心
-      papers: [], paperSubject: '',
+      papers: [],
       // 统计
       vocabStats: {}, classicalStats: {}, grammarStats: {},
       // Toast
@@ -150,6 +151,7 @@ createApp({
         if (s !== '英语' && this.practiceSub === 'grammar') this.practiceSub = 'generate';
         if (s === '英语') this.loadGrammarPoints();
       }
+      if (this.tab === 'wrong') this.loadWrongItems();
       this.saveUser(); this.refreshAll();
     },
     onGradeChange() { this.saveUser(); this.refreshAll(); },
@@ -167,6 +169,7 @@ createApp({
     /* ─────────── 全局刷新 ─────────── */
     refreshAll() {
       if (!this.user) return;
+      this.loadDailyTasks();
       this.loadDashboard();
       this.loadReviewQueue();
       this.loadVocabToday();
@@ -204,6 +207,30 @@ createApp({
           if (!tasks.length) tasks.push({ key: 'practice', ico: '🧮', icoCls: 't-violet', title: '刷一套新试卷', subject: this.subject, detail: '生成试卷立即开始做题', done: false });
           this.todayTasks = tasks;
         }).catch(e => this.showToast(e.message));
+    },
+    /* ─────────── 每科必做：每日任务 ─────────── */
+    loadDailyTasks() {
+      this.api(`/api/tasks/daily?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => this._applyDailyTasks(d, true))
+        .catch(() => {});
+    },
+    swapDailyTask(subject) {
+      this.api('/api/tasks/daily/swap', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
+        .then(d => this._applyDailyTasks(d, false))
+        .catch(e => this.showToast(e.message));
+    },
+    claimDailyTask(subject) {
+      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
+        .then(d => this._applyDailyTasks(d, true))
+        .catch(e => this.showToast(e.message));
+    },
+    _applyDailyTasks(d, celebrate) {
+      const prev = this.dailyTaskStats ? this.dailyTaskStats.done_count : 0;
+      this.dailyTasks = (d && d.tasks) || [];
+      this.dailyTaskStats = { done_count: (d && d.done_count) || 0, total: (d && d.total) || 3, streak_days: (d && d.streak_days) || 0 };
+      if (celebrate && this.dailyTaskStats.total && this.dailyTaskStats.done_count >= this.dailyTaskStats.total && prev < this.dailyTaskStats.total) {
+        this.showToast('🎉 三科任务全部完成，今天全勤！');
+      }
     },
     _pendingWrong(d) {
       const w = o => o ? (o.exam_pending || 0) + (o.study_pending || 0) : 0;
@@ -275,7 +302,16 @@ createApp({
         .then(async r => {
           const id = r.headers.get('x-exam-id');
           const t = await r.text();
-          if (!r.ok) { let d = t; try { d = JSON.parse(t); } catch (e) {} throw new Error(typeof d === 'object' && d ? (d.detail || '生成失败') : '生成失败'); }
+          if (!r.ok) {
+            let d = null; try { d = JSON.parse(t); } catch (e) {}
+            let msg = '生成失败';
+            if (d) {
+              if (typeof d.detail === 'string') msg = d.detail;
+              else if (Array.isArray(d.detail) && d.detail.length) msg = d.detail.map(x => (x && x.msg) ? x.msg : '参数错误').join('；');
+              else if (d.message) msg = d.message;
+            }
+            throw new Error(msg);
+          }
           if (!id) throw new Error('生成失败：未获取到试卷ID');
           return id;
         })
@@ -288,7 +324,7 @@ createApp({
         .catch(e => { this.generating = false; this.showToast(e.message); });
     },
     loadAttempts() {
-      this.api(`/api/exam/attempts/list?user_id=${encodeURIComponent(this.user)}&page_size=50${this.attemptSubject ? '&subject=' + encodeURIComponent(this.attemptSubject) : ''}`)
+      this.api(`/api/exam/attempts/list?user_id=${encodeURIComponent(this.user)}&page_size=50&subject=${encodeURIComponent(this.subject)}`)
         .then(list => {
           list = list || [];
           this.attempts = list;
@@ -499,7 +535,7 @@ createApp({
 
     /* ─────────── 错题本 ─────────── */
     loadWrongItems() {
-      const q = `user_id=${encodeURIComponent(this.user)}`;
+      const q = `user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`;
       Promise.all([this.api(`/api/exam/wrong/list?${q}`), this.api(`/api/study/errors?${q}`)])
         .then(([examList, studyList]) => {
           const exam = (examList || []).map(w => ({
@@ -521,7 +557,6 @@ createApp({
           if (this.wrongKind === 'study') items = items.filter(i => i.kind === 'study');
           if (this.wrongStatus === 'pending') items = items.filter(i => !i.mastered);
           if (this.wrongStatus === 'mastered') items = items.filter(i => i.mastered);
-          if (this.wrongSubject) items = items.filter(i => i.subject === this.wrongSubject);
           this.wrongItems = items;
         }).catch(e => this.showToast(e.message));
     },
@@ -552,7 +587,7 @@ createApp({
       }
     },
     loadAnalysis() {
-      this.api(`/api/study/errors/analysis?user_id=${encodeURIComponent(this.user)}`)
+      this.api(`/api/study/errors/analysis?user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`)
         .then(r => {
           this.wrongAnalysis = r;
           this.masteredTotal = r.mastered || 0;
@@ -593,7 +628,7 @@ createApp({
     },
     async retryTopCause() {
       const code = this.topCause.code;
-      const q = `user_id=${encodeURIComponent(this.user)}`;
+      const q = `user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`;
       try {
         const [examList, studyList] = await Promise.all([
           this.api(`/api/exam/wrong/list?${q}`), this.api(`/api/study/errors?${q}`),
@@ -608,10 +643,9 @@ createApp({
 
     /* ─────────── 试卷中心 ─────────── */
     loadPapers() {
-      this.api('/api/exam/records')
+      this.api(`/api/exam/records?subject=${encodeURIComponent(this.subject)}`)
         .then(ps => {
-          ps = ps || [];
-          this.papers = this.paperSubject ? ps.filter(p => p.subject === this.paperSubject) : ps;
+          this.papers = ps || [];
         }).catch(() => { this.papers = []; });
     },
     previewPaper(p) { this.startExamQuiz(p.id, p.title); },
