@@ -4,10 +4,12 @@
 - zhipu（免费）：智谱 GLM，ZHIPU_API_KEY；AI_MODEL / AI_BASE_URL 可覆盖
   - 付费优先：主模型 glm-4.7 标准版（关闭思考防超时），余额耗尽/无有效输出时自动回退免费版 glm-4.7-flash
   - 程序内部全局节流（AI_THROTTLE_SEC）控制请求频率，避免超时/限流
+- relay（备用兜底）：第三方 OpenAI 兼容中转站，RELAY_API_KEY / RELAY_BASE_URL / RELAY_MODEL 配置；
+  智谱失败/无有效输出后自动尝试，仅兜底不抢主链路；未配置 Key 时自动跳过
 - deepseek（付费）：DeepSeek，DEEPSEEK_API_KEY，接口 https://api.deepseek.com，模型 deepseek-v4-flash
 
 路由规则：
-- 所有用户：免费链 [zhipu]（glm-4.7 付费优先，余额耗尽自动切免费版 glm-4.7-flash）
+- 所有用户：免费链 [zhipu, relay]（glm-4.7 付费优先，余额耗尽自动切免费版 glm-4.7-flash，再失败由中转站兜底）
 - VIP 用户（名单存数据库 vip_users 表，按 user_id 精确匹配）：免费链全部失败后再尝试付费链 [deepseek]
 - 付费链按 user_id 独立限频（PAID_DAILY_LIMIT 次/天），防止单个用户刷爆付费 API
 - 未配置 Key 的提供商直接跳过；全链失败返回 None，由路由层降级为本地模板
@@ -93,9 +95,20 @@ PROVIDERS: dict = {
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-v4-flash",
     },
+    # 第三方 OpenAI 兼容中转站（备用兜底）：RELAY_* 环境变量配置，未配置自动跳过
+    "relay": {
+        "label": "中转站",
+        "tier": "free",
+        "base_url": "",  # 默认空 → 必须配置 RELAY_BASE_URL 才有意义
+        "model": "gpt-4o-mini",  # 默认模型；RELAY_MODEL 可覆盖
+        "env_key": "RELAY_API_KEY",
+        "env_base": "RELAY_BASE_URL",
+        "env_model": "RELAY_MODEL",
+        "timeout": 20,  # 中转站为套壳转发，链路长，放宽超时
+    },
 }
 
-FREE_CHAIN = ["zhipu"]
+FREE_CHAIN = ["zhipu", "relay"]
 PAID_CHAIN = ["deepseek"]
 
 # ── 付费余额耗尽标记（账户级，全局） ──
@@ -185,6 +198,11 @@ def _config_provider(name: str) -> dict:
         cfg["fallback_model"] = p.get("fallback_model", "")
     elif name == "deepseek":
         cfg["api_key"] = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    elif name == "relay":
+        # 中转站：RELAY_API_KEY / RELAY_BASE_URL / RELAY_MODEL 均可覆盖；未配置 Key 自动跳过
+        cfg["api_key"] = os.environ.get(p.get("env_key", "RELAY_API_KEY"), "").strip()
+        cfg["model"] = os.environ.get(p.get("env_model", "RELAY_MODEL"), p["model"])
+        cfg["base_url"] = os.environ.get(p.get("env_base", "RELAY_BASE_URL"), p["base_url"]).rstrip("/")
     if p.get("timeout"):
         cfg["timeout"] = p["timeout"]  # 推理模型需更长超时
     if p.get("extra_params"):
@@ -313,7 +331,7 @@ def _call_model(cfg: dict, system: str, user: str,
 def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Optional[dict]:
     """按用户调用链取 AI 结果。
 
-    - 免费链（zhipu）对所有用户开放：glm-4.7 付费优先，余额耗尽/无有效输出自动回退免费版 glm-4.7-flash
+    - 免费链（zhipu, relay）对所有用户开放：glm-4.7 付费优先，余额耗尽/无有效输出自动回退免费版 glm-4.7-flash，再失败由中转站兜底
     - VIP 用户（数据库 vip_users 表，按 user_id 判定）在免费链全部失败后追加付费链（deepseek）
     - 付费链按 user_id 独立日配额（PAID_DAILY_LIMIT），配额用尽直接返回 None（防刷）
     - 未配置 Key 的提供商跳过；全链失败返回 None（路由层降级模板）
