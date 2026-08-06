@@ -66,6 +66,10 @@ createApp({
       chestReward: '', turbo: false, selfCompare: null,
       // 试卷中心
       papers: [],
+      // 十万个为什么（Sprint 5）
+      qaAsk: '', qaProvider: 'zhipu', qaLoading: false, qaAnswer: null,
+      qaModels: [], qaModelsVip: false,
+      qaHistory: [], qaHistType: 'all',
       // 统计
       vocabStats: {}, classicalStats: {}, grammarStats: {},
       // Toast
@@ -224,6 +228,7 @@ createApp({
       if (t === 'recite') { this.reciteSub === 'words' ? this.loadVocabToday() : this.loadClassicalToday(); this.loadClassicalTexts(); }
       if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); this.loadTeachDue(); }
       if (t === 'papers') this.loadPapers();
+      if (t === 'qa') { this.loadQaModels(); this.loadQaHistory(); }
       if (t === 'stats') this.loadStats();
       if (t === 'settings') this.loadParentPanel();
     },
@@ -246,6 +251,45 @@ createApp({
       this.reciteSub = s;
       if (s === 'words') this.loadVocabToday(); else this.loadClassicalToday();
       if (s === 'classical') this.loadClassicalTexts();
+    },
+
+    /* ─────────── 十万个为什么（Sprint 5） ─────────── */
+    loadQaModels() {
+      this.api(`/api/qa/models?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          this.qaModels = d.models || [];
+          this.qaModelsVip = !!d.vip;
+          const cur = this.qaModels.find(m => m.key === this.qaProvider);
+          if (!cur || !cur.available) {
+            const first = (this.qaModels || []).find(m => m.available);
+            this.qaProvider = first ? first.key : 'zhipu';
+          }
+        }).catch(() => { this.qaModels = []; });
+    },
+    qaModelLabel(key) {
+      const m = (this.qaModels || []).find(x => x.key === key);
+      return m ? m.label : key;
+    },
+    askQa() {
+      const q = this.qaAsk.trim();
+      if (!q || this.qaLoading) return;
+      this.qaLoading = true;
+      this.qaAnswer = null;
+      this.api('/api/qa/ask', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, question: q, provider: this.qaProvider }),
+      }).then(d => {
+        this.qaAnswer = d;
+        this.loadQaHistory();
+      }).catch(e => {
+        this.showToast(e.message);
+      }).finally(() => { this.qaLoading = false; });
+    },
+    loadQaHistory() {
+      if (!this.user) return;
+      this.api(`/api/qa/history?user_id=${encodeURIComponent(this.user)}&q_type=${this.qaHistType}`)
+        .then(d => { this.qaHistory = d || []; })
+        .catch(() => { this.qaHistory = []; });
     },
 
     /* ─────────── 全局刷新 ─────────── */

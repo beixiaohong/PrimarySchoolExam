@@ -375,3 +375,35 @@ def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Opt
 def chat(system: str, user: str, max_tokens: int = 800) -> Optional[dict]:
     """旧签名兼容：走免费链（不区分用户）"""
     return chat_for("", system, user, max_tokens)
+
+
+def chat_with(user_id: str, system: str, user: str, max_tokens: int = 800,
+              provider: Optional[str] = None) -> Optional[dict]:
+    """按用户指定提供商调用 AI（十万个为什么用）。
+
+    - provider=None → 走默认链（chat_for：zhipu 付费优先 → relay 兜底 → VIP 追加 deepseek）
+    - provider=zhipu / relay → 只走该提供商（智谱仍含模型级回退与余额耗尽降级）
+    - provider=deepseek → 仅 VIP 用户可用（非 VIP 直接 None），并占用付费链日配额
+    - 未配置 Key / 全链失败返回 None；成功返回 {"text", "prompt_tokens", "completion_tokens", "model", "provider"}
+    """
+    if not provider:
+        return chat_for(user_id, system, user, max_tokens)
+    if provider not in PROVIDERS:
+        logger.warning("AI 未知提供商 %s，返回 None", provider)
+        return None
+    if provider in PAID_CHAIN:
+        if not _is_vip(user_id):
+            logger.info("AI 非 VIP 用户 %s 请求付费链 %s，拒绝", user_id, provider)
+            return None
+        if not rate_limit(f"paid:{user_id}", PAID_DAILY_LIMIT, 86400):
+            logger.warning("AI 付费链日配额用尽（user=%s, limit=%d），降级模板", user_id, PAID_DAILY_LIMIT)
+            return None
+    cfg = _config_provider(provider)
+    if not cfg["api_key"]:
+        logger.info("AI 提供商 %s 未配置 Key（user=%s），返回 None", provider, user_id)
+        return None
+    result = _call_provider(provider, cfg, system, user, max_tokens)
+    if result and result["text"].strip():
+        result["provider"] = provider
+        return result
+    return None

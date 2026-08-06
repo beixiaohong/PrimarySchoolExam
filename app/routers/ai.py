@@ -105,11 +105,25 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
 # ═══════════════════ 1. AI 错题讲解 ═══════════════════
 
 def _explain_core(db: Session, user_id: str, q: Question, wrong: WrongRecord) -> dict:
-    """讲解核心：24h 缓存 → 多提供商 AI 调用 → 降级模板。返回体不含 marked"""
+    """讲解核心：24h 内存缓存 → 数据库全局缓存（同题复用，不再请求 AI）→ AI 调用 → 降级模板。
+
+    返回体不含 marked。所有成功讲解写入 ai_qa（q_type=explain），
+    十万个为什么历史页可回看，相同题目（任意用户）直接复用答案。
+    """
     key = (user_id, q.id)
     cached = EXPLAIN_CACHE.get(key)
     if cached and time.time() - cached[0] < CACHE_TTL:
         return {"degraded": False, "cached": True, "text": cached[1],
+                "question": q.question, "answer": q.answer}
+
+    # 数据库全局缓存：同题（ref_id）已有成功讲解 → 直接复用，不再请求 AI
+    from ..models.ai_usage import AiQa
+    db_cached = db.query(AiQa).filter(
+        AiQa.q_type == "explain", AiQa.ref_id == q.id, AiQa.degraded == 0,
+    ).order_by(AiQa.id.desc()).first()
+    if db_cached:
+        EXPLAIN_CACHE[key] = (time.time(), db_cached.answer)
+        return {"degraded": False, "cached": True, "text": db_cached.answer,
                 "question": q.question, "answer": q.answer}
 
     cause_text = CAUSE_CN.get(wrong.cause, CAUSE_CN[""])
@@ -132,10 +146,19 @@ def _explain_core(db: Session, user_id: str, q: Question, wrong: WrongRecord) ->
     result = ai_svc.chat_for(user_id, system, user, max_tokens=900)
     if result and result["text"].strip():
         EXPLAIN_CACHE[key] = (time.time(), result["text"])
+        db.add(AiQa(user_id=user_id, question=q.question, answer=result["text"],
+                    provider=result.get("provider") or "",
+                    model=result.get("model") or "",
+                    q_type="explain", ref_id=q.id, degraded=0))
+        try:
+            db.commit()
+        except Exception as e:
+            logger.warning("写 ai_qa（讲解）失败: %s", e)
+            db.rollback()
         _log_usage(db, user_id, "explain", True, result)
         return {"degraded": False, "cached": False, "text": result["text"],
                 "question": q.question, "answer": q.answer}
-    # 降级：本地解析
+    # 降级：本地解析（不写库，避免缓存劣质答案）
     _log_usage(db, user_id, "explain", False, error="AI 不可用，降级模板")
     fallback = (
         f"【错在哪】{cause_text}，这道题你选了/写了和答案不一样的内容。\n"

@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from .database import init_db
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa
 from .services.init_data import ensure_initial_data
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -48,6 +48,7 @@ app.include_router(rewards.router, prefix="/api/rewards", tags=["奖励闭环"])
 app.include_router(challenge.router, prefix="/api/challenge", tags=["限时挑战赛"])
 app.include_router(teach.router, prefix="/api/teach", tags=["小老师模式"])
 app.include_router(goals.router, prefix="/api/goals", tags=["目标倒计时"])
+app.include_router(qa.router, prefix="/api/qa", tags=["十万个为什么"])
 
 # 前端静态资源（样式、脚本）
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")

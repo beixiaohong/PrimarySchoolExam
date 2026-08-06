@@ -48,6 +48,7 @@
       <button class="nav-item" :class="{active: tab==='home'}" @click="goTab('home')"><span class="ico">🏠</span>今日学习</button>
       <button class="nav-item" :class="{active: tab==='practice'}" @click="goTab('practice')"><span class="ico">✏️</span>刷题中心</button>
       <button class="nav-item" :class="{active: tab==='recite'}" @click="goTab('recite')"><span class="ico">📖</span>背诵中心</button>
+      <button class="nav-item" :class="{active: tab==='qa'}" @click="goTab('qa')"><span class="ico">❓</span>十万个为什么</button>
       <button class="nav-item" :class="{active: tab==='wrong'}" @click="goTab('wrong')"><span class="ico">📝</span>错题本<span v-if="wrongBadge>0" class="badge">{{wrongBadge}}</span></button>
       <button class="nav-item" :class="{active: tab==='papers'}" @click="goTab('papers')"><span class="ico">📄</span>试卷中心</button>
       <button class="nav-item" :class="{active: tab==='stats'}" @click="goTab('stats')"><span class="ico">📊</span>学习统计</button>
@@ -683,6 +684,67 @@
       </div>
 
       <!-- ═══════════ 设置 ═══════════ -->
+      <!-- ═══════════ 十万个为什么 ═══════════ -->
+      <div v-if="tab==='qa'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#667eea,#764ba2)">
+          <div style="flex:1">
+            <h1>❓ 十万个为什么</h1>
+            <p class="sub" style="color:rgba(255,255,255,.9)">想问什么就问什么，AI 老师来解答！相同问题直接秒回，不重复问 AI</p>
+          </div>
+        </div>
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>💬 提问</b></div>
+          <div class="qa-model-row">
+            <span class="qa-model-label">选 AI 老师：</span>
+            <button v-for="m in qaModels" :key="m.key" class="qa-model-btn"
+                    :class="{on: qaProvider===m.key, off: !m.available}"
+                    :disabled="!m.available" :title="m.vip_only && !qaModelsVip ? 'DeepSeek 仅 VIP 用户可用' : ''"
+                    @click="qaProvider=m.key">
+              {{m.label}}<span v-if="m.vip_only" class="tag tag-gold" style="margin-left:4px">VIP</span>
+            </button>
+            <span v-if="qaModels && !qaModelsVip" class="qa-vip-tip">💎 DeepSeek 仅 VIP 用户可用，找家长开通哦</span>
+          </div>
+          <div class="qa-ask-row">
+            <textarea v-model="qaAsk" class="qa-input" rows="2" maxlength="300"
+                      placeholder="例如：为什么天是蓝色的？为什么飞机不会从天上掉下来？"></textarea>
+            <button class="btn btn-primary" :disabled="qaLoading || !qaAsk.trim()" @click="askQa()">
+              {{qaLoading ? 'AI 老师思考中…' : '提问 →'}}
+            </button>
+          </div>
+          <div v-if="qaAnswer" class="qa-answer" :class="{degraded: qaAnswer.degraded}">
+            <div class="qa-answer-meta">
+              <span v-if="qaAnswer.cached" class="tag tag-green">⚡ 已有答案 · 秒回</span>
+              <span v-else-if="qaAnswer.degraded" class="tag tag-orange">AI 暂不可用</span>
+              <span v-else class="tag tag-blue">AI 回答</span>
+              <span class="qa-src" v-if="qaAnswer.provider">{{qaModelLabel(qaAnswer.provider)}} · {{qaAnswer.model}}</span>
+            </div>
+            <div class="qa-answer-text">{{qaAnswer.answer}}</div>
+          </div>
+        </div>
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>📚 我的记录</b>
+            <span class="more">
+              <button class="qa-tab" :class="{on: qaHistType==='all'}" @click="qaHistType='all'; loadQaHistory()">全部</button>
+              <button class="qa-tab" :class="{on: qaHistType==='qa'}" @click="qaHistType='qa'; loadQaHistory()">提问</button>
+              <button class="qa-tab" :class="{on: qaHistType==='explain'}" @click="qaHistType='explain'; loadQaHistory()">题目讲解</button>
+            </span>
+          </div>
+          <div v-if="!qaHistory.length" class="empty" style="padding:24px">
+            <div class="em">🌱</div><h3>还没有记录</h3><p>问一个问题试试吧！</p>
+          </div>
+          <div v-else class="qa-hist-list">
+            <div v-for="h in qaHistory" :key="h.id" class="qa-hist-item" @click="h._open = !h._open">
+              <div class="qa-hist-head">
+                <span class="qa-hist-q">{{h.question}}</span>
+                <span class="tag" :class="h.q_type==='qa' ? 'tag-blue' : 'tag-violet'">{{h.q_type==='qa' ? '提问' : '讲解'}}</span>
+                <span class="qa-hist-time">{{h.created_at}}</span>
+              </div>
+              <div class="qa-hist-a" v-show="h._open">{{h.answer}}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="tab==='settings'" class="fade-enter">
         <div class="card" style="max-width:640px">
           <div class="card-head"><b>👤 个人信息</b></div>
@@ -1196,6 +1258,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=20"></script>
+<script src="/static/app.js?v=21"></script>
 </body>
 </html>
