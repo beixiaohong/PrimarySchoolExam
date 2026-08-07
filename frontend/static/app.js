@@ -1819,27 +1819,49 @@ createApp({
       return null;
     },
     _matchAnswer(ua, ans) {
-      const norm = s => String(s || '').trim().toLowerCase()
-        .replace(/\s+/g, '')
-        .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
-        .replace(/[ａ-ｚ]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
-        .replace(/[Ａ-Ｚ]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
-        .replace(/（/g, '(').replace(/）/g, ')')
-        .replace(/＝/g, '=').replace(/，/g, ',').replace(/。/g, '.')
-        .replace(/×/g, '*').replace(/＊/g, '*').replace(/·/g, '*')
-        .replace(/÷/g, '/').replace(/＋/g, '+').replace(/－/g, '-')
-        .replace(/,/g, '')
-        .replace(/[。！？；：、,.!?;:…]+$/g, '');
+      const stripAnnot = s => {   // 仅剥含非数学字符的末尾括号注释（共N个/原式=…），算式括号保留
+        for (;;) {
+          const m = /\([^()]*\)$/.exec(s);
+          if (!m) return s;
+          const inner = m[0].slice(1, -1);
+          if (/^[0-9+\-*/().%]*$/.test(inner)) return s;   // 纯算式（(999+1)、(45)）→ 停止
+          const t = s.slice(0, m.index);
+          if (!t) return s;
+          s = t;
+        }
+      };
+      const norm = (s, keepSep) => {
+        let x = String(s || '').trim().toLowerCase()
+          .replace(/\s+/g, '')
+          .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
+          .replace(/[ａ-ｚ]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
+          .replace(/[Ａ-Ｚ]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
+          .replace(/（/g, '(').replace(/）/g, ')')
+          .replace(/＝/g, '=').replace(/，/g, ',').replace(/。/g, '.')
+          .replace(/×/g, '*').replace(/＊/g, '*').replace(/·/g, '*')
+          .replace(/÷/g, '/').replace(/＋/g, '+').replace(/－/g, '-')
+          .replace(/、/g, ',')   // 顿号当分隔符（与后端 answer_check 一致）
+          .replace(/[。！？；：、,.!?;:…]+$/g, '');
+        x = stripAnnot(x);
+        if (!keepSep) x = x.replace(/,/g, '');
+        return x;
+      };
       const u = norm(ua), a = norm(ans);
       if (!a) return false;
       if (u === a) return true;
       if (!/\d/.test(a)) return false;   // 无数字（单词/古诗文/句子）→ 严格
       const uRes = this._resultValue(u), aRes = this._resultValue(a);
       if (uRes !== null && aRes !== null && Math.abs(uRes - aRes) < 1e-9) return true;
+      // token 从保留分隔符的规范化串提取："90、120、150" 与 "90,120,150" 均为 3 个 token
       const nums = s => (String(s).match(/-?\d+\.?\d*/g) || []);
-      const un = nums(u), an = nums(a);
+      const un = nums(norm(ua, true)), an = nums(norm(ans, true));
       if (an.length === 1 && un.length && Math.abs(parseFloat(un[un.length - 1]) - parseFloat(an[0])) < 1e-9) return true;
-      if (un.length && un.length === an.length && un.every((x, i) => Math.abs(parseFloat(x) - parseFloat(an[i])) < 1e-9)) return true;
+      // 数字 token 数量一致 → 排序后逐一比对（忽略书写顺序）
+      if (un.length && un.length === an.length) {
+        const us = un.map(parseFloat).sort((m, n) => m - n);
+        const as = an.map(parseFloat).sort((m, n) => m - n);
+        if (us.every((x, i) => Math.abs(x - as[i]) < 1e-9)) return true;
+      }
       return false;
     },
   },

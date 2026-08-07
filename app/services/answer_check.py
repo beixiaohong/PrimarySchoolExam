@@ -20,13 +20,31 @@ _FW_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
 _FW_LOWER = str.maketrans("ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
                           "abcdefghijklmnopqrstuvwxyz")
 _FW_SYM = {"（": "(", "）": ")", "＝": "=", "，": ",", "。": ".",
-           "×": "*", "＊": "*", "·": "*", "÷": "/", "＋": "+", "－": "-"}
+           "×": "*", "＊": "*", "·": "*", "÷": "/", "＋": "+", "－": "-",
+           "、": ","}   # 顿号当分隔符（"90、120、150" 与 "90,120,150" 等价）
 
 _TRAIL_PUNC = "。！？；：、,.!?;:…"
+_MATH_CHARS = re.compile(r"[0-9+\-*/().%]*\Z")
 
 
-def normalize_answer(s) -> str:
-    """规范化答案：小写、去空白、全角→半角、数学符号统一、去末尾标点"""
+def _strip_annot(s: str) -> str:
+    """剥离末尾括号注释（内容含非数学字符，如 （共6个）/（原式=1000×2=2000）），
+    纯算式括号（如 2*(999+1)、(45)）保留，避免把数学表达式当注释剥掉。"""
+    while True:
+        m = re.search(r"\([^()]*\)\Z", s)
+        if not m:
+            return s
+        if _MATH_CHARS.match(m.group(0)[1:-1]):   # 括号内全是数学字符 → 算式，停止
+            return s
+        t = s[: m.start()]
+        if not t:
+            return s
+        s = t
+
+
+def normalize_answer(s, keep_sep: bool = False) -> str:
+    """规范化答案：小写、去空白、全角→半角、数学符号统一、去末尾标点与括号注释。
+    keep_sep=True 时保留分隔符（顿号/逗号已归一为 ','），供数字 token 提取用。"""
     if s is None:
         return ""
     s = str(s).strip().lower()
@@ -34,8 +52,10 @@ def normalize_answer(s) -> str:
     s = s.translate(_FW_DIGITS).translate(_FW_LOWER)
     for k, v in _FW_SYM.items():
         s = s.replace(k, v)
-    s = s.replace(",", "")
     s = s.rstrip(_TRAIL_PUNC)
+    s = _strip_annot(s)          # "90、120、…、240（共6个）" → "90,120,…240"
+    if not keep_sep:
+        s = s.replace(",", "")
     return s
 
 
@@ -173,16 +193,25 @@ def fill_answer_correct(user_ans, correct_ans) -> bool:
         return True
 
     # b) 数字 token 兜底：正确答案仅 1 个数字 → 用户答案最后一个数字须等于它；
-    #    双方数字 token 完全一致（数值比较）→ 对
-    u_nums = re.findall(r"-?\d+\.?\d*", u)
-    a_nums = re.findall(r"-?\d+\.?\d*", a)
+    #    双方数字 token 完全一致（排序后数值比对，忽略书写顺序与分隔符写法）→ 对
+    #    token 从保留分隔符的规范化串提取："90、120、150" 与 "90,120,150" 均为 3 个 token
+    u_sep = normalize_answer(user_ans, keep_sep=True)
+    a_sep = normalize_answer(correct_ans, keep_sep=True)
+    u_nums = re.findall(r"-?\d+\.?\d*", u_sep)
+    a_nums = re.findall(r"-?\d+\.?\d*", a_sep)
     if len(a_nums) == 1 and u_nums:
         try:
             if abs(float(u_nums[-1]) - float(a_nums[0])) < 1e-9:
                 return True
         except ValueError:
             pass
-    if u_nums and len(u_nums) == len(a_nums) and all(
-            abs(float(x) - float(y)) < 1e-9 for x, y in zip(u_nums, a_nums)):
-        return True
+    # 双方数字 token 数量一致 → 排序后逐一比对（忽略书写顺序："210,240,90…" 也算对）
+    if u_nums and len(u_nums) == len(a_nums):
+        try:
+            us = sorted(float(x) for x in u_nums)
+            as_ = sorted(float(y) for y in a_nums)
+        except ValueError:
+            us = as_ = None
+        if us is not None and all(abs(x - y) < 1e-9 for x, y in zip(us, as_)):
+            return True
     return False
