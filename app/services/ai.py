@@ -84,8 +84,8 @@ PROVIDERS: dict = {
         "fallback_model": "glm-4.7-flash",
         "env_model": "AI_MODEL",
         "env_base": "AI_BASE_URL",
-        # 关闭思考后实测 1.8-2.2s 返回；12s 上限：服务端过载时快速失败回退免费版，避免用户久等
-        "timeout": 12,
+        # 关闭思考后实测 1.8-2.2s 返回；2026-08-07 实测服务端变慢至 ~11s（接近 12s 上限会频繁超时全链失败）→ 放宽到 25s
+        "timeout": 25,
         # 关闭思考：glm-4.7 思考阶段实测 6-60s 经常超时，关闭后 2.2s 稳定返回
         "extra_params": {"thinking": {"type": "disabled"}},
     },
@@ -104,8 +104,8 @@ PROVIDERS: dict = {
         "env_key": "RELAY_API_KEY",
         "env_base": "RELAY_BASE_URL",
         "env_model": "RELAY_MODEL",
-        "timeout": 20,  # 中转站为套壳转发，链路长，放宽超时
-        "retry_on_timeout": True,  # 实测 gpt-5.5 经中转站约 50% 20s 超时 → 超时后重试一次（成功率 ~75%）
+        "timeout": 30,  # 中转站为套壳转发，链路长 + 大模型推理慢，放宽到 30s（2026-08-07 实测 20s 仍频繁超时）
+        "retry_on_timeout": True,  # 实测 gpt-5.5 经中转站约 50% 超时 → 超时后重试一次（成功率 ~75%）
     },
 }
 
