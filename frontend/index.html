@@ -447,7 +447,7 @@
           <div class="grid-2">
             <div class="card recite-card">
               <div class="card-head"><b>📖 今日新词</b><span class="tag tag-blue">{{vocabToday.stats.new_remaining}} 个待学</span></div>
-              <p class="card-desc">每天 10 个新单词，按艾宾浩斯遗忘曲线科学安排复习</p>
+              <p class="card-desc">每天 20 个新单词，按艾宾浩斯遗忘曲线科学安排复习</p>
               <button class="btn btn-primary btn-lg recite-btn" :disabled="vocabToday.stats.new_remaining<=0" @click="startWordSession('new')">开始学习新词 →</button>
             </div>
             <div class="card recite-card">
@@ -473,7 +473,7 @@
           <div class="grid-2">
             <div class="card recite-card">
               <div class="card-head"><b>📜 今日新篇</b><span class="tag tag-blue">{{classicalToday.stats.new_remaining}} 篇待背</span></div>
-              <p class="card-desc">每天 3 篇古诗文，先读熟再背诵，逐步内化</p>
+              <p class="card-desc">每天 5 篇古诗文，先读熟再背诵，逐步内化</p>
               <button class="btn btn-primary btn-lg recite-btn" :disabled="classicalToday.stats.new_remaining<=0" @click="startTextSession('new')">开始背诵 →</button>
             </div>
             <div class="card recite-card">
@@ -535,6 +535,8 @@
                 <div class="wi-meta">
                   <span class="tag" :class="w.kind==='exam'?'tag-blue':'tag-violet'">{{w.source}}</span>
                   <span class="tag tag-gray">{{w.subject}}</span>
+                  <span v-if="w.is_unanswered" class="tag tag-yellow">未答</span>
+                  <span v-else-if="!w.mastered" class="tag tag-red">答错</span>
                   <span v-if="!w.mastered && w.cause" class="tag tag-orange">{{causeLabel(w.cause)}}</span>
                   <span class="wi-count">错 {{w.error_count}} 次</span>
                   <span class="wi-last">{{w.wrong_at}}</span>
@@ -553,7 +555,16 @@
             <div class="card-head"><b>错题复盘</b><span class="tag" :class="curWrong.kind==='exam'?'tag-blue':'tag-violet'" style="margin-left:auto">{{curWrong.source}}</span></div>
             <div class="quiz-q" style="font-size:17px;margin:16px 0 4px">{{curWrong.question}}</div>
             <p class="quiz-sub">回顾当时为什么错，才能不再错</p>
-            <div class="detail-compare">
+            <!-- 未答题：先作答再判断对错，不直接显示答案 -->
+            <div v-if="curWrong.is_unanswered" class="unanswered-box" style="margin:12px 0">
+              <p style="color:#8B7CF6;font-weight:600;margin-bottom:8px">这道题当时未作答，请先作答：</p>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input v-model="curWrong._answerInput" class="quiz-fill-input" placeholder="输入你的答案" style="flex:1" @keyup.enter="answerUnanswered">
+                <button class="btn btn-primary" @click="answerUnanswered">提交</button>
+              </div>
+            </div>
+            <!-- 答错题：显示答案对比 -->
+            <div v-else class="detail-compare">
               <div class="answer-box wrong"><span>我的答案</span><b>{{curWrong.user_answer || '（未作答）'}}</b></div>
               <div class="answer-box right"><span>正确答案</span><b>{{curWrong.correct_answer}}</b></div>
             </div>
@@ -588,12 +599,13 @@
               <div class="progress"><i style="width:100%;background:var(--success)"></i></div>
             </div>
             <div class="detail-actions">
-              <button class="btn btn-primary" v-if="curWrong.kind==='exam' && curWrong.question_id" :disabled="curWrong.explaining" @click="openExplain(curWrong)">{{curWrong.explaining ? '⏳ 讲解中…' : '🤖 AI 讲解'}}</button>
-              <button class="btn btn-primary" @click="openTeach(curWrong)">🎓 出题给家长</button>
-              <button class="btn btn-primary" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
-              <button class="btn btn-success" v-if="!curWrong.mastered" @click="markWrongMastered(curWrong)" title="先做 3 道同类型题，全部答对才标记已掌握">✅ 检测掌握（3 题全对）</button>
+              <button class="btn btn-primary" v-if="curWrong.kind==='exam' && curWrong.question_id" :disabled="curWrong.explaining || !curWrong.cause" @click="openExplain(curWrong)">{{curWrong.explaining ? '⏳ 讲解中…' : '🤖 AI 讲解'}}</button>
+              <button class="btn btn-primary" :disabled="!curWrong.cause" @click="openTeach(curWrong)">🎓 出题给家长</button>
+              <button class="btn btn-primary" :disabled="!curWrong.cause" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
+              <button class="btn btn-success" v-if="!curWrong.mastered" :disabled="!curWrong.cause" @click="markWrongMastered(curWrong)" title="先做 3 道同类型题，全部答对才标记已掌握">✅ 检测掌握（3 题全对）</button>
               <button class="btn btn-ghost" @click="wrongScreen='list'">返回列表</button>
             </div>
+            <p v-if="!curWrong.cause && !curWrong.is_unanswered" style="text-align:center;color:var(--text-3);font-size:13px;margin-top:8px">💡 请先选择错因，才能进行讲解、重练等操作</p>
           </div>
         </div>
 

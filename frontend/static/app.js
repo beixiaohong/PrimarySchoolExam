@@ -1181,9 +1181,10 @@ createApp({
         .then(([examList, studyList]) => {
           const exam = (examList || []).map(w => ({
             key: 'exam-' + w.id, kind: 'exam', id: w.id, record_id: w.id, question_id: w.question_id,
-            question: w.question, user_answer: '', correct_answer: w.answer, explanation: '',
+            question: w.question, user_answer: w.user_answer || '', correct_answer: w.answer, explanation: '',
             error_count: w.practice_count || 1, wrong_at: w.wrong_at || '',
             mastered: !!w.is_mastered, cause: w.cause || '',
+            is_unanswered: !!w.is_unanswered,
             subject: w.subject || '', source: '试卷错题',
           }));
           const study = (studyList || []).map(e => ({
@@ -1191,6 +1192,7 @@ createApp({
             question: e.question, user_answer: e.user_answer, correct_answer: e.correct_answer,
             explanation: e.explanation || '', error_count: e.error_count || 1, wrong_at: e.wrong_at || '',
             mastered: !!e.is_mastered, cause: e.cause || '',
+            is_unanswered: false,
             subject: e.source_type === 'grammar' ? '英语' : '语文', source: e.module_name || '学习错题',
           }));
           let items = [...exam, ...study];
@@ -1222,6 +1224,7 @@ createApp({
     },
     openExplain(w) {
       if (w.kind !== 'exam' || !w.question_id) { this.showToast('这道题暂不支持 AI 讲解'); return; }
+      if (!w.cause) { this.showToast('请先选择错因，才能使用讲解功能'); return; }
       if (w.explaining) return; // 防重复点击
       w.explaining = true; w.aiText = ''; w.aiError = ''; w.aiDegraded = false;
       this.explainFetch('/api/ai/explain', { user_id: this.user, question_id: w.question_id })
@@ -1731,6 +1734,7 @@ createApp({
         });
     },
     openTeach(w) {
+      if (!w.cause) { this.showToast('请先选择错因，才能出题给家长'); return; }
       this.api('/api/teach/create', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, kind: w.kind, record_id: w.id }),
@@ -1829,9 +1833,31 @@ createApp({
         this.loadAnalysis();
       }).catch(e => this.showToast(e.message));
     },
+    /* 未答题作答：先做再判断对错 */
+    answerUnanswered() {
+      if (!this.curWrong || !this.curWrong.is_unanswered) return;
+      const ans = (this.curWrong._answerInput || '').trim();
+      if (!ans) { this.showToast('请先输入答案'); return; }
+      this.api('/api/exam/wrong/answer-unanswered', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, record_id: this.curWrong.record_id, user_answer: ans }),
+      }).then(r => {
+        this.showToast(r.message || (r.correct ? '答对了！' : '答错了'));
+        if (r.correct) {
+          this.curWrong.mastered = true;
+          this.curWrong.is_unanswered = false;
+        } else {
+          this.curWrong.is_unanswered = false;
+          this.curWrong.correct_answer = r.correct_answer || this.curWrong.correct_answer;
+        }
+        this.loadWrongItems();
+        this.loadAnalysis();
+      }).catch(e => this.showToast(e.message));
+    },
     /* 「标记已掌握」= 掌握检测：先做 3 道同类型题，全部答对才真正标记已掌握，
        防止"假掌握"。答对结果由 /api/study/practice-submit 按 record 分组整组判定 */
     markWrongMastered(w) {
+      if (!w.cause) { this.showToast('请先选择错因，才能检测掌握'); return; }
       this.showToast('先做 3 道同类型题，全部答对才算掌握');
       this.startWrongRetry(w, { mastery: true });
     },
@@ -1860,6 +1886,7 @@ createApp({
       return Math.round((c.pending || 0) / max * 100);
     },
     startWrongRetry(w, opts = {}) {
+      if (!w.cause) { this.showToast('请先选择错因，才能进行重练'); return; }
       this.api('/api/study/retry', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, kind: w.kind, record_id: w.record_id, count: 3 }),
@@ -2145,9 +2172,33 @@ createApp({
         // "任务已完成"提示延迟到下次刷新（如切换学科）才弹出
         p.then(() => { this.loadAnalysis(); this.loadDailyTasks(); }).catch(() => {});
       } else if (src.mode === 'dictate') {
-        // 默写检测：全对才算通过；未全对 → 只重默错的部分，直到全对才落库
+        // 默写检测：全对才算通过
         const wrongs = this.quiz.items.filter(it => !it.correct);
         this.quiz.items.forEach(it => { if (it.correct) this.dtOk[it.qid] = it.userAnswer; });
+        if (src.kind === 'text' && wrongs.length) {
+          // 古诗文默写错了：标记为错题，直接换一首，不再重默
+          const errorItems = wrongs.map(it => ({
+            source_type: 'classical', source_id: it.text_id, module_name: '古诗文默写',
+            question: it.question, user_answer: it.userAnswer, correct_answer: it.answer,
+            explanation: it.sub || '',
+          }));
+          this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: errorItems }) })
+            .then(() => {
+              this.showToast('默写有错，已记入错题本，换一首继续加油！');
+              const ts = this.textSession;
+              ts.active = false;
+              this.quiz.active = false;
+              this.loadAnalysis();
+              this.loadDailyTasks();
+              this.refreshAll();
+            }).catch(() => {
+              this.quiz.active = false;
+              const ts = this.textSession;
+              ts.active = false;
+              this.refreshAll();
+            });
+          return;
+        }
         if (wrongs.length) {
           this.showToast(`还有 ${wrongs.length} 处没默写对，再默一遍！`);
           this.startQuiz({

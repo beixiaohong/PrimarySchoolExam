@@ -20,7 +20,7 @@ router = APIRouter()
 # 艾宾浩斯记忆曲线复习间隔（天）
 EBBINGHAUS_INTERVALS = [1, 2, 4, 7, 15, 30]
 # 每天新学单词数
-NEW_WORDS_PER_DAY = 10
+NEW_WORDS_PER_DAY = 20
 
 
 def _get_grade_books(db: Session, grade: int) -> List[int]:

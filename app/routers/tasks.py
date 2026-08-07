@@ -37,8 +37,8 @@ TASK_POOLS = {
     "数学": [
         {"code": "math_exam", "title": "完成 1 套数学练习", "target": 1, "manual": False,
          "ico": "🧮", "desc": "刷题中心做一套数学试卷"},
-        {"code": "math_fix", "title": "订正 2 道数学错题", "target": 2, "manual": False,
-         "ico": "📕", "desc": "错题本重做或标记已掌握"},
+        {"code": "math_fix", "title": "订正 10 道数学错题", "target": 10, "manual": False,
+         "ico": "📕", "desc": "错题本重做或标记已掌握（每道需做3道同类型题全对才算修正）"},
         {"code": "math_teach", "title": "给家长讲 1 道题", "target": 1, "manual": True,
          "ico": "🎓", "desc": "挑一道今天的题讲给家长听"},
     ],

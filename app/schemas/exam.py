@@ -66,10 +66,13 @@ class WrongRecordOut(BaseModel):
     user_id: str
     question_id: int
     is_mastered: bool
+    is_unanswered: bool = False
     practice_count: int
     cause: str = ""  # 错因自评：careless/concept/method/reading
     wrong_at: Optional[str] = None
     mastered_at: Optional[str] = None
+    # 用户作答（从最近一次 AttemptAnswer 取）
+    user_answer: str = ""
     # 题目信息（展开）
     exam_id: int = 0
     seq: int = 0

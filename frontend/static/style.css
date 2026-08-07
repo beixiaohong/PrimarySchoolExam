@@ -92,6 +92,7 @@ input,select,textarea{font-family:inherit}
 .tag-green{background:var(--success-light);color:var(--success)}
 .tag-orange{background:var(--warning-light);color:var(--warning)}
 .tag-red{background:var(--danger-light);color:var(--danger)}
+.tag-yellow{background:#FFF8E1;color:#E6A817}
 .tag-violet{background:var(--violet-light);color:var(--violet)}
 .tag-gray{background:#EEF1F8;color:var(--text-2)}
 .progress{height:8px;background:#EDF0F8;border-radius:6px;overflow:hidden}

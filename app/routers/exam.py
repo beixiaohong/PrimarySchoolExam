@@ -263,7 +263,7 @@ def list_wrong_questions(
         q = q.filter(Question.type_code == type_code)
 
     records = q.order_by(WrongRecord.wrong_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return [_wrong_record_to_out(wr) for wr in records]
+    return [_wrong_record_to_out(wr, db) for wr in records]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -457,14 +457,19 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
                     "mastered_at": existing.mastered_at,
                     "correct_streak": existing.correct_streak,
                     "wrong_at": existing.wrong_at,
+                    "is_unanswered": existing.is_unanswered,
                 }
                 existing.is_mastered = False
                 existing.mastered_at = None
                 existing.correct_streak = 0  # 重新标错：连击清零，闭环重新开始
+                existing.is_unanswered = not user_ans
                 existing.wrong_at = now
                 wrong_ids[q.id] = existing.id
             else:
-                rec = WrongRecord(user_id=user_id, question_id=q.id, wrong_at=now)
+                rec = WrongRecord(
+                    user_id=user_id, question_id=q.id,
+                    is_unanswered=not user_ans, wrong_at=now,
+                )
                 db.add(rec)
                 db.flush()  # 立即取得 id，供前端错因自评
                 wrong_ids[q.id] = rec.id
@@ -695,18 +700,42 @@ def _locate_questions(db: Session, exam_id: int, question_ids: list = None, seqs
     return questions
 
 
-def _wrong_record_to_out(wr: WrongRecord) -> WrongRecordOut:
-    """WrongRecord ORM → WrongRecordOut（展开题目信息）"""
+def _wrong_record_to_out(wr: WrongRecord, db: Session = None) -> WrongRecordOut:
+    """WrongRecord ORM → WrongRecordOut（展开题目信息 + 用户实际作答）"""
     q = wr.question
+
+    # 查询用户最近一次作答内容（通过 ExamAttempt + AttemptAnswer 联查）
+    user_answer = ""
+    if db is not None:
+        latest_aa = (
+            db.query(AttemptAnswer)
+            .join(ExamAttempt, AttemptAnswer.attempt_id == ExamAttempt.id)
+            .filter(
+                ExamAttempt.user_id == wr.user_id,
+                AttemptAnswer.question_id == wr.question_id,
+            )
+            .order_by(ExamAttempt.id.desc())
+            .first()
+        )
+        if latest_aa:
+            user_answer = (latest_aa.user_answer or "").strip()
+
+    # 以实际作答内容为准判断是否未答（兜底修正）
+    is_unanswered = wr.is_unanswered or False
+    if user_answer:
+        is_unanswered = False
+
     return WrongRecordOut(
         id=wr.id,
         user_id=wr.user_id,
         question_id=wr.question_id,
         is_mastered=wr.is_mastered,
+        is_unanswered=is_unanswered,
         practice_count=wr.practice_count,
         cause=wr.cause or "",
         wrong_at=wr.wrong_at.strftime("%Y-%m-%d %H:%M:%S") if wr.wrong_at else None,
         mastered_at=wr.mastered_at.strftime("%Y-%m-%d %H:%M:%S") if wr.mastered_at else None,
+        user_answer=user_answer,
         exam_id=q.exam_id,
         seq=q.seq,
         subject=q.subject,
@@ -939,6 +968,57 @@ def get_attempt_detail(attempt_id: int, db: Session = Depends(get_db)):
         "created_at": attempt.created_at.strftime("%Y-%m-%d %H:%M:%S"),
         "answers": detail,
     }
+
+
+# ═══════════════════════════════════════════════════════════
+# 未答题作答（错题本中未答题先做再判断对错）
+# ═══════════════════════════════════════════════════════════
+
+class AnswerUnansweredRequest(BaseModel):
+    user_id: str
+    record_id: int
+    user_answer: str
+
+
+@router.post("/wrong/answer-unanswered", summary="未答题作答（错题本中先做再判对错）")
+def answer_unanswered(req: AnswerUnansweredRequest, db: Session = Depends(get_db)):
+    """错题本中「未答」的题：用户作答后判对错。
+    - 答对 → 直接标记已掌握（相当于用户会了）
+    - 答错 → 标记为「答错」（is_unanswered=False），保留在错题本
+    """
+    rec = db.query(WrongRecord).filter(
+        WrongRecord.id == req.record_id,
+        WrongRecord.user_id == req.user_id,
+    ).first()
+    if not rec:
+        raise HTTPException(404, "错题记录不存在")
+
+    q = rec.question
+    is_correct = _check_answer(req.user_answer, q.answer.strip(), q.options_json)
+
+    if is_correct:
+        rec.is_mastered = True
+        rec.is_unanswered = False
+        rec.mastered_at = datetime.now()
+        rec.next_review_date = None
+        rec.correct_streak = 3
+        db.commit()
+        # 答对发金币
+        try:
+            from .pet import _grant_coins
+            _grant_coins(db, req.user_id, 3, "未答题答对")
+        except Exception:
+            pass
+        return {"correct": True, "mastered": True, "message": "答对了！已标记为已掌握"}
+    else:
+        rec.is_unanswered = False
+        rec.wrong_at = datetime.now()
+        db.commit()
+        return {
+            "correct": False, "mastered": False,
+            "correct_answer": q.answer,
+            "message": "答错了，已标记为答错，继续加油！",
+        }
 
 
 # ═══════════════════════════════════════════════════════════

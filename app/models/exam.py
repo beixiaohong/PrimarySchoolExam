@@ -117,6 +117,8 @@ class WrongRecord(Base):
     # ── 错题状态 ──
     is_mastered = Column(Boolean, default=False,
                          comment="是否已掌握（掌握后错题练习不再抽取）")
+    is_unanswered = Column(Boolean, default=False,
+                           comment="是否未作答（回答为空时为True，需先作答再判断对错）")
     practice_count = Column(Integer, default=0,
                             comment="该题被纳入错题练习的累计次数")
     correct_streak = Column(Integer, default=0,

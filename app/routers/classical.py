@@ -16,7 +16,7 @@ router = APIRouter()
 # 艾宾浩斯间隔（天）
 EBBINGHAUS_INTERVALS = [1, 2, 4, 7, 15, 30]
 # 每天新学篇数
-NEW_TEXTS_PER_DAY = 3
+NEW_TEXTS_PER_DAY = 5
 
 
 # ═══════════════════════════════════════════════════════════
