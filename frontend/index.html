@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=23">
+<link rel="stylesheet" href="/static/style.css?v=24">
 </head>
 <body>
 <div id="app">
@@ -1290,7 +1290,7 @@
 
 <!-- ═══════════ 单词学习浮层 ═══════════ -->
 <div class="quiz-overlay" v-if="wordSession.active">
-  <template v-if="!wordSession.done">
+  <template v-if="!wordSession.done && wordSession.phase==='card'">
     <div class="quiz-shell">
       <div class="quiz-top">
         <span class="qname">{{wordSession.mode==='new'?'📖 学习新词':'🔁 复习单词'}}</span>
@@ -1317,19 +1317,20 @@
           </div>
         </template>
       </div>
+      <p class="dictate-hint">📌 翻完卡片后还要默写一遍，全部写对才算完成哦 ✍️</p>
     </div>
   </template>
-  <div v-else class="done-wrap">
+  <div v-else-if="wordSession.done" class="done-wrap">
     <div class="done-illus">🎉</div>
     <h2>{{wordSession.mode==='new' ? '新词学习完成！' : '复习完成！'}}</h2>
-    <p class="sub">共学习 {{wordSession.words.length}} 个单词 · 记住 {{wordSession.okCount}} 个</p>
+    <p class="sub">共学习 {{wordSession.words.length}} 个单词 · 默写全部通过 ✍️</p>
     <div class="done-actions"><button class="btn btn-primary" @click="wordSession.active=false; refreshAll()">完成</button></div>
   </div>
 </div>
 
 <!-- ═══════════ 古诗文背诵浮层 ═══════════ -->
 <div class="quiz-overlay" v-if="textSession.active">
-  <template v-if="!textSession.done">
+  <template v-if="!textSession.done && textSession.phase==='card'">
     <div class="quiz-shell">
       <div class="quiz-top">
         <span class="qname">{{textSession.mode==='new'?'📜 背诵新篇':'🔁 复习背诵'}}</span>
@@ -1345,13 +1346,13 @@
           <button class="btn btn-success" @click="textNext(true)">背熟了 →</button>
         </div>
       </div>
+      <p class="dictate-hint">📌 背完卡片后还要填空默写，全部写对才算完成哦 ✍️</p>
     </div>
   </template>
-  <div v-else class="done-wrap">
+  <div v-else-if="textSession.done" class="done-wrap">
     <div class="done-illus">🏮</div>
-    <h2>今日古诗文完成！</h2>
-    <p class="sub">背熟 {{textSession.okCount}} 篇 · 待巩固 {{textSession.failCount}} 篇</p>
-    <div class="done-note" v-if="textSession.failCount>0">没背熟的篇目明天会自动安排再次复习</div>
+    <h2>{{textSession.mode==='new' ? '今日古诗文完成！' : '复习默写完成！'}}</h2>
+    <p class="sub">背诵 {{textSession.okCount}} 篇 · 默写全部通过 ✍️</p>
     <div class="done-actions"><button class="btn btn-primary" @click="textSession.active=false; refreshAll()">完成</button></div>
   </div>
 </div>
@@ -1401,6 +1402,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=23"></script>
+<script src="/static/app.js?v=24"></script>
 </body>
 </html>

@@ -430,6 +430,78 @@ def submit_review(req: ReviewRequest, db: Session = Depends(get_db)):
     return {"updated": len(results), "details": results}
 
 
+# ═══════════════════════════════════════════════════════════
+# 默写：全对才算通过（前端填空判分），通过后才落库
+# ═══════════════════════════════════════════════════════════
+
+class DictateRequest(BaseModel):
+    user_id: str
+    mode: str = "new"  # new=新学 / review=复习
+    text_ids: List[int]
+
+
+@router.post("/dictate", summary="古诗文默写提交：全对才落库（new=学会 / review=复习推进）")
+def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
+    """默写结果提交（前端随机填空题判分，全对才允许调用本接口）：
+
+    - mode=new：全部默写正确 → 与 /learn 相同落库（建进度 + 今日新学数 +N）
+    - mode=review：全部正确 → 按全部 correct 提交复习（记忆曲线推进，达满掌握）
+    - text_ids 为空 → 不落库，视为未通过
+    """
+    if not req.text_ids:
+        return {"passed": False, "updated": 0}
+
+    today = date.today()
+    log = _get_today_log(db, req.user_id, today)
+    results = []
+
+    if req.mode == "new":
+        for tid in req.text_ids:
+            existing = db.query(ClassicalProgress).filter(
+                ClassicalProgress.user_id == req.user_id,
+                ClassicalProgress.text_id == tid,
+            ).first()
+            if existing:
+                results.append({"text_id": tid, "status": "already_exists"})
+                continue
+            progress = ClassicalProgress(
+                user_id=req.user_id, text_id=tid,
+                status="learning", review_stage=0,
+                first_learn_date=today, last_review_date=today,
+                next_review_date=today + timedelta(days=EBBINGHAUS_INTERVALS[0]),
+                correct_count=1, total_reviews=1,
+            )
+            db.add(progress)
+            log.texts_learned += 1
+            log.correct_count += 1
+            results.append({"text_id": tid, "status": "learned"})
+        db.commit()
+        return {"passed": True, "updated": len(results), "details": results}
+
+    # mode=review：全部按 correct 提交复习（全对才落库，等同 /review 的 correct 分支）
+    for tid in req.text_ids:
+        progress = db.query(ClassicalProgress).filter(
+            ClassicalProgress.user_id == req.user_id,
+            ClassicalProgress.text_id == tid,
+        ).first()
+        if not progress:
+            results.append({"text_id": tid, "status": "not_found"})
+            continue
+        progress.total_reviews += 1
+        progress.last_review_date = today
+        log.texts_reviewed += 1
+        progress.correct_count += 1
+        log.correct_count += 1
+        progress.review_stage = min(progress.review_stage + 1, len(EBBINGHAUS_INTERVALS))
+        progress.next_review_date = _calc_next_review(progress.review_stage, today)
+        if progress.review_stage >= len(EBBINGHAUS_INTERVALS):
+            progress.status = "mastered"
+        results.append({"text_id": tid, "status": "correct",
+                        "next_review": str(progress.next_review_date)})
+    db.commit()
+    return {"passed": True, "updated": len(results), "details": results}
+
+
 @router.get("/stats", summary="古诗文学习统计")
 def get_stats(
     user_id: str = Query(...),

@@ -369,25 +369,45 @@ class PracticeSubmitRequest(BaseModel):
     results: List[PracticeSubmitItem]
 
 
-@router.post("/practice-submit", summary="错题练习提交（连续3次答对自动掌握）")
+@router.post("/practice-submit", summary="错题练习提交（整组全对直接掌握 / 单题累计 3 次掌握）")
 def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
-    """错题练习结果回写（双轨统一）：
+    """错题练习结果回写（双轨统一，按 record_id 分组判定）：
 
-    - 答对：correct_streak +1，达到 3 次自动标记已掌握
-    - 答错：streak 清零，重新激活（study 累计 error_count，exam 累计 practice_count）
+    - 修正模式（同一 record_id 提交 ≥3 条）：整组全对 → 直接标记已掌握；
+      组内任一条答错 → 整组失败（streak 清零、计数 +1、重新激活）
+    - 兼容旧模式（单条提交）：答对 streak +1，累计 3 次掌握；答错清零重激活
     """
     from datetime import datetime as _dt
+    from collections import defaultdict
     updated = []
-
+    groups = defaultdict(list)
     for item in req.results:
-        if item.kind == "exam":
+        groups[(item.kind, item.record_id)].append(item)
+
+    for (kind, rid), items in groups.items():
+        all_correct = all(it.correct for it in items)
+        if kind == "exam":
             rec = db.query(WrongRecord).filter(
-                WrongRecord.id == item.record_id,
+                WrongRecord.id == rid,
                 WrongRecord.user_id == req.user_id,
             ).first()
             if not rec:
                 continue
-            if item.correct:
+            if len(items) >= 3:
+                # 修正模式：整组判定（三道同类型全对才算修正）
+                if all_correct:
+                    rec.correct_streak = max(rec.correct_streak, MASTER_STREAK)
+                    rec.is_mastered = True
+                    rec.mastered_at = _dt.now()
+                    status = "mastered"
+                else:
+                    rec.correct_streak = 0
+                    rec.practice_count += 1
+                    rec.is_mastered = False
+                    rec.mastered_at = None
+                    rec.wrong_at = _dt.now()
+                    status = "reactivated"
+            elif items[0].correct:
                 rec.correct_streak = rec.correct_streak + 1
                 if rec.correct_streak >= MASTER_STREAK:
                     rec.is_mastered = True
@@ -404,14 +424,28 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                 status = "reactivated"
             updated.append({"kind": "exam", "record_id": rec.id,
                             "status": status, "streak": rec.correct_streak})
-        elif item.kind == "study":
+        elif kind == "study":
             rec = db.query(StudyError).filter(
-                StudyError.id == item.record_id,
+                StudyError.id == rid,
                 StudyError.user_id == req.user_id,
             ).first()
             if not rec:
                 continue
-            if item.correct:
+            if len(items) >= 3:
+                # 修正模式：整组判定
+                if all_correct:
+                    rec.correct_streak = max(rec.correct_streak, MASTER_STREAK)
+                    rec.is_mastered = True
+                    rec.mastered_at = _dt.now()
+                    status = "mastered"
+                else:
+                    rec.correct_streak = 0
+                    rec.error_count += 1
+                    rec.is_mastered = False
+                    rec.mastered_at = None
+                    rec.wrong_at = _dt.now()
+                    status = "reactivated"
+            elif items[0].correct:
                 rec.correct_streak = rec.correct_streak + 1
                 if rec.correct_streak >= MASTER_STREAK:
                     rec.is_mastered = True

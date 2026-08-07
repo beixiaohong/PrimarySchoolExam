@@ -620,7 +620,7 @@ createApp({
     startWordSession(mode) {
       const words = mode === 'new' ? (this.vocabToday.new_words || []) : (this.vocabToday.review_words || []);
       if (!words.length) { this.showToast(mode === 'new' ? '今日新词已学完，明天再来吧' : '今日没有到期复习的单词'); return; }
-      this.wordSession = { active: true, done: false, mode, words, i: 0, revealed: false, okCount: 0, results: [] };
+      this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [] };
     },
     wordNext(ok) {
       const ws = this.wordSession;
@@ -628,22 +628,28 @@ createApp({
       ws.results.push({ word_id: w.word_id, correct: ok });
       if (ok) ws.okCount++;
       if (ws.i < ws.words.length - 1) { ws.i++; ws.revealed = false; }
-      else {
-        ws.done = true;
-        if (ws.mode === 'new') {
-          this.api('/api/vocab/learn', { method: 'POST', body: JSON.stringify({ user_id: this.user, word_ids: ws.words.map(x => x.word_id) }) })
-            .then(() => this.refreshAll()).catch(e => this.showToast(e.message));
-        } else {
-          this.api('/api/vocab/review', { method: 'POST', body: JSON.stringify({ user_id: this.user, results: ws.results }) })
-            .then(() => this.refreshAll()).catch(e => this.showToast(e.message));
-        }
-      }
+      else { ws.phase = 'dictate'; this.startWordDictate(); }
+    },
+    /* 默写环节：翻完卡片后听写一遍，全对才算完成（错词重默直到全对） */
+    startWordDictate() {
+      const ws = this.wordSession;
+      this.dtOk = {};
+      const items = ws.words.map(w => ({
+        qid: w.word_id, text_id: 0,
+        question: `✍️ 听写：${w.pos ? w.pos + ' ' : ''}${w.meaning}`,
+        sub: w.phonetic ? '🔉 ' + w.phonetic : '',
+        placeholder: '请输入英文单词', options: [], answer: w.word, explanation: '',
+      }));
+      this.startQuiz({
+        title: '✍️ 默写检测 · ' + (ws.mode === 'new' ? '新词听写' : '复习听写'),
+        items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode },
+      });
     },
     startTextSession(mode) {
       const raw = mode === 'new' ? (this.classicalToday.new_texts || []) : (this.classicalToday.review_texts || []);
       if (!raw.length) { this.showToast(mode === 'new' ? '今日新篇已背完，明天再来吧' : '今日没有到期复习的篇目'); return; }
       this.textSession = {
-        active: true, done: false, mode,
+        active: true, done: false, phase: 'card', mode,
         texts: raw.map(x => ({ ...x, dynasty: x.dynasty || '' })),
         i: 0, okCount: 0, failCount: 0, results: [],
       };
@@ -654,16 +660,29 @@ createApp({
       ts.results.push({ text_id: t.text_id, correct: ok });
       if (ok) ts.okCount++; else ts.failCount++;
       if (ts.i < ts.texts.length - 1) { ts.i++; }
-      else {
-        ts.done = true;
-        if (ts.mode === 'new') {
-          this.api('/api/classical/learn', { method: 'POST', body: JSON.stringify({ user_id: this.user, text_ids: ts.texts.map(x => x.text_id) }) })
-            .then(() => this.refreshAll()).catch(e => this.showToast(e.message));
-        } else {
-          this.api('/api/classical/review', { method: 'POST', body: JSON.stringify({ user_id: this.user, results: ts.results }) })
-            .then(() => this.refreshAll()).catch(e => this.showToast(e.message));
-        }
-      }
+      else { ts.phase = 'dictate'; this.startTextDictate(); }
+    },
+    /* 默写环节：翻完卡片后填空默写，全对才算完成（错句重默直到全对） */
+    startTextDictate() {
+      const ts = this.textSession;
+      this.dtOk = {};
+      const qs = [];
+      const tasks = ts.texts.map(t =>
+        this.api(`/api/classical/quiz?grade=${this.grade}&text_id=${t.text_id}&count=2`)
+          .then(rows => { (rows || []).forEach(q => qs.push(q)); }).catch(() => {})
+      );
+      Promise.all(tasks).then(() => {
+        if (!qs.length) { ts.active = false; this.showToast('默写题生成失败，请重试'); return; }
+        const items = qs.map(q => ({
+          qid: 0, text_id: q.text_id, question: q.question,
+          sub: '📜 ' + (q.context || '默写'),
+          placeholder: '默写内容', options: [], answer: q.answer, explanation: '',
+        }));
+        this.startQuiz({
+          title: '✍️ 默写检测 · ' + (ts.mode === 'new' ? '新篇默写' : '复习默写'),
+          items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode },
+        });
+      });
     },
     openTextDetail(t) {
       this.textDetail = { show: true, id: t.id, title: t.title, author: t.author || '', dynasty: t.dynasty || '', grade: t.grade, text_type: t.text_type || 'poem', content: t.content };
@@ -1323,21 +1342,28 @@ createApp({
         });
       }).catch(e => this.showToast(e.message));
     },
-    /* 错题攻坚页「练习错题」：从错题本（当前学科，未掌握）随机抽 10 题在线练 */
+    /* 错题攻坚页「练习错题」：从错题本（当前学科，未掌握）抽 5 道错题，
+       每道错题配 3 道同类型新题，整组全对才算修正 */
     startWrongPractice() {
       this.api('/api/exam/wrong/practice-quiz', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, subject: this.subject, count: 10 }),
+        body: JSON.stringify({ user_id: this.user, subject: this.subject, count: 5 }),
       }).then(r => {
-        const qs = r.questions || [];
-        if (!qs.length) { this.showToast('暂无错题可练习，先去做题积累错题吧'); return; }
-        const items = qs.map(q => ({
-          qid: q.qid, question: q.question, sub: q.type_name || '',
-          options: q.options || [], answer: q.answer, explanation: q.explanation || '',
-          extra: { kind: 'exam', record_id: q.record_id }, text_id: 0,
-        }));
+        const groups = r.groups || [];
+        if (!groups.length) { this.showToast('暂无错题可练习，先去做题积累错题吧'); return; }
+        const items = [];
+        groups.forEach(g => {
+          (g.questions || []).forEach(q => {
+            items.push({
+              qid: q.qid, question: q.question,
+              sub: (g.type_name ? '🎯 ' + g.type_name + ' · 全组全对才算修正' : '🎯 错题修正'),
+              options: q.options || [], answer: q.answer, explanation: q.explanation || '',
+              extra: { kind: 'exam', record_id: g.record_id }, text_id: 0,
+            });
+          });
+        });
         this.startQuiz({
-          title: `🎯 错题练习 · ${this.subject}（${qs.length} 题）`,
+          title: `🎯 错题修正 · ${this.subject}（${groups.length} 组 × 3 题）`,
           items, source: { mode: 'retry', retry: { kind: 'exam', record_id: 0 } },
         });
       }).catch(e => this.showToast(e.message));
@@ -1429,7 +1455,9 @@ createApp({
         // AI 即时鼓励：连击中断或答错时给一句暖心话（3 次/分钟限频，失败自动降级）
         this.askEncourage(broken ? 'combo_broken' : 'wrong_answer');
       }
-      if (it.correct && this.quiz.source && this.quiz.source.mode === 'retry' && it.extra) {
+      if (it.correct && this.quiz.source && this.quiz.source.mode === 'retry' && it.extra
+          && this.quiz.source.retry && this.quiz.source.retry.record_id) {
+        // 变式重练（单题连对累计）：逐题回写
         this.api('/api/study/practice-submit', {
           method: 'POST',
           body: JSON.stringify({ user_id: this.user, results: [{ kind: it.extra.kind, record_id: it.extra.record_id, correct: true }] }),
@@ -1521,12 +1549,58 @@ createApp({
         // 提交完成后再刷新每日任务：与答题提交竞态同理，避免
         // "任务已完成"提示延迟到下次刷新（如切换学科）才弹出
         p.then(() => { this.loadAnalysis(); this.loadDailyTasks(); }).catch(() => {});
+      } else if (src.mode === 'dictate') {
+        // 默写检测：全对才算通过；未全对 → 只重默错的部分，直到全对才落库
+        const wrongs = this.quiz.items.filter(it => !it.correct);
+        this.quiz.items.forEach(it => { if (it.correct) this.dtOk[it.qid] = it.userAnswer; });
+        if (wrongs.length) {
+          this.showToast(`还有 ${wrongs.length} 处没默写对，再默一遍！`);
+          this.startQuiz({
+            title: this.quiz.title,
+            items: wrongs.map(it => ({
+              qid: it.qid, text_id: it.text_id, question: it.question, sub: it.sub,
+              placeholder: it.placeholder, options: [], answer: it.answer, explanation: '',
+            })),
+            source: src,
+          });
+          return;
+        }
+        // 全部默写正确 → 提交后端（后端再核验，全对才真正记录进度）
+        if (src.kind === 'word') {
+          const ws = this.wordSession;
+          const results = (ws.words || []).map(w => ({ word_id: w.word_id, answer: this.dtOk[w.word_id] || w.word }));
+          this.api('/api/vocab/dictate', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: this.user, mode: src.mode2, results }),
+          }).then(r => {
+            this.quiz.active = false;
+            if (r && r.passed) { ws.done = true; this.refreshAll(); }
+            else { ws.active = false; this.showToast('有个别拼写仍需核对，再学一遍吧'); this.refreshAll(); }
+          }).catch(e => { this.quiz.active = false; ws.active = false; this.showToast(e.message); });
+        } else {
+          const ts = this.textSession;
+          const textIds = (ts.texts || []).map(t => t.text_id);
+          this.api('/api/classical/dictate', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: this.user, mode: src.mode2, text_ids: textIds }),
+          }).then(r => {
+            this.quiz.active = false;
+            if (r && r.passed) { ts.done = true; this.refreshAll(); }
+            else { ts.active = false; this.showToast('默写未通过，本次不计入进度'); this.refreshAll(); }
+          }).catch(e => { this.quiz.active = false; ts.active = false; this.showToast(e.message); });
+        }
+        return;
       }
       this.refreshAll();
     },
     closeQuiz() {
       const src = this.quiz.source;
-      if (src && src.mode === 'retry' && !this.quiz.done) {
+      if (src && src.mode === 'dictate' && !this.quiz.done) {
+        // 默写中途退出：学习未完成默写，不记录任何进度
+        if (src.kind === 'word') this.wordSession.active = false;
+        else this.textSession.active = false;
+        this.showToast('未完成默写，本次学习不记录进度，加油再来！');
+      } else if (src && src.mode === 'retry' && !this.quiz.done) {
         const answered = this.quiz.items.filter(it => it.answered);
         if (answered.length) {
           this.api('/api/study/practice-submit', {
@@ -1561,7 +1635,10 @@ createApp({
       const src = this.quiz.source;
       if (!src) return;
       if (src.mode === 'exam') this.startExamQuiz(src.exam_id, src.title);
-      else if (src.mode === 'retry') this.startWrongRetry({ kind: src.retry.kind, record_id: src.retry.record_id });
+      else if (src.mode === 'retry') {
+        if (src.retry && src.retry.record_id) this.startWrongRetry({ kind: src.retry.kind, record_id: src.retry.record_id });
+        else this.startWrongPractice();
+      }
       else if (src.mode === 'classical') this.startTextQuiz({ id: src.text_id, title: src.textTitle });
     },
     closeQuizGo(tab) {

@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, and_
 from sqlalchemy.orm import Session
 
@@ -270,6 +271,85 @@ def submit_review(
 
     db.commit()
     return {"updated": len(results), "details": results}
+
+
+# ═══════════════════════════════════════════════════════════
+# 听写（默写）：全对才算通过，通过后才落库
+# ═══════════════════════════════════════════════════════════
+
+class DictateItem(BaseModel):
+    word_id: int
+    answer: str = ""
+
+
+class DictateRequest(BaseModel):
+    user_id: str
+    mode: str = "new"  # new=新学 / review=复习
+    results: List[DictateItem]
+
+
+@router.post("/dictate", summary="单词听写判分：全对才落库（new=学会 / review=复习推进）")
+def dictate_words(req: DictateRequest, db: Session = Depends(get_db)):
+    """默写判分（规则：全对才算通过）：
+
+    - 判分忽略大小写与首尾空白（如 Apple/apple 均正确）
+    - mode=new：全部拼写正确 → 与「标记学会」相同落库（建进度 + 今日新学数 +N）；
+      有拼写错误 → 不落库，返回错词及正确答案，孩子重默
+    - mode=review：全部正确 → 按全部 correct 提交复习（记忆曲线推进）；
+      有错误 → 不落库（孩子重默，错词也一并返回）
+    """
+    today = date.today()
+    wrong = []
+    for it in req.results:
+        w = db.query(Word).filter(Word.id == it.word_id).first()
+        key = (w.word or "").strip().lower() if w else ""
+        ans = (it.answer or "").strip().lower()
+        if not w or ans != key:
+            wrong.append({"word_id": it.word_id, "correct": False,
+                          "correct_answer": w.word if w else ""})
+    if not req.results or wrong:
+        return {"passed": False, "wrong": wrong, "updated": 0}
+
+    log = _get_today_log(db, req.user_id, today)
+    if req.mode == "new":
+        # 全对 → 与 /learn 相同：建进度记录
+        for it in req.results:
+            existing = db.query(VocabProgress).filter(
+                VocabProgress.user_id == req.user_id,
+                VocabProgress.word_id == it.word_id,
+            ).first()
+            if existing:
+                continue
+            progress = VocabProgress(
+                user_id=req.user_id, word_id=it.word_id,
+                status="learning", review_stage=0,
+                first_learn_date=today, last_review_date=today,
+                next_review_date=today + timedelta(days=EBBINGHAUS_INTERVALS[0]),
+                correct_count=1, total_reviews=1,
+            )
+            db.add(progress)
+            log.new_words_learned += 1
+            log.correct_count += 1
+    else:
+        # 全对 → 全部按 correct 提交复习
+        for it in req.results:
+            progress = db.query(VocabProgress).filter(
+                VocabProgress.user_id == req.user_id,
+                VocabProgress.word_id == it.word_id,
+            ).first()
+            if not progress:
+                continue
+            progress.total_reviews += 1
+            progress.last_review_date = today
+            progress.correct_count += 1
+            progress.review_stage = min(progress.review_stage + 1, len(EBBINGHAUS_INTERVALS))
+            progress.next_review_date = _calc_next_review(progress.review_stage, today)
+            if progress.review_stage >= len(EBBINGHAUS_INTERVALS):
+                progress.status = "mastered"
+            log.words_reviewed += 1
+            log.correct_count += 1
+    db.commit()
+    return {"passed": True, "wrong": [], "updated": len(req.results)}
 
 
 @router.get("/stats", response_model=VocabStatsOut, summary="用户词汇学习统计")

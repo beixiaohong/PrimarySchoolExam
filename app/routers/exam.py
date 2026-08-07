@@ -316,7 +316,7 @@ class WrongPracticeQuizRequest(BaseModel):
     """错题在线练习抽题（JSON，供前端直接答题）"""
     user_id: str = Field(..., max_length=64, description="用户标识")
     subject: Optional[str] = Field(None, description="学科筛选：数学/英语，不填则混合")
-    count: int = Field(10, ge=1, le=50, description="练习题数（默认 10）")
+    count: int = Field(5, ge=1, le=50, description="抽题组数（每组 3 道同类型题，默认 5 组）")
 
 
 def _parse_options_json(options_json: Optional[str]) -> list:
@@ -330,13 +330,14 @@ def _parse_options_json(options_json: Optional[str]) -> list:
         return []
 
 
-@router.post("/wrong/practice-quiz", summary="错题在线练习抽题（JSON 直接答题）")
+@router.post("/wrong/practice-quiz", summary="错题修正练习抽题（每道错题配 3 道同类型题）")
 def wrong_practice_quiz(req: WrongPracticeQuizRequest, db: Session = Depends(get_db)):
-    """从用户未掌握的错题中随机抽 count 道（默认 10），返回可直接答题的 JSON。
+    """从用户未掌握的错题中随机抽 count 道错题（默认 5），每道错题配 3 道同类型新题。
 
-    - 范围为错题本中当前学科的错题类型（未掌握记录，含选项/答案/题型）
-    - 每道题带 record_id，前端答完用 /api/study/practice-submit 回写
-      （连续 3 次答对自动掌握，答错重新激活）
+    - 「修正」规则：同类型 = type_code 相同（无 type_code 时退化为 category 相同）
+      且同学科、非原题；同类型题不足 3 道时用原题补齐（保证每组正好 3 道）
+    - 返回分组结构，前端整组答题，整组全对才提交修正
+      （/api/study/practice-submit 按 record_id 分组判定，全对直接掌握）
     """
     q = db.query(WrongRecord).filter(
         WrongRecord.user_id == req.user_id,
@@ -351,21 +352,45 @@ def wrong_practice_quiz(req: WrongPracticeQuizRequest, db: Session = Depends(get
         raise HTTPException(404, "暂无错题可练习（或全部已掌握）")
 
     selected = random.sample(all_wrong, min(req.count, len(all_wrong)))
-    selected.sort(key=lambda wr: (wr.question.subject, wr.question.type_code, wr.question.seq))
+    groups = []
+    for wr in selected:
+        qs = wr.question
+        # 同类型候选池：同学科 + type_code 相同（无 type_code 退化为 category）
+        pool = db.query(Question).filter(
+            Question.subject == qs.subject,
+            Question.id != qs.id,
+        )
+        if qs.type_code:
+            pool = pool.filter(Question.type_code == qs.type_code)
+        elif qs.category:
+            pool = pool.filter(Question.category == qs.category)
+        candidates = pool.order_by(Question.seq).all()
+        picks = random.sample(candidates, min(3, len(candidates))) if candidates else []
+        # 不足 3 道用原题补齐，保证一组正好 3 道
+        while len(picks) < 3:
+            picks.append(qs)
 
-    questions = [{
-        "qid": wr.question_id,
-        "kind": "exam",
-        "record_id": wr.id,
-        "question": wr.question.question,
-        "options": _parse_options_json(wr.question.options_json),
-        "answer": wr.question.answer,
-        "explanation": "",
-        "type_name": wr.question.type_name or "",
-        "subject": wr.question.subject,
-        "exam_id": wr.question.exam_id,
-    } for wr in selected]
-    return {"count": len(questions), "questions": questions}
+        group_questions = [{
+            "qid": qu.id,
+            "kind": "exam",
+            "record_id": wr.id,
+            "question": qu.question,
+            "options": _parse_options_json(qu.options_json),
+            "answer": qu.answer,
+            "explanation": "",
+            "type_name": qu.type_name or "",
+            "subject": qu.subject,
+            "exam_id": qu.exam_id,
+        } for qu in picks]
+        groups.append({
+            "record_id": wr.id,
+            "qid": wr.question_id,
+            "type_name": qs.type_name or "",
+            "subject": qs.subject,
+            "questions": group_questions,
+        })
+
+    return {"count": len(groups), "groups": groups}
 
 
 # ═══════════════════════════════════════════════════════════
