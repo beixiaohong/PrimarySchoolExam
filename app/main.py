@@ -11,8 +11,11 @@ from .migrations.runner import run_migrations
 from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond
 from .services.init_data import ensure_initial_data
 
+# 定义前端静态资源目录路径
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+# 定义输出目录路径（用于存储生成的试卷等文件）
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+# 确保输出目录存在
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
@@ -32,6 +35,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 路由注册：业务逻辑模块挂载
 app.include_router(words.router, prefix="/api/words", tags=["英语单词"])
 app.include_router(phrases.router, prefix="/api/english", tags=["英语词组与句子"])
 app.include_router(math.router, prefix="/api/math", tags=["数学题目"])
@@ -76,4 +80,5 @@ def index():
 
 @app.get("/health", tags=["系统"])
 def health():
+    """健康检查接口"""
     return {"status": "ok"}
