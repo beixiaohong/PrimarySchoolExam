@@ -1822,7 +1822,7 @@
       </div>
       <div class="word-card" v-if="wordSession.words.length">
         <template v-if="wordSession.mode==='new'">
-          <div class="word-big">{{wordSession.words[wordSession.i].word}}</div>
+          <div class="word-big" @click="wordSpeak" style="cursor:pointer" title="点击朗读">🔊 {{wordSession.words[wordSession.i].word}}</div>
           <div class="word-phonetic">{{wordSession.words[wordSession.i].phonetic || ''}}</div>
           <div class="word-meaning" v-if="wordSession.revealed">{{wordSession.words[wordSession.i].pos}} {{wordSession.words[wordSession.i].meaning}}</div>
           <div class="word-unit" v-if="wordSession.revealed">📚 {{wordSession.words[wordSession.i].unit || '未分单元'}}</div>
@@ -1830,7 +1830,7 @@
           <div v-else><button class="btn btn-success btn-lg" @click="wordNext(true)">学会了 →</button></div>
         </template>
         <template v-else>
-          <div class="word-big">{{wordSession.words[wordSession.i].word}}</div>
+          <div class="word-big" @click="wordSpeak" style="cursor:pointer" title="点击朗读">🔊 {{wordSession.words[wordSession.i].word}}</div>
           <div class="word-phonetic">{{wordSession.words[wordSession.i].phonetic || ''}}</div>
           <div class="word-meaning">{{wordSession.words[wordSession.i].meaning}}</div>
           <div class="word-btns">
@@ -1862,7 +1862,7 @@
       </div>
       <div class="word-card text-card" v-if="textSession.texts.length">
         <div class="text-title">《{{textSession.texts[textSession.i].title}}》<span>{{textSession.texts[textSession.i].author}} · {{textSession.texts[textSession.i].dynasty}}</span></div>
-        <div class="text-content">{{textSession.texts[textSession.i].content}}</div>
+        <div class="text-content" @click="textSpeak" style="cursor:pointer" title="点击朗读">🔊 {{textSession.texts[textSession.i].content}}</div>
         <div class="word-btns">
           <button class="btn btn-danger" @click="textNext(false)">还没背熟</button>
           <button class="btn btn-success" @click="textNext(true)">背熟了 →</button>

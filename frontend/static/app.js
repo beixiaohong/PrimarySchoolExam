@@ -561,6 +561,30 @@ createApp({
         this.$nextTick(() => setTimeout(() => this.dictSpeak(items[0]), 350));
       }).catch(e => this.showToast(e.message));
     },
+    speakText(text, lang, rate) {
+      if (!text) return;
+      try {
+        if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang;
+        u.rate = rate;
+        u.pitch = 1;
+        window.speechSynthesis.speak(u);
+      } catch (e) { /* 静默失败，不阻断操作 */ }
+    },
+    wordSpeak() {
+      const ws = this.wordSession;
+      if (!ws.words || !ws.words.length) return;
+      const w = ws.words[ws.i];
+      if (w) this.speakText(w.word, 'en-US', 0.8);
+    },
+    textSpeak() {
+      const ts = this.textSession;
+      if (!ts.texts || !ts.texts.length) return;
+      const t = ts.texts[ts.i];
+      if (t) this.speakText(t.title + '，' + (t.author || '') + '，' + t.content, 'zh-CN', 0.85);
+    },
     dictSpeak(item) {
       if (!item) return;
       try {
@@ -1094,13 +1118,14 @@ createApp({
       const words = mode === 'new' ? (this.vocabToday.new_words || []) : (this.vocabToday.review_words || []);
       if (!words.length) { this.showToast(mode === 'new' ? '今日新词已学完，明天再来吧' : '今日没有到期复习的单词'); return; }
       this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [] };
+      this.$nextTick(() => setTimeout(() => this.wordSpeak(), 350));
     },
     wordNext(ok) {
       const ws = this.wordSession;
       const w = ws.words[ws.i];
       ws.results.push({ word_id: w.word_id, correct: ok });
       if (ok) ws.okCount++;
-      if (ws.i < ws.words.length - 1) { ws.i++; ws.revealed = false; }
+      if (ws.i < ws.words.length - 1) { ws.i++; ws.revealed = false; this.$nextTick(() => setTimeout(() => this.wordSpeak(), 200)); }
       else { ws.phase = 'dictate'; this.startWordDictate(); }
     },
     /* 默写环节：翻完卡片后听写一遍，全对才算完成（错词重默直到全对） */
@@ -1126,13 +1151,14 @@ createApp({
         texts: raw.map(x => ({ ...x, dynasty: x.dynasty || '' })),
         i: 0, okCount: 0, failCount: 0, results: [],
       };
+      this.$nextTick(() => setTimeout(() => this.textSpeak(), 350));
     },
     textNext(ok) {
       const ts = this.textSession;
       const t = ts.texts[ts.i];
       ts.results.push({ text_id: t.text_id, correct: ok });
       if (ok) ts.okCount++; else ts.failCount++;
-      if (ts.i < ts.texts.length - 1) { ts.i++; }
+      if (ts.i < ts.texts.length - 1) { ts.i++; this.$nextTick(() => setTimeout(() => this.textSpeak(), 200)); }
       else { ts.phase = 'dictate'; this.startTextDictate(); }
     },
     /* 默写环节：翻完卡片后填空默写，全对才算完成（错句重默直到全对） */
