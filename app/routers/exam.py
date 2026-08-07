@@ -568,6 +568,15 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
             user_answer=r["user_answer"],
             is_correct=r["is_correct"],
         ))
+    # 答题发金币：每题答对 +1，全对额外 +10（P2 金币宠物）
+    try:
+        from .pet import _grant_coins
+        if correct_count > 0:
+            _grant_coins(db, user_id, correct_count, "答题答对")
+        if total > 0 and correct_count == total:
+            _grant_coins(db, user_id, 10, "全对奖励")
+    except Exception:
+        pass
     db.commit()
 
     return {

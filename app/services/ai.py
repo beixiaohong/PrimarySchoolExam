@@ -239,15 +239,19 @@ def rate_limit(key: str, max_calls: int, window_sec: int) -> bool:
 
 
 def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
-               _attempt: int = 0) -> dict:
-    """单次 OpenAI 兼容 POST；429 时短暂等待重试一次；开头全局节流防超时/限流"""
+               history: Optional[list] = None, _attempt: int = 0) -> dict:
+    """单次 OpenAI 兼容 POST；429 时短暂等待重试一次；开头全局节流防超时/限流
+
+    history：多轮对话历史 [{role, content}, ...]，插在 system 与本次提问之间
+    """
     _throttle()
+    messages = [{"role": "system", "content": system}]
+    if history:
+        messages.extend(history[-20:])  # 最多携带 20 条历史消息
+    messages.append({"role": "user", "content": user})
     payload = {
         "model": cfg["model"],
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
+        "messages": messages,
         "max_tokens": max_tokens,
         "temperature": 0.7,
         "stream": False,
@@ -271,12 +275,12 @@ def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
         # 免费档易被限流（429）→ 短暂等待重试一次
         if e.code == 429 and _attempt == 0:
             time.sleep(1.5)
-            return _http_call(cfg, system, user, max_tokens, _attempt=1)
+            return _http_call(cfg, system, user, max_tokens, history, _attempt=1)
         raise
 
 
 def _call_provider(name: str, cfg: dict, system: str, user: str,
-                   max_tokens: int) -> Optional[dict]:
+                   max_tokens: int, history: Optional[list] = None) -> Optional[dict]:
     """调用单个提供商：付费主模型无有效输出时自动回退免费备用模型"""
     fb = cfg.get("fallback_model")
     # 付费余额已耗尽：跳过必然失败的付费主模型，直接用免费备用
@@ -286,8 +290,8 @@ def _call_provider(name: str, cfg: dict, system: str, user: str,
                     name, cfg["model"], fb)
         fb_cfg = dict(cfg)
         fb_cfg["model"] = fb
-        return _call_model(fb_cfg, system, user, max_tokens)
-    result = _call_model(cfg, system, user, max_tokens)
+        return _call_model(fb_cfg, system, user, max_tokens, history)
+    result = _call_model(cfg, system, user, max_tokens, history)
     if result and result["text"].strip():
         return result
     if fb and fb != cfg["model"]:
@@ -295,21 +299,21 @@ def _call_provider(name: str, cfg: dict, system: str, user: str,
         fb_cfg["model"] = fb
         logger.info("AI[%s] 主模型 %s 无有效输出，自动回退 %s",
                     name, cfg["model"], fb)
-        return _call_model(fb_cfg, system, user, max_tokens)
+        return _call_model(fb_cfg, system, user, max_tokens, history)
     return result
 
 
 def _call_model(cfg: dict, system: str, user: str,
-                max_tokens: int) -> Optional[dict]:
+                max_tokens: int, history: Optional[list] = None) -> Optional[dict]:
     """调用单个模型，返回 {"text", ...}；失败/异常返回 None"""
     try:
-        data = _http_call(cfg, system, user, max_tokens)
+        data = _http_call(cfg, system, user, max_tokens, history)
         choice = (data.get("choices") or [{}])[0]
         content = (choice.get("message") or {}).get("content", "").strip()
         # 推理模型（如 glm-4.7-flash）会把 token 预算耗在思考上，
         # 导致 content 为空且 finish_reason=length → 扩容重试一次
         if not content and choice.get("finish_reason") == "length":
-            data = _http_call(cfg, system, user, min(max(max_tokens * 10, 900), 2500))
+            data = _http_call(cfg, system, user, min(max(max_tokens * 10, 900), 2500), history)
             choice = (data.get("choices") or [{}])[0]
             content = (choice.get("message") or {}).get("content", "").strip()
         usage = data.get("usage", {})
@@ -339,11 +343,12 @@ def _call_model(cfg: dict, system: str, user: str,
             cfg2 = dict(cfg)
             cfg2["_timeout_retried"] = True
             logger.warning("AI[%s] 超时，重试一次…", cfg["model"])
-            return _call_model(cfg2, system, user, max_tokens)
+            return _call_model(cfg2, system, user, max_tokens, history)
         return None
 
 
-def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Optional[dict]:
+def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800,
+             history: Optional[list] = None) -> Optional[dict]:
     """按用户调用链取 AI 结果。
 
     - 免费链（zhipu, relay）对所有用户开放：glm-4.7 付费优先，余额耗尽/无有效输出自动回退免费版 glm-4.7-flash，再失败由中转站兜底
@@ -363,7 +368,7 @@ def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Opt
         if not cfg["api_key"]:
             continue
         tried.append(name)
-        result = _call_provider(name, cfg, system, user, max_tokens)
+        result = _call_provider(name, cfg, system, user, max_tokens, history)
         if result and result["text"].strip():
             result["provider"] = name
             return result
@@ -372,22 +377,25 @@ def chat_for(user_id: str, system: str, user: str, max_tokens: int = 800) -> Opt
     return None
 
 
-def chat(system: str, user: str, max_tokens: int = 800) -> Optional[dict]:
+def chat(system: str, user: str, max_tokens: int = 800,
+         history: Optional[list] = None) -> Optional[dict]:
     """旧签名兼容：走免费链（不区分用户）"""
-    return chat_for("", system, user, max_tokens)
+    return chat_for("", system, user, max_tokens, history)
 
 
 def chat_with(user_id: str, system: str, user: str, max_tokens: int = 800,
-              provider: Optional[str] = None) -> Optional[dict]:
+              provider: Optional[str] = None,
+              history: Optional[list] = None) -> Optional[dict]:
     """按用户指定提供商调用 AI（十万个为什么用）。
 
     - provider=None → 走默认链（chat_for：zhipu 付费优先 → relay 兜底 → VIP 追加 deepseek）
     - provider=zhipu / relay → 只走该提供商（智谱仍含模型级回退与余额耗尽降级）
     - provider=deepseek → 仅 VIP 用户可用（非 VIP 直接 None），并占用付费链日配额
+    - history：多轮对话历史 [{role, content}, ...]，可选
     - 未配置 Key / 全链失败返回 None；成功返回 {"text", "prompt_tokens", "completion_tokens", "model", "provider"}
     """
     if not provider:
-        return chat_for(user_id, system, user, max_tokens)
+        return chat_for(user_id, system, user, max_tokens, history)
     if provider not in PROVIDERS:
         logger.warning("AI 未知提供商 %s，返回 None", provider)
         return None
@@ -402,7 +410,7 @@ def chat_with(user_id: str, system: str, user: str, max_tokens: int = 800,
     if not cfg["api_key"]:
         logger.info("AI 提供商 %s 未配置 Key（user=%s），返回 None", provider, user_id)
         return None
-    result = _call_provider(provider, cfg, system, user, max_tokens)
+    result = _call_provider(provider, cfg, system, user, max_tokens, history)
     if result and result["text"].strip():
         result["provider"] = provider
         return result

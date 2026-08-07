@@ -165,6 +165,12 @@ def mark_study_error_mastered(req: StudyErrorMasterRequest, db: Session = Depend
         raise HTTPException(404, "错题记录不存在")
     error.is_mastered = True
     error.mastered_at = date.today()
+    # 错题掌握 → 金币 +3（P2 金币宠物）
+    try:
+        from .pet import _grant_coins
+        _grant_coins(db, req.user_id, 3, "错题掌握")
+    except Exception:
+        pass
     db.commit()
     return {"ok": True}
 
@@ -512,6 +518,13 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
             updated.append({"kind": "study", "record_id": rec.id,
                             "status": status, "streak": rec.correct_streak})
 
+    # 重做掌握 → 金币 +3（P2 金币宠物）
+    try:
+        from .pet import _grant_coins
+        if any(u["status"] == "mastered" for u in updated):
+            _grant_coins(db, req.user_id, 3 * sum(1 for u in updated if u["status"] == "mastered"), "错题掌握")
+    except Exception:
+        pass
     db.commit()
     return {"updated": len(updated), "details": updated, "ai_approved": ai_approved}
 

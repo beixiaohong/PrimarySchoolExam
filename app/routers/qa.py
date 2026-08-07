@@ -1,8 +1,9 @@
-"""AI 十万个为什么：提问 → 全局缓存命中 / 指定模型 AI 回答 → 入库；历史问答列表
+"""AI 十万个为什么：提问 → 全局缓存命中 / 指定模型 AI 回答 → 入库；多轮对话会话；历史列表
 
 约定：
-- 模型选择：zhipu（智谱，付费优先自动降级）/ relay（GPT 中转站）/ deepseek（仅 VIP）
-- 相同问题（规范化文本）全局共享答案：命中直接返回 cached=true，不再请求 AI
+- 模型选择：zhipu（智谱，付费优先自动降级，默认）/ relay（GPT 中转站）/ deepseek（仅 VIP）
+- 单轮（不带 session_id）：相同问题（规范化文本）全局共享答案，命中直接返回 cached=true，不再请求 AI
+- 多轮（带 session_id）：同会话最近 6 轮问答作为上下文传给 AI，支持追问/连续对话；不命中全局缓存
 - 所有成功问答写入 ai_qa 表（q_type=qa），题目讲解（q_type=explain）由 routers/ai.py 写入
 - 降级模板不写库、不参与缓存命中
 """
@@ -23,13 +24,15 @@ router = APIRouter()
 
 QA_MAX_LEN = 300  # 问题最长字符数
 QA_RATE = 5       # 提问限频：次/分钟/用户
+SESSION_ROUNDS = 6  # 多轮对话携带最近 6 轮问答作为上下文
 
 SYSTEM_PROMPT = (
     "你是小学生「十万个为什么」的讲解老师。"
     "要求：1) 语言口语化、生动有趣，孩子（6 年级）一定能听懂，禁止生硬术语；"
     "2) 先一句话直接回答，再用 2-3 个小点简单解释原因；"
     "3) 全文不超过 250 字；"
-    "4) 只回答孩子的提问，不要说题外话。"
+    "4) 只回答孩子的提问，不要说题外话；"
+    "5) 这是多轮对话，如果孩子追问，请结合前面聊过的内容继续回答，不要重复已说过的解释。"
 )
 
 PROVIDER_LABELS = {
@@ -43,6 +46,7 @@ class AskReq(BaseModel):
     user_id: str
     question: str
     provider: str = "zhipu"  # zhipu / relay / deepseek
+    session_id: str = ""  # 多轮会话标识；为空 = 单轮提问
 
 
 def _norm_question(q: str) -> str:
@@ -89,7 +93,7 @@ def qa_models(user_id: str = Query(..., min_length=1)):
     return {"vip": is_vip, "models": models}
 
 
-@router.post("/ask", summary="十万个为什么提问（全局缓存命中则秒回）")
+@router.post("/ask", summary="十万个为什么提问（单轮命中全局缓存；带 session_id 走多轮对话）")
 def qa_ask(req: AskReq, db: Session = Depends(get_db)):
     question = (req.question or "").strip()
     if not question:
@@ -105,29 +109,73 @@ def qa_ask(req: AskReq, db: Session = Depends(get_db)):
     if not ai_svc.rate_limit(f"qa:{req.user_id}", QA_RATE, 60):
         raise HTTPException(400, "提问太快啦，休息一下再来吧")
 
-    # 1) 全局缓存命中：相同问题直接展示已有回答（不再次请求 AI）
-    norm = _norm_question(question)
-    cached = db.query(AiQa).filter(
-        AiQa.q_type == "qa", AiQa.degraded == 0,
-        AiQa.question == norm,
-    ).order_by(AiQa.id.desc()).first()
-    if cached:
-        return {
-            "cached": True,
-            "answer": cached.answer,
-            "provider": cached.provider,
-            "model": cached.model,
-            "question": question,
-        }
+    session_id = (req.session_id or "").strip()
+    history: list = []
 
-    # 2) 未命中 → 指定模型 AI 调用
+    # 1) 多轮模式：读同会话最近 N 轮问答作为上下文（不命中全局缓存）
+    if session_id:
+        rows = db.query(AiQa).filter(
+            AiQa.user_id == req.user_id,
+            AiQa.session_id == session_id,
+            AiQa.q_type == "qa",
+            AiQa.degraded == 0,
+        ).order_by(AiQa.id.desc()).limit(SESSION_ROUNDS * 2).all()
+        rows.reverse()
+        for r in rows:
+            history.append({"role": "user", "content": r.question})
+            history.append({"role": "assistant", "content": r.answer})
+        # 会话第一轮：同样享受全局缓存秒回（命中后写回本会话）
+        if not history:
+            norm = _norm_question(question)
+            cached = db.query(AiQa).filter(
+                AiQa.q_type == "qa", AiQa.degraded == 0,
+                AiQa.question == norm,
+            ).order_by(AiQa.id.desc()).first()
+            if cached:
+                try:
+                    db.add(AiQa(user_id=req.user_id, question=question,
+                                answer=cached.answer, provider=cached.provider,
+                                model=cached.model, q_type="qa", degraded=0,
+                                session_id=session_id))
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                return {
+                    "cached": True,
+                    "answer": cached.answer,
+                    "provider": cached.provider,
+                    "model": cached.model,
+                    "question": question,
+                    "session_id": session_id,
+                }
+    else:
+        # 单轮：全局缓存命中 → 秒回
+        norm = _norm_question(question)
+        cached = db.query(AiQa).filter(
+            AiQa.q_type == "qa", AiQa.degraded == 0,
+            AiQa.question == norm,
+        ).order_by(AiQa.id.desc()).first()
+        if cached:
+            return {
+                "cached": True,
+                "answer": cached.answer,
+                "provider": cached.provider,
+                "model": cached.model,
+                "question": question,
+            }
+
+    # 2) 指定模型 AI 调用（多轮带 history）
     result = ai_svc.chat_with(req.user_id, SYSTEM_PROMPT, question,
-                              max_tokens=500, provider=provider)
+                              max_tokens=500, provider=provider,
+                              history=history if history else None)
     if result and result["text"].strip():
-        db.add(AiQa(user_id=req.user_id, question=norm, answer=result["text"],
+        db.add(AiQa(user_id=req.user_id,
+                    question=_norm_question(question) if not session_id else question,
+                    answer=result["text"],
                     provider=result.get("provider") or provider,
                     model=result.get("model") or "",
-                    q_type="qa", degraded=0))
+                    q_type="qa", degraded=0,
+                    session_id=session_id or None))
         try:
             db.commit()
         except Exception as e:
@@ -140,6 +188,7 @@ def qa_ask(req: AskReq, db: Session = Depends(get_db)):
             "provider": result.get("provider") or provider,
             "model": result.get("model") or "",
             "question": question,
+            "session_id": session_id,
         }
 
     # 3) AI 不可用 → 降级（不写库，避免缓存劣质答案）
@@ -148,7 +197,47 @@ def qa_ask(req: AskReq, db: Session = Depends(get_db)):
         "cached": False, "degraded": True,
         "answer": "AI 老师暂时有点忙，换个问题或稍后再试一下吧！",
         "provider": "", "model": "", "question": question,
+        "session_id": session_id,
     }
+
+
+@router.get("/sessions", summary="我的多轮对话会话列表（按最后提问时间倒序）")
+def qa_sessions(user_id: str = Query(..., min_length=1),
+                db: Session = Depends(get_db)):
+    rows = db.query(AiQa).filter(
+        AiQa.user_id == user_id,
+        AiQa.q_type == "qa",
+        AiQa.session_id.isnot(None),
+    ).order_by(AiQa.id.desc()).all()
+    sessions: dict = {}
+    for r in rows:
+        sid = r.session_id
+        if sid not in sessions:
+            sessions[sid] = {
+                "session_id": sid,
+                "first_question": r.question,
+                "rounds": 0,
+                "updated_at": str(r.created_at)[:16],
+            }
+        sessions[sid]["rounds"] += 1
+    items = sorted(sessions.values(), key=lambda s: s["updated_at"], reverse=True)
+    return {"items": items}
+
+
+@router.get("/session", summary="单个会话的完整对话记录")
+def qa_session(user_id: str = Query(..., min_length=1),
+               session_id: str = Query(..., min_length=1),
+               db: Session = Depends(get_db)):
+    rows = db.query(AiQa).filter(
+        AiQa.user_id == user_id,
+        AiQa.session_id == session_id,
+        AiQa.q_type == "qa",
+    ).order_by(AiQa.id.asc()).limit(100).all()
+    return {"items": [{
+        "id": r.id, "question": r.question, "answer": r.answer,
+        "provider": r.provider, "model": r.model,
+        "degraded": r.degraded, "created_at": str(r.created_at)[:16],
+    } for r in rows]}
 
 
 @router.get("/history", summary="我的问答历史（十万个为什么 + 题目讲解）")

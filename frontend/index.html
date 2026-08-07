@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=31">
+<link rel="stylesheet" href="/static/style.css?v=35">
 </head>
 <body>
 <div id="app">
@@ -49,6 +49,14 @@
       <button class="nav-item" :class="{active: tab==='practice'}" @click="goTab('practice')"><span class="ico">✏️</span>刷题中心</button>
       <button class="nav-item" :class="{active: tab==='recite'}" @click="goTab('recite')"><span class="ico">📖</span>背诵中心</button>
       <button class="nav-item" :class="{active: tab==='qa'}" @click="goTab('qa')"><span class="ico">❓</span>十万个为什么</button>
+      <button class="nav-item" :class="{active: tab==='pet'}" @click="goTab('pet')"><span class="ico">🐣</span>宠物家园<span v-if="petProfile && petLeveledUp" class="badge badge-gold">升级</span></button>
+      <button class="nav-item" :class="{active: tab==='tree'}" @click="goTab('tree')"><span class="ico">🌳</span>成长树</button>
+      <button class="nav-item" :class="{active: tab==='badges'}" @click="goTab('badges')"><span class="ico">🏅</span>成就徽章<span v-if="badgeNew.length" class="badge badge-gold">新</span></button>
+      <button class="nav-item" :class="{active: tab==='cards'}" @click="goTab('cards')"><span class="ico">🃏</span>知识卡图鉴</button>
+      <button class="nav-item" :class="{active: tab==='dict'}" @click="goTab('dict')"><span class="ico">👂</span>听写磨耳朵</button>
+      <button class="nav-item" :class="{active: tab==='focus'}" @click="goTab('focus')"><span class="ico">⏰</span>专注钟</button>
+      <button class="nav-item" :class="{active: tab==='aiquiz'}" @click="goTab('aiquiz')"><span class="ico">🎲</span>AI 趣味出题</button>
+      <button class="nav-item" :class="{active: tab==='assistant'}" @click="goTab('assistant')"><span class="ico">🧑‍🏫</span>AI 学习助手</button>
       <button class="nav-item" :class="{active: tab==='wrong'}" @click="goTab('wrong')"><span class="ico">📝</span>错题本<span v-if="wrongBadge>0" class="badge">{{wrongBadge}}</span></button>
       <button class="nav-item" :class="{active: tab==='papers'}" @click="goTab('papers')"><span class="ico">📄</span>试卷中心</button>
       <button class="nav-item" :class="{active: tab==='stats'}" @click="goTab('stats')"><span class="ico">📊</span>学习统计</button>
@@ -734,7 +742,11 @@
           </div>
         </div>
         <div class="card" style="max-width:760px;margin-top:16px">
-          <div class="card-head"><b>💬 提问</b></div>
+          <div class="card-head"><b>💬 对话</b>
+            <span class="more">
+              <button class="qa-tab" :class="{on: !qaSessionId}" @click="newQaSession()">➕ 新对话</button>
+            </span>
+          </div>
           <div class="qa-model-row">
             <span class="qa-model-label">选 AI 老师：</span>
             <button v-for="m in qaModels" :key="m.key" class="qa-model-btn"
@@ -745,21 +757,35 @@
             </button>
             <span v-if="qaModels && !qaModelsVip" class="qa-vip-tip">💎 DeepSeek 仅 VIP 用户可用，找家长开通哦</span>
           </div>
-          <div class="qa-ask-row">
-            <textarea v-model="qaAsk" class="qa-input" rows="2" maxlength="300"
-                      placeholder="例如：为什么天是蓝色的？为什么飞机不会从天上掉下来？"></textarea>
-            <button class="btn btn-primary" :disabled="qaLoading || !qaAsk.trim()" @click="askQa()">
-              {{qaLoading ? 'AI 老师思考中…' : '提问 →'}}
+          <div class="qa-sess-row" v-if="qaSessions.length">
+            <span class="qa-model-label">会话：</span>
+            <button v-for="s in qaSessions.slice(0, 6)" :key="s.session_id" class="qa-sess-btn"
+                    :class="{on: qaSessionId===s.session_id}"
+                    :title="s.first_question" @click="openQaSession(s.session_id)">
+              {{s.first_question.slice(0, 10)}} <em>{{s.rounds}}轮</em>
             </button>
           </div>
-          <div v-if="qaAnswer" class="qa-answer" :class="{degraded: qaAnswer.degraded}">
-            <div class="qa-answer-meta">
-              <span v-if="qaAnswer.cached" class="tag tag-green">⚡ 已有答案 · 秒回</span>
-              <span v-else-if="qaAnswer.degraded" class="tag tag-orange">AI 暂不可用</span>
-              <span v-else class="tag tag-blue">AI 回答</span>
-              <span class="qa-src" v-if="qaAnswer.provider">{{qaModelLabel(qaAnswer.provider)}} · {{qaAnswer.model}}</span>
+          <div class="qa-chat" ref="qaChat">
+            <div v-if="!qaMessages.length" class="empty" style="padding:20px">
+              <div class="em">🌱</div><h3>开始一段新对话吧</h3>
+              <p>问一个问题，然后可以接着追问，AI 老师会记住我们聊过的内容</p>
             </div>
-            <div class="qa-answer-text">{{qaAnswer.answer}}</div>
+            <div v-for="(m, mi) in qaMessages" :key="mi" class="qa-bubble" :class="m.role==='user' ? 'user' : 'ai'">
+              <div class="qa-bubble-text" :class="{degraded: m.degraded}">{{m.text}}</div>
+              <div class="qa-bubble-meta" v-if="m.role==='ai' && (m.provider || m.cached || m.degraded)">
+                <span v-if="m.cached" class="tag tag-green" style="font-size:11px">⚡ 秒回 · 缓存</span>
+                <span v-else-if="m.degraded" class="tag tag-orange" style="font-size:11px">AI 暂不可用</span>
+                <span v-else class="tag tag-blue" style="font-size:11px">{{qaModelLabel(m.provider)}}<template v-if="m.model"> · {{m.model}}</template></span>
+              </div>
+            </div>
+          </div>
+          <div class="qa-ask-row" style="margin-top:12px">
+            <textarea v-model="qaAsk" class="qa-input" rows="2" maxlength="300"
+                      placeholder="例如：为什么天是蓝色的？……（问完可以继续追问，AI 会记得上下文）"
+                      @keydown.enter.exact.prevent="askQa()"></textarea>
+            <button class="btn btn-primary" :disabled="qaLoading || !qaAsk.trim()" @click="askQa()">
+              {{qaLoading ? 'AI 老师思考中…' : '发送 →'}}
+            </button>
           </div>
         </div>
         <div class="card" style="max-width:760px;margin-top:16px">
@@ -782,6 +808,445 @@
               </div>
               <div class="qa-hist-a" v-show="h._open">{{h.answer}}</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 宠物家园（P2-1 金币宠物） ═══════════ -->
+      <div v-if="tab==='pet'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#f7971e,#ffd200)">
+          <div style="flex:1">
+            <h1>🐣 宠物家园</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">完成任务、答对题目、讲清错题都能赚金币，喂饱小宠物陪它长大！</p>
+          </div>
+          <div class="pet-coin" v-if="petProfile">
+            <div class="pet-coin-num">{{petProfile.coins}}</div>
+            <div class="pet-coin-label">🪙 金币</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="pet-stage" v-if="petProfile">
+            <div class="pet-emoji">{{petEmoji(petProfile.level)}}</div>
+            <div class="pet-name">{{petName(petProfile.level)}}<span class="tag tag-gold" style="margin-left:8px">Lv.{{petProfile.level}}</span></div>
+            <div class="pet-desc">{{petDesc(petProfile.level)}}</div>
+            <div class="pet-exp-bar">
+              <div class="pet-exp-fill" :style="{width: petExpPct(petProfile) + '%'}"></div>
+            </div>
+            <div class="pet-exp-text" v-if="petProfile.exp_next">{{petProfile.exp}} / {{petProfile.exp_next}} 经验<span v-if="petProfile.max_level">（已满级）</span></div>
+            <div v-else class="pet-exp-text">⭐ 已满级，太棒啦！</div>
+            <div class="pet-actions">
+              <button class="btn btn-primary" :disabled="petBusy || (petProfile && petProfile.coins < 10)" @click="petFeed()">
+                🍎 喂食（-10 金币，+5 经验）<span v-if="petProfile && petProfile.feeds_today"> · 今天已喂 {{petProfile.feeds_today}} 次</span>
+              </button>
+              <button class="btn" :disabled="petBusy || (petProfile && petProfile.pats_today >= 3)" @click="petPat()">
+                🤗 摸摸头（+1 经验）<span v-if="petProfile"> · 今天 {{petProfile.pats_today}}/3 次</span>
+              </button>
+            </div>
+            <div v-if="petMsg" class="pet-msg">{{petMsg}}</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>🪙 金币流水</b><span class="more" style="font-size:12px;color:var(--text-3)">余额：{{petProfile ? petProfile.coins : 0}}</span></div>
+          <div v-if="!petLedger.length" class="empty" style="padding:24px">
+            <div class="em">🪙</div><h3>还没有金币记录</h3><p>完成任务、答题全对、错题掌握、小老师讲清楚都可以赚金币哦</p>
+          </div>
+          <div v-else class="pet-ledger-list">
+            <div v-for="(l, i) in petLedger" :key="i" class="pet-ledger-item">
+              <span class="pet-ledger-reason">{{l.reason}}</span>
+              <span class="pet-ledger-time">{{l.created_at}}</span>
+              <span class="pet-ledger-amt" :class="{minus: l.amount < 0}">{{l.amount > 0 ? '+' : ''}}{{l.amount}}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>📜 赚金币规则</b></div>
+          <div class="pet-rules">
+            <div v-for="r in petRules" :key="r.action" class="pet-rule-item">
+              <div class="pet-rule-left"><b>{{r.action}}</b><span class="pet-rule-desc">{{r.desc}}</span></div>
+              <span class="pet-rule-coin" :class="{minus: r.coins < 0}">{{r.coins > 0 ? '+' : ''}}{{r.coins}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 成长树（P2-2 创意 7） ═══════════ -->
+      <div v-if="tab==='tree'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#11998e,#38ef7d)">
+          <div style="flex:1">
+            <h1>🌳 成长树</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">你的每一次学习都在浇灌这棵树，只和自己比，看着它慢慢长大！</p>
+          </div>
+          <div class="tree-score" v-if="treeData">
+            <div class="tree-score-num">{{treeData.score}}</div>
+            <div class="tree-score-label">🌱 成长值</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="tree-stage" v-if="treeData">
+            <div class="tree-emoji">{{treeData.stage.emoji}}</div>
+            <div class="tree-name">{{treeData.stage.name}}</div>
+            <div class="tree-bar"><div class="tree-fill" :style="{width: treeData.stage.pct + '%'}"></div></div>
+            <div class="tree-bar-text" v-if="treeData.stage.next">再攒 {{treeData.stage.next - treeData.score}} 成长值，长成「{{treeStageName(treeData.stage.stage + 1)}}」！</div>
+            <div class="tree-bar-text" v-else>已经长成「森林之王」，太厉害了！</div>
+            <div class="tree-path">
+              <div v-for="(s, i) in treeStages" :key="i" class="tree-path-node"
+                   :class="{done: i <= (treeData.stage.stage), cur: i === treeData.stage.stage}">
+                <span class="tree-path-emoji">{{s.emoji}}</span><span class="tree-path-name">{{s.name}}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>📈 成长值来源</b><span class="more" style="font-size:12px;color:var(--text-3)">总计 {{treeData ? treeData.score : 0}}</span></div>
+          <div v-if="!treeData || !treeData.parts.length" class="empty" style="padding:24px">
+            <div class="em">🌱</div><h3>成长值还是 0</h3><p>去刷一套题，或者背几个单词，小树就会发芽啦！</p>
+          </div>
+          <div v-else class="tree-parts">
+            <div v-for="p in treeData.parts" :key="p.key" class="tree-part-item">
+              <span class="tree-part-label">{{p.label}}<em class="tree-part-val">{{p.value}} 次</em></span>
+              <span class="tree-part-score">+{{p.score}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 成就徽章墙（P2-3 创意 8） ═══════════ -->
+      <div v-if="tab==='badges'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#f093fb,#f5576c)">
+          <div style="flex:1">
+            <h1>🏅 成就徽章墙</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">每达成一个里程碑，就点亮一枚徽章。看看你已经收集了多少枚？</p>
+          </div>
+          <div class="badge-count" v-if="badgeData">
+            <div class="badge-count-num">{{badgeData.earned}} / {{badgeData.total}}</div>
+            <div class="badge-count-label">🏅 已点亮</div>
+          </div>
+        </div>
+
+        <div v-if="badgeNew.length" class="card" style="max-width:760px;margin-top:16px;border-color:#F0C98A;background:#FFF8EC">
+          <div class="card-head"><b>🎉 恭喜获得新徽章！</b></div>
+          <div class="badge-new-list">
+            <div v-for="b in badgeNew" :key="b.code" class="badge-new-item">
+              <span class="badge-new-emoji">{{b.emoji}}</span>
+              <div class="badge-new-info"><b>{{b.name}}</b><span>{{b.desc}}</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="badge-grid" v-if="badgeData">
+            <div v-for="b in badgeData.items" :key="b.code" class="badge-item" :class="{locked: !b.earned}">
+              <div class="badge-medal">{{b.earned ? b.emoji : '🔒'}}</div>
+              <div class="badge-name">{{b.name}}</div>
+              <div class="badge-desc">{{b.desc}}</div>
+              <div class="badge-date" v-if="b.earned">{{b.earned_at}} 获得</div>
+              <div class="badge-date" v-else>待解锁</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 知识卡图鉴（P2-4 创意 13） ═══════════ -->
+      <div v-if="tab==='cards'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#4facfe,#00f2fe)">
+          <div style="flex:1">
+            <h1>🃏 知识卡图鉴</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">掌握一个知识点就点亮一张卡，集齐图鉴成为知识收藏家！</p>
+          </div>
+          <div class="card-count" v-if="cardData">
+            <div class="card-count-num">{{cardData.collected}} / {{cardData.total}}</div>
+            <div class="card-count-label">🃏 已点亮</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>🎴 今日抽卡</b>
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:12.5px" @click="cardDraw()" :disabled="cardDrawing">
+              {{cardDrawing ? '抽卡中…' : '抽 3 张 →'}}
+            </button>
+          </div>
+          <p class="card-desc">从还没点亮的卡里抽 3 张，看看今天该去学什么！</p>
+          <div v-if="drawAllCollected" class="empty" style="padding:20px">
+            <div class="em">🏆</div><h3>全部收集完成！</h3><p>你就是知识收藏家！</p>
+          </div>
+          <div v-else-if="drawCards.length" class="draw-cards">
+            <div v-for="(c, i) in drawCards" :key="i" class="draw-card" :style="{animationDelay: i * 0.15 + 's'}">
+              <div class="draw-card-emoji">{{c.emoji}}</div>
+              <div class="draw-card-title">{{c.title}}</div>
+              <div class="draw-card-sub">{{c.sub}}</div>
+              <div class="draw-card-desc">{{c.desc}}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>📚 我的图鉴</b><span class="more" style="font-size:12px;color:var(--text-3)">掌握即点亮</span></div>
+          <div v-if="!cardData || !cardData.categories.length" class="empty" style="padding:24px">
+            <div class="em">🃏</div><h3>图鉴还是空的</h3><p>掌握第一个知识点，点亮第一张卡吧！</p>
+          </div>
+          <div v-else v-for="cat in cardData.categories" :key="cat.key" class="card-cat">
+            <div class="card-cat-head"><b>{{cat.emoji}} {{cat.name}}</b><span class="more" style="font-size:12px;color:var(--text-3)">{{cat.collected}} / {{cat.total}}</span></div>
+            <div v-if="!cat.cards.length" class="card-cat-empty">还没有收集，去学习吧！</div>
+            <div v-else class="card-grid">
+              <div v-for="c in cat.cards" :key="c.id" class="card-tile">
+                <span class="card-tile-emoji">{{c.emoji}}</span>
+                <span class="card-tile-title">{{c.title}}</span>
+                <span class="card-tile-sub">{{c.sub}}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 听写磨耳朵（P2-5 创意 25） ═══════════ -->
+      <div v-if="tab==='dict'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#a18cd1,#fbc2eb)">
+          <div style="flex:1">
+            <h1>👂 听写磨耳朵</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">听一听，写一写，耳朵和手都练起来！全对还能赚金币哦</p>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="dict-mode-row">
+            <button class="dict-mode-btn" :class="{on: dictMode==='word'}" @click="dictSwitchMode('word')">🔤 单词听写</button>
+            <button class="dict-mode-btn" :class="{on: dictMode==='text'}" @click="dictSwitchMode('text')">📜 古诗文听写</button>
+            <span class="dict-tip">💡 听不清就点 🔊 再听一遍</span>
+          </div>
+
+          <div v-if="!dictSession.active" class="dict-start">
+            <div class="dict-start-info">
+              <p><b>{{dictMode==='word' ? '🔤 单词听写' : '📜 古诗文听写'}}</b></p>
+              <p class="dict-start-desc">{{dictMode==='word' ? '电脑朗读单词，你写出拼写，锻炼耳朵和拼写！' : '电脑朗读古诗文句子，你默写出来，加深记忆！'}}</p>
+            </div>
+            <button class="btn btn-primary" @click="dictStart()">🎧 开始听写（{{dictMode==='word' ? 10 : 5}} 题）</button>
+          </div>
+
+          <div v-else class="dict-session">
+            <div class="dict-progress">第 {{dictSession.i + 1}} / {{dictSession.items.length}} 题</div>
+            <div class="dict-question" v-if="!dictSession.revealed">
+              <button class="dict-play-btn" @click="dictSpeak(dictSession.current)">🔊 播放</button>
+              <div class="dict-hint">{{dictMode==='word' ? '听到单词了吗？写出它！' : '听句子，默写出来'}}</div>
+              <input v-model="dictSession.answer" class="dict-input" :placeholder="dictMode==='word' ? '输入单词拼写' : '输入句子'"
+                     @keyup.enter="dictCheck()" autofocus>
+              <button class="btn btn-primary" @click="dictCheck()" :disabled="!dictSession.answer.trim()">✓ 提交</button>
+            </div>
+            <div v-else class="dict-result" :class="{ok: dictSession.lastOk}">
+              <div class="dict-result-head">{{dictSession.lastOk ? '✅ 答对啦！' : '❌ 再听一遍，记住它'}}</div>
+              <div class="dict-result-ans">
+                <div class="dict-result-line"><span>你写的：</span><b>{{dictSession.answer}}</b></div>
+                <div class="dict-result-line" v-if="!dictSession.lastOk"><span>正确答案：</span><b class="dict-correct">{{dictSession.current.answer}}</b></div>
+                <div class="dict-result-line" v-if="dictMode==='word' && !dictSession.lastOk"><span>意思：</span><em>{{dictSession.current.meaning}}</em></div>
+              </div>
+              <div class="dict-result-actions">
+                <button class="btn" @click="dictReplay()">🔊 再听一遍</button>
+                <button class="btn btn-primary" @click="dictNext()">{{dictSession.i < dictSession.items.length - 1 ? '下一题 →' : '看成绩 🏁'}}</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="dictSession.done" class="dict-done">
+            <div class="dict-done-score">{{dictSession.correct}} / {{dictSession.items.length}}</div>
+            <div class="dict-done-text" v-if="dictSession.correct === dictSession.items.length">🎉 全对！赚到 3 金币，去宠物家园喂小宠物吧！</div>
+            <div class="dict-done-text" v-else-if="dictSession.correct >= dictSession.items.length * 0.6">👏 不错哦，再练几遍就能全对啦！</div>
+            <div class="dict-done-text" v-else>💪 多听几遍，磨磨耳朵再来一次！</div>
+            <button class="btn btn-primary" @click="dictStart()">🔁 再来一组</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ 番茄专注钟（P2-6 创意 22） ═══════════ -->
+      <div v-if="tab==='focus'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#ff512f,#dd2476)">
+          <div style="flex:1">
+            <h1>⏰ 番茄专注钟</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">专注 25 分钟，休息 5 分钟。每完成一次专注 +2 金币，保护眼睛也攒金币！</p>
+          </div>
+          <div class="focus-stats" v-if="focusToday">
+            <div class="focus-stats-num">{{focusToday.count}}<em>次</em></div>
+            <div class="focus-stats-label">今日专注 {{focusToday.minutes}} 分钟</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="focus-pick-row" v-if="!focusTimer.running && !focusTimer.paused">
+            <button v-for="m in [10, 15, 25]" :key="m" class="focus-pick-btn" :class="{on: focusTimer.total === m}" @click="focusSet(m)">
+              {{m}} 分钟
+            </button>
+          </div>
+
+          <div class="focus-clock" :class="{running: focusTimer.running, done: focusDone}">
+            <div class="focus-ring" :style="{background: focusRingStyle}">
+              <div class="focus-time">{{focusTimeText}}</div>
+              <div class="focus-state">{{focusTimer.running ? '专注中…' : focusDone ? '完成！' : (focusTimer.paused ? '已暂停' : '准备好就开始')}}</div>
+            </div>
+          </div>
+
+          <div class="focus-actions">
+            <template v-if="!focusDone">
+              <button v-if="!focusTimer.running && !focusTimer.paused" class="btn btn-primary" @click="focusStart()">▶ 开始专注</button>
+              <button v-if="focusTimer.running && !focusTimer.paused" class="btn" @click="focusPause()">⏸ 暂停</button>
+              <button v-if="focusTimer.paused" class="btn btn-primary" @click="focusResume()">▶ 继续</button>
+              <button v-if="focusTimer.running || focusTimer.paused" class="btn" @click="focusReset()">↺ 放弃</button>
+            </template>
+            <button v-else class="btn btn-primary" @click="focusReset()">🔁 再来一次</button>
+          </div>
+
+          <div v-if="focusMsg" class="focus-msg">{{focusMsg}}</div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>📊 专注统计</b></div>
+          <div v-if="!focusStats" class="card-desc">完成一次专注后，这里会显示你的专注数据</div>
+          <div v-else class="focus-stat-grid">
+            <div class="focus-stat-item"><b>{{focusStats.today.count}}</b><span>今日（{{focusStats.today.minutes}} 分钟）</span></div>
+            <div class="focus-stat-item"><b>{{focusStats.week.count}}</b><span>本周（{{focusStats.week.minutes}} 分钟）</span></div>
+            <div class="focus-stat-item"><b>{{focusStats.total.count}}</b><span>累计（{{focusStats.total.minutes}} 分钟）</span></div>
+          </div>
+          <p class="card-desc" style="margin-top:8px">💡 小贴士：每专注 25 分钟记得站起来看看远处，眼睛休息一下哦</p>
+        </div>
+      </div>
+
+      <!-- ═══════════ AI 趣味出题（AI-2 创意 24） ═══════════ -->
+      <div v-if="tab==='aiquiz'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#00b09b,#96c93d)">
+          <div style="flex:1">
+            <h1>🎲 AI 趣味出题</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">AI 老师把题目包装成冒险、太空、恐龙、美食、魔法主题，全对还能拿金币！答错的题会自动进错题本。</p>
+          </div>
+          <div class="focus-stats" v-if="aiQuizPlayed">
+            <div class="focus-stats-num">{{aiQuizPlayed}}<em>次</em></div>
+            <div class="focus-stats-label">玩过的闯关</div>
+          </div>
+        </div>
+
+        <!-- 配置区 -->
+        <div v-if="!aiQuiz.loading && !aiQuiz.quiz" class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>🎮 选好主题，AI 老师就出题</b></div>
+          <div class="form-grid" style="margin-top:16px">
+            <div class="form-item"><label>学科</label>
+              <select v-model="aiQuiz.subject">
+                <option>数学</option><option>语文</option><option>英语</option>
+              </select>
+            </div>
+            <div class="form-item"><label>年级</label>
+              <select v-model="aiQuiz.grade">
+                <option v-for="g in [3,4,5,6,7,8,9]" :value="g">{{g}}年级</option>
+              </select>
+            </div>
+          </div>
+          <div class="dict-mode-row" style="margin-top:14px">
+            <button v-for="(t, k) in aiQuizThemes" :key="k" class="dict-mode-btn" :class="{on: aiQuiz.theme === k}" @click="aiQuiz.theme = k">
+              {{aiQuizThemeEmoji[k]}} {{t}}
+            </button>
+          </div>
+          <div style="margin-top:18px">
+            <button class="btn btn-primary" @click="aiQuizGenerate()">✨ 让 AI 出 5 道题</button>
+          </div>
+          <p class="card-desc" style="margin-top:10px">💡 AI 生成大约需要 10 秒，请耐心等待。每道题都有 4 个选项，全对奖励 +5 金币，答错的进错题本！</p>
+        </div>
+
+        <!-- 加载中 -->
+        <div v-if="aiQuiz.loading" class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>🤖 AI 老师正在出题…</b></div>
+          <p class="card-desc">正在把 {{aiQuiz.subject}}{{aiQuiz.grade}}年级题目包装成「{{aiQuizThemeEmoji[aiQuiz.theme]}} {{aiQuizThemes[aiQuiz.theme]}}」主题，请稍候</p>
+          <div class="loading-bar"><div class="loading-bar-inner"></div></div>
+        </div>
+
+        <!-- 作答区 -->
+        <template v-if="aiQuiz.quiz && !aiQuiz.graded">
+          <div class="card" style="max-width:760px;margin-top:16px">
+            <div class="card-head"><b>🎯 {{aiQuiz.themeName}} · {{aiQuiz.subject}}闯关</b>
+              <span style="float:right;font-size:13px;color:#999">已答 {{aiQuizAnswered}}/{{aiQuiz.quiz.length}} 题</span>
+            </div>
+            <div class="quiz-q" v-for="(q, i) in aiQuiz.quiz" :key="i">
+              <div class="quiz-q-title">{{i + 1}}. {{q.question}}</div>
+              <div v-if="q.options && q.options.length" class="quiz-options">
+                <button v-for="(o, j) in q.options" :key="j" class="quiz-opt-btn"
+                        :class="{on: aiQuiz.answers[i] === o[0]}"
+                        @click="aiQuizPick(i, o[0])">{{o}}</button>
+              </div>
+              <input v-else class="quiz-fill" v-model="aiQuiz.inputs[i]" placeholder="想一想，把答案打在这里" @keyup.enter="aiQuizGrade()">
+            </div>
+            <div style="margin-top:18px;text-align:center">
+              <button class="btn btn-primary" :disabled="aiQuizAnswered < aiQuiz.quiz.length" @click="aiQuizGrade()">✅ 交卷判分</button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 判分结果 -->
+        <template v-if="aiQuiz.quiz && aiQuiz.graded">
+          <div class="card" style="max-width:760px;margin-top:16px">
+            <div class="card-head"><b>{{aiQuiz.score.correct === aiQuiz.quiz.length ? '🎉 全对！太厉害了！' : '📋 判分结果'}}</b></div>
+            <div class="dict-done-text" style="margin-bottom:14px">
+              答对 <b style="color:var(--primary)">{{aiQuiz.score.correct}}</b> / {{aiQuiz.quiz.length}} 题
+              <span v-if="aiQuiz.rewardGranted" style="color:#e6a23c"> · 全对奖励金币 +{{aiQuiz.rewardGranted}} 💰</span>
+            </div>
+            <div class="quiz-q" v-for="(q, i) in aiQuiz.quiz" :key="i">
+              <div class="quiz-q-title" :class="aiQuiz.score.detail[i] ? 'q-right' : 'q-wrong'">
+                {{i + 1}}. {{q.question}} <span class="q-mark">{{aiQuiz.score.detail[i] ? '✓' : '✗'}}</span>
+              </div>
+              <div class="quiz-fun" v-if="!aiQuiz.score.detail[i]">你的答案：{{aiQuizUserAnswer(i)}} · 正确答案：{{q.answer}}</div>
+              <div class="quiz-fun">{{q.explanation}}</div>
+              <div class="quiz-fun" style="background:linear-gradient(90deg,#fff7e6,#fffbe6);border-color:#ffd591">🧠 {{q.fun}}</div>
+            </div>
+            <div style="margin-top:18px;text-align:center">
+              <button class="btn btn-primary" @click="aiQuizReset()">🔁 再来一组</button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- ═══════════ AI 学习助手（AI-5） ═══════════ -->
+      <div v-if="tab==='assistant'" class="fade-enter">
+        <div class="hero" style="background:linear-gradient(135deg,#654ea3,#eaafc8)">
+          <div style="flex:1">
+            <h1>🧑‍🏫 AI 学习助手</h1>
+            <p class="sub" style="color:rgba(255,255,255,.92)">AI 老师认识你的学习数据！可以问它「今天该学什么」「帮我分析错题」「夸夸我」，它会结合你的真实情况回答。</p>
+          </div>
+          <div class="focus-stats" v-if="assistantProfile">
+            <div class="focus-stats-num">{{assistantProfile.grade}}<em>年级</em></div>
+            <div class="focus-stats-label">{{assistantProfile.subject}} · {{assistantChipCount}} 条学习数据</div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:760px;margin-top:16px">
+          <div class="card-head"><b>💬 和 AI 老师聊聊</b></div>
+
+          <!-- 快捷提问 -->
+          <div class="dict-mode-row" style="margin-top:10px;margin-bottom:6px" v-if="!assistantLoading">
+            <button v-for="q in assistantChips" :key="q" class="dict-mode-btn" @click="assistantAsk(q)">{{q}}</button>
+          </div>
+
+          <!-- 消息区 -->
+          <div class="chat-box" ref="chatBox">
+            <div v-if="!assistantMsgs.length" class="chat-empty">
+              <div style="font-size:34px">🤖</div>
+              <p>嗨！我是你的 AI 学习助手，我已经看过你的学习数据啦～</p>
+              <p class="chat-empty-tip">点上面任意一个问题，或者直接在下面打字问我！</p>
+            </div>
+            <div v-for="(m, i) in assistantMsgs" :key="i" class="chat-row" :class="m.role === 'me' ? 'chat-me' : 'chat-ai'">
+              <div class="chat-bubble" :class="m.role === 'me' ? 'bubble-me' : 'bubble-ai'">
+                <span v-if="m.role === 'me'" class="chat-name">我</span>
+                <span v-else class="chat-name">AI 老师</span>
+                <div class="chat-text" style="white-space:pre-wrap">{{m.text}}</div>
+              </div>
+            </div>
+            <div v-if="assistantLoading" class="chat-row chat-ai">
+              <div class="chat-bubble bubble-ai"><span class="chat-name">AI 老师</span><div class="chat-dots"><i></i><i></i><i></i></div></div>
+            </div>
+          </div>
+
+          <!-- 输入区 -->
+          <div class="chat-input-row">
+            <input class="chat-input" v-model="assistantDraft" placeholder="问问 AI 老师…（它会结合你的学习数据回答）"
+                   @keyup.enter="assistantSend()" :disabled="assistantLoading">
+            <button class="btn btn-primary" style="flex-shrink:0" :disabled="assistantLoading || !assistantDraft.trim()" @click="assistantSend()">发送</button>
           </div>
         </div>
       </div>
@@ -1174,7 +1639,7 @@
 <div class="quiz-overlay" v-if="teachOverlay.show">
   <div class="quiz-shell teach-shell">
     <div class="quiz-top">
-      <span class="qname">🎓 小老师课堂</span>
+      <span class="qname">🎓 小老师课堂 <em v-if="teachOverlay.cards.length>1" class="ts-prog">{{teachOverlay.idx+1}} / {{teachOverlay.cards.length}}</em></span>
       <button class="icon-btn" @click="closeTeach()" title="关闭">✕</button>
     </div>
     <div class="teach-body">
@@ -1207,7 +1672,10 @@
         <div class="em">🎉</div>
         <h3>{{teachOverlay.result}}</h3>
         <p class="ts-hint">{{teachOverlay.hint}}</p>
-        <div class="detail-actions"><button class="btn btn-primary" @click="closeTeach()">完成</button></div>
+        <div class="detail-actions">
+          <button v-if="teachOverlay.idx < teachOverlay.cards.length-1" class="btn btn-primary" @click="nextTeach()">讲下一道 →</button>
+          <button v-else class="btn btn-primary" @click="closeTeach()">全部讲完，完成 🎓</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1444,6 +1912,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=31"></script>
+<script src="/static/app.js?v=35"></script>
 </body>
 </html>

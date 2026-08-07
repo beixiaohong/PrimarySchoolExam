@@ -411,5 +411,11 @@ def claim_task(req: ClaimRequest, db: Session = Depends(get_db)):
         inc_active_wish_progress(db, req.user_id, 1)
     except Exception:
         pass
+    # 任务完成 → 金币 +5（P2 金币宠物）
+    try:
+        from .pet import _grant_coins
+        _grant_coins(db, req.user_id, 5, "完成任务")
+    except Exception:
+        pass
     db.commit()
     return _build_payload(db, req.user_id)

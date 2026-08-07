@@ -38,7 +38,10 @@ class WeeklyReport(Base):
 
 
 class AiQa(Base):
-    """AI 问答缓存（十万个为什么 + 错题讲解，全局共享，相同问题不再请求 AI）"""
+    """AI 问答缓存（十万个为什么 + 错题讲解，全局共享，相同问题不再请求 AI）
+
+    session_id（015 迁移）：多轮对话会话标识；为空表示单轮提问（命中全局缓存）
+    """
     __tablename__ = "ai_qa"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -50,4 +53,5 @@ class AiQa(Base):
     q_type = Column(String(10), nullable=False, default="qa")  # qa=提问 / explain=讲解
     ref_id = Column(Integer, nullable=True)  # explain 时为题目 id
     degraded = Column(Integer, nullable=False, default=0)  # 降级模板不参与缓存命中
+    session_id = Column(String(40), nullable=True, index=True)  # 多轮对话会话（015 迁移）
     created_at = Column(DateTime, default=datetime.now)

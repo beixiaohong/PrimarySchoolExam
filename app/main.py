@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from .database import init_db
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant
 from .services.init_data import ensure_initial_data
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -51,6 +51,14 @@ app.include_router(goals.router, prefix="/api/goals", tags=["目标倒计时"])
 app.include_router(qa.router, prefix="/api/qa", tags=["十万个为什么"])
 app.include_router(parent.router, prefix="/api/parent", tags=["家长功能"])
 app.include_router(appeal.router, prefix="/api/appeal", tags=["申诉复核"])
+app.include_router(pet.router, prefix="/api/pet", tags=["金币宠物"])
+app.include_router(tree.router, prefix="/api/tree", tags=["成长树"])
+app.include_router(badges.router, prefix="/api/badges", tags=["成就徽章"])
+app.include_router(cards.router, prefix="/api/cards", tags=["知识卡图鉴"])
+app.include_router(dictation.router, prefix="/api/dictation", tags=["听写磨耳朵"])
+app.include_router(focus.router, prefix="/api/focus", tags=["番茄专注钟"])
+app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"])
+app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"])
 
 # 前端静态资源（样式、脚本）
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")

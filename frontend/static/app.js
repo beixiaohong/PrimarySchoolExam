@@ -68,7 +68,7 @@ createApp({
       chalCombo: 0, chalBest: { math: { best: 0 }, word: { best: 0 } },
       goalOverlay: { show: false, kind: 'score', target: 90, deadline: '', subject: '数学' },
       goals: [],
-      teachOverlay: { show: false, step: 1, card: null, answerText: '', result: '', hint: '' },
+      teachOverlay: { show: false, cards: [], idx: 0, step: 1, card: null, answerText: '', result: '', hint: '' },
       teachDue: [], recheckOverlay: { show: false, card: null, answerText: '' },
       // 通用答题状态机
       quiz: { active: false, done: false, title: '', items: [], i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source: null },
@@ -81,10 +81,37 @@ createApp({
       tomorrowQueue: { count: 0, items: [] },
       // 试卷中心
       papers: [],
-      // 十万个为什么（Sprint 5）
+      // 十万个为什么（Sprint 5 + 多轮对话）
       qaAsk: '', qaProvider: 'zhipu', qaLoading: false, qaAnswer: null,
       qaModels: [], qaModelsVip: false,
       qaHistory: [], qaHistType: 'all',
+      qaMessages: [], qaSessionId: '', qaSessions: [],
+      // 宠物家园（P2-1 金币宠物）
+      petProfile: null, petLedger: [], petRules: [], petMsg: '', petBusy: false, petLeveledUp: false,
+      // 成长树（P2-2 创意 7）
+      treeData: null,
+      treeStages: [
+        { name: '小种子', emoji: '🌱' }, { name: '小幼苗', emoji: '🌿' }, { name: '小树苗', emoji: '🪴' },
+        { name: '青葱小树', emoji: '🌳' }, { name: '茁壮大树', emoji: '🌳' }, { name: '枝繁叶茂', emoji: '🌳' },
+        { name: '开花啦', emoji: '🌸' }, { name: '硕果累累', emoji: '🍎' }, { name: '森林之王', emoji: '🌟' },
+      ],
+      // 成就徽章（P2-3 创意 8）
+      badgeData: null, badgeNew: [],
+      // 知识卡图鉴（P2-4 创意 13）
+      cardData: null, drawCards: [], drawAllCollected: false, cardDrawing: false,
+      // 听写磨耳朵（P2-5 创意 25）
+      dictMode: 'word',
+      dictSession: { active: false, done: false, items: [], i: 0, current: null, answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false },
+      // 番茄专注钟（P2-6 创意 22）
+      focusTimer: { total: 25, left: 25 * 60, running: false, paused: false },
+      focusDone: false, focusMsg: '', focusToday: null, focusStats: null, _focusTicker: null,
+      // AI 趣味出题（AI-2 创意 24）
+      aiQuizThemes: { adventure: '冒险岛探险', space: '太空旅行', dino: '恐龙世界', food: '美食厨房', magic: '魔法学院' },
+      aiQuizThemeEmoji: { adventure: '🗺️', space: '🚀', dino: '🦕', food: '🍔', magic: '🔮' },
+      aiQuiz: { subject: '数学', grade: 6, theme: 'adventure', loading: false, themeName: '', quiz: null, answers: {}, inputs: {}, graded: null, score: null, rewardGranted: 0 },
+      aiQuizPlayed: Number(localStorage.getItem('zx_aiquiz_played') || 0),
+      // AI 学习助手（AI-5）
+      assistantProfile: null, assistantMsgs: [], assistantDraft: '', assistantLoading: false,
       // 统计
       vocabStats: {}, classicalStats: {}, grammarStats: {},
       // Toast
@@ -96,6 +123,32 @@ createApp({
     greeting() {
       const h = new Date().getHours();
       return h < 6 ? '夜深了' : h < 12 ? '早上好' : h < 18 ? '下午好' : '晚上好';
+    },
+    focusTimeText() {
+      const s = this.focusTimer.left % 60;
+      const m = Math.floor(this.focusTimer.left / 60);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    },
+    focusRingStyle() {
+      const total = this.focusTimer.total * 60 || 1;
+      const pct = Math.min(100, Math.round((total - this.focusTimer.left) / total * 100));
+      return `background: conic-gradient(#ff512f ${pct}%, #ffe3e3 ${pct}% 100%)`;
+    },
+    aiQuizAnswered() {
+      const q = this.aiQuiz;
+      if (!q.quiz) return 0;
+      let n = 0;
+      q.quiz.forEach((item, i) => {
+        if (item.options && item.options.length) { if (q.answers[i]) n++; }
+        else if (q.inputs[i] && String(q.inputs[i]).trim()) n++;
+      });
+      return n;
+    },
+    assistantChips() {
+      return ['今天该学什么？', '帮我分析我的错题', '夸夸我这周表现', '我进步了吗？'];
+    },
+    assistantChipCount() {
+      return this.assistantProfile ? (this.assistantProfile.profile || '').split('；').filter(Boolean).length : 0;
     },
     vocabPct() {
       const s = this.vocabToday.stats || {};
@@ -245,7 +298,16 @@ createApp({
       if (t === 'recite') { this.reciteSub === 'words' ? this.loadVocabToday() : this.loadClassicalToday(); this.loadClassicalTexts(); }
       if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); this.loadTeachDue(); }
       if (t === 'papers') this.loadPapers();
-      if (t === 'qa') { this.loadQaModels(); this.loadQaHistory(); }
+      if (t === 'qa') { this.loadQaModels(); this.loadQaHistory(); this.loadQaSessions(); }
+      if (t === 'pet') { this.petLeveledUp = false; this.loadPet(); this.loadPetLedger(); this.loadPetRules(); }
+      if (t === 'tree') this.loadTree();
+      if (t === 'badges') { this.badgeNew = []; this.loadBadges(true); }
+      if (t === 'cards') this.loadCards();
+      if (t === 'focus') this.loadFocus();
+      if (t === 'aiquiz') {
+        if (!this.aiQuiz.quiz) { this.aiQuiz.subject = this.subject; this.aiQuiz.grade = this.grade; }
+      }
+      if (t === 'assistant') this.loadAssistantProfile();
       if (t === 'stats') this.loadStats();
       if (t === 'settings') this.initParentPanel();
     },
@@ -287,19 +349,60 @@ createApp({
       const m = (this.qaModels || []).find(x => x.key === key);
       return m ? m.label : key;
     },
+    genSessionId() {
+      return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    },
+    newQaSession() {
+      this.qaSessionId = '';
+      this.qaMessages = [];
+      this.qaAsk = '';
+    },
+    loadQaSessions() {
+      if (!this.user) return;
+      this.api(`/api/qa/sessions?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.qaSessions = (d && d.items) || []; })
+        .catch(() => { this.qaSessions = []; });
+    },
+    openQaSession(sid) {
+      if (this.qaLoading) return;
+      this.api(`/api/qa/session?user_id=${encodeURIComponent(this.user)}&session_id=${encodeURIComponent(sid)}`)
+        .then(d => {
+          this.qaSessionId = sid;
+          this.qaMessages = ((d && d.items) || []).map(r => ({
+            role: 'user', text: r.question,
+          }, {
+            role: 'ai', text: r.answer, provider: r.provider, model: r.model, degraded: !!r.degraded,
+          })).flat();
+          this.$nextTick(this.scrollQaChat);
+        })
+        .catch(() => {});
+    },
+    scrollQaChat() {
+      const el = document.querySelector('.qa-chat');
+      if (el) el.scrollTop = el.scrollHeight;
+    },
     askQa() {
       const q = this.qaAsk.trim();
       if (!q || this.qaLoading) return;
+      if (!this.qaSessionId) this.qaSessionId = this.genSessionId();
       this.qaLoading = true;
-      this.qaAnswer = null;
+      this.qaMessages.push({ role: 'user', text: q });
+      this.qaAsk = '';
+      this.$nextTick(this.scrollQaChat);
       this.api('/api/qa/ask', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, question: q, provider: this.qaProvider }),
+        body: JSON.stringify({ user_id: this.user, question: q, provider: this.qaProvider, session_id: this.qaSessionId }),
       }).then(d => {
-        this.qaAnswer = d;
+        this.qaMessages.push({
+          role: 'ai', text: d.answer, provider: d.provider, model: d.model,
+          cached: !!d.cached, degraded: !!d.degraded, session_id: d.session_id || '',
+        });
+        if (!d.cached && d.session_id) this.qaSessionId = d.session_id;
+        this.$nextTick(this.scrollQaChat);
+        this.loadQaSessions();
         this.loadQaHistory();
       }).catch(e => {
-        this.showToast(e.message);
+        this.qaMessages.push({ role: 'ai', text: '（发送失败）' + e.message, degraded: true });
       }).finally(() => { this.qaLoading = false; });
     },
     loadQaHistory() {
@@ -307,6 +410,353 @@ createApp({
       this.api(`/api/qa/history?user_id=${encodeURIComponent(this.user)}&q_type=${this.qaHistType}`)
         .then(d => { this.qaHistory = d || []; })
         .catch(() => { this.qaHistory = []; });
+    },
+
+    /* ─────────── 宠物家园（P2-1 金币宠物） ─────────── */
+    loadPet() {
+      if (!this.user) return;
+      this.api(`/api/pet?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.petProfile = d; })
+        .catch(() => { this.petProfile = null; });
+    },
+    loadPetLedger() {
+      if (!this.user) return;
+      this.api(`/api/pet/ledger?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.petLedger = d || []; })
+        .catch(() => { this.petLedger = []; });
+    },
+    loadPetRules() {
+      if (this.petRules.length) return;
+      this.api('/api/pet/rules')
+        .then(d => { this.petRules = (d && d.items) || []; })
+        .catch(() => {});
+    },
+    petFeed() {
+      if (this.petBusy) return;
+      this.petBusy = true;
+      this.petMsg = '';
+      this.api('/api/pet/feed', { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+        .then(d => {
+          const leveled = !!d.leveled;
+          this.petProfile = d;
+          if (leveled) {
+            this.petLeveledUp = true;
+            this.petMsg = '🎉 升级啦！宠物长成新的样子了！';
+            this.showToast(`🎉 宠物升级到 Lv.${d.level}！`);
+          } else {
+            this.petMsg = '🍎 嗷呜～真好吃！经验 +5';
+          }
+          this.loadPetLedger();
+        })
+        .catch(e => { this.petMsg = e.message; })
+        .finally(() => { this.petBusy = false; });
+    },
+    petPat() {
+      if (this.petBusy) return;
+      this.petBusy = true;
+      this.petMsg = '';
+      this.api('/api/pet/pat', { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+        .then(d => {
+          this.petProfile = d;
+          this.petMsg = d.leveled ? '🎉 升级啦！宠物长成新的样子了！' : '🤗 好舒服～经验 +1';
+          if (d.leveled) { this.petLeveledUp = true; this.showToast(`🎉 宠物升级到 Lv.${d.level}！`); }
+        })
+        .catch(e => { this.petMsg = e.message; })
+        .finally(() => { this.petBusy = false; });
+    },
+    petEmoji(level) {
+      if (level >= 9) return '🦚';
+      if (level >= 7) return '🦜';
+      if (level >= 5) return '🐥';
+      if (level >= 3) return '🐤';
+      return '🥚';
+    },
+    petName(level) {
+      if (level >= 9) return '🦚 凤凰奇奇';
+      if (level >= 7) return '🦜 鹦鹉小七';
+      if (level >= 5) return '🐥 大黄鸭';
+      if (level >= 3) return '🐤 小黄鸡';
+      return '🥚 宠物蛋';
+    },
+    petDesc(level) {
+      if (level >= 9) return '传说中的凤凰，闪闪发光，同学都会羡慕你！';
+      if (level >= 7) return '学会说人话了，会跟着你朗读课文！';
+      if (level >= 5) return '长出翅膀了，越来越精神！';
+      if (level >= 3) return '破壳啦！一只毛茸茸的小家伙';
+      return '还是一颗蛋，努力赚金币喂它，很快就会孵出来！';
+    },
+    petExpPct(p) {
+      if (!p || !p.exp_next) return 100;
+      return Math.min(100, Math.round(p.exp / p.exp_next * 100));
+    },
+
+    /* ─────────── 成长树（P2-2 创意 7） ─────────── */
+    loadTree() {
+      if (!this.user) return;
+      this.api(`/api/tree?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.treeData = d; })
+        .catch(() => { this.treeData = null; });
+    },
+    treeStageName(idx) {
+      const s = this.treeStages[idx];
+      return s ? s.name : '';
+    },
+
+    /* ─────────── 成就徽章（P2-3 创意 8） ─────────── */
+    loadBadges(announce) {
+      if (!this.user) return;
+      this.api(`/api/badges?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          const prevNew = this.badgeNew;
+          this.badgeData = d;
+          if (d.newly && d.newly.length) {
+            this.badgeNew = (d.items || []).filter(b => (d.newly || []).includes(b.code));
+            if (announce && this.badgeNew.length) {
+              this.showToast(`🎉 获得新徽章：${this.badgeNew.map(b => b.name).join('、')}！`);
+            }
+          } else if (prevNew.length) {
+            this.badgeNew = prevNew;
+          }
+        })
+        .catch(() => { this.badgeData = null; });
+    },
+
+    /* ─────────── 知识卡图鉴（P2-4 创意 13） ─────────── */
+    loadCards() {
+      if (!this.user) return;
+      this.api(`/api/cards?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.cardData = d; })
+        .catch(() => { this.cardData = null; });
+    },
+    cardDraw() {
+      if (this.cardDrawing || !this.user) return;
+      this.cardDrawing = true;
+      this.drawCards = [];
+      this.api(`/api/cards/draw?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          this.drawAllCollected = !!d.all_collected;
+          this.drawCards = d.cards || [];
+          if (this.drawCards.length) this.showToast('🎴 抽到 3 张知识卡！');
+        })
+        .catch(e => this.showToast(e.message))
+        .finally(() => { this.cardDrawing = false; });
+    },
+
+    /* ─────────── 听写磨耳朵（P2-5 创意 25） ─────────── */
+    dictSwitchMode(m) {
+      if (this.dictSession.active) return;
+      this.dictMode = m;
+    },
+    dictStart() {
+      const isWord = this.dictMode === 'word';
+      const url = isWord
+        ? `/api/dictation/words?user_id=${encodeURIComponent(this.user)}&count=10`
+        : `/api/dictation/texts?user_id=${encodeURIComponent(this.user)}&count=5&grade=${this.grade}`;
+      this.api(url).then(d => {
+        const items = (d.items || []).map(it => isWord
+          ? { answer: it.word, meaning: `${it.pos || ''} ${it.meaning || ''}`.trim(), extra: it.word }
+          : { answer: it.sentence, meaning: it.title, extra: it.full });
+        if (!items.length) { this.showToast('题库是空的，先学一点再来听写吧'); return; }
+        this.dictSession = { active: true, done: false, items, i: 0, current: items[0], answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false };
+        this.$nextTick(() => setTimeout(() => this.dictSpeak(items[0]), 350));
+      }).catch(e => this.showToast(e.message));
+    },
+    dictSpeak(item) {
+      if (!item) return;
+      try {
+        if (!('speechSynthesis' in window)) { this.showToast('当前浏览器不支持语音朗读'); return; }
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(item.extra || item.answer);
+        u.lang = this.dictMode === 'word' ? 'en-US' : 'zh-CN';
+        u.rate = this.dictMode === 'word' ? 0.8 : 0.9;
+        u.pitch = 1;
+        window.speechSynthesis.speak(u);
+      } catch (e) { this.showToast('语音播放失败，请检查浏览器设置'); }
+    },
+    dictCheck() {
+      const s = this.dictSession;
+      if (!s.current) return;
+      const ans = (s.answer || '').trim().toLowerCase().replace(/[，。！？；、\s]/g, '');
+      const correct = (s.current.answer || '').trim().toLowerCase().replace(/[，。！？；、\s]/g, '');
+      s.lastOk = ans === correct;
+      if (s.lastOk) s.correct += 1;
+      s.revealed = true;
+    },
+    dictReplay() { this.dictSpeak(this.dictSession.current); },
+    dictNext() {
+      const s = this.dictSession;
+      if (s.i >= s.items.length - 1) {
+        s.active = false;
+        s.done = true;
+        if (s.correct === s.items.length && !s.rewarded) {
+          s.rewarded = true;
+          this.api('/api/dictation/reward', { method: 'POST', body: JSON.stringify({ user_id: this.user, correct: s.correct, total: s.items.length }) })
+            .then(d => { if (d.granted) { this.loadPet(); this.showToast(`🪙 听写全对 +${d.granted} 金币！`); } })
+            .catch(() => {});
+        }
+        return;
+      }
+      s.i += 1;
+      s.current = s.items[s.i];
+      s.answer = '';
+      s.revealed = false;
+      this.$nextTick(() => setTimeout(() => this.dictSpeak(s.current), 250));
+    },
+
+    /* ─────────── 番茄专注钟（P2-6 创意 22） ─────────── */
+    focusSet(m) { this.focusTimer.total = m; this.focusTimer.left = m * 60; },
+    focusStart() {
+      this.focusDone = false;
+      this.focusMsg = '';
+      this.focusTimer.running = true;
+      this.focusTimer.paused = false;
+      this._startFocusTicker();
+      this.showToast(`⏰ 开始专注 ${this.focusTimer.total} 分钟，加油！`);
+    },
+    _startFocusTicker() {
+      if (this._focusTicker) clearInterval(this._focusTicker);
+      this._focusTicker = setInterval(() => {
+        if (!this.focusTimer.running) return;
+        this.focusTimer.left -= 1;
+        if (this.focusTimer.left <= 0) {
+          this.focusTimer.left = 0;
+          this.focusFinish();
+        }
+      }, 1000);
+    },
+    focusPause() { this.focusTimer.running = false; this.focusTimer.paused = true; this.focusMsg = '⏸ 已暂停，休息一下眼睛吧'; },
+    focusResume() { this.focusTimer.running = true; this.focusTimer.paused = false; this.focusMsg = ''; },
+    focusReset() {
+      if (this._focusTicker) clearInterval(this._focusTicker);
+      this.focusTimer.running = false;
+      this.focusTimer.paused = false;
+      this.focusDone = false;
+      this.focusMsg = '';
+      this.focusTimer.left = this.focusTimer.total * 60;
+    },
+    focusFinish() {
+      if (this._focusTicker) clearInterval(this._focusTicker);
+      this.focusTimer.running = false;
+      this.focusDone = true;
+      this.focusMsg = '🎉 专注完成！';
+      this.api('/api/focus/complete', { method: 'POST', body: JSON.stringify({ user_id: this.user, minutes: this.focusTimer.total }) })
+        .then(d => {
+          if (d.granted) {
+            this.focusMsg = `🎉 专注完成！金币 +${d.granted}`;
+            this.loadPet();
+          } else if (d.limited) {
+            this.focusMsg = '🎉 专注完成！（今天专注次数已满，金币不再增加啦）';
+          }
+          this.loadFocus();
+        })
+        .catch(e => this.showToast(e.message));
+    },
+    loadFocus() {
+      if (!this.user) return;
+      this.api(`/api/focus/today?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.focusToday = d; })
+        .catch(() => {});
+      this.api(`/api/focus/stats?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.focusStats = d; })
+        .catch(() => {});
+    },
+
+    /* ─────────── AI 趣味出题（AI-2） ─────────── */
+    aiQuizGenerate() {
+      if (!this.user) return this.showToast('请先登录');
+      const q = this.aiQuiz;
+      q.loading = true; q.quiz = null; q.graded = null; q.score = null; q.rewardGranted = 0; q.themeName = '';
+      this.api('/api/ai-quiz/generate', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, subject: q.subject, grade: q.grade, theme: q.theme, count: 5 }),
+      }).then(d => {
+        q.loading = false;
+        if (!d.questions || !d.questions.length) { this.showToast(d.detail || 'AI 生成失败了，稍后再试试'); return; }
+        q.themeName = d.theme;
+        q.quiz = d.questions;
+        q.answers = {}; q.inputs = {};
+      }).catch(e => { q.loading = false; this.showToast(e.message); });
+    },
+    aiQuizPick(i, letter) { this.aiQuiz.answers[i] = letter; },
+    aiQuizUserAnswer(i) {
+      const q = this.aiQuiz.quiz[i];
+      return (q.options && q.options.length) ? (this.aiQuiz.answers[i] || '未作答') : (this.aiQuiz.inputs[i] || '未作答');
+    },
+    aiQuizGrade() {
+      const q = this.aiQuiz;
+      if (!q.quiz) return;
+      let correct = 0;
+      const detail = [];
+      q.quiz.forEach((item, i) => {
+        const userAns = (item.options && item.options.length) ? (q.answers[i] || '') : (q.inputs[i] || '');
+        const ok = String(userAns).trim().toLowerCase() === String(item.answer).trim().toLowerCase();
+        if (ok) correct++;
+        detail.push(ok);
+        if (!ok) {
+          // 答错 → 回写错题本
+          this.api('/api/ai-quiz/wrong', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: this.user, question: item.question, user_answer: userAns, correct_answer: item.answer, explanation: item.explanation }),
+          }).catch(() => {});
+        }
+      });
+      q.graded = true;
+      q.score = { correct, total: q.quiz.length, detail };
+      this.aiQuizPlayed++;
+      localStorage.setItem('zx_aiquiz_played', String(this.aiQuizPlayed));
+      if (correct === q.quiz.length) {
+        this.api('/api/ai-quiz/reward', {
+          method: 'POST',
+          body: JSON.stringify({ user_id: this.user, correct, total: q.quiz.length }),
+        }).then(d => {
+          q.rewardGranted = (d && d.granted) || 0;
+          if (q.rewardGranted) { this.loadPet(); this.showToast(`🎉 全对！金币 +${q.rewardGranted}`); }
+        }).catch(() => {});
+      } else {
+        this.loadWrongItems();
+      }
+    },
+    aiQuizReset() {
+      const q = this.aiQuiz;
+      q.quiz = null; q.graded = null; q.score = null; q.answers = {}; q.inputs = {};
+      q.rewardGranted = 0; q.themeName = ''; q.subject = this.subject; q.grade = this.grade;
+    },
+
+    /* ─────────── AI 学习助手（AI-5） ─────────── */
+    loadAssistantProfile() {
+      if (!this.user) return;
+      this.api(`/api/assistant/profile?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.assistantProfile = d; })
+        .catch(() => {});
+    },
+    assistantAsk(q) {
+      this.assistantDraft = q;
+      this.assistantSend();
+    },
+    assistantSend() {
+      const text = (this.assistantDraft || '').trim();
+      if (!text || this.assistantLoading || !this.user) return;
+      this.assistantMsgs.push({ role: 'me', text });
+      this.assistantDraft = '';
+      this.assistantLoading = true;
+      this.$nextTick(() => this._scrollChat());
+      const history = this.assistantMsgs.slice(-8, -1).map(m => ({ role: m.role === 'me' ? 'user' : 'assistant', content: m.text }));
+      this.api('/api/assistant/chat', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, message: text, history }),
+      }).then(d => {
+        this.assistantMsgs.push({ role: 'ai', text: d.text || '（AI 老师没说出话来，再问一次吧）' });
+        this.assistantLoading = false;
+        this.$nextTick(() => this._scrollChat());
+      }).catch(e => {
+        this.assistantMsgs.push({ role: 'ai', text: e.message || '网络出错了，稍后再试试' });
+        this.assistantLoading = false;
+        this.$nextTick(() => this._scrollChat());
+      });
+    },
+    _scrollChat() {
+      const box = this.$refs.chatBox;
+      if (box) box.scrollTop = box.scrollHeight;
     },
 
     /* ─────────── 全局刷新 ─────────── */
@@ -334,6 +784,11 @@ createApp({
       this.loadNotices();
       this.loadRewardTimeline();
       this.loadTomorrowQueue();
+      this.loadPet();
+      this.loadTree();
+      this.loadBadges(false);
+      this.loadCards();
+      this.loadFocus();
     },
 
     /* ─────────── 首页 ─────────── */
@@ -390,6 +845,7 @@ createApp({
         this.showToast('🎉 三科任务全部完成，今天全勤！');
         this.remindMoodCheckin();
       }
+      if (celebrate && this.dailyTaskStats.done_count > prev) this.loadPet();
     },
     _pendingWrong(d) {
       const w = o => o ? (o.exam_pending || 0) + (o.study_pending || 0) : 0;
@@ -1264,14 +1720,31 @@ createApp({
         .then(() => { this.loadGoals(); })
         .catch(e => this.showToast(e.message));
     },
-    /* ─────────── 小老师模式（Sprint 4） ─────────── */
+    /* ─────────── 小老师模式（Sprint 4 + PRD 17：1-3 道错题） ─────────── */
+    loadTeachCards() {
+      return this.api(`/api/teach/active?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          const items = (d && d.items) || [];
+          if (!items.length) return null;
+          this.teachOverlay = { show: true, cards: items, idx: 0, step: 1, card: items[0], answerText: '', result: '', hint: '' };
+          return this.teachOverlay;
+        });
+    },
     openTeach(w) {
       this.api('/api/teach/create', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, kind: w.kind, record_id: w.id }),
-      }).then(card => {
-        this.teachOverlay = { show: true, step: 1, card, answerText: '', result: '', hint: '' };
-      }).catch(e => this.showToast(e.message));
+      }).then(() => this.loadTeachCards())
+        .catch(e => this.showToast(e.message));
+    },
+    nextTeach() {
+      const idx = this.teachOverlay.idx + 1;
+      if (idx >= this.teachOverlay.cards.length) return this.closeTeach();
+      this.teachOverlay.idx = idx;
+      this.teachOverlay.card = this.teachOverlay.cards[idx];
+      this.teachOverlay.step = 1;
+      this.teachOverlay.answerText = '';
+      this.teachOverlay.result = '';
     },
     closeTeach() {
       this.teachOverlay.show = false;
@@ -1286,6 +1759,7 @@ createApp({
         body: JSON.stringify({ user_id: this.user, card_id: this.teachOverlay.card.id, answer_text: text }),
       }).then(card => {
         this.teachOverlay.card = card;
+        this.teachOverlay.cards[this.teachOverlay.idx] = card;
         this.teachOverlay.step = 3;
       }).catch(e => this.showToast(e.message));
     },
@@ -1295,6 +1769,7 @@ createApp({
         body: JSON.stringify({ user_id: this.user, card_id: this.teachOverlay.card.id, is_correct: ok }),
       }).then(card => {
         this.teachOverlay.card = card;
+        this.teachOverlay.cards[this.teachOverlay.idx] = card;
         if (ok) {
           this.teachOverlay.result = '讲得真棒！🌟';
           this.teachOverlay.hint = '7 天后系统会帮你复习验证这道题，看看真记住了没';

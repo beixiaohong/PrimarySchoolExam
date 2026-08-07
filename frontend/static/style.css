@@ -636,6 +636,20 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .qa-answer-meta{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
 .qa-src{font-size:11.5px;color:var(--text-3)}
 .qa-answer-text{font-size:14.5px;line-height:1.8;color:var(--text-1);white-space:pre-wrap;word-break:break-word}
+/* 多轮对话（v32） */
+.qa-sess-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.qa-sess-btn{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;transition:all .15s;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qa-sess-btn em{font-style:normal;font-size:10.5px;color:var(--text-3);margin-left:3px}
+.qa-sess-btn.on{border-color:var(--primary);color:var(--primary);background:#EEF3FF}
+.qa-chat{display:flex;flex-direction:column;gap:10px;max-height:380px;overflow-y:auto;padding:4px 2px;scroll-behavior:smooth}
+.qa-bubble{display:flex;flex-direction:column;max-width:86%}
+.qa-bubble.user{align-self:flex-end;align-items:flex-end}
+.qa-bubble.ai{align-self:flex-start;align-items:flex-start}
+.qa-bubble-text{font-size:14px;line-height:1.75;padding:10px 14px;border-radius:14px;white-space:pre-wrap;word-break:break-word;box-shadow:0 2px 6px rgba(0,0,0,.04)}
+.qa-bubble.user .qa-bubble-text{background:var(--primary);color:#fff;border-bottom-right-radius:4px}
+.qa-bubble.ai .qa-bubble-text{background:var(--bg);border:1.5px solid var(--line);border-bottom-left-radius:4px}
+.qa-bubble-text.degraded{background:#FFF8EC;border-color:#F0C98A}
+.qa-bubble-meta{margin-top:4px}
 .qa-hist-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .qa-hist-item{border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:all .15s;background:#fff}
 .qa-hist-item:hover{border-color:var(--primary);box-shadow:0 3px 10px rgba(78,124,246,.12)}
@@ -677,3 +691,189 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .msg-body{flex:1;min-width:0}
 .msg-body p{font-size:14px;line-height:1.6;color:var(--text-1);word-break:break-word;margin:0 0 4px}
 .msg-body span{font-size:11.5px;color:var(--text-3)}
+
+/* ═══════════ 宠物家园（P2-1 金币宠物） ═══════════ */
+.badge-gold{background:linear-gradient(135deg,#f7971e,#ffd200);color:#7a4a00}
+.pet-coin{background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.6);border-radius:16px;padding:10px 20px;text-align:center;min-width:110px}
+.pet-coin-num{font-size:30px;font-weight:800;color:#fff;text-shadow:0 2px 6px rgba(122,74,0,.35)}
+.pet-coin-label{font-size:13px;font-weight:700;color:rgba(255,255,255,.95)}
+.pet-stage{display:flex;flex-direction:column;align-items:center;padding:28px 16px 22px}
+.pet-emoji{font-size:86px;line-height:1.2;animation:pet-bounce 2.4s ease-in-out infinite;filter:drop-shadow(0 8px 14px rgba(247,151,30,.35))}
+@keyframes pet-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.pet-name{font-size:20px;font-weight:800;color:var(--text-1);margin-top:10px}
+.pet-desc{font-size:13px;color:var(--text-3);margin-top:4px}
+.pet-exp-bar{width:min(420px,90%);height:12px;background:var(--bg);border:1.5px solid var(--line);border-radius:999px;overflow:hidden;margin-top:14px}
+.pet-exp-fill{height:100%;background:linear-gradient(90deg,#f7971e,#ffd200);border-radius:999px;transition:width .4s}
+.pet-exp-text{font-size:12px;color:var(--text-3);margin-top:6px}
+.pet-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}
+.pet-msg{margin-top:12px;font-size:13.5px;font-weight:600;color:#9A6B1F;background:#FFF6E5;border-radius:999px;padding:6px 14px}
+.pet-ledger-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.pet-ledger-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff}
+.pet-ledger-reason{flex:1;font-size:13.5px;font-weight:600;color:var(--text-1)}
+.pet-ledger-time{font-size:11.5px;color:var(--text-3)}
+.pet-ledger-amt{font-size:14px;font-weight:800;color:#2e9e5b}
+.pet-ledger-amt.minus{color:#e05d5d}
+.pet-rules{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.pet-rule-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff}
+.pet-rule-left{flex:1;display:flex;flex-direction:column;gap:2px}
+.pet-rule-desc{font-size:11.5px;color:var(--text-3)}
+.pet-rule-coin{font-size:14px;font-weight:800;color:#2e9e5b}
+.pet-rule-coin.minus{color:#e05d5d}
+
+/* ═══════════ 成长树（P2-2 创意 7） ═══════════ */
+.tree-score{background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.6);border-radius:16px;padding:10px 20px;text-align:center;min-width:110px}
+.tree-score-num{font-size:30px;font-weight:800;color:#fff;text-shadow:0 2px 6px rgba(17,153,142,.4)}
+.tree-score-label{font-size:13px;font-weight:700;color:rgba(255,255,255,.95)}
+.tree-stage{display:flex;flex-direction:column;align-items:center;padding:28px 16px 22px}
+.tree-emoji{font-size:88px;line-height:1.2;filter:drop-shadow(0 8px 14px rgba(17,153,142,.3));animation:tree-sway 3.5s ease-in-out infinite}
+@keyframes tree-sway{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+.tree-name{font-size:20px;font-weight:800;color:var(--text-1);margin-top:10px}
+.tree-bar{width:min(420px,90%);height:12px;background:var(--bg);border:1.5px solid var(--line);border-radius:999px;overflow:hidden;margin-top:14px}
+.tree-fill{height:100%;background:linear-gradient(90deg,#11998e,#38ef7d);border-radius:999px;transition:width .4s}
+.tree-bar-text{font-size:12px;color:var(--text-3);margin-top:6px}
+.tree-path{display:flex;gap:6px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+.tree-path-node{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;border-radius:12px;border:1.5px solid var(--line);background:#fff;opacity:.45}
+.tree-path-node.done{opacity:1;border-color:#38ef7d;background:#F0FBF5}
+.tree-path-node.cur{border-color:var(--primary);box-shadow:0 4px 12px rgba(78,124,246,.2)}
+.tree-path-emoji{font-size:20px}
+.tree-path-name{font-size:10.5px;font-weight:600;color:var(--text-2)}
+.tree-parts{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.tree-part-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;background:#fff}
+.tree-part-label{flex:1;font-size:13.5px;font-weight:600;color:var(--text-1)}
+.tree-part-val{font-style:normal;font-size:11.5px;color:var(--text-3);margin-left:8px;font-weight:400}
+.tree-part-score{font-size:14px;font-weight:800;color:#11998e}
+
+/* ═══════════ 成就徽章墙（P2-3 创意 8） ═══════════ */
+.badge-count{background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.6);border-radius:16px;padding:10px 20px;text-align:center;min-width:110px}
+.badge-count-num{font-size:26px;font-weight:800;color:#fff;text-shadow:0 2px 6px rgba(240,87,108,.4)}
+.badge-count-label{font-size:13px;font-weight:700;color:rgba(255,255,255,.95)}
+.badge-new-list{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.badge-new-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1.5px solid #F0C98A;border-radius:12px;background:#fff}
+.badge-new-emoji{font-size:26px}
+.badge-new-info{display:flex;flex-direction:column}
+.badge-new-info b{font-size:14px;color:#9A6B1F}
+.badge-new-info span{font-size:11.5px;color:var(--text-3)}
+.badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}
+.badge-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 10px;border:1.5px solid var(--line);border-radius:14px;background:#fff;text-align:center;transition:all .2s}
+.badge-item:not(.locked):hover{transform:translateY(-3px);box-shadow:0 6px 16px rgba(240,147,251,.25)}
+.badge-item.locked{background:var(--bg);opacity:.55}
+.badge-medal{font-size:40px;line-height:1.15;filter:drop-shadow(0 3px 6px rgba(0,0,0,.12))}
+.badge-item.locked .badge-medal{filter:grayscale(1) opacity(.7)}
+.badge-name{font-size:13.5px;font-weight:800;color:var(--text-1)}
+.badge-desc{font-size:11px;color:var(--text-3);min-height:26px}
+.badge-date{font-size:10.5px;color:#9A6B1F;font-weight:600}
+.badge-item.locked .badge-date{color:var(--text-3);font-weight:400}
+
+/* ═══════════ 知识卡图鉴（P2-4 创意 13） ═══════════ */
+.card-count{background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.6);border-radius:16px;padding:10px 20px;text-align:center;min-width:110px}
+.card-count-num{font-size:26px;font-weight:800;color:#fff;text-shadow:0 2px 6px rgba(79,172,254,.4)}
+.card-count-label{font-size:13px;font-weight:700;color:rgba(255,255,255,.95)}
+.draw-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:10px}
+.draw-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:16px 12px;border:1.5px solid #4facfe;border-radius:14px;background:linear-gradient(135deg,#F0F8FF,#E8F4FF);text-align:center;animation:card-flip .5s ease-out both}
+@keyframes card-flip{from{transform:rotateY(90deg);opacity:0}to{transform:rotateY(0);opacity:1}}
+.draw-card-emoji{font-size:34px}
+.draw-card-title{font-size:14.5px;font-weight:800;color:var(--text-1)}
+.draw-card-sub{font-size:11.5px;color:var(--text-3)}
+.draw-card-desc{font-size:11.5px;color:#1a6fb5;line-height:1.5;margin-top:4px}
+.card-cat{margin-top:14px;border-top:1.5px dashed var(--line);padding-top:12px}
+.card-cat:first-child{margin-top:4px;border-top:none;padding-top:0}
+.card-cat-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.card-cat-empty{font-size:12.5px;color:var(--text-3);padding:8px 0}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.card-tile{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;transition:all .15s}
+.card-tile:hover{border-color:#4facfe;box-shadow:0 4px 12px rgba(79,172,254,.15);transform:translateY(-2px)}
+.card-tile-emoji{font-size:22px}
+.card-tile-title{font-size:13px;font-weight:700;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-tile-sub{font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ═══════════ 听写磨耳朵（P2-5 创意 25） ═══════════ */
+.dict-mode-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dict-mode-btn{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:8px 18px;font-size:13.5px;font-weight:700;color:var(--text-1);cursor:pointer;transition:all .15s}
+.dict-mode-btn.on{border-color:#a18cd1;background:linear-gradient(135deg,#a18cd1,#fbc2eb);color:#fff;box-shadow:0 4px 12px rgba(161,140,209,.3)}
+.dict-tip{font-size:12px;color:var(--text-3)}
+.dict-start{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:16px;padding:16px;background:var(--bg);border-radius:12px;border:1.5px dashed var(--line);flex-wrap:wrap}
+.dict-start-info p{margin:0 0 6px;font-size:15px}
+.dict-start-desc{font-size:12.5px;color:var(--text-3)!important;line-height:1.6}
+.dict-session{margin-top:16px}
+.dict-progress{font-size:12.5px;font-weight:700;color:var(--text-3);margin-bottom:10px}
+.dict-question{display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 16px;border:1.5px dashed #a18cd1;border-radius:14px;background:#FBF8FF}
+.dict-play-btn{border:none;background:linear-gradient(135deg,#a18cd1,#fbc2eb);color:#fff;font-size:15px;font-weight:800;padding:12px 26px;border-radius:999px;cursor:pointer;box-shadow:0 4px 12px rgba(161,140,209,.35);transition:all .15s}
+.dict-play-btn:hover{transform:scale(1.05)}
+.dict-hint{font-size:12.5px;color:var(--text-3)}
+.dict-input{width:min(420px,92%);border:1.5px solid var(--line);border-radius:12px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;text-align:center}
+.dict-input:focus{border-color:#a18cd1}
+.dict-result{margin-top:6px;padding:16px;border-radius:14px;border:1.5px solid #F0C98A;background:#FFF8EC}
+.dict-result.ok{border-color:#B7E3C4;background:#F2FBF5}
+.dict-result-head{font-size:16px;font-weight:800;color:var(--text-1);margin-bottom:10px}
+.dict-result-ans{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.dict-result-line{font-size:14px}
+.dict-result-line span{color:var(--text-3);margin-right:6px}
+.dict-correct{color:#2e9e5b}
+.dict-result-line em{font-style:normal;color:var(--text-3);font-size:13px}
+.dict-result-actions{display:flex;gap:10px;flex-wrap:wrap}
+.dict-done{display:flex;flex-direction:column;align-items:center;gap:10px;padding:24px 16px;text-align:center}
+.dict-done-score{font-size:44px;font-weight:800;color:#a18cd1}
+.dict-done-text{font-size:14.5px;color:var(--text-2)}
+
+/* ═══════════ 番茄专注钟（P2-6 创意 22） ═══════════ */
+.focus-stats{background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.6);border-radius:16px;padding:10px 20px;text-align:center;min-width:120px}
+.focus-stats-num{font-size:26px;font-weight:800;color:#fff;text-shadow:0 2px 6px rgba(221,36,118,.4)}
+.focus-stats-num em{font-style:normal;font-size:13px;margin-left:4px}
+.focus-stats-label{font-size:12px;font-weight:700;color:rgba(255,255,255,.95)}
+.focus-pick-row{display:flex;gap:10px;justify-content:center;margin-bottom:14px}
+.focus-pick-btn{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:8px 22px;font-size:14px;font-weight:700;color:var(--text-1);cursor:pointer;transition:all .15s}
+.focus-pick-btn.on{border-color:#dd2476;background:linear-gradient(135deg,#ff512f,#dd2476);color:#fff;box-shadow:0 4px 12px rgba(221,36,118,.3)}
+.focus-clock{display:flex;justify-content:center;padding:10px 0 6px}
+.focus-ring{width:210px;height:210px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:conic-gradient(#ff512f 0%, #ffe3e3 0% 100%);transition:background .5s}
+.focus-ring::before{content:'';position:absolute;width:182px;height:182px;border-radius:50%;background:#fff}
+.focus-ring{position:relative}
+.focus-time,.focus-state{position:relative;z-index:1}
+.focus-time{font-size:42px;font-weight:800;color:var(--text-1);font-variant-numeric:tabular-nums}
+.focus-clock.done .focus-time{color:#2e9e5b}
+.focus-state{font-size:13px;color:var(--text-3);font-weight:600;margin-top:4px}
+.focus-clock.running .focus-state{color:#dd2476}
+.focus-actions{display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.focus-msg{margin-top:12px;text-align:center;font-size:13.5px;font-weight:600;color:#9A6B1F;background:#FFF6E5;border-radius:999px;padding:6px 14px;display:inline-block;width:100%}
+.focus-stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+.focus-stat-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 8px;border:1.5px solid var(--line);border-radius:12px;background:#fff}
+.focus-stat-item b{font-size:24px;font-weight:800;color:#dd2476}
+.focus-stat-item span{font-size:12px;color:var(--text-3)}
+
+/* ═══════════ AI 趣味出题（AI-2） ═══════════ */
+.loading-bar{height:8px;border-radius:999px;background:#E8F5E9;overflow:hidden;margin-top:14px}
+.loading-bar-inner{height:100%;width:40%;border-radius:999px;background:linear-gradient(90deg,#00b09b,#96c93d);animation:aiq-loading 1.2s ease-in-out infinite}
+@keyframes aiq-loading{0%{margin-left:-40%}100%{margin-left:100%}}
+.quiz-q{background:#FAFBFC;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:12px}
+.quiz-q-title{font-size:14.5px;font-weight:700;color:var(--text-1);line-height:1.6}
+.quiz-q-title .q-mark{float:right;font-weight:900;font-size:17px}
+.quiz-q-title.q-right .q-mark{color:#00b09b}
+.quiz-q-title.q-wrong .q-mark{color:#e74c3c}
+.quiz-options{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.quiz-opt-btn{border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:9px 14px;font-size:13.5px;font-weight:600;color:var(--text-1);text-align:left;cursor:pointer;transition:all .15s}
+.quiz-opt-btn:hover{border-color:#00b09b;background:#F0FBF4}
+.quiz-opt-btn.on{border-color:#00b09b;background:#E3F6EC;color:#00796b;box-shadow:0 0 0 3px rgba(0,176,155,.12)}
+.quiz-fill{width:100%;margin-top:10px;border:1.5px solid var(--line);border-radius:10px;padding:9px 14px;font-size:14px;color:var(--text-1);background:#fff}
+.quiz-fill:focus{border-color:#00b09b;outline:none}
+.quiz-fun{font-size:12.5px;color:var(--text-2);background:#F3F6F8;border:1px dashed var(--line);border-radius:10px;padding:8px 12px;margin-top:8px;line-height:1.7}
+
+/* ═══════════ AI 学习助手（AI-5） ═══════════ */
+.chat-box{height:400px;overflow-y:auto;background:#F7F8FA;border:1.5px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.chat-empty{text-align:center;color:var(--text-2);padding:48px 20px;font-size:14px;line-height:2}
+.chat-empty-tip{font-size:12.5px;color:var(--text-3)}
+.chat-row{display:flex}
+.chat-me{justify-content:flex-end}
+.chat-ai{justify-content:flex-start}
+.chat-bubble{max-width:82%;display:flex;flex-direction:column;gap:3px}
+.chat-name{font-size:11px;color:var(--text-3);font-weight:600;padding:0 4px}
+.chat-me .chat-name{text-align:right}
+.chat-text{font-size:13.5px;line-height:1.7;padding:10px 14px;border-radius:14px;word-break:break-word}
+.bubble-me .chat-text{background:linear-gradient(135deg,#654ea3,#8e6fc0);color:#fff;border-top-right-radius:4px}
+.bubble-ai .chat-text{background:#fff;border:1.5px solid var(--line);border-top-left-radius:4px;color:var(--text-1)}
+.chat-dots{display:flex;gap:5px;padding:12px 16px;background:#fff;border:1.5px solid var(--line);border-radius:14px;border-top-left-radius:4px;width:fit-content}
+.chat-dots i{width:7px;height:7px;border-radius:50%;background:#b0a3d6;animation:chat-dot 1.2s infinite}
+.chat-dots i:nth-child(2){animation-delay:.2s}
+.chat-dots i:nth-child(3){animation-delay:.4s}
+@keyframes chat-dot{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}
+.chat-input-row{display:flex;gap:10px;margin-top:12px}
+.chat-input{flex:1;border:1.5px solid var(--line);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--text-1);background:#fff}
+.chat-input:focus{border-color:#654ea3;outline:none}

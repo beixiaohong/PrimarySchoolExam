@@ -18,6 +18,7 @@ from ..database import get_db
 router = APIRouter()
 
 ACTIVE_STATUS = ("pending", "answered")
+ACTIVE_LIMIT = 3  # PRD 17：孩子一次选 1-3 道错题讲给家长
 
 
 class CreateReq(BaseModel):
@@ -77,15 +78,23 @@ def _source(db: Session, user_id: str, kind: str, record_id: int):
     raise HTTPException(400, "kind 只能是 exam/study")
 
 
-@router.post("/create", summary="从错题出一道「讲给家长」的题（同时只教 1 道）")
+@router.post("/create", summary="从错题出一道「讲给家长」的题（最多同时教 3 道）")
 def create_card(req: CreateReq, db: Session = Depends(get_db)):
     from ..models.sprint4 import TeachingRecord
-    active = db.query(TeachingRecord).filter(
+    active_count = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == req.user_id,
         TeachingRecord.status.in_(ACTIVE_STATUS),
+    ).count()
+    if active_count >= ACTIVE_LIMIT:
+        raise HTTPException(400, f"最多同时教 {ACTIVE_LIMIT} 道题，先讲完再出下一道")
+    dup = db.query(TeachingRecord).filter(
+        TeachingRecord.user_id == req.user_id,
+        TeachingRecord.status.in_(ACTIVE_STATUS),
+        TeachingRecord.record_kind == req.kind,
+        TeachingRecord.record_id == req.record_id,
     ).first()
-    if active:
-        raise HTTPException(400, "还有一道题在教家长，先讲完再出下一道")
+    if dup:
+        raise HTTPException(400, "这道题已经在教啦，去小老师课堂继续吧")
     question, answer = _source(db, req.user_id, req.kind, req.record_id)
     c = TeachingRecord(user_id=req.user_id, record_kind=req.kind,
                        record_id=req.record_id, question=question,
@@ -95,14 +104,14 @@ def create_card(req: CreateReq, db: Session = Depends(get_db)):
     return _card_out(c)
 
 
-@router.get("/active", summary="当前在教的题（待作答/待批改）")
+@router.get("/active", summary="当前在教的题列表（待作答/待批改，最多 3 道）")
 def get_active(user_id: str = Query(...), db: Session = Depends(get_db)):
     from ..models.sprint4 import TeachingRecord
-    c = db.query(TeachingRecord).filter(
+    rows = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == user_id,
         TeachingRecord.status.in_(ACTIVE_STATUS),
-    ).order_by(TeachingRecord.id.desc()).first()
-    return {"card": _card_out(c) if c else None}
+    ).order_by(TeachingRecord.id.asc()).all()
+    return {"items": [_card_out(c) for c in rows]}
 
 
 @router.post("/answer", summary="「家长」作答")
@@ -138,6 +147,12 @@ def grade_answer(req: GradeReq, db: Session = Depends(get_db)):
         c.graded_at = datetime.now()
         c.due_date = date.today() + timedelta(days=7)
         c.recheck_status = None
+        # 讲清楚 → 金币 +10（P2 金币宠物）
+        try:
+            from .pet import _grant_coins
+            _grant_coins(db, req.user_id, 10, "小老师讲清楚")
+        except Exception:
+            pass
     else:
         c.status = "pending"  # 没讲明白，重新讲
         c.answer_text = ""
