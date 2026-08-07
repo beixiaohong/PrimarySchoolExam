@@ -26,6 +26,7 @@ class CouponReq(BaseModel):
     title: str
     kind: str = "custom"
     max_per_month: int = 2
+    reason: str = ""  # 发券理由（成长奖励记录）
 
 
 class WishReq(BaseModel):
@@ -38,6 +39,11 @@ class ToggleReq(BaseModel):
     user_id: str
 
 
+class RedeemReq(BaseModel):
+    user_id: str
+    reason: str = ""  # 兑现理由（成长奖励记录）
+
+
 class ParentNoteReq(BaseModel):
     user_id: str
     note: str = ""
@@ -48,14 +54,15 @@ def _coupon_out(c):
         "id": c.id, "title": c.title, "kind": c.kind,
         "kind_label": COUPON_KINDS.get(c.kind, "自定义"),
         "max_per_month": c.max_per_month, "used_count": c.used_count,
-        "status": c.status,
+        "reason": c.reason or "", "status": c.status,
     }
 
 
 def _wish_out(w):
     return {
         "id": w.id, "title": w.title, "progress": w.progress, "target": w.target,
-        "status": w.status, "created_at": str(w.created_at)[:10] if w.created_at else "",
+        "status": w.status, "redeem_reason": w.redeem_reason or "",
+        "created_at": str(w.created_at)[:10] if w.created_at else "",
     }
 
 
@@ -112,7 +119,8 @@ def create_coupon(req: CouponReq, db: Session = Depends(get_db)):
         raise HTTPException(400, f"券类型只能是 {list(COUPON_KINDS)}")
     max_n = max(1, min(12, req.max_per_month or 2))
     c = RewardCoupon(user_id=req.user_id, title=title[:100], kind=req.kind,
-                     max_per_month=max_n, status="active")
+                     max_per_month=max_n, status="active",
+                     reason=(req.reason or "").strip()[:200] or None)
     db.add(c)
     db.commit()
     return _coupon_out(c)
@@ -167,7 +175,7 @@ def confirm_wish(wid: int, req: ToggleReq, db: Session = Depends(get_db)):
 
 
 @router.post("/wish/{wid}/redeem", summary="家长确认兑现心愿")
-def redeem_wish(wid: int, req: ToggleReq, db: Session = Depends(get_db)):
+def redeem_wish(wid: int, req: RedeemReq, db: Session = Depends(get_db)):
     from ..models.reward import WishItem
     w = db.query(WishItem).filter(WishItem.id == wid,
                                   WishItem.user_id == req.user_id).first()
@@ -176,6 +184,7 @@ def redeem_wish(wid: int, req: ToggleReq, db: Session = Depends(get_db)):
     if w.status != "pending_redeem":
         raise HTTPException(400, "心愿还没完成，先完成再兑现哦")
     w.status = "redeemed"
+    w.redeem_reason = (req.reason or "").strip()[:200] or None
     w.updated_at = datetime.now()
     db.commit()
     return _wish_out(w)
@@ -210,6 +219,34 @@ def inc_active_wish_progress(db: Session, user_id: str, n: int = 1):
     w.updated_at = datetime.now()
     db.commit()
     return _wish_out(w)
+
+
+# ═══════════════════ 成长奖励记录 ═══════════════════
+
+@router.get("/timeline", summary="成长奖励记录：已兑现心愿 + 已发兑换券（带理由）")
+def reward_timeline(user_id: str, db: Session = Depends(get_db)):
+    from ..models.reward import RewardCoupon, WishItem
+    items = []
+    wishes = db.query(WishItem).filter(
+        WishItem.user_id == user_id, WishItem.status == "redeemed",
+    ).order_by(WishItem.updated_at.desc()).all()
+    for w in wishes:
+        items.append({
+            "kind": "wish", "title": w.title,
+            "reason": w.redeem_reason or "心愿达成！",
+            "at": str(w.updated_at)[:16] if w.updated_at else "",
+        })
+    coupons = db.query(RewardCoupon).filter(
+        RewardCoupon.user_id == user_id, RewardCoupon.status == "active",
+    ).order_by(RewardCoupon.created_at.desc()).all()
+    for c in coupons:
+        items.append({
+            "kind": "coupon", "title": f"{COUPON_KINDS.get(c.kind, '自定义')}·{c.title}",
+            "reason": c.reason or "家长奖励",
+            "at": str(c.created_at)[:16] if c.created_at else "",
+        })
+    items.sort(key=lambda x: x["at"], reverse=True)
+    return {"items": items[:20]}
 
 
 # ═══════════════════ 家长寄语 ═══════════════════

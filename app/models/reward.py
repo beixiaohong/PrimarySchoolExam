@@ -16,6 +16,7 @@ class RewardCoupon(Base):
     kind = Column(String(30), default="custom")  # cartoon/snack/sticker/toy/outing/custom
     max_per_month = Column(Integer, default=2)
     used_count = Column(Integer, default=0)
+    reason = Column(String(200), nullable=True)  # 发券理由（成长奖励记录）
     status = Column(String(20), default="active")  # active/archived
     created_at = Column(DateTime, default=datetime.now)
 
@@ -30,6 +31,7 @@ class WishItem(Base):
     progress = Column(Integer, default=0)
     target = Column(Integer, default=10)
     status = Column(String(20), default="active")  # active/pending/redeemed/archived
+    redeem_reason = Column(String(200), nullable=True)  # 兑现理由（成长奖励记录）
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

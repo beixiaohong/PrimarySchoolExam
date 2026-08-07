@@ -640,3 +640,34 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .qa-tab{border:none;background:transparent;font-size:12.5px;font-weight:600;color:var(--text-3);cursor:pointer;padding:4px 10px;border-radius:999px}
 .qa-tab.on{background:var(--primary);color:#fff}
 .tag-gold{background:#FFF3D6;color:#B8860B}
+
+/* ═══════════ 家长功能（Sprint 6） ═══════════ */
+.notice-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.nb-item{font-size:12.5px;font-weight:700;border-radius:999px;padding:6px 14px;background:#EFF4FF;color:#3E5CC9;cursor:default}
+.nb-item.nb-msg{cursor:pointer;background:#E8F7EE;color:#1F8A4C}
+.nb-item.nb-msg:hover{box-shadow:0 3px 10px rgba(31,138,76,.18)}
+.nb-item.nb-hot{background:#FFF0F0;color:#D94F4F;animation:nbPulse 1.6s ease-in-out infinite}
+@keyframes nbPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+.pc-hint{font-size:12px;color:var(--text-3);margin-top:6px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:10px;margin-top:8px}
+.sg{background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center}
+.sg b{display:block;font-size:18px;color:var(--primary)}
+.sg span{font-size:11.5px;color:var(--text-3)}
+.c-reason{display:block;font-size:11.5px;color:#B8860B;margin-top:2px}
+.timeline-box{margin-top:12px;padding-top:10px;border-top:1.5px dashed var(--line)}
+.tl-title{font-size:12.5px;font-weight:700;color:var(--text-2);margin-bottom:8px}
+.tl-item{display:flex;gap:10px;align-items:flex-start;padding:6px 0}
+.tl-ico{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.tl-ico.t-gold{background:#FFF3D6}
+.tl-ico.t-blue{background:#E8F0FE}
+.tl-body{flex:1;min-width:0}
+.tl-body b{display:block;font-size:13px;color:var(--text-1)}
+.tl-body span{font-size:11.5px;color:var(--text-3)}
+.msg-card .card-head .more{cursor:pointer;color:#1F8A4C;font-weight:700}
+.msg-list{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.msg-item{display:flex;gap:10px;background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px}
+.msg-item.unread{background:#FFF8EC;border-color:#F0C98A}
+.msg-ico{font-size:16px;flex-shrink:0}
+.msg-body{flex:1;min-width:0}
+.msg-body p{font-size:14px;line-height:1.6;color:var(--text-1);word-break:break-word;margin:0 0 4px}
+.msg-body span{font-size:11.5px;color:var(--text-3)}

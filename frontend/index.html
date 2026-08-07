@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=20">
+<link rel="stylesheet" href="/static/style.css?v=22">
 </head>
 <body>
 <div id="app">
@@ -113,6 +113,13 @@
           </div>
         </div>
 
+        <!-- 家长提醒条（未读留言 / 心愿待办） -->
+        <div class="notice-bar" v-if="notices && (notices.unread_messages>0 || notices.pending_wishes>0 || notices.pending_redeem>0)">
+          <span v-if="notices.unread_messages>0" class="nb-item nb-msg" @click="openMessages()">✉️ 家长留言 {{notices.unread_messages}} 条未读</span>
+          <span v-if="notices.pending_wishes>0" class="nb-item">🌟 心愿在等家长确认</span>
+          <span v-if="notices.pending_redeem>0" class="nb-item nb-hot">🎉 心愿达标啦，快找家长兑现！</span>
+        </div>
+
         <!-- 每科必做：今日任务（每科完成 1 项即全勤，任务可更换） -->
         <div class="section-title">✅ 每科必做 <span class="more">三科各完成 1 项即今日全勤 · 🔥已连续 {{dailyTaskStats.streak_days}} 天</span></div>
         <div class="grid-3" v-if="dailyTasks">
@@ -216,9 +223,34 @@
           <div class="coupon-list" v-if="rewards.coupons.length">
             <div class="coupon-item" v-for="c in rewards.coupons" :key="c.id">
               <span class="ci">{{couponIcon(c.kind)}}</span>
-              <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 每月可用 {{c.max_per_month}} 次</span></div>
+              <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 每月可用 {{c.max_per_month}} 次</span><span v-if="c.reason" class="c-reason">🎯 {{c.reason}}</span></div>
               <span class="tag tag-green">可用</span>
             </div>
+          </div>
+          <div class="timeline-box" v-if="rewardTimeline.length">
+            <div class="tl-title">🏆 成长奖励记录</div>
+            <div class="tl-item" v-for="(it,i) in rewardTimeline" :key="i">
+              <span class="tl-ico" :class="it.kind==='wish' ? 't-gold' : 't-blue'">{{it.kind==='wish' ? '🌟' : '🎫'}}</span>
+              <div class="tl-body"><b>{{it.title}}</b><span>{{it.reason}}<template v-if="it.at"> · {{it.at}}</template></span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 家长留言（孩子端） -->
+        <div class="card msg-card" style="margin-top:14px">
+          <div class="card-head">
+            <b>✉️ 家长留言</b>
+            <span class="more" v-if="parentMsgs.unread>0" @click="markMsgsRead()">点开即已读，共 {{parentMsgs.unread}} 条未读</span>
+            <span class="more" v-else>家长写给你的悄悄话</span>
+          </div>
+          <div v-if="parentMsgs.messages && parentMsgs.messages.length" class="msg-list">
+            <div class="msg-item" :class="{unread: !m.read}" v-for="m in parentMsgs.messages.slice(0,6)" :key="m.id">
+              <span class="msg-ico">💌</span>
+              <div class="msg-body"><p>{{m.content}}</p><span>{{m.created_at}}<template v-if="!m.read"> · 未读</template></span></div>
+            </div>
+          </div>
+          <div v-else class="empty" style="padding:18px">
+            <p style="color:#8a97b0;font-size:13px">还没有留言，等爸爸妈妈来说悄悄话吧</p>
           </div>
         </div>
 
@@ -771,10 +803,53 @@
           </div>
         </div>
 
-        <!-- 家长管理（Sprint 3 奖励闭环 + 寄语） -->
+        <!-- 家长管理（密码保护 + 任务设置 + 兑换券/心愿 + 留言/学习数据/题数设置） -->
         <div class="card parent-card" style="max-width:640px;margin-top:16px">
-          <div class="card-head"><b>👨‍👩‍👧 家长管理</b><span class="more">每日任务数量 / 奖励兑换券 / 心愿确认 / 成长寄语</span></div>
+          <div class="card-head"><b>👨‍👩‍👧 家长管理</b><span class="more">家长密码保护 · 孩子进不来</span></div>
 
+          <!-- ① 首次使用：设置家长密码 -->
+          <div v-if="parentPhase==='unset'" class="pc-sec">
+            <div class="pc-title">🔒 设置家长密码 <span class="more">设置后进入家长管理需要输密码，防止孩子乱动</span></div>
+            <div class="pc-row">
+              <input v-model="pwdForm.pwd" type="password" class="fill-input" maxlength="32" placeholder="家长密码（4-32 位）" style="max-width:180px">
+              <input v-model="pwdForm.pwd2" type="password" class="fill-input" maxlength="32" placeholder="再输一次" style="max-width:180px">
+            </div>
+            <div class="pc-row" style="margin-top:8px">
+              <input v-model="pwdForm.hintQ" class="fill-input" maxlength="100" placeholder="密保问题（忘记密码时用，如：孩子的小名是？）">
+            </div>
+            <div class="pc-row" style="margin-top:8px">
+              <input v-model="pwdForm.hintA" class="fill-input" maxlength="50" placeholder="密保答案（家长才能答对哦）" style="max-width:240px">
+              <button class="btn btn-primary btn-sm" @click="setupParentPwd()">设置并进入</button>
+            </div>
+          </div>
+
+          <!-- ② 已设密码：输入密码解锁 -->
+          <div v-else-if="parentPhase==='locked' || parentPhase==='reset'" class="pc-sec">
+            <div class="pc-title">🔑 家长验证</div>
+            <template v-if="parentPhase==='locked'">
+              <div class="pc-row">
+                <input v-model="pwdForm.unlock" type="password" class="fill-input" maxlength="32" placeholder="输入家长密码" style="max-width:200px" @keyup.enter="unlockParent()">
+                <button class="btn btn-primary btn-sm" @click="unlockParent()">解锁</button>
+                <button class="btn btn-ghost btn-sm" @click="parentPhase='reset'">忘记密码？</button>
+              </div>
+              <p class="pc-hint">孩子完成每日任务、兑换券、心愿都由家长在这里管理</p>
+            </template>
+            <template v-else>
+              <div class="pc-row">
+                <span class="more" style="font-size:13px">密保问题：{{pwdForm.hintQ}}</span>
+              </div>
+              <div class="pc-row" style="margin-top:8px">
+                <input v-model="pwdForm.resetA" class="fill-input" maxlength="50" placeholder="密保答案" style="max-width:200px">
+                <input v-model="pwdForm.resetPwd" type="password" class="fill-input" maxlength="32" placeholder="新密码" style="max-width:180px">
+                <button class="btn btn-primary btn-sm" @click="resetParentPwd()">重置</button>
+                <button class="btn btn-ghost btn-sm" @click="parentPhase='locked'">返回</button>
+              </div>
+              <p class="pc-hint">答对密保问题即可重置密码（家长预设的问题）</p>
+            </template>
+          </div>
+
+          <!-- ③ 已解锁：家长管理全部功能 -->
+          <template v-else>
           <div class="pc-sec">
             <div class="pc-title">📋 每日任务题目数量 <span class="more">孩子今天及以后的每日任务目标按此设置</span></div>
             <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap">
@@ -789,7 +864,45 @@
           </div>
 
           <div class="pc-sec">
-            <div class="pc-title">💌 给孩子写悄悄话</div>
+            <div class="pc-title">📝 试卷最少题数 <span class="more">孩子生成试卷（含每日练习）不得少于这个数</span></div>
+            <div class="pc-row" style="gap:12px">
+              <span class="more" style="font-size:13px">数学</span>
+              <input v-model.number="examMin.math_min" type="number" min="1" max="50" class="fill-input" style="max-width:70px">
+              <span class="more" style="font-size:13px">语文</span>
+              <input v-model.number="examMin.chi_min" type="number" min="1" max="50" class="fill-input" style="max-width:70px">
+              <span class="more" style="font-size:13px">英语</span>
+              <input v-model.number="examMin.eng_min" type="number" min="1" max="50" class="fill-input" style="max-width:70px">
+              <button class="btn btn-primary btn-sm" @click="saveExamSettings()">保存</button>
+            </div>
+            <p class="pc-hint">范围 1-50 题。比如数学设 20，孩子怎么选都不会少于 20 题</p>
+          </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">📊 孩子学习数据 <span class="more">本周概况</span></div>
+            <div class="stats-grid">
+              <div class="sg"><b>{{childStats.week_attempts}}</b><span>本周做题(套)</span></div>
+              <div class="sg"><b>{{childStats.week_avg_score}}%</b><span>平均正确率</span></div>
+              <div class="sg"><b>{{childStats.unmastered_wrong}}</b><span>未消灭错题</span></div>
+              <div class="sg"><b>{{childStats.streak_days}}</b><span>连续学习(天)</span></div>
+              <div class="sg"><b>{{childStats.week_tasks_done}}</b><span>本周完成任务</span></div>
+            </div>
+          </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">💬 留言给孩子 <span class="more">孩子一登录就能看到，未读有提醒</span></div>
+            <div class="pc-row">
+              <input v-model="parentMsg" class="fill-input" maxlength="300" placeholder="写句悄悄话：如 今天数学做得不错，继续保持！" @keyup.enter="sendParentMsg()">
+              <button class="btn btn-primary btn-sm" @click="sendParentMsg()">发送</button>
+            </div>
+            <div class="pc-list" v-if="sentMsgs.length">
+              <div class="pc-item" v-for="m in sentMsgs.slice(0,5)" :key="m.id">
+                <div class="c-body"><b>💌 {{m.content}}</b><span>{{m.created_at}}</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">💌 给孩子写悄悄话（周报寄语）</div>
             <div class="pc-row">
               <input v-model="parentNote" class="fill-input" maxlength="200" placeholder="写一句鼓励的话，会出现在孩子的成长周报里">
               <button class="btn btn-primary btn-sm" @click="saveParentNote()">保存</button>
@@ -797,36 +910,49 @@
           </div>
 
           <div class="pc-sec">
-            <div class="pc-title">🎫 兑换券管理 <span class="more">孩子完成心愿后凭券兑换</span></div>
-            <div class="pc-row">
-              <input v-model="newCoupon.title" class="fill-input" maxlength="30" placeholder="如：周末看动画半小时">
-              <select v-model="newCoupon.kind" class="fill-input" style="max-width:130px">
+            <div class="pc-title">🎫 兑换券管理 <span class="more">孩子学习表现好时，家长凭券兑现奖励</span></div>
+            <div class="pc-row" style="flex-wrap:wrap">
+              <input v-model="newCoupon.title" class="fill-input" maxlength="30" placeholder="如：周末看动画半小时" style="min-width:150px">
+              <select v-model="newCoupon.kind" class="fill-input" style="max-width:120px">
                 <option value="cartoon">动画时间</option><option value="snack">零食券</option>
                 <option value="sticker">贴纸券</option><option value="toy">玩具券</option>
                 <option value="outing">外出券</option><option value="custom">自定义</option>
               </select>
+              <input v-model="newCoupon.reason" class="fill-input" maxlength="50" placeholder="奖励理由（选填，如：今天主动复习）" style="min-width:160px">
               <button class="btn btn-primary btn-sm" @click="createCoupon()">添加</button>
             </div>
             <div class="pc-list" v-if="allCoupons.length">
               <div class="pc-item" v-for="c in allCoupons" :key="c.id">
                 <span class="ci">{{couponIcon(c.kind)}}</span>
-                <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 月限 {{c.max_per_month}} 次 · 已用 {{c.used_count}}</span></div>
+                <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 月限 {{c.max_per_month}} 次<template v-if="c.reason"> · 🎯 {{c.reason}}</template></span></div>
                 <button class="btn btn-sm" :class="c.status==='active' ? 'btn-ghost' : 'btn-primary'" @click="toggleCoupon(c)">{{c.status==='active' ? '停用' : '启用'}}</button>
               </div>
             </div>
           </div>
 
           <div class="pc-sec">
-            <div class="pc-title">🌟 心愿确认 <span class="more">孩子的心愿需要家长确认才能开始</span></div>
+            <div class="pc-title">🌟 心愿确认 <span class="more">孩子的心愿需要家长确认才能开始，达标后由家长兑现</span></div>
             <div class="pc-list" v-if="pendingWishes.length">
-              <div class="pc-item" v-for="w in pendingWishes" :key="w.id">
-                <div class="c-body"><b>{{w.title}}</b><span>{{w.status==='pending' ? '待确认' : '已完成，待兑现'}} · 进度 {{w.progress}}/{{w.target}}</span></div>
+              <div class="pc-item" v-for="w in pendingWishes" :key="w.id" style="flex-wrap:wrap">
+                <div class="c-body" style="flex:1"><b>{{w.title}}</b><span>{{w.status==='pending' ? '待确认' : '已完成，待兑现'}} · 进度 {{w.progress}}/{{w.target}}</span></div>
+                <input v-if="w.status==='pending_redeem'" v-model="w.redeemReason" class="fill-input" maxlength="50" placeholder="兑现理由（选填）" style="max-width:150px">
                 <button class="btn btn-success btn-sm" @click="confirmWish(w)">{{w.status==='pending' ? '确认开始' : '确认兑现'}}</button>
                 <button class="btn btn-ghost btn-sm" @click="archiveWish(w)">移除</button>
               </div>
             </div>
             <p v-else class="pc-empty">没有待处理的心愿</p>
           </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">🔐 修改家长密码 <span class="more">需验证当前密码</span></div>
+            <div class="pc-row" style="flex-wrap:wrap">
+              <input v-model="pwdForm.old" type="password" class="fill-input" maxlength="32" placeholder="当前密码" style="max-width:140px">
+              <input v-model="pwdForm.new1" type="password" class="fill-input" maxlength="32" placeholder="新密码" style="max-width:140px">
+              <input v-model="pwdForm.new2" type="password" class="fill-input" maxlength="32" placeholder="再输一次" style="max-width:140px">
+              <button class="btn btn-primary btn-sm" @click="changeParentPwd()">修改</button>
+            </div>
+          </div>
+          </template>
         </div>
       </div>
     </main>
@@ -1258,6 +1384,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=21"></script>
+<script src="/static/app.js?v=22"></script>
 </body>
 </html>

@@ -44,10 +44,19 @@ createApp({
       // 奖励闭环 + 成长周报（Sprint 3）
       rewards: null,
       allCoupons: [], pendingWishes: [],
-      newCoupon: { title: '', kind: 'custom' },
+      newCoupon: { title: '', kind: 'custom', reason: '' },
       wishOverlay: { show: false, title: '', target: 5 },
       weeklyOverlay: { show: false }, weeklyLoading: false, weekly: null,
       shareImg: '', parentNote: '',
+      // 家长功能（Sprint 6）：密码解锁 + 留言 + 学习数据 + 题数设置 + 成长记录
+      parentPhase: '',           // unset / locked / reset / open（sessionStorage 记忆解锁）
+      pwdForm: { pwd: '', pwd2: '', hintQ: '', hintA: '', unlock: '', resetA: '', resetPwd: '', old: '', new1: '', new2: '' },
+      parentMsg: '', sentMsgs: [],
+      parentMsgs: { unread: 0, messages: [] },
+      examMin: { math_min: 5, chi_min: 5, eng_min: 5 },
+      childStats: { week_attempts: 0, week_avg_score: 0, unmastered_wrong: 0, streak_days: 0, week_tasks_done: 0 },
+      notices: null,
+      rewardTimeline: [],
       // 每日任务目标数量（家长设置）
       taskSettings: { items: [] },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
@@ -218,19 +227,21 @@ createApp({
     },
     logout() {
       localStorage.removeItem('zx_user');
+      sessionStorage.removeItem('zx_parent_open');
       this.user = ''; this.username = ''; this.tab = 'home';
     },
 
     /* ─────────── 导航 ─────────── */
     goTab(t) {
       this.tab = t;
+      if (t === 'home') { this.loadRewards(); this.loadRewardTimeline(); this.loadParentMsgs(); this.loadNotices(); }
       if (t === 'practice') { this.loadMathCategories(); if (this.subject === '英语') this.loadGrammarPoints(); }
       if (t === 'recite') { this.reciteSub === 'words' ? this.loadVocabToday() : this.loadClassicalToday(); this.loadClassicalTexts(); }
       if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); this.loadTeachDue(); }
       if (t === 'papers') this.loadPapers();
       if (t === 'qa') { this.loadQaModels(); this.loadQaHistory(); }
       if (t === 'stats') this.loadStats();
-      if (t === 'settings') this.loadParentPanel();
+      if (t === 'settings') this.initParentPanel();
     },
     switchSubject(s) {
       this.subject = s;
@@ -313,6 +324,9 @@ createApp({
       this.loadGoals();
       this.loadChalBest();
       this.loadTeachDue();
+      this.loadParentMsgs();
+      this.loadNotices();
+      this.loadRewardTimeline();
     },
 
     /* ─────────── 首页 ─────────── */
@@ -422,7 +436,7 @@ createApp({
       i >= 0 ? this.selectedTypes.splice(i, 1) : this.selectedTypes.push(t);
     },
     generateExam() {
-      const body = { subject: this.subject, grade: this.grade, difficulty: this.genDifficulty };
+      const body = { subject: this.subject, grade: this.grade, difficulty: this.genDifficulty, user_id: this.user };
       if (this.subject === '数学') {
         body.math_count = this.genCount;
         body.math_categories = this.selectedCategories.length ? this.selectedCategories.slice() : null;
@@ -805,6 +819,136 @@ createApp({
         }).catch(() => { this.allCoupons = []; this.pendingWishes = []; });
       this.loadTaskSettings();
     },
+    /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
+    initParentPanel() {
+      // 会话内已解锁过（sessionStorage），直接打开
+      if (sessionStorage.getItem('zx_parent_open') === '1') { this.parentPhase = 'open'; this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); return; }
+      this.api(`/api/parent/status?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          this.parentPhase = (d && d.has_password) ? 'locked' : 'unset';
+          if (this.parentPhase === 'locked') this.pwdForm.hintQ = (d && d.hint_question) || '';
+        })
+        .catch(() => { this.parentPhase = 'unset'; });
+    },
+    _resetPwdForm() {
+      this.pwdForm = { pwd: '', pwd2: '', hintQ: '', hintA: '', unlock: '', resetA: '', resetPwd: '', old: '', new1: '', new2: '' };
+    },
+    setupParentPwd() {
+      const { pwd, pwd2, hintQ, hintA } = this.pwdForm;
+      if (!pwd || pwd.length < 4 || pwd.length > 32) return this.showToast('密码需 4-32 位');
+      if (pwd !== pwd2) return this.showToast('两次输入的密码不一致');
+      if (!hintQ.trim() || !hintA.trim()) return this.showToast('请填写密保问题和答案（忘记密码时重置用）');
+      this.api('/api/parent/setup', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, password: pwd, hint_question: hintQ.trim(), hint_answer: hintA.trim() }),
+      }).then(() => {
+        this._resetPwdForm();
+        this.parentPhase = 'open';
+        sessionStorage.setItem('zx_parent_open', '1');
+        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs();
+        this.showToast('家长密码已设置，家长管理已解锁 🔓');
+      }).catch(e => this.showToast(e.message));
+    },
+    unlockParent() {
+      const pwd = this.pwdForm.unlock;
+      if (!pwd) return this.showToast('请输入家长密码');
+      this.api('/api/parent/unlock', {
+        method: 'POST', body: JSON.stringify({ user_id: this.user, password: pwd }),
+      }).then(() => {
+        this._resetPwdForm();
+        this.parentPhase = 'open';
+        sessionStorage.setItem('zx_parent_open', '1');
+        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs();
+        this.showToast('欢迎回来，家长 👋');
+      }).catch(e => this.showToast(e.message));
+    },
+    resetParentPwd() {
+      const { resetA, resetPwd } = this.pwdForm;
+      if (!resetA.trim() || !resetPwd) return this.showToast('请填写密保答案和新密码');
+      this.api('/api/parent/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, hint_answer: resetA.trim(), new_password: resetPwd }),
+      }).then(() => {
+        this._resetPwdForm();
+        this.parentPhase = 'locked';
+        this.showToast('密码已重置，请用新密码解锁 🔓');
+      }).catch(e => this.showToast(e.message));
+    },
+    changeParentPwd() {
+      const { old, new1, new2 } = this.pwdForm;
+      if (!old || !new1) return this.showToast('请填写当前密码和新密码');
+      if (new1 !== new2) return this.showToast('两次输入的新密码不一致');
+      this.api('/api/parent/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, old_password: old, new_password: new1 }),
+      }).then(() => {
+        this._resetPwdForm();
+        this.showToast('家长密码已修改 ✅');
+      }).catch(e => this.showToast(e.message));
+    },
+    loadChildStats() {
+      this.api(`/api/parent/child-stats?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.childStats = d || this.childStats; })
+        .catch(() => {});
+    },
+    loadExamSettings() {
+      this.api(`/api/parent/exam-settings?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.examMin = d || this.examMin; })
+        .catch(() => {});
+    },
+    saveExamSettings() {
+      const m = { math_min: Number(this.examMin.math_min), chi_min: Number(this.examMin.chi_min), eng_min: Number(this.examMin.eng_min) };
+      for (const k in m) {
+        if (!Number.isInteger(m[k]) || m[k] < 1 || m[k] > 50) return this.showToast(`每科最少题数需为 1-50 的整数`);
+      }
+      this.api('/api/parent/exam-settings', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, ...m }),
+      }).then(d => { this.examMin = d || this.examMin; this.showToast('试卷最少题数已保存 ✅'); })
+        .catch(e => this.showToast(e.message));
+    },
+    sendParentMsg() {
+      const content = (this.parentMsg || '').trim();
+      if (!content) return this.showToast('写点什么再发送吧');
+      this.api('/api/parent/message', {
+        method: 'POST', body: JSON.stringify({ user_id: this.user, content }),
+      }).then(() => {
+        this.parentMsg = '';
+        this.loadSentMsgs();
+        this.showToast('留言已发送，孩子登录就能看到 💌');
+      }).catch(e => this.showToast(e.message));
+    },
+    loadSentMsgs() {
+      this.api(`/api/parent/messages?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.sentMsgs = (d && d.messages) || []; })
+        .catch(() => { this.sentMsgs = []; });
+    },
+    loadParentMsgs() {
+      this.api(`/api/parent/messages?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.parentMsgs = d || { unread: 0, messages: [] }; })
+        .catch(() => { this.parentMsgs = { unread: 0, messages: [] }; });
+    },
+    markMsgsRead() {
+      this.api('/api/parent/messages/read', {
+        method: 'POST', body: JSON.stringify({ user_id: this.user }),
+      }).then(() => { this.loadParentMsgs(); this.loadNotices(); })
+        .catch(() => {});
+    },
+    openMessages() {
+      this.goTab('home');
+      this.markMsgsRead();
+      this.showToast('家长留言已打开 💌');
+    },
+    loadNotices() {
+      this.api(`/api/parent/notices?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.notices = d || null; })
+        .catch(() => { this.notices = null; });
+    },
+    loadRewardTimeline() {
+      this.api(`/api/rewards/timeline?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.rewardTimeline = (d && d.items) || []; })
+        .catch(() => { this.rewardTimeline = []; });
+    },
     loadTaskSettings() {
       this.api(`/api/tasks/settings?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.taskSettings = d || { items: [] }; })
@@ -832,9 +976,9 @@ createApp({
       if (!title) return this.showToast('先写下兑换券内容');
       this.api('/api/rewards/coupon', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, title, kind: this.newCoupon.kind }),
+        body: JSON.stringify({ user_id: this.user, title, kind: this.newCoupon.kind, reason: this.newCoupon.reason || '' }),
       }).then(() => {
-        this.newCoupon.title = '';
+        this.newCoupon.title = ''; this.newCoupon.reason = '';
         this.loadParentPanel(); this.loadRewards();
         this.showToast('兑换券已添加 🎫');
       }).catch(e => this.showToast(e.message));
@@ -861,7 +1005,9 @@ createApp({
     },
     confirmWish(w) {
       const url = w.status === 'pending' ? `/api/rewards/wish/${w.id}/confirm` : `/api/rewards/wish/${w.id}/redeem`;
-      this.api(url, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+      const body = { user_id: this.user };
+      if (w.status === 'pending_redeem') body.reason = (w.redeemReason || '').trim();
+      this.api(url, { method: 'POST', body: JSON.stringify(body) })
         .then(() => {
           this.loadParentPanel(); this.loadRewards();
           this.showToast(w.status === 'pending' ? '心愿已确认开始，孩子加油 🌟' : '已兑现，太棒了 🎉');

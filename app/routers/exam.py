@@ -43,6 +43,18 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
     所有题目自动保存到 questions 表。
     试卷为公共资源，不绑定用户。
     """
+    # 家长设置的每科最少题数 → 强制下限（孩子无法把题数设太少）
+    if req.user_id:
+        from ..models.parent import ExamMinCount
+        m = db.query(ExamMinCount).filter_by(user_id=req.user_id).first()
+        if m:
+            if req.subject == "数学":
+                req.math_count = max(req.math_count, m.math_min or 0)
+            elif req.subject == "英语":
+                req.english_count = max(req.english_count, m.eng_min or 0)
+            elif req.subject == "语文":
+                req.english_count = max(req.english_count, m.chi_min or 0)
+
     if req.subject == "数学":
         filepath, questions_data = _generate_math_exam(req, db)
     elif req.subject == "英语":

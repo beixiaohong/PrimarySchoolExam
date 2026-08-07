@@ -9,6 +9,7 @@ class ExamCreateRequest(BaseModel):
     title: Optional[str] = Field(None, description="试卷标题，不填则自动生成")
     grade: int = Field(6, ge=1, le=9)
     difficulty: str = Field("综合", description="基础/提高/拔高/综合")
+    user_id: Optional[str] = Field(None, description="请求者用户名（家长设置的每科最少题数将强制下限）")
 
     # 数学专用
     math_count: int = Field(30, ge=1, le=200, description="数学题数量")
