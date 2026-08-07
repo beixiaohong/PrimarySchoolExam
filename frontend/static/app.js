@@ -709,7 +709,7 @@ createApp({
       const base = `user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`;
       const examQ = `${base}&include_mastered=${this.wrongStatus === 'pending' ? 0 : 1}`;
       const studyQ = `${base}&only_pending=${this.wrongStatus === 'pending' ? 1 : 0}`;
-      Promise.all([this.api(`/api/exam/wrong/list?${examQ}`), this.api(`/api/study/errors?${studyQ}`)])
+      return Promise.all([this.api(`/api/exam/wrong/list?${examQ}`), this.api(`/api/study/errors?${studyQ}`)])
         .then(([examList, studyList]) => {
           const exam = (examList || []).map(w => ({
             key: 'exam-' + w.id, kind: 'exam', id: w.id, record_id: w.id, question_id: w.question_id,
@@ -1296,16 +1296,11 @@ createApp({
         this.loadAnalysis();
       }).catch(e => this.showToast(e.message));
     },
+    /* 「标记已掌握」= 掌握检测：先做 3 道同类型题，全部答对才真正标记已掌握，
+       防止"假掌握"。答对结果由 /api/study/practice-submit 按 record 分组整组判定 */
     markWrongMastered(w) {
-      if (w.kind === 'study') {
-        this.api('/api/study/errors/master', { method: 'POST', body: JSON.stringify({ user_id: this.user, error_id: w.id }) })
-          .then(() => { w.mastered = true; this.showToast('已标记掌握 🎉'); this.loadAnalysis(); this.loadWrongItems(); })
-          .catch(e => this.showToast(e.message));
-      } else {
-        this.api('/api/exam/wrong/batch-master', { method: 'POST', body: JSON.stringify({ user_id: this.user, question_ids: [w.question_id] }) })
-          .then(() => { w.mastered = true; this.showToast('已标记掌握 🎉'); this.loadAnalysis(); this.loadWrongItems(); })
-          .catch(e => this.showToast(e.message));
-      }
+      this.showToast('先做 3 道同类型题，全部答对才算掌握');
+      this.startWrongRetry(w, { mastery: true });
     },
     loadAnalysis() {
       this.api(`/api/study/errors/analysis?user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`)
@@ -1331,19 +1326,20 @@ createApp({
       const max = Math.max(1, ...arr.map(x => x.pending || 0));
       return Math.round((c.pending || 0) / max * 100);
     },
-    startWrongRetry(w) {
+    startWrongRetry(w, opts = {}) {
       this.api('/api/study/retry', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, kind: w.kind, record_id: w.record_id, count: 3 }),
       }).then(r => {
         const items = (r.questions || []).map(q => ({
-          qid: q.qid, question: q.question, sub: q.type_name || r.module_name || '',
+          qid: q.qid, question: q.question,
+          sub: (q.type_name || r.module_name || '') + (opts.mastery ? ' · 全对才掌握' : ''),
           options: q.options || [], answer: q.answer, explanation: q.explanation || '',
           extra: { kind: w.kind, record_id: w.record_id }, text_id: q.text_id || 0,
         }));
         this.startQuiz({
-          title: '🎯 变式重练 · ' + (r.module_name || '同类题'),
-          items, source: { mode: 'retry', retry: { kind: w.kind, record_id: w.record_id } },
+          title: opts.mastery ? '✅ 掌握检测 · 3 题全对才标记已掌握' : '🎯 变式重练 · ' + (r.module_name || '同类题'),
+          items, source: { mode: 'retry', retry: { kind: w.kind, record_id: w.record_id }, mastery: !!opts.mastery },
         });
       }).catch(e => this.showToast(e.message));
     },
@@ -1537,9 +1533,26 @@ createApp({
             user_id: this.user,
             results: this.quiz.items.map(it => ({ kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct })),
           }),
-        }).then(() => {
+        }).then(r => {
+          const answered = this.quiz.items.filter(it => it.answered);
+          const allOk = answered.length > 0 && answered.every(it => it.correct);
+          const masteredIds = ((r && r.details) || []).filter(d => d.status === 'mastered').map(d => d.record_id);
+          // 掌握检测/错题修正：整组全对 → 已掌握（后端按 record 分组判定）
+          if (src.mastery || this.quiz.items.length >= 3) {
+            this.showToast(allOk ? '🎉 全部答对，已标记掌握！' : '有答错的题，暂未掌握，加油再来！');
+          } else {
+            this.showToast(allOk ? '全部答对 🎉' : '再练练，下次全对就能掌握啦');
+          }
           this.loadAnalysis();
           this.loadDailyTasks();
+          this.loadWrongItems().then(() => {
+            // 同步详情页当前错题的最新掌握状态
+            if (this.curWrong && this.curWrong.record_id) {
+              const fresh = this.wrongItems.find(x => x.kind === this.curWrong.kind && x.record_id === this.curWrong.record_id);
+              if (fresh) Object.assign(this.curWrong, fresh);
+              else if (masteredIds.includes(this.curWrong.record_id)) this.curWrong.mastered = true;
+            }
+          });
         }).catch(e => this.showToast(e.message));
       } else if (src.mode === 'classical') {
         const wrongs = this.quiz.items.filter(it => !it.correct && it.userAnswer)
@@ -1611,7 +1624,7 @@ createApp({
           this.api('/api/study/practice-submit', {
             method: 'POST',
             body: JSON.stringify({ user_id: this.user, results: answered.map(it => ({ kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct })) }),
-          }).then(() => { this.loadAnalysis(); this.loadDailyTasks(); }).catch(() => {});
+          }).then(() => { this.loadAnalysis(); this.loadDailyTasks(); this.loadWrongItems(); }).catch(() => {});
         }
       } else if (src && src.mode === 'exam' && !this.quiz.done) {
         // 中途退出：全部题目提交，未作答的记为错误，保证一定生成完整做题记录

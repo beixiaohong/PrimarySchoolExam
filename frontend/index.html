@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=27">
+<link rel="stylesheet" href="/static/style.css?v=28">
 </head>
 <body>
 <div id="app">
@@ -507,7 +507,7 @@
             <button class="pill" :class="{active: wrongStatus==='pending'}" @click="wrongStatus='pending'; loadWrongItems()">未掌握</button>
             <button class="pill" :class="{active: wrongStatus==='mastered'}" @click="wrongStatus='mastered'; loadWrongItems()">已掌握</button>
             <span class="filter-sep"></span><span class="tag tag-blue">{{subject}}</span>
-            <button class="btn btn-primary btn-sm" style="margin-left:auto" @click="startWrongPractice()" title="从错题本随机抽 10 题在线练习，连续答对 3 次自动掌握">🎯 练习错题</button>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" @click="startWrongPractice()" title="从错题本随机抽 5 道错题，每道配 3 道同类型题，整组全对自动掌握">🎯 练习错题</button>
             <button class="btn btn-ghost btn-sm" @click="loadAnalysis(); wrongScreen='analysis'">📊 错因分析</button>
           </div>
           <div class="card teach-due" v-if="teachDue.length" @click="openRecheck()">
@@ -579,7 +579,7 @@
               <button class="btn btn-primary" v-if="curWrong.kind==='exam' && curWrong.question_id" :disabled="curWrong.explaining" @click="openExplain(curWrong)">{{curWrong.explaining ? '⏳ 讲解中…' : '🤖 AI 讲解'}}</button>
               <button class="btn btn-primary" @click="openTeach(curWrong)">🎓 出题给家长</button>
               <button class="btn btn-primary" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
-              <button class="btn btn-success" v-if="!curWrong.mastered" @click="markWrongMastered(curWrong)">✅ 标记已掌握</button>
+              <button class="btn btn-success" v-if="!curWrong.mastered" @click="markWrongMastered(curWrong)" title="先做 3 道同类型题，全部答对才标记已掌握">✅ 检测掌握（3 题全对）</button>
               <button class="btn btn-ghost" @click="wrongScreen='list'">返回列表</button>
             </div>
           </div>
@@ -1261,7 +1261,7 @@
               </div>
               <p class="explain-deg" v-if="quiz.items[quiz.i].aiDegraded">（离线讲解版 · 已尽力帮到你了）</p>
               <div class="explain-actions" style="justify-content:flex-start" v-if="curWrong && curWrong.question_id===quiz.items[quiz.i].qid">
-                <button class="btn btn-primary btn-sm" @click="markWrongMastered(curWrong)">✅ 这次会了</button>
+                <button class="btn btn-primary btn-sm" @click="markWrongMastered(curWrong)" title="先做 3 道同类型题，全部答对才标记已掌握">✅ 检测掌握</button>
                 <button class="btn btn-ghost btn-sm" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
               </div>
             </template>
@@ -1417,6 +1417,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=27"></script>
+<script src="/static/app.js?v=28"></script>
 </body>
 </html>
