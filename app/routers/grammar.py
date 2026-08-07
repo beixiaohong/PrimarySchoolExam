@@ -276,8 +276,9 @@ def submit_grammar_answers(req: GrammarSubmitRequest, db: Session = Depends(get_
         if exercise.exercise_type == "choice":
             is_correct = user_ans == correct_ans
         else:
-            # 填空题忽略大小写和首尾空格
-            is_correct = user_ans == correct_ans
+            # 填空题：忽略大小写和首尾空格，并支持算式/格式容错（与前端即时反馈一致）
+            from ..services.answer_check import fill_answer_correct
+            is_correct = fill_answer_correct(user_ans, correct_ans)
 
         if is_correct:
             correct_count += 1

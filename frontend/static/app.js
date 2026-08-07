@@ -1665,15 +1665,92 @@ createApp({
       if (!s) return [];
       try { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } catch (e) { return []; }
     },
+    /* 容错判题（与后端 app/services/answer_check.py 完全一致）：
+       孩子写简便方法过程（如 2*(999+1)=2*1000=2000）也算对 */
+    _cleanSeg(seg) {
+      let x = String(seg).replace(/[^0-9+\-*/().%]+$/g, '');   // 剥单位："2000元"→"2000"
+      if (!x) return null;
+      while (x.endsWith('(') || (x.endsWith(')') && !x.includes('('))) {  // 不成对括号
+        x = x.slice(0, -1).replace(/[^0-9+\-*/().%]+$/g, '');
+        if (!x) return null;
+      }
+      if (x.endsWith('%')) x = x.slice(0, -1) + '/100';         // "50%" → 50/100
+      return x;
+    },
+    /* 安全求值简单算术表达式（+ - * / 括号、小数）；非法/除零 → null */
+    _mathEval(expr) {
+      const s = this._cleanSeg(expr);
+      if (!s || /[^0-9+\-*/().]/.test(s) || s.includes('%')) return null;
+      let i = 0; const n = s.length;
+      const peek = () => (i < n ? s[i] : '');
+      const num = () => {
+        const m = /^\d+(?:\.\d+)?/.exec(s.slice(i));
+        if (!m) return null;
+        i += m[0].length;
+        return parseFloat(m[0]);
+      };
+      const exprP = () => {
+        const c = peek();
+        if (c === '(') { i++; const v = exprFull(); if (v === null || peek() !== ')') return null; i++; return v; }
+        if (c === '+') { i++; return exprP(); }
+        if (c === '-') { i++; const v = exprP(); return v === null ? null : -v; }
+        return num();
+      };
+      const term = () => {
+        let v = exprP();
+        if (v === null) return null;
+        while (peek() === '*' || peek() === '/') {
+          const op = peek(); i++;
+          const r = exprP();
+          if (r === null || (op === '/' && r === 0)) return null;
+          v = op === '*' ? v * r : v / r;
+        }
+        return v;
+      };
+      const exprFull = () => {
+        let v = term();
+        if (v === null) return null;
+        while (peek() === '+' || peek() === '-') {
+          const op = peek(); i++;
+          const r = term();
+          if (r === null) return null;
+          v = op === '+' ? v + r : v - r;
+        }
+        return v;
+      };
+      const v = exprFull();
+      return v !== null && i === n ? v : null;
+    },
+    /* 答案的最终结果值：'=' 分段取最后一段求值（用户陈述的结果），不可求值时取第一个可求值段 */
+    _resultValue(s) {
+      const segs = s.split('=');
+      const last = this._mathEval(segs[segs.length - 1]);
+      if (last !== null) return last;
+      for (const seg of segs) { const v = this._mathEval(seg); if (v !== null) return v; }
+      return null;
+    },
     _matchAnswer(ua, ans) {
-      const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
-      const stripP = s => s.replace(/[，。！？；：、,.!?;:]+$/g, '');
-      const u = stripP(norm(ua)), a = stripP(norm(ans));
+      const norm = s => String(s || '').trim().toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
+        .replace(/[ａ-ｚ]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
+        .replace(/[Ａ-Ｚ]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
+        .replace(/（/g, '(').replace(/）/g, ')')
+        .replace(/＝/g, '=').replace(/，/g, ',').replace(/。/g, '.')
+        .replace(/×/g, '*').replace(/＊/g, '*').replace(/·/g, '*')
+        .replace(/÷/g, '/').replace(/＋/g, '+').replace(/－/g, '-')
+        .replace(/,/g, '')
+        .replace(/[。！？；：、,.!?;:…]+$/g, '');
+      const u = norm(ua), a = norm(ans);
       if (!a) return false;
       if (u === a) return true;
+      if (!/\d/.test(a)) return false;   // 无数字（单词/古诗文/句子）→ 严格
+      const uRes = this._resultValue(u), aRes = this._resultValue(a);
+      if (uRes !== null && aRes !== null && Math.abs(uRes - aRes) < 1e-9) return true;
       const nums = s => (String(s).match(/-?\d+\.?\d*/g) || []);
-      const un = nums(ua), an = nums(ans);
-      if (an.length === 1 && un.length === 1) return Math.abs(parseFloat(un[0]) - parseFloat(an[0])) < 1e-9;
+      const un = nums(u), an = nums(a);
+      if (an.length === 1 && un.length && Math.abs(parseFloat(un[un.length - 1]) - parseFloat(an[0])) < 1e-9) return true;
+      if (un.length && un.length === an.length && un.every((x, i) => Math.abs(parseFloat(x) - parseFloat(an[i])) < 1e-9)) return true;
       return false;
     },
   },

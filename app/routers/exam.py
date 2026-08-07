@@ -556,7 +556,7 @@ def wrong_stats(
 
 
 def _check_answer(user_ans: str, correct_ans: str, options_json: str) -> bool:
-    """判断答案是否正确"""
+    """判断答案是否正确（填空题为容错判题：规范化 + 数学式求值，见 answer_check）"""
     if not user_ans:
         return False
     ua = user_ans.strip().lower()
@@ -575,18 +575,9 @@ def _check_answer(user_ans: str, correct_ans: str, options_json: str) -> bool:
     if ua == ca:
         return True
 
-    # 数字答案：提取数字比较
-    import re
-    ua_nums = re.findall(r'-?\d+\.?\d*', ua)
-    ca_nums = re.findall(r'-?\d+\.?\d*', ca)
-    if ca_nums and ua_nums:
-        # 如果正确答案只有一个核心数字，用户答案包含即可
-        if len(ca_nums) == 1 and ca_nums[0] in ua_nums:
-            return True
-        if ua_nums == ca_nums:
-            return True
-
-    return False
+    # 填空题：容错判题（算式过程/单位/全角符号/顺序差异均可识别）
+    from ..services.answer_check import fill_answer_correct
+    return fill_answer_correct(ua, ca)
 
 
 # ═══════════════════════════════════════════════════════════
