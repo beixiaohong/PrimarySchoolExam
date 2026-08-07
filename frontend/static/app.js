@@ -4,7 +4,7 @@ createApp({
   data() {
     return {
       // 登录
-      user: '', username: '', grade: 6, subject: '英语',
+      user: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
       // 导航
       tab: 'home',
       // 全局统计
@@ -275,19 +275,25 @@ createApp({
       if (!name) return;
       this.api('/api/user/login', {
         method: 'POST',
-        body: JSON.stringify({ user_id: name, grade: this.grade, subject: this.subject }),
+        body: JSON.stringify({ user_id: name }),
       }).then(r => {
         this.user = name;
         this.streakDays = r.streak_days || 0;
+        this.grade = r.grade || 6;
+        this.subject = r.subject || '英语';
         this.saveUser();
         this.showToast(`欢迎回来，${name}！`);
-        this.refreshAll();
+        if (r.is_new || !r.grade) {
+          this.showGradeModal = true;
+        } else {
+          this.refreshAll();
+        }
       }).catch(e => this.showToast(e.message));
     },
     logout() {
       localStorage.removeItem('zx_user');
       sessionStorage.removeItem('zx_parent_open');
-      this.user = ''; this.username = ''; this.tab = 'home';
+      this.user = ''; this.username = ''; this.tab = 'home'; this.showGradeModal = false;
     },
 
     /* ─────────── 导航 ─────────── */
@@ -316,11 +322,25 @@ createApp({
       if (this.tab === 'practice') {
         if (s !== '英语' && this.practiceSub === 'grammar') this.practiceSub = 'generate';
         if (s === '英语') this.loadGrammarPoints();
+        this.loadAttempts();
       }
-      if (this.tab === 'wrong') this.loadWrongItems();
-      this.saveUser(); this.refreshAll();
+      if (this.tab === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); }
+      this.saveUser();
     },
-    onGradeChange() { this.saveUser(); this.refreshAll(); },
+    onGradeChange() {
+      this.saveUser();
+      this.api('/api/user/grade', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, grade: this.grade }),
+      }).then(() => this.refreshAll()).catch(() => {});
+    },
+    selectInitialGrade() {
+      this.showGradeModal = false;
+      this.api('/api/user/grade', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, grade: this.grade }),
+      }).then(() => { this.saveUser(); this.refreshAll(); }).catch(() => { this.refreshAll(); });
+    },
     onSubjectChange() {
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;
       this.selectedTypes = [];

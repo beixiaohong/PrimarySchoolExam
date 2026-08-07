@@ -20,25 +20,27 @@
       <label>你的名字</label>
       <input v-model="username" placeholder="输入名字即可开始，如：小明" @keyup.enter="login">
     </div>
-    <div class="field">
-      <label>年级</label>
-      <select v-model="grade">
-        <option v-for="g in [3,4,5,6,7,8,9]" :value="g">{{g}}年级</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>常用学科</label>
-      <select v-model="subject">
-        <option>数学</option><option>语文</option><option>英语</option>
-      </select>
-    </div>
     <button class="btn btn-primary btn-lg login-btn" :disabled="!username.trim()" @click="login">进入学习 →</button>
     <p class="login-tip">无需注册，直接填写用户名即可使用</p>
   </div>
 </div>
 
+<!-- ═══════════════════ 首次进入 · 选择年级弹窗 ═══════════════════ -->
+<div class="grade-modal-overlay" v-if="showGradeModal">
+  <div class="grade-modal">
+    <h2>👋 欢迎来到智学学堂</h2>
+    <p>请选择你当前的年级，后续每年9月会自动升级哦</p>
+    <div class="grade-grid">
+      <button v-for="g in [3,4,5,6,7,8,9]" :key="g"
+              class="grade-btn" :class="{active: grade===g}"
+              @click="grade=g">{{g}}年级</button>
+    </div>
+    <button class="btn btn-primary btn-lg" style="margin-top:20px;width:100%" @click="selectInitialGrade">开始学习 →</button>
+  </div>
+</div>
+
 <!-- ═══════════════════ App Shell ═══════════════════ -->
-<div class="app" v-else>
+<div class="app" v-if="user && !showGradeModal">
   <aside class="sidebar">
     <div class="logo">
       <div class="logo-badge">📘</div>
@@ -70,14 +72,11 @@
 
   <div class="main">
     <header class="topbar">
-      <div class="subject-pills">
+      <div class="subject-pills" v-if="tab==='practice' || tab==='wrong'">
         <button :class="{active: subject==='数学'}" @click="switchSubject('数学')">数学</button>
         <button :class="{active: subject==='语文'}" @click="switchSubject('语文')">语文</button>
         <button :class="{active: subject==='英语'}" @click="switchSubject('英语')">英语</button>
       </div>
-      <select class="grade-select" v-model="grade" @change="onGradeChange">
-        <option v-for="g in [3,4,5,6,7,8,9]" :value="g">{{g}}年级</option>
-      </select>
       <button class="icon-btn" @click="showToast('🔔 暂无新通知，加油学习！')">🔔</button>
       <div class="me">
         <div class="avatar" style="width:32px;height:32px;font-size:12px">{{user.charAt(0)}}</div>
@@ -1271,7 +1270,7 @@
             <div class="form-item"><label>年级</label><select v-model="grade" @change="onGradeChange"><option v-for="g in [3,4,5,6,7,8,9]" :value="g">{{g}}年级</option></select></div>
             <div class="form-item"><label>默认学科</label><select v-model="subject" @change="onSubjectChange"><option>数学</option><option>语文</option><option>英语</option></select></div>
           </div>
-          <p class="card-desc">当前学习计划：{{grade}}年级 · {{subject}} · 学习数据按用户名保存在本地服务器</p>
+          <p class="card-desc">当前年级：{{grade}}年级 · 每年9月自动升一年级 · 学习数据按用户名保存在本地服务器</p>
         </div>
         <div class="card" style="max-width:640px;margin-top:16px">
           <div class="card-head"><b>📚 学习数据</b></div>

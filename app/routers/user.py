@@ -1,12 +1,12 @@
 """简易用户系统 API
 
 无需注册/密码，直接填写用户名即可使用。
-登录时登记用户信息（用户名 + 常用年级/学科 + 活跃时间），
-返回该用户的统计概览（连续学习天数等），前端 localStorage 记住用户名。
+登录时登记用户名，年级在进入系统后选择。
 """
 from datetime import date, datetime, timedelta
+import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,13 +15,20 @@ from ..models.user import User
 from ..models.vocab import VocabDailyLog
 from ..models.classical import ClassicalDailyLog
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
 class UserLoginRequest(BaseModel):
     user_id: str
-    grade: int = 6
-    subject: str = "英语"
+    grade: int = None
+    subject: str = None
+
+
+class GradeUpdateRequest(BaseModel):
+    user_id: str
+    grade: int
 
 
 @router.post("/login", summary="用户登录登记（填用户名即用）")
@@ -29,25 +36,29 @@ def user_login(req: UserLoginRequest, db: Session = Depends(get_db)):
     """登记用户（不存在则创建），返回用户档案与学习概览"""
     uid = req.user_id.strip()
     if not uid:
-        from fastapi import HTTPException
         raise HTTPException(400, "用户名不能为空")
 
     user = db.query(User).filter(User.user_id == uid).first()
     is_new = False
     if not user:
-        user = User(user_id=uid, grade=req.grade, subject=req.subject,
+        user = User(user_id=uid, grade=req.grade or 6, subject=req.subject or "英语",
                     last_login_date=date.today())
         db.add(user)
         db.flush()
         is_new = True
 
-    # 更新常用设置与活跃时间
-    user.grade = req.grade
-    user.subject = req.subject
+    # 仅当调用方显式传了 grade/subject 时才覆盖（登录页不再传这两个字段）
+    if req.grade is not None:
+        user.grade = req.grade
+    if req.subject is not None:
+        user.subject = req.subject
     user.last_login_at = datetime.now()
     if user.last_login_date != date.today():
         user.last_login_date = date.today()
     db.commit()
+
+    # 启动时检查是否需要自动升年级（每年9月1号）
+    _auto_upgrade_grade(db)
 
     # 连续学习天数：词汇 + 古诗文 日志合并取最大
     streak = _streak(db, uid)
@@ -61,6 +72,34 @@ def user_login(req: UserLoginRequest, db: Session = Depends(get_db)):
         "created_at": user.created_at.strftime("%Y-%m-%d") if user.created_at else "",
         "message": "欢迎回来！" if not is_new else "欢迎加入，今天开始学习吧！",
     }
+
+
+@router.post("/grade", summary="更新用户年级")
+def update_grade(req: GradeUpdateRequest, db: Session = Depends(get_db)):
+    """家长或用户手动修改年级"""
+    uid = req.user_id.strip()
+    if not uid:
+        raise HTTPException(400, "用户名不能为空")
+    if not (1 <= req.grade <= 12):
+        raise HTTPException(400, "年级范围无效（1-12）")
+    user = db.query(User).filter(User.user_id == uid).first()
+    if not user:
+        raise HTTPException(404, "用户不存在")
+    user.grade = req.grade
+    db.commit()
+    return {"user_id": uid, "grade": user.grade}
+
+
+def _auto_upgrade_grade(db: Session):
+    """每年9月1号自动将所有用户年级 +1（上限9年级）"""
+    today = date.today()
+    if today.month == 9 and today.day == 1:
+        users = db.query(User).filter(User.grade < 9).all()
+        for u in users:
+            u.grade = (u.grade or 6) + 1
+        db.commit()
+        if users:
+            logger.info("9月1日自动升年级：升级了 %d 个用户", len(users))
 
 
 @router.get("/info", summary="获取用户信息")

@@ -74,6 +74,16 @@ input,select,textarea{font-family:inherit}
 .login-btn{width:100%;margin-top:8px}
 .login-tip{font-size:12px;color:var(--text-3);margin-top:16px}
 
+/* ============ 首次年级选择弹窗 ============ */
+.grade-modal-overlay{position:fixed;inset:0;background:linear-gradient(150deg,#EAF0FE 0%,#F4F6FB 45%,#E6F9F0 100%);display:flex;align-items:center;justify-content:center;z-index:100}
+.grade-modal{background:var(--card);border-radius:24px;box-shadow:var(--shadow-lg);padding:40px 36px;text-align:center;max-width:480px;width:92vw}
+.grade-modal h2{font-size:22px;margin-bottom:8px}
+.grade-modal p{font-size:13px;color:var(--text-3);margin-bottom:24px}
+.grade-grid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.grade-btn{padding:12px 20px;border-radius:14px;font-size:15px;font-weight:600;background:var(--bg);color:var(--text-2);border:2px solid transparent;transition:.15s}
+.grade-btn:hover{border-color:var(--primary);color:var(--primary)}
+.grade-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);box-shadow:0 4px 12px rgba(78,124,246,.35)}
+
 /* ============ 通用组件 ============ */
 .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 22px;border-radius:12px;font-size:14px;font-weight:600;transition:.15s}
