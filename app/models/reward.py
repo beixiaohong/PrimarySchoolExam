@@ -17,6 +17,11 @@ class RewardCoupon(Base):
     max_per_month = Column(Integer, default=2)
     used_count = Column(Integer, default=0)
     reason = Column(String(200), nullable=True)  # 发券理由（成长奖励记录）
+    required_days = Column(Integer, default=0)  # 需全勤天数才可得 1 张；0=即时券
+    progress_days = Column(Integer, default=0)  # 已累计全勤天数
+    progress_date = Column(String(10), nullable=True)  # 最近累计日期（同日不重复）
+    granted_count = Column(Integer, default=0)  # 已获得张数
+    redeemed_count = Column(Integer, default=0)  # 已核销张数
     status = Column(String(20), default="active")  # active/archived
     created_at = Column(DateTime, default=datetime.now)
 

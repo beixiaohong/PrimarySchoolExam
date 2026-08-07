@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=22">
+<link rel="stylesheet" href="/static/style.css?v=23">
 </head>
 <body>
 <div id="app">
@@ -223,8 +223,13 @@
           <div class="coupon-list" v-if="rewards.coupons.length">
             <div class="coupon-item" v-for="c in rewards.coupons" :key="c.id">
               <span class="ci">{{couponIcon(c.kind)}}</span>
-              <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 每月可用 {{c.max_per_month}} 次</span><span v-if="c.reason" class="c-reason">🎯 {{c.reason}}</span></div>
-              <span class="tag tag-green">可用</span>
+              <div class="c-body">
+                <b>{{c.title}}</b>
+                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得，当前 {{c.progress_days}}/{{c.required_days}} 天</template></span>
+                <span v-else>{{c.kind_label}} · 可直接使用，剩余 {{c.left}} 张</span>
+                <span v-if="c.reason" class="c-reason">🎯 {{c.reason}}</span>
+              </div>
+              <span class="tag" :class="c.left>0 ? 'tag-green' : 'tag-blue'">{{c.left>0 ? '可用' : (c.required_days>0 ? '待达成' : '已用完')}}</span>
             </div>
           </div>
           <div class="timeline-box" v-if="rewardTimeline.length">
@@ -850,6 +855,10 @@
 
           <!-- ③ 已解锁：家长管理全部功能 -->
           <template v-else>
+          <div class="pc-row" style="justify-content:space-between;margin-bottom:8px">
+            <span class="more" style="font-size:13px">🔓 家长模式已解锁</span>
+            <button class="btn btn-ghost btn-sm" @click="exitParentMode()">退出家长模式 →</button>
+          </div>
           <div class="pc-sec">
             <div class="pc-title">📋 每日任务题目数量 <span class="more">孩子今天及以后的每日任务目标按此设置</span></div>
             <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap">
@@ -910,21 +919,29 @@
           </div>
 
           <div class="pc-sec">
-            <div class="pc-title">🎫 兑换券管理 <span class="more">孩子学习表现好时，家长凭券兑现奖励</span></div>
+            <div class="pc-title">🎫 兑换券管理 <span class="more">可设全勤天数门槛，孩子达成即获得；家长核销兑现</span></div>
             <div class="pc-row" style="flex-wrap:wrap">
               <input v-model="newCoupon.title" class="fill-input" maxlength="30" placeholder="如：周末看动画半小时" style="min-width:150px">
-              <select v-model="newCoupon.kind" class="fill-input" style="max-width:120px">
+              <select v-model="newCoupon.kind" class="fill-input" style="max-width:110px">
                 <option value="cartoon">动画时间</option><option value="snack">零食券</option>
                 <option value="sticker">贴纸券</option><option value="toy">玩具券</option>
                 <option value="outing">外出券</option><option value="custom">自定义</option>
               </select>
-              <input v-model="newCoupon.reason" class="fill-input" maxlength="50" placeholder="奖励理由（选填，如：今天主动复习）" style="min-width:160px">
+              <input v-model.number="newCoupon.requiredDays" type="number" min="0" max="30" class="fill-input" style="max-width:84px" placeholder="全勤几天">
+              <span class="more">0=添加即获得</span>
+              <input v-model="newCoupon.reason" class="fill-input" maxlength="50" placeholder="奖励理由（选填）" style="min-width:150px">
               <button class="btn btn-primary btn-sm" @click="createCoupon()">添加</button>
             </div>
             <div class="pc-list" v-if="allCoupons.length">
-              <div class="pc-item" v-for="c in allCoupons" :key="c.id">
+              <div class="pc-item" v-for="c in allCoupons" :key="c.id" style="flex-wrap:wrap">
                 <span class="ci">{{couponIcon(c.kind)}}</span>
-                <div class="c-body"><b>{{c.title}}</b><span>{{c.kind_label}} · 月限 {{c.max_per_month}} 次<template v-if="c.reason"> · 🎯 {{c.reason}}</template></span></div>
+                <div class="c-body">
+                  <b>{{c.title}}</b>
+                  <span>{{c.kind_label}}<template v-if="c.required_days>0"> · 三科全勤 {{c.required_days}} 天得 1 张</template><template v-if="c.reason"> · 🎯 {{c.reason}}</template></span>
+                  <span v-if="c.status==='active'">已获得 {{c.granted_count}} 张 · 剩余 {{c.left}} 张</span>
+                  <span v-else>已停用（历史获得 {{c.granted_count}} 张）</span>
+                </div>
+                <button v-if="c.status==='active' && c.left>0" class="btn btn-success btn-sm" @click="redeemCoupon(c)">核销 1 张</button>
                 <button class="btn btn-sm" :class="c.status==='active' ? 'btn-ghost' : 'btn-primary'" @click="toggleCoupon(c)">{{c.status==='active' ? '停用' : '启用'}}</button>
               </div>
             </div>
@@ -1384,6 +1401,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=22"></script>
+<script src="/static/app.js?v=23"></script>
 </body>
 </html>

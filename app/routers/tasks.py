@@ -321,6 +321,13 @@ def _build_payload(db: Session, user_id: str) -> dict:
                     pass
     db.commit()
 
+    # 全勤日 → 需天数的兑换券累计 1 天进度（同日去重，达标自动获得 1 张）
+    try:
+        from .rewards import sync_coupon_progress
+        sync_coupon_progress(db, user_id)
+    except Exception:
+        pass
+
     tasks = []
     for subj in SUBJECTS:
         r = rows[subj]

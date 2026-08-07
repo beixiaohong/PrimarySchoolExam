@@ -27,6 +27,7 @@ class CouponReq(BaseModel):
     kind: str = "custom"
     max_per_month: int = 2
     reason: str = ""  # 发券理由（成长奖励记录）
+    required_days: int = 0  # 需全勤天数才可获得 1 张；0 = 添加即获得（即时券）
 
 
 class WishReq(BaseModel):
@@ -55,6 +56,11 @@ def _coupon_out(c):
         "kind_label": COUPON_KINDS.get(c.kind, "自定义"),
         "max_per_month": c.max_per_month, "used_count": c.used_count,
         "reason": c.reason or "", "status": c.status,
+        "required_days": c.required_days or 0,
+        "progress_days": c.progress_days or 0,
+        "granted_count": c.granted_count or 0,
+        "redeemed_count": c.redeemed_count or 0,
+        "left": max(0, (c.granted_count or 0) - (c.redeemed_count or 0)),
     }
 
 
@@ -118,10 +124,30 @@ def create_coupon(req: CouponReq, db: Session = Depends(get_db)):
     if req.kind not in COUPON_KINDS:
         raise HTTPException(400, f"券类型只能是 {list(COUPON_KINDS)}")
     max_n = max(1, min(12, req.max_per_month or 2))
+    rd = max(0, min(30, req.required_days or 0))
     c = RewardCoupon(user_id=req.user_id, title=title[:100], kind=req.kind,
                      max_per_month=max_n, status="active",
-                     reason=(req.reason or "").strip()[:200] or None)
+                     reason=(req.reason or "").strip()[:200] or None,
+                     required_days=rd,
+                     granted_count=0 if rd > 0 else 1)
     db.add(c)
+    db.commit()
+    return _coupon_out(c)
+
+
+@router.post("/coupon/{cid}/redeem", summary="家长核销一张兑换券")
+def redeem_coupon(cid: int, req: ToggleReq, db: Session = Depends(get_db)):
+    from ..models.reward import RewardCoupon
+    c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
+                                      RewardCoupon.user_id == req.user_id).first()
+    if not c:
+        raise HTTPException(404, "兑换券不存在")
+    if c.status != "active":
+        raise HTTPException(400, "该券已停用")
+    left = (c.granted_count or 0) - (c.redeemed_count or 0)
+    if left <= 0:
+        raise HTTPException(400, "没有可核销的券")
+    c.redeemed_count = (c.redeemed_count or 0) + 1
     db.commit()
     return _coupon_out(c)
 
@@ -219,6 +245,33 @@ def inc_active_wish_progress(db: Session, user_id: str, n: int = 1):
     w.updated_at = datetime.now()
     db.commit()
     return _wish_out(w)
+
+
+def sync_coupon_progress(db: Session, user_id: str):
+    """每日任务刷新时调用：今天三科全勤 → 每张需天数的券当日累计 1 天，
+    达到 required_days 自动获得 1 张（进度清零，可继续累计下一张）"""
+    from datetime import date
+    from ..models.daily_task import DailyTask
+    from ..models.reward import RewardCoupon
+    today = str(date.today())
+    rows = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == date.today()).all()
+    if len(rows) < 3 or not all(r.status == "done" for r in rows):
+        return  # 今天尚未全勤，不累计
+    changed = False
+    for c in db.query(RewardCoupon).filter(
+            RewardCoupon.user_id == user_id, RewardCoupon.status == "active",
+            RewardCoupon.required_days > 0).all():
+        if c.progress_date == today:
+            continue  # 今天已累计过
+        c.progress_days = (c.progress_days or 0) + 1
+        c.progress_date = today
+        if c.progress_days >= c.required_days:
+            c.granted_count = (c.granted_count or 0) + 1
+            c.progress_days = 0
+        changed = True
+    if changed:
+        db.commit()
 
 
 # ═══════════════════ 成长奖励记录 ═══════════════════

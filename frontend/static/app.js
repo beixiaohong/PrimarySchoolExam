@@ -44,7 +44,7 @@ createApp({
       // 奖励闭环 + 成长周报（Sprint 3）
       rewards: null,
       allCoupons: [], pendingWishes: [],
-      newCoupon: { title: '', kind: 'custom', reason: '' },
+      newCoupon: { title: '', kind: 'custom', reason: '', requiredDays: 0 },
       wishOverlay: { show: false, title: '', target: 5 },
       weeklyOverlay: { show: false }, weeklyLoading: false, weekly: null,
       shareImg: '', parentNote: '',
@@ -820,6 +820,13 @@ createApp({
       this.loadTaskSettings();
     },
     /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
+    exitParentMode() {
+      sessionStorage.removeItem('zx_parent_open');
+      this.parentPhase = 'locked';
+      this._resetPwdForm();
+      this.loadRewards(); // 刷新孩子端数据（券状态等）
+      this.showToast('已退出家长模式 🔒');
+    },
     initParentPanel() {
       // 会话内已解锁过（sessionStorage），直接打开
       if (sessionStorage.getItem('zx_parent_open') === '1') { this.parentPhase = 'open'; this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); return; }
@@ -974,13 +981,22 @@ createApp({
     createCoupon() {
       const title = (this.newCoupon.title || '').trim();
       if (!title) return this.showToast('先写下兑换券内容');
+      const requiredDays = Math.max(0, Math.min(30, Number(this.newCoupon.requiredDays) || 0));
       this.api('/api/rewards/coupon', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, title, kind: this.newCoupon.kind, reason: this.newCoupon.reason || '' }),
+        body: JSON.stringify({ user_id: this.user, title, kind: this.newCoupon.kind, reason: this.newCoupon.reason || '', required_days: requiredDays }),
       }).then(() => {
-        this.newCoupon.title = ''; this.newCoupon.reason = '';
+        this.newCoupon.title = ''; this.newCoupon.reason = ''; this.newCoupon.requiredDays = 0;
         this.loadParentPanel(); this.loadRewards();
-        this.showToast('兑换券已添加 🎫');
+        this.showToast(requiredDays > 0 ? `已添加：三科全勤 ${requiredDays} 天可得 🎫` : '兑换券已添加 🎫');
+      }).catch(e => this.showToast(e.message));
+    },
+    redeemCoupon(c) {
+      this.api(`/api/rewards/coupon/${c.id}/redeem`, {
+        method: 'POST', body: JSON.stringify({ user_id: this.user }),
+      }).then(() => {
+        this.loadParentPanel(); this.loadRewards();
+        this.showToast(`已核销 1 张「${c.title}」✅`);
       }).catch(e => this.showToast(e.message));
     },
     toggleCoupon(c) {
