@@ -362,6 +362,11 @@ class PracticeSubmitItem(BaseModel):
     kind: str  # exam / study
     record_id: int
     correct: bool
+    # ── AI 判题复核字段（本地判错的题需携带，供 AI 复核改判） ──
+    question: str = ""
+    user_answer: str = ""
+    correct_answer: str = ""
+    subject: str = ""
 
 
 class PracticeSubmitRequest(BaseModel):
@@ -376,9 +381,43 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
     - 修正模式（同一 record_id 提交 ≥3 条）：整组全对 → 直接标记已掌握；
       组内任一条答错 → 整组失败（streak 清零、计数 +1、重新激活）
     - 兼容旧模式（单条提交）：答对 streak +1，累计 3 次掌握；答错清零重激活
+    - AI 判题复核：本地判错且带作答内容的题批量送 AI，AI 判对 → 该条视为答对再分组
     """
     from datetime import datetime as _dt
     from collections import defaultdict
+
+    # ── AI 判题复核（只升不降）：本地判错的题批量送 AI，AI 判对 → 改判正确 ──
+    ai_approved: list = []
+    ai_items = [
+        {"key": i, "question": it.question, "answer": it.correct_answer,
+         "user_answer": it.user_answer, "subject": it.subject}
+        for i, it in enumerate(req.results)
+        if not it.correct and (it.question or it.user_answer)
+    ]
+    if ai_items:
+        from ..services.judge import judge_wrong_items
+        approved = judge_wrong_items(db, req.user_id, ai_items)
+        for i, it in enumerate(req.results):
+            if i in approved:
+                it.correct = True
+                ai_approved.append(i)
+
+    # AI 已判对的题：同步自动确认孩子对同错题记录的待处理申诉（避免家长端重复确认）
+    if ai_approved:
+        from ..models.appeal import AnswerAppeal
+        from datetime import datetime as _dt
+        auto_map = {req.results[i].record_id: req.results[i].user_answer for i in ai_approved}
+        auto = db.query(AnswerAppeal).filter(
+            AnswerAppeal.user_id == req.user_id,
+            AnswerAppeal.status == "pending",
+            AnswerAppeal.source == "retry",
+            AnswerAppeal.record_id.in_(auto_map.keys()),
+        ).all()
+        for ap in auto:
+            if auto_map.get(ap.record_id) == ap.user_answer:
+                ap.status = "approved"
+                ap.decided_at = _dt.now()
+
     updated = []
     groups = defaultdict(list)
     for item in req.results:
@@ -464,7 +503,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                             "status": status, "streak": rec.correct_streak})
 
     db.commit()
-    return {"updated": len(updated), "details": updated}
+    return {"updated": len(updated), "details": updated, "ai_approved": ai_approved}
 
 
 # ═══════════════════════════════════════════════════════════

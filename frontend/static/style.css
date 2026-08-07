@@ -439,6 +439,9 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .cause-pill{padding:6px 13px;border-radius:999px;border:1.5px solid var(--border);background:#fff;font-size:13px;color:var(--text-2);cursor:pointer;transition:.15s}
 .cause-pill:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
 
+/* ═══════════ 孩子申诉（「我做对了」→ 家长二次确认） ═══════════ */
+.appeal-row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+
 /* ═══════════ 自我超越（统计页） ═══════════ */
 .cmp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-top:12px}
 .cmp-item{display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:12px;background:var(--bg);border:1px solid var(--border)}

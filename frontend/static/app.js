@@ -57,6 +57,9 @@ createApp({
       childStats: { week_attempts: 0, week_avg_score: 0, unmastered_wrong: 0, streak_days: 0, week_tasks_done: 0 },
       notices: null,
       rewardTimeline: [],
+      // 申诉（AI 判题复核 + 孩子「我做对了」家长二次确认）
+      pendingAppeals: [],
+      submitWrongIds: {}, submitWrongNew: {},
       // 每日任务目标数量（家长设置）
       taskSettings: { items: [] },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
@@ -842,6 +845,52 @@ createApp({
           this.pendingWishes = (d && d.wishes) || [];
         }).catch(() => { this.allCoupons = []; this.pendingWishes = []; });
       this.loadTaskSettings();
+      this.loadAppeals();
+    },
+    /* ─────────── 孩子申诉（AI 判题复核 + 家长二次确认）─────────── */
+    loadAppeals() {
+      this.api(`/api/appeal/list?user_id=${encodeURIComponent(this.user)}&status=pending`)
+        .then(d => { this.pendingAppeals = (d && d.appeals) || []; })
+        .catch(() => { this.pendingAppeals = []; });
+    },
+    decideAppeal(a, ok) {
+      this.api('/api/appeal/decide', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject' }),
+      }).then(() => {
+        this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
+        this.loadAppeals();
+        this.loadChildStats();
+      }).catch(e => this.showToast(e.message));
+    },
+    appealThis() {
+      const it = this.quiz.items[this.quiz.i];
+      if (!it || !it.answered || it.correct || it.appealed) return;
+      const src = this.quiz.source;
+      const mode = (src && src.mode === 'retry') ? 'retry' : 'exam';
+      const payload = {
+        user_id: this.user,
+        source: mode,
+        question_id: it.qid || null,
+        question: it.question,
+        user_answer: it.userAnswer || '',
+        correct_answer: it.answer || '',
+        subject: this.subject,
+      };
+      if (mode === 'retry' && it.extra) {
+        payload.record_id = it.extra.record_id;
+        payload.record_kind = it.extra.kind;
+      } else if (this.submitWrongIds && this.submitWrongIds[it.qid]) {
+        payload.wrong_record_id = this.submitWrongIds[it.qid];
+        payload.wrong_new = !!this.submitWrongNew[it.qid];
+      }
+      this.api('/api/appeal/create', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }).then(() => {
+        it.appealed = true;
+        this.showToast('已提交申诉，等家长在「家长管理」里确认 ✋');
+      }).catch(e => this.showToast(e.message));
     },
     /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
     exitParentMode() {
@@ -1511,6 +1560,21 @@ createApp({
           }),
         }).then(r => {
           this.loadAttempts();
+          // 提交后按服务端结果（含 AI 复核改判）同步题目状态与得分
+          this.submitWrongIds = (r && r.wrong_ids) || {};
+          this.submitWrongNew = (r && r.wrong_new_ids) || {};
+          if (r && r.results) {
+            r.results.forEach(rr => {
+              const it = this.quiz.items.find(x => x.qid === rr.question_id);
+              if (it) it.correct = rr.is_correct;
+            });
+            this.quiz.correct = r.correct;
+            this.quiz.wrongCount = r.wrong;
+            this.quiz.score = r.score;
+          }
+          if (r && r.ai_approved && r.ai_approved.length) {
+            this.showToast(`🤖 AI 复核：${r.ai_approved.length} 题判定为正确 ✓`);
+          }
           // 正确率不足 60%：任务不推进，明确告诉孩子/家长为什么任务还没完成
           if (typeof r.score === 'number' && r.score < 60) {
             this.showToast(`正确率 ${r.score}%，要 60% 以上才算完成今日任务哦，再练一套吧！`);
@@ -1531,9 +1595,21 @@ createApp({
           method: 'POST',
           body: JSON.stringify({
             user_id: this.user,
-            results: this.quiz.items.map(it => ({ kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct })),
+            results: this.quiz.items.map(it => ({
+              kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct,
+              question: it.question, user_answer: it.userAnswer || '',
+              correct_answer: it.answer || '', subject: this.subject,
+            })),
           }),
         }).then(r => {
+          // AI 复核判对的题：同步前端题目状态（得分/提示保持一致）
+          if (r && r.ai_approved && r.ai_approved.length) {
+            r.ai_approved.forEach(idx => {
+              const it = this.quiz.items[idx];
+              if (it && !it.correct) { it.correct = true; it.appealed = false; }
+            });
+            this.showToast(`🤖 AI 复核：${r.ai_approved.length} 题判定为正确 ✓`);
+          }
           const answered = this.quiz.items.filter(it => it.answered);
           const allOk = answered.length > 0 && answered.every(it => it.correct);
           const masteredIds = ((r && r.details) || []).filter(d => d.status === 'mastered').map(d => d.record_id);

@@ -875,6 +875,22 @@
           </div>
 
           <div class="pc-sec">
+            <div class="pc-title">✋ 孩子的申诉 <span class="more">孩子觉得题判错了，请家长二次确认</span><span v-if="pendingAppeals.length" class="tag tag-orange">{{pendingAppeals.length}} 条待处理</span></div>
+            <div class="pc-list" v-if="pendingAppeals.length">
+              <div class="pc-item" v-for="a in pendingAppeals" :key="a.id" style="flex-wrap:wrap">
+                <div class="c-body" style="flex:1;min-width:220px">
+                  <b>[{{a.subject || '未分科'}}] {{a.question}}</b>
+                  <span>孩子答案：{{a.user_answer}} · 参考答案：{{a.correct_answer}}</span>
+                  <span class="more">{{a.created_at}} 提交</span>
+                </div>
+                <button class="btn btn-success btn-sm" @click="decideAppeal(a, true)" title="确认后该题改判正确、本卷得分重算">确认做对了 ✓</button>
+                <button class="btn btn-ghost btn-sm" @click="decideAppeal(a, false)">维持判错</button>
+              </div>
+            </div>
+            <p v-else class="pc-empty">没有待处理的申诉</p>
+          </div>
+
+          <div class="pc-sec">
             <div class="pc-title">📋 每日任务题目数量 <span class="more">孩子今天及以后的每日任务目标按此设置</span></div>
             <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap">
               <span style="min-width:150px;font-size:13px;color:#3a4a6b">{{ts.subject}} · {{ts.title.replace(/\d+/, 'N')}}</span>
@@ -1243,6 +1259,11 @@
                 <span class="pill-label">这次是哪里没弄明白？</span>
                 <button v-for="(c,ci) in causeOptions" :key="ci" class="cause-pill" @click="pickCause(c.code)">{{c.label}}</button>
               </div>
+              <!-- 孩子申诉：判错 → 「我做对了」→ 家长二次确认 -->
+              <div class="appeal-row" v-if="!quiz.items[quiz.i].correct && quiz.source && (quiz.source.mode==='exam' || quiz.source.mode==='retry')">
+                <button v-if="!quiz.items[quiz.i].appealed" class="btn btn-ghost btn-sm" @click="appealThis()" title="觉得这道题批错了？点这里，家长会来确认">🙋 我做对了</button>
+                <span v-else class="fb-gentle">✋ 申诉已提交，等家长在「家长管理」里确认</span>
+              </div>
               <p v-if="!quiz.items[quiz.i].correct && quiz.items[quiz.i].cause" class="fb-gentle">已记录错因：{{causeLabel(quiz.items[quiz.i].cause)}} · 进步 +1 ✨</p>
               <p v-if="quiz.items[quiz.i].explanation">📖 {{quiz.items[quiz.i].explanation}}</p>
             </template>
@@ -1417,6 +1438,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=28"></script>
+<script src="/static/app.js?v=29"></script>
 </body>
 </html>
