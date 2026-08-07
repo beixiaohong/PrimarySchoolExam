@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=24">
+<link rel="stylesheet" href="/static/style.css?v=25">
 </head>
 <body>
 <div id="app">
@@ -133,7 +133,7 @@
             <div class="dtask-desc">{{t.desc}}</div>
             <div class="dtask-actions">
               <button class="btn btn-ghost btn-sm" :disabled="t.status==='done'" @click="swapDailyTask(t.subject)">换一个<span v-if="t.next_title" class="next-hint">：{{t.next_title}}</span></button>
-              <button v-if="t.manual && t.status!=='done'" class="btn btn-primary btn-sm" @click="claimDailyTask(t.subject)">我完成了 ✓</button>
+              <span v-if="t.manual && t.status!=='done'" class="tag tag-orange">完成找家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">全勤 +1</span>
             </div>
             <div class="dtask-bar"><div class="dtask-bar-in" :style="{width: (t.target ? Math.min(100, t.progress / t.target * 100) : 0) + '%'}"></div></div>
@@ -860,9 +860,24 @@
             <button class="btn btn-ghost btn-sm" @click="exitParentMode()">退出家长模式 →</button>
           </div>
           <div class="pc-sec">
+            <div class="pc-title">🎯 今日任务确认 <span class="more">讲题/朗读/听写由家长确认完成，数量可在下方设置</span></div>
+            <div class="pc-row" v-for="t in dailyTasks" :key="t.subject" style="justify-content:space-between;flex-wrap:wrap">
+              <span style="font-size:13px;color:#3a4a6b">{{t.subject}} · {{t.title}}</span>
+              <span style="display:inline-flex;align-items:center;gap:8px">
+                <span v-if="t.status==='done'" class="tag tag-green">✅ 已完成</span>
+                <template v-else-if="t.manual">
+                  <span class="more">待家长确认</span>
+                  <button class="btn btn-primary btn-sm" @click="parentConfirmTask(t.subject)">确认完成 ✓</button>
+                </template>
+                <span v-else class="more">{{t.progress}} / {{t.target}}</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="pc-sec">
             <div class="pc-title">📋 每日任务题目数量 <span class="more">孩子今天及以后的每日任务目标按此设置</span></div>
             <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap">
-              <span style="min-width:150px;font-size:13px;color:#3a4a6b">{{ts.subject}} · {{ts.title.replace(/\d+/, '').replace(/\s+/g, ' ').trim()}}</span>
+              <span style="min-width:150px;font-size:13px;color:#3a4a6b">{{ts.subject}} · {{ts.title.replace(/\d+/, 'N')}}</span>
               <input v-model.number="ts.target" type="number" min="1" max="50" class="fill-input" style="max-width:80px">
               <span class="more">默认 {{ts.default}}</span>
             </div>
@@ -1402,6 +1417,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=24"></script>
+<script src="/static/app.js?v=25"></script>
 </body>
 </html>

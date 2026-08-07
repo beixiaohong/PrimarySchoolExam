@@ -370,6 +370,11 @@ createApp({
         .then(d => this._applyDailyTasks(d, true))
         .catch(e => this.showToast(e.message));
     },
+    parentConfirmTask(subject) {
+      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
+        .then(() => { this.loadDailyTasks(); this.showToast('已确认完成 ✅'); })
+        .catch(e => this.showToast(e.message));
+    },
     _applyDailyTasks(d, celebrate) {
       const prev = this.dailyTaskStats ? this.dailyTaskStats.done_count : 0;
       this.dailyTasks = (d && d.tasks) || [];
@@ -848,7 +853,7 @@ createApp({
     },
     initParentPanel() {
       // 会话内已解锁过（sessionStorage），直接打开
-      if (sessionStorage.getItem('zx_parent_open') === '1') { this.parentPhase = 'open'; this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); return; }
+      if (sessionStorage.getItem('zx_parent_open') === '1') { this.parentPhase = 'open'; this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); return; }
       this.api(`/api/parent/status?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
           this.parentPhase = (d && d.has_password) ? 'locked' : 'unset';
@@ -871,7 +876,7 @@ createApp({
         this._resetPwdForm();
         this.parentPhase = 'open';
         sessionStorage.setItem('zx_parent_open', '1');
-        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs();
+        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('家长密码已设置，家长管理已解锁 🔓');
       }).catch(e => this.showToast(e.message));
     },
@@ -884,7 +889,7 @@ createApp({
         this._resetPwdForm();
         this.parentPhase = 'open';
         sessionStorage.setItem('zx_parent_open', '1');
-        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs();
+        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('欢迎回来，家长 👋');
       }).catch(e => this.showToast(e.message));
     },

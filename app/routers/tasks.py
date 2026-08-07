@@ -47,22 +47,25 @@ TASK_POOLS = {
          "ico": "📜", "desc": "古诗文模块完成新背或复习"},
         {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
          "ico": "🖋️", "desc": "刷题中心做一套语文试卷"},
-        {"code": "chi_read", "title": "朗读课文 5 分钟", "target": 1, "manual": True,
-         "ico": "🎙️", "desc": "大声朗读课文或古诗，家长见证"},
+        {"code": "chi_read", "title": "朗读课文 5 分钟", "target": 5, "manual": True,
+         "ico": "🎙️", "desc": "大声朗读课文或古诗，完成后由家长确认"},
     ],
     "英语": [
         {"code": "eng_vocab", "title": "学 5 个新单词", "target": 5, "manual": False,
          "ico": "🔤", "desc": "背单词模块完成 5 个新词"},
         {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
          "ico": "📝", "desc": "刷题中心做一套英语试卷"},
-        {"code": "eng_dictation", "title": "听写 5 个单词", "target": 1, "manual": True,
-         "ico": "✍️", "desc": "家长报词，孩子写出来"},
+        {"code": "eng_dictation", "title": "听写 5 个单词", "target": 5, "manual": True,
+         "ico": "✍️", "desc": "家长报词孩子写出来，完成后由家长确认"},
     ],
 }
 
-# 家长可配置目标数量的任务（自动任务；手动任务保持"1 次"语义）
+# 家长可配置目标数量的任务（自动任务由学习数据自动判定完成；
+# 手动任务 [讲题/朗读/听写] 无法自动核验，家长在家长面板设置数量，
+# 孩子完成后由家长在家长面板点「确认完成」）
 CONFIGURABLE_CODES = ["math_exam", "math_fix", "chi_exam", "chi_classical",
-                      "eng_exam", "eng_vocab"]
+                      "eng_exam", "eng_vocab",
+                      "math_teach", "chi_read", "eng_dictation"]
 MIN_TARGET, MAX_TARGET = 1, 50
 
 # 练习类任务（math_exam / chi_exam / eng_exam）的完成门槛：
