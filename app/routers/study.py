@@ -438,6 +438,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                     rec.correct_streak = max(rec.correct_streak, MASTER_STREAK)
                     rec.is_mastered = True
                     rec.mastered_at = _dt.now()
+                    rec.next_review_date = None
                     status = "mastered"
                 else:
                     rec.correct_streak = 0
@@ -445,14 +446,17 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                     rec.is_mastered = False
                     rec.mastered_at = None
                     rec.wrong_at = _dt.now()
+                    rec.next_review_date = date.today() + timedelta(days=1)   # 重做仍错 → 明天再来一次
                     status = "reactivated"
             elif items[0].correct:
                 rec.correct_streak = rec.correct_streak + 1
                 if rec.correct_streak >= MASTER_STREAK:
                     rec.is_mastered = True
                     rec.mastered_at = _dt.now()
+                    rec.next_review_date = None
                     status = "mastered"
                 else:
+                    rec.next_review_date = None   # 答对即出队（明日复习队列只留「重做仍错」）
                     status = "streak"
             else:
                 rec.correct_streak = 0
@@ -460,6 +464,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                 rec.is_mastered = False
                 rec.mastered_at = None
                 rec.wrong_at = _dt.now()
+                rec.next_review_date = date.today() + timedelta(days=1)   # 重做仍错 → 明天再来一次
                 status = "reactivated"
             updated.append({"kind": "exam", "record_id": rec.id,
                             "status": status, "streak": rec.correct_streak})
@@ -476,6 +481,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                     rec.correct_streak = max(rec.correct_streak, MASTER_STREAK)
                     rec.is_mastered = True
                     rec.mastered_at = _dt.now()
+                    rec.next_review_date = None
                     status = "mastered"
                 else:
                     rec.correct_streak = 0
@@ -483,14 +489,17 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                     rec.is_mastered = False
                     rec.mastered_at = None
                     rec.wrong_at = _dt.now()
+                    rec.next_review_date = date.today() + timedelta(days=1)   # 重做仍错 → 明天再来一次
                     status = "reactivated"
             elif items[0].correct:
                 rec.correct_streak = rec.correct_streak + 1
                 if rec.correct_streak >= MASTER_STREAK:
                     rec.is_mastered = True
                     rec.mastered_at = _dt.now()
+                    rec.next_review_date = None
                     status = "mastered"
                 else:
+                    rec.next_review_date = None   # 答对即出队（明日复习队列只留「重做仍错」）
                     status = "streak"
             else:
                 rec.correct_streak = 0
@@ -498,6 +507,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
                 rec.is_mastered = False
                 rec.mastered_at = None
                 rec.wrong_at = _dt.now()
+                rec.next_review_date = date.today() + timedelta(days=1)   # 重做仍错 → 明天再来一次
                 status = "reactivated"
             updated.append({"kind": "study", "record_id": rec.id,
                             "status": status, "streak": rec.correct_streak})
@@ -946,3 +956,59 @@ def review_queue(
         )
 
     return {"date": str(today), "count": len(items), "items": items[:limit], "upcoming": upcoming}
+
+
+# ═══════════════════════════════════════════════════════════
+# 明日复习队列（PRD 3.3：重做仍错 → 明天再来一次）
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/tomorrow-queue", summary="明日复习队列（重做仍错，建议明天再战的错题）")
+def tomorrow_queue(
+    user_id: str = Query(..., description="用户名"),
+    subject: str = Query(None, description="学科筛选（数学/语文/英语，学习错题无学科概念时忽略）"),
+    db: Session = Depends(get_db),
+):
+    """重做仍错的错题进入明日复习队列（next_review_date 非空且未掌握）。
+
+    items: [{kind: exam/study, record_id, question, subject, module_name, cause, next_review_date}]
+    """
+    today = date.today()
+    items = []
+
+    # ── 试卷错题（wrong_records）──
+    recs = db.query(WrongRecord).filter(
+        WrongRecord.user_id == user_id,
+        WrongRecord.next_review_date.isnot(None),
+        WrongRecord.is_mastered.is_(False),
+    ).all()
+    if recs:
+        qids = list({r.question_id for r in recs})
+        qmap = {q.id: q for q in db.query(Question).filter(Question.id.in_(qids)).all()} if qids else {}
+        for r in recs:
+            q = qmap.get(r.question_id)
+            if not q:
+                continue
+            if subject and q.subject != subject:
+                continue
+            items.append({
+                "kind": "exam", "record_id": r.id,
+                "question": q.question, "subject": q.subject,
+                "module_name": q.type_name or "", "cause": r.cause or "",
+                "next_review_date": str(r.next_review_date) if r.next_review_date else "",
+            })
+
+    # ── 学习错题（study_errors）──
+    for r in db.query(StudyError).filter(
+        StudyError.user_id == user_id,
+        StudyError.next_review_date.isnot(None),
+        StudyError.is_mastered.is_(False),
+    ).all():
+        items.append({
+            "kind": "study", "record_id": r.id,
+            "question": r.question, "subject": "语文" if r.source_type == "classical" else "英语",
+            "module_name": r.module_name or "", "cause": r.cause or "",
+            "next_review_date": str(r.next_review_date) if r.next_review_date else "",
+        })
+
+    items.sort(key=lambda x: x["next_review_date"])
+    return {"date": str(today), "count": len(items), "items": items}

@@ -4,9 +4,9 @@ ExamRecord:   试卷生成记录（一份试卷可给多人使用，不绑定用
 Question:     试卷中的每道题（生成时自动入库，属于试卷本身）
 WrongRecord:  用户错题记录（哪个用户把哪道题标记为错题，支持多用户独立错题本）
 """
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Date, Text, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -123,6 +123,8 @@ class WrongRecord(Base):
                             comment="连续答对次数（达3次自动掌握）")
     cause = Column(String(20), default="",
                    comment="错因自评：careless(粗心)/concept(概念不清)/method(方法不会)/reading(审题失误)")
+    next_review_date = Column(Date, nullable=True,
+                              comment="明日复习队列：重做仍错 → 明天再来一次（014 迁移）")
 
     # ── 时间记录 ──
     wrong_at = Column(DateTime, default=datetime.now,

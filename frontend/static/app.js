@@ -76,6 +76,9 @@ createApp({
       combo: 0, maxCombo: 0,
       floatFx: { show: false, text: '', ok: true },
       chestReward: '', turbo: false, selfCompare: null,
+      newStarRecord: false,   // 首获五星 → 「新纪录！」（结算页展示）
+      // 明日复习队列（PRD 3.3：重做仍错 → 明天再来一次）
+      tomorrowQueue: { count: 0, items: [] },
       // 试卷中心
       papers: [],
       // 十万个为什么（Sprint 5）
@@ -144,7 +147,7 @@ createApp({
     starCount() {
       const s = this.quiz.score;
       if (!this.quiz.done) return 0;
-      return s >= 90 ? 3 : s >= 70 ? 2 : s >= 50 ? 1 : 0;
+      return s >= 90 ? 5 : s >= 70 ? 4 : s >= 50 ? 3 : s >= 30 ? 2 : 1;
     },
     causeOptions() {
       return [
@@ -330,6 +333,7 @@ createApp({
       this.loadParentMsgs();
       this.loadNotices();
       this.loadRewardTimeline();
+      this.loadTomorrowQueue();
     },
 
     /* ─────────── 首页 ─────────── */
@@ -402,6 +406,11 @@ createApp({
           const up = r.upcoming || {};
           this.queueTomorrow = up.t1 || 0; this.queueDayAfter = up.t2 || 0; this.queueLater = up.t3 || 0;
         }).catch(() => {});
+    },
+    loadTomorrowQueue() {
+      this.api(`/api/study/tomorrow-queue?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.tomorrowQueue = d || { count: 0, items: [] }; })
+        .catch(() => { this.tomorrowQueue = { count: 0, items: [] }; });
     },
     startTask(t) {
       if (t.done) { this.showToast('该任务今天已完成，明天再来吧'); return; }
@@ -1511,7 +1520,10 @@ createApp({
         this.api('/api/study/practice-submit', {
           method: 'POST',
           body: JSON.stringify({ user_id: this.user, results: [{ kind: it.extra.kind, record_id: it.extra.record_id, correct: true }] }),
-        }).then(() => this.loadAnalysis()).catch(() => {});
+        }).then(r => {
+          if (r && r.details && r.details.some(d => d.status === 'mastered')) this.showFloat('📈 进步 +1', true, 900);
+          this.loadAnalysis();
+        }).catch(() => {});
       }
     },
     showFloat(text, ok, ms = 700) {
@@ -1543,6 +1555,14 @@ createApp({
       const total = this.quiz.items.length;
       this.quiz.score = total ? Math.round(this.quiz.correct / total * 100) : 0;
       this.quiz.done = true;
+      // 首获五星 → 「新纪录！」（每个用户独立记录，首次达到 90 分时展示）
+      if (this.quiz.score >= 90) {
+        const k = 'zx_five_' + (this.user || 'guest');
+        this.newStarRecord = !localStorage.getItem(k);
+        if (this.newStarRecord) localStorage.setItem(k, '1');
+      } else {
+        this.newStarRecord = false;
+      }
       const rewards = [
         '✨ 获得 20 学习金币', '📖 掉落知识卡：连击纪录刷新了！',
         '🏅 获得徽章碎片 x1', '💪 勇气值 +10，明天继续挑战！',
@@ -1615,7 +1635,13 @@ createApp({
           const masteredIds = ((r && r.details) || []).filter(d => d.status === 'mastered').map(d => d.record_id);
           // 掌握检测/错题修正：整组全对 → 已掌握（后端按 record 分组判定）
           if (src.mastery || this.quiz.items.length >= 3) {
-            this.showToast(allOk ? '🎉 全部答对，已标记掌握！' : '有答错的题，暂未掌握，加油再来！');
+            if (allOk) {
+              this.showToast('🎉 全部答对，已标记掌握！');
+              if (masteredIds.length) this.showFloat('📈 进步 +1', true, 900);   // PRD 3.3 进步动效
+            } else {
+              this.showToast('有答错的题，明天再来一次！已记入明日复习队列 🌙');
+              this.loadTomorrowQueue();
+            }
           } else {
             this.showToast(allOk ? '全部答对 🎉' : '再练练，下次全对就能掌握啦');
           }

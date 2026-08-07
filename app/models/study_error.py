@@ -4,9 +4,9 @@
 与试卷错题（WrongRecord）分开存储，通过 source_type 区分来源。
 同一用户对同一道题只有一条记录（联合唯一约束），重复答错累计次数。
 """
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Date, Text, Boolean, UniqueConstraint
 
 from ..database import Base
 
@@ -51,6 +51,8 @@ class StudyError(Base):
                             comment="连续答对次数（达3次自动掌握）")
     cause = Column(String(20), default="",
                    comment="错因自评：careless(粗心)/concept(概念不清)/method(方法不会)/reading(审题失误)")
+    next_review_date = Column(Date, nullable=True,
+                              comment="明日复习队列：重做仍错 → 明天再来一次（014 迁移）")
     wrong_at = Column(DateTime, default=datetime.now,
                       comment="最近一次答错时间")
     mastered_at = Column(DateTime, nullable=True,

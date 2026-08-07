@@ -424,6 +424,8 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .star{font-size:42px;line-height:1;color:var(--border);transition:.25s}
 .star.on{color:#F5A623;animation:starPop .55s ease both;text-shadow:0 4px 16px rgba(245,166,35,.5)}
 @keyframes starPop{0%{transform:scale(0) rotate(-40deg);opacity:0}70%{transform:scale(1.28) rotate(10deg);opacity:1}100%{transform:scale(1) rotate(0)}}
+.new-record{display:inline-flex;align-items:center;gap:6px;margin:4px auto 10px;padding:6px 16px;border-radius:999px;background:linear-gradient(135deg,#FFD34D,#F5A623);color:#7A4D00;font-size:15px;font-weight:800;animation:recordPop .8s ease both;box-shadow:0 4px 14px rgba(245,166,35,.45)}
+@keyframes recordPop{0%{transform:scale(0) rotate(-8deg);opacity:0}55%{transform:scale(1.18) rotate(4deg);opacity:1}100%{transform:scale(1) rotate(0)}}
 .chest-box{display:flex;align-items:center;gap:14px;justify-content:center;margin:18px auto 0;max-width:440px;padding:14px 18px;border-radius:14px;background:linear-gradient(135deg,#FFF7E6,#FFEFC9);border:2px dashed #F5C76A}
 .chest-box .chest{font-size:34px;animation:chestShake 1.5s ease-in-out infinite}
 .chest-box p{font-size:14px;color:var(--text-2)}

@@ -236,7 +236,30 @@ def _aggregate_week(db: Session, user_id: str) -> dict:
         "week_start": str(start), "week_end": str(end),
         "attempts": 0, "avg_score": 0, "wrong_mastered": 0,
         "new_words": 0, "classical_learned": 0, "full_days": 0,
+        "best_mood_day": None, "ai_explains": 0,
     }
+    # 本周心情最好的一天（mood 档位：great > happy > ok > blue > sad，取最好的一天）
+    from ..models.mood import MoodCheckin
+    moods = db.query(MoodCheckin).filter(
+        MoodCheckin.user_id == user_id,
+        MoodCheckin.check_date >= start, MoodCheckin.check_date <= end,
+    ).order_by(MoodCheckin.check_date.asc()).all()
+    if moods:
+        order = {"great": 0, "happy": 1, "ok": 2, "blue": 3, "sad": 4}
+        best = min(moods, key=lambda r: order.get(r.mood, 9))
+        stats["best_mood_day"] = {
+            "date": str(best.check_date),
+            "mood": best.mood,
+            "label": {"great": "超开心", "happy": "开心", "ok": "一般", "blue": "有点烦", "sad": "很难过"}.get(best.mood, best.mood),
+        }
+    # 本周 AI 讲解使用次数（周报亮点数据源，q_type=explain 非降级记录）
+    from ..models.ai_usage import AiQa
+    stats["ai_explains"] = db.query(AiQa).filter(
+        AiQa.user_id == user_id,
+        AiQa.q_type == "explain",
+        AiQa.degraded == 0,
+        AiQa.created_at >= start_dt, AiQa.created_at <= end_dt,
+    ).count()
     attempts = db.query(ExamAttempt).filter(
         ExamAttempt.user_id == user_id,
         ExamAttempt.created_at >= start_dt, ExamAttempt.created_at <= end_dt,
@@ -300,6 +323,10 @@ def ai_report(req: ReportReq, db: Session = Depends(get_db)):
         highlights.append(f"完成了 {stats['attempts']} 套练习，平均正确率 {stats['avg_score']}%")
     if stats["full_days"]:
         highlights.append(f"三科全勤 {stats['full_days']} 天")
+    if stats.get("best_mood_day"):
+        highlights.append(f"本周心情最好的一天是 {stats['best_mood_day']['date'][5:]}（{stats['best_mood_day']['label']}）")
+    if stats.get("ai_explains"):
+        highlights.append(f"AI 讲解用了 {stats['ai_explains']} 次，好学好问")
     if not highlights:
         highlights.append("上周是休息周，本周一起加油")
 

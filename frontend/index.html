@@ -6,7 +6,7 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=30">
+<link rel="stylesheet" href="/static/style.css?v=31">
 </head>
 <body>
 <div id="app">
@@ -509,6 +509,10 @@
             <span class="filter-sep"></span><span class="tag tag-blue">{{subject}}</span>
             <button class="btn btn-primary btn-sm" style="margin-left:auto" @click="startWrongPractice()" title="从错题本随机抽 5 道错题，每道配 3 道同类型题，整组全对自动掌握">🎯 练习错题</button>
             <button class="btn btn-ghost btn-sm" @click="loadAnalysis(); wrongScreen='analysis'">📊 错因分析</button>
+          </div>
+          <div class="card teach-due" v-if="tomorrowQueue.count>0" @click="wrongStatus='pending'; loadWrongItems()">
+            <b>🌙 明日复习队列：{{tomorrowQueue.count}} 道题重做仍错，明天再来一次</b>
+            <span>{{(tomorrowQueue.items||[]).slice(0,3).map(i=>i.subject+(i.module_name?'·'+i.module_name:'')).join('、')}}<template v-if="tomorrowQueue.count>3"> 等</template> · 点我查看</span>
           </div>
           <div class="card teach-due" v-if="teachDue.length" @click="openRecheck()">
             <b>🔁 7 天到啦，考考自己还记得吗？</b>
@@ -1141,12 +1145,13 @@
           <div class="g-foot">
             <span v-if="g.deadline">⏳ 还剩 {{g.days_left}} 天（{{g.deadline}} 截止）</span>
             <span v-else>长期目标 · 持续进步中</span>
+            <span v-if="g.daily_step && !g.achieved" class="tag tag-blue">每日小步 ≈ {{g.daily_step}}</span>
             <span v-if="g.achieved && g.status==='active'"><button class="btn btn-success btn-sm" @click="doneGoal(g)">标记达成 🏆</button></span>
             <button class="btn btn-ghost btn-sm" @click="archiveGoal(g)">移除</button>
           </div>
         </div>
       </div>
-      <p v-else class="pc-empty">还没有目标，立一个吧 👇（最多同时 3 个）</p>
+      <p v-else class="pc-empty">还没有目标，立一个吧 👇（最多同时 2 个）</p>
       <div class="goal-form">
         <label>立下新目标</label>
         <div class="pc-row">
@@ -1226,6 +1231,7 @@
 
 <!-- ═══════════ 全屏答题（通用状态机） ═══════════ -->
 <div class="quiz-overlay" v-if="quiz.active" :class="{turbo}">
+  <div class="float-fx" v-if="floatFx.show" :class="{no: !floatFx.ok}">{{floatFx.text}}</div>
   <template v-if="!quiz.done">
     <div class="quiz-shell">
       <div class="quiz-top">
@@ -1235,7 +1241,6 @@
         <span class="qcount">{{quiz.i+1}} / {{quiz.items.length}}</span>
         <button class="icon-btn" @click="closeQuiz()" title="退出">✕</button>
       </div>
-      <div class="float-fx" v-if="floatFx.show" :class="{no: !floatFx.ok}">{{floatFx.text}}</div>
       <div class="quiz-card" style="max-width:760px">
         <template v-if="quiz.items.length">
           <div class="quiz-q">{{quiz.items[quiz.i].question}}</div>
@@ -1300,8 +1305,9 @@
   </template>
   <div v-else class="done-wrap">
     <div class="stars-row">
-      <span v-for="n in 3" :key="n" class="star" :class="{on: n<=starCount}">★</span>
+      <span v-for="n in 5" :key="n" class="star" :class="{on: n<=starCount}">★</span>
     </div>
+    <div v-if="newStarRecord" class="new-record">🏆 新纪录！首次五星</div>
     <div class="done-illus" :class="{no: quiz.score<60}">{{quiz.score>=90?'🏆':quiz.score>=60?'🎉':'💪'}}</div>
     <h2>{{quiz.score>=90?'太棒了！':quiz.score>=60?'继续加油！':'别灰心，再来一次'}}</h2>
     <p class="sub">{{quiz.title}} · 完成<template v-if="maxCombo>=2"> · 最佳连击 🔥 x{{maxCombo}}</template></p>
@@ -1438,6 +1444,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=30"></script>
+<script src="/static/app.js?v=31"></script>
 </body>
 </html>

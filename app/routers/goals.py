@@ -4,7 +4,7 @@ current 自动计算：
 - score：最近 10 次练习平均分
 - wrong：累计消灭错题数（试卷错题 + 学习错题已掌握）
 - recite：累计背诵古诗文篇数
-目标到期自动归档；最多同时 3 个进行中。
+目标到期自动归档；最多同时 2 个进行中（PRD P1：同时 ≤2 个）。
 """
 from datetime import date
 
@@ -58,6 +58,11 @@ def _current(db: Session, user_id: str, kind: str, subject: str = "") -> int:
 def _goal_out(db: Session, g) -> dict:
     current = _current(db, g.user_id, g.kind, g.subject)
     days_left = (g.deadline - date.today()).days if g.deadline else None
+    # 每日小步：剩余进度 ÷ 剩余天数（有截止日且未达成时才有意义）
+    daily_step = None
+    if days_left and days_left > 0 and current < g.target:
+        import math
+        daily_step = max(1, math.ceil((g.target - current) / days_left))
     return {
         "id": g.id, "kind": g.kind, "kind_label": KINDS.get(g.kind, g.kind),
         "title": g.title, "subject": g.subject,
@@ -65,6 +70,7 @@ def _goal_out(db: Session, g) -> dict:
         "raw_current": current, "pct": round(min(current / g.target, 1) * 100) if g.target else 0,
         "deadline": str(g.deadline) if g.deadline else None,
         "days_left": days_left, "status": g.status,
+        "daily_step": daily_step,
         "achieved": current >= g.target,
     }
 
@@ -78,7 +84,7 @@ def list_goals(user_id: str = Query(...), db: Session = Depends(get_db)):
     return {"goals": [_goal_out(db, g) for g in rows]}
 
 
-@router.post("", summary="新建目标（同时最多 3 个进行中）")
+@router.post("", summary="新建目标（同时最多 2 个进行中）")
 def create_goal(req: GoalReq, db: Session = Depends(get_db)):
     from ..models.reward import GoalItem
     if req.kind not in KINDS:
@@ -86,8 +92,8 @@ def create_goal(req: GoalReq, db: Session = Depends(get_db)):
     target = max(1, min(1000, req.target))
     active = db.query(GoalItem).filter(
         GoalItem.user_id == req.user_id, GoalItem.status == "active").count()
-    if active >= 3:
-        raise HTTPException(400, "进行中的目标最多 3 个，先完成或移除再添加")
+    if active >= 2:
+        raise HTTPException(400, "进行中的目标最多 2 个，先完成或移除再添加")
     deadline = None
     if req.deadline:
         try:

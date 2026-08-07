@@ -231,6 +231,7 @@ def mark_mastered(exam_id: int, req: MarkWrongRequest, db: Session = Depends(get
         if wr:
             wr.is_mastered = True
             wr.mastered_at = now
+            wr.next_review_date = None   # 掌握出队（明日复习队列）
             mastered += 1
     db.commit()
     return {"message": f"已标记 {mastered} 题为已掌握", "mastered_count": mastered}
@@ -958,6 +959,7 @@ def batch_master(req: dict, db: Session = Depends(get_db)):
         if wr and not wr.is_mastered:
             wr.is_mastered = True
             wr.mastered_at = now
+            wr.next_review_date = None   # 掌握出队（明日复习队列）
             mastered += 1
     db.commit()
     return {"message": f"已标记 {mastered} 题为已掌握", "mastered_count": mastered}
