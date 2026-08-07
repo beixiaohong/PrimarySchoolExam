@@ -1193,7 +1193,7 @@ createApp({
             explanation: e.explanation || '', error_count: e.error_count || 1, wrong_at: e.wrong_at || '',
             mastered: !!e.is_mastered, cause: e.cause || '',
             is_unanswered: false,
-            subject: e.source_type === 'grammar' ? '英语' : '语文', source: e.module_name || '学习错题',
+            subject: (e.source_type === 'grammar' || e.source_type === 'vocab') ? '英语' : '语文', source: e.module_name || '学习错题',
           }));
           let items = [...exam, ...study];
           if (this.wrongKind === 'exam') items = items.filter(i => i.kind === 'exam');
@@ -2200,6 +2200,16 @@ createApp({
           return;
         }
         if (wrongs.length) {
+          // 单词听写错了：也记入错题本（source_type=vocab）
+          if (src.kind === 'word') {
+            const vocabErrors = wrongs.map(it => ({
+              source_type: 'vocab', source_id: it.qid, module_name: '单词听写',
+              question: it.question, user_answer: it.userAnswer, correct_answer: it.answer,
+              explanation: '',
+            }));
+            this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: vocabErrors }) })
+              .then(() => { this.loadAnalysis(); }).catch(() => {});
+          }
           this.showToast(`还有 ${wrongs.length} 处没默写对，再默一遍！`);
           this.startQuiz({
             title: this.quiz.title,

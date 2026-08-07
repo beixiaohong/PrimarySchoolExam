@@ -126,10 +126,10 @@ def list_study_errors(
     q = db.query(StudyError).filter(StudyError.user_id == user_id)
     if subject:
         if subject == "英语":
-            q = q.filter(StudyError.source_type == "grammar")
+            q = q.filter(StudyError.source_type.in_(["grammar", "vocab"]))
         elif subject == "语文":
             q = q.filter(StudyError.source_type == "classical")
-        else:  # 学习错题仅来自英语语法/语文古诗文，数学学科无学习错题
+        else:  # 学习错题仅来自英语语法/单词听写/语文古诗文，数学学科无学习错题
             q = q.filter(StudyError.id == -1)
     if source_type:
         q = q.filter(StudyError.source_type == source_type)
@@ -141,7 +141,7 @@ def list_study_errors(
         {
             "id": e.id,
             "source_type": e.source_type,
-            "module_name": e.module_name or ("语法练习" if e.source_type == "grammar" else "古诗文默写"),
+            "module_name": e.module_name or ({"grammar": "语法练习", "vocab": "单词听写"}.get(e.source_type, "古诗文默写")),
             "question": e.question,
             "user_answer": e.user_answer,
             "correct_answer": e.correct_answer,
