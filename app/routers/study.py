@@ -284,7 +284,7 @@ def _build_subject_task(db: Session, user_id: str, grade: int, subject: str, tod
 
     # ── 错题（按学科归属过滤） ──
     if subject == "英语":
-        study_source = StudyError.source_type == "grammar"
+        study_source = StudyError.source_type.in_(["grammar", "vocab"])
     elif subject == "语文":
         study_source = StudyError.source_type == "classical"
     else:
@@ -688,7 +688,7 @@ def analyze_errors(
     wrq = db.query(WrongRecord).filter(WrongRecord.user_id == user_id).join(Question)
     if subject:
         if subject == "英语":
-            sq = sq.filter(StudyError.source_type == "grammar")
+            sq = sq.filter(StudyError.source_type.in_(["grammar", "vocab"]))
         elif subject == "语文":
             sq = sq.filter(StudyError.source_type == "classical")
         else:  # 数学学科无学习错题
@@ -862,6 +862,34 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
             "text_id": q["text_id"],
         } for q in qs]
         return {"kind": "study", "module_name": f"《{text.title}》默写",
+                "count": len(questions), "questions": questions}
+
+    if e.source_type == "vocab":
+        from ..models.word import Word
+        orig = db.query(Word).filter(Word.id == e.source_id).first()
+        if not orig:
+            raise HTTPException(404, "原单词不存在")
+        # 从同一词册取其他单词作为候选
+        candidates = db.query(Word).filter(
+            Word.book_id == orig.book_id,
+            Word.id != orig.id,
+        ).order_by(func.random()).limit(req.count).all()
+        if len(candidates) < req.count:
+            extra = db.query(Word).filter(
+                Word.id != orig.id,
+                Word.id.notin_([c.id for c in candidates]),
+            ).order_by(func.random()).limit(req.count - len(candidates)).all()
+            candidates = candidates + extra
+        questions = [{
+            "qid": c.id,
+            "kind": "study",
+            "question": f"✍️ 听写：{c.pos + ' ' if c.pos else ''}{c.meaning}",
+            "options": [],
+            "answer": c.word,
+            "explanation": "",
+            "type_name": "单词听写",
+        } for c in candidates]
+        return {"kind": "study", "module_name": "单词听写重练",
                 "count": len(questions), "questions": questions}
 
     raise HTTPException(400, "未知的错题来源")

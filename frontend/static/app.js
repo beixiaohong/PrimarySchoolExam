@@ -9,7 +9,7 @@ createApp({
       tab: 'home',
       // 全局统计
       streakDays: 0, totalTodo: 0, avgScore: 0,
-      masteredTotal: 0, wrongBadge: 0,
+      masteredTotal: 0, wrongBadge: 0, diamonds: 0,
       // 首页
       dashboard: null, todayTasks: [],
       dailyTasks: null, dailyTaskStats: { done_count: 0, total: 3, streak_days: 0 },
@@ -419,6 +419,12 @@ createApp({
         .then(d => { this.petProfile = d; })
         .catch(() => { this.petProfile = null; });
     },
+    loadDiamonds() {
+      if (!this.user) return;
+      this.api(`/api/diamond/balance?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.diamonds = d.balance || 0; })
+        .catch(() => { this.diamonds = 0; });
+    },
     loadPetLedger() {
       if (!this.user) return;
       this.api(`/api/pet/ledger?user_id=${encodeURIComponent(this.user)}`)
@@ -809,6 +815,7 @@ createApp({
       this.loadRewardTimeline();
       this.loadTomorrowQueue();
       this.loadPet();
+      this.loadDiamonds();
       this.loadTree();
       this.loadBadges(false);
       this.loadCards();
@@ -1258,6 +1265,7 @@ createApp({
           w.explaining = false;
           w.aiText = d.text || '';
           w.aiDegraded = !!d.degraded;
+          if (d.diamond_cost) this.loadDiamonds();
         }).catch(e => {
           w.explaining = false;
           w.aiError = e.message || '讲解生成失败，请稍后重试';
@@ -1275,6 +1283,7 @@ createApp({
           it.explaining = false;
           it.aiText = d.text || '';
           it.aiDegraded = !!d.degraded;
+          if (d.diamond_cost) this.loadDiamonds();
           if (d.marked) {
             it.cause = 'ai';
             this.showToast('已标记为做错了（AI 讲解），讲解后可以点「这次会了」');

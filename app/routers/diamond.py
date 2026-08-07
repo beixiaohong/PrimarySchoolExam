@@ -36,6 +36,10 @@ def adjust_diamonds(req: AdjustRequest, db: Session = Depends(get_db)):
     """管理员增减用户钻石。amount 为正时增加，为负时扣除。"""
     if req.amount == 0:
         raise HTTPException(400, "变动数量不能为 0")
+    # 校验用户存在
+    from ..models.user import User
+    if not db.query(User).filter(User.user_id == req.user_id).first():
+        raise HTTPException(404, f"用户 {req.user_id} 不存在")
     if req.amount > 0:
         new_balance = diamond_svc.grant(db, req.user_id, req.amount, reason=req.reason)
     else:
