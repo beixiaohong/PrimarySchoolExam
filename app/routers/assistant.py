@@ -185,5 +185,14 @@ def assistant_chat(req: ChatReq, db: Session = Depends(get_db)):
         _log_usage(db, req.user_id, "assistant", False, resp, "AI 无有效回复")
         raise HTTPException(502, "AI 老师正在打盹，稍后再试试吧")
     _log_usage(db, req.user_id, "assistant", True, resp)
+    # 钻石扣费
+    try:
+        from ..services import diamond as diamond_svc
+        diamond_svc.check_and_deduct(db, req.user_id,
+                                      resp.get("prompt_tokens", 0),
+                                      resp.get("completion_tokens", 0),
+                                      reason="ai_assistant")
+    except Exception:
+        pass
     return {"text": resp["text"].strip(), "model": resp.get("model", ""),
             "provider": resp.get("provider", "")}

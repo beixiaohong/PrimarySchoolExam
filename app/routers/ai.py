@@ -102,6 +102,20 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
         db.rollback()
 
 
+def _deduct_diamonds(db: Session, user_id: str, result: dict, feature: str) -> dict:
+    """根据 AI 返回的 token 用量扣除钻石，返回扣费信息（失败不阻断主流程）"""
+    try:
+        from ..services import diamond as diamond_svc
+        prompt_tokens = result.get("prompt_tokens", 0)
+        completion_tokens = result.get("completion_tokens", 0)
+        info = diamond_svc.check_and_deduct(db, user_id, prompt_tokens, completion_tokens,
+                                            reason=f"ai_{feature}")
+        return info
+    except Exception as e:
+        logger.warning("钻石扣费失败: %s", e)
+        return {"ok": True, "cost": 0, "balance": 0, "error": ""}
+
+
 # ═══════════════════ 1. AI 错题讲解 ═══════════════════
 
 def _explain_core(db: Session, user_id: str, q: Question, wrong: WrongRecord) -> dict:
@@ -156,8 +170,11 @@ def _explain_core(db: Session, user_id: str, q: Question, wrong: WrongRecord) ->
             logger.warning("写 ai_qa（讲解）失败: %s", e)
             db.rollback()
         _log_usage(db, user_id, "explain", True, result)
+        diamond_info = _deduct_diamonds(db, user_id, result, "explain")
         return {"degraded": False, "cached": False, "text": result["text"],
-                "question": q.question, "answer": q.answer}
+                "question": q.question, "answer": q.answer,
+                "diamond_cost": diamond_info.get("cost", 0),
+                "diamond_balance": diamond_info.get("balance", 0)}
     # 降级：本地解析（不写库，避免缓存劣质答案）
     _log_usage(db, user_id, "explain", False, error="AI 不可用，降级模板")
     fallback = (
@@ -343,6 +360,7 @@ def ai_report(req: ReportReq, db: Session = Depends(get_db)):
         advice = result["text"][:60]
         degraded = False
         _log_usage(db, req.user_id, "report", True, result)
+        _deduct_diamonds(db, req.user_id, result, "report")
     else:
         _log_usage(db, req.user_id, "report", False, error="AI 不可用，降级模板")
 
@@ -386,6 +404,7 @@ def ai_encourage(req: EncourageReq, db: Session = Depends(get_db)):
         text = result["text"].strip().strip('"').strip("「」")[:40]
         if text:
             _log_usage(db, req.user_id, "encourage", True, result)
+            _deduct_diamonds(db, req.user_id, result, "encourage")
             return {"text": text, "degraded": False}
     _log_usage(db, req.user_id, "encourage", False, error="AI 不可用，降级模板")
     return {"text": random.choice(ENCOURAGE_TEMPLATES.get(req.context, ENCOURAGE_TEMPLATES["default"])),

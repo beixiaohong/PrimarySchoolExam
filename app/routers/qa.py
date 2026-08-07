@@ -182,6 +182,15 @@ def qa_ask(req: AskReq, db: Session = Depends(get_db)):
             logger.warning("写 ai_qa 失败: %s", e)
             db.rollback()
         _log_usage(db, req.user_id, "qa_ask", True, result)
+        # 钻石扣费
+        try:
+            from ..services import diamond as diamond_svc
+            diamond_svc.check_and_deduct(db, req.user_id,
+                                          result.get("prompt_tokens", 0),
+                                          result.get("completion_tokens", 0),
+                                          reason="ai_qa")
+        except Exception as e:
+            logger.warning("QA 钻石扣费失败: %s", e)
         return {
             "cached": False,
             "answer": result["text"],

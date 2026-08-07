@@ -79,6 +79,15 @@ def generate_quiz(req: QuizGenReq, db: Session = Depends(get_db)):
         text = (resp or {}).get("text", "") or ""
         questions = _parse_questions(text)
         if questions:
+            # 钻石扣费
+            try:
+                from ..services import diamond as diamond_svc
+                diamond_svc.check_and_deduct(db, req.user_id,
+                                              (resp or {}).get("prompt_tokens", 0),
+                                              (resp or {}).get("completion_tokens", 0),
+                                              reason="ai_quiz")
+            except Exception:
+                pass
             return {"theme": theme, "count": len(questions), "questions": questions,
                     "raw": None}
     raise HTTPException(502, "AI 生成失败了，稍后再试一次吧")
