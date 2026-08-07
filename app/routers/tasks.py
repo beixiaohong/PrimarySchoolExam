@@ -25,6 +25,7 @@ from ..models.daily_task import DailyTask
 from ..models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
 from ..models.vocab import VocabDailyLog
 from ..models.classical import ClassicalDailyLog
+from ..models.study_error import StudyError
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ TASK_POOLS = {
          "ico": "🧮", "desc": "刷题中心做一套数学试卷"},
         {"code": "math_fix", "title": "订正 10 道数学错题", "target": 10, "manual": False,
          "ico": "📕", "desc": "错题本重做或标记已掌握（每道需做3道同类型题全对才算修正）"},
+        {"code": "math_review", "title": "复习 5 道昨日数学错题", "target": 5, "manual": False,
+         "ico": "🔄", "desc": "把昨天做错的数学题重做一遍"},
         {"code": "math_teach", "title": "给家长讲 1 道题", "target": 1, "manual": True,
          "ico": "🎓", "desc": "挑一道今天的题讲给家长听"},
     ],
@@ -47,6 +50,8 @@ TASK_POOLS = {
          "ico": "📜", "desc": "古诗文模块完成新背或复习"},
         {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
          "ico": "🖋️", "desc": "刷题中心做一套语文试卷"},
+        {"code": "chi_review", "title": "复习 5 道昨日语文错题", "target": 5, "manual": False,
+         "ico": "🔄", "desc": "把昨天做错的语文题重做一遍"},
         {"code": "chi_read", "title": "朗读课文 5 分钟", "target": 5, "manual": True,
          "ico": "🎙️", "desc": "大声朗读课文或古诗，完成后由家长确认"},
     ],
@@ -55,6 +60,8 @@ TASK_POOLS = {
          "ico": "🔤", "desc": "背单词模块完成 5 个新词"},
         {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
          "ico": "📝", "desc": "刷题中心做一套英语试卷"},
+        {"code": "eng_review", "title": "复习 5 道昨日英语错题", "target": 5, "manual": False,
+         "ico": "🔄", "desc": "把昨天做错的英语题重做一遍"},
         {"code": "eng_dictation", "title": "听写 5 个单词", "target": 5, "manual": True,
          "ico": "✍️", "desc": "家长报词孩子写出来，完成后由家长确认"},
     ],
@@ -63,8 +70,8 @@ TASK_POOLS = {
 # 家长可配置目标数量的任务（自动任务由学习数据自动判定完成；
 # 手动任务 [讲题/朗读/听写] 无法自动核验，家长在家长面板设置数量，
 # 孩子完成后由家长在家长面板点「确认完成」）
-CONFIGURABLE_CODES = ["math_exam", "math_fix", "chi_exam", "chi_classical",
-                      "eng_exam", "eng_vocab",
+CONFIGURABLE_CODES = ["math_exam", "math_fix", "math_review", "chi_exam", "chi_classical", "chi_review",
+                      "eng_exam", "eng_vocab", "eng_review",
                       "math_teach", "chi_read", "eng_dictation"]
 MIN_TARGET, MAX_TARGET = 1, 50
 
@@ -227,6 +234,44 @@ def _today_mastered(db: Session, user_id: str, subject: str) -> int:
     ).count()
 
 
+def _yesterday_start() -> datetime:
+    return datetime.combine(date.today() - timedelta(days=1), dtime.min)
+
+
+def _yesterday_end() -> datetime:
+    return datetime.combine(date.today(), dtime.min)
+
+
+def _yesterday_reviewed(db: Session, user_id: str, subject: str) -> int:
+    """昨天做错的题中，今天已复习（掌握或练习过）的数量。
+
+    覆盖 WrongRecord（试卷错题）+ StudyError（学习模块错题）。
+    """
+    # 试卷错题：昨天错的，今天已掌握
+    exam_reviewed = db.query(WrongRecord).join(Question, WrongRecord.question_id == Question.id).filter(
+        WrongRecord.user_id == user_id,
+        Question.subject == subject,
+        WrongRecord.wrong_at >= _yesterday_start(),
+        WrongRecord.wrong_at < _yesterday_end(),
+        WrongRecord.is_mastered == True,  # noqa: E712
+        WrongRecord.mastered_at >= _today_start(),
+    ).count()
+    # 学习模块错题：昨天错的，今天已掌握
+    source_map = {"数学": [], "英语": ["grammar", "vocab"], "语文": ["classical"]}
+    types = source_map.get(subject, [])
+    study_reviewed = 0
+    if types:
+        study_reviewed = db.query(StudyError).filter(
+            StudyError.user_id == user_id,
+            StudyError.source_type.in_(types),
+            StudyError.wrong_at >= _yesterday_start(),
+            StudyError.wrong_at < _yesterday_end(),
+            StudyError.is_mastered == True,  # noqa: E712
+            StudyError.mastered_at >= _today_start(),
+        ).count()
+    return exam_reviewed + study_reviewed
+
+
 def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int) -> int:
     """根据真实学习数据计算自动任务的当前进度（封顶为任务目标）"""
     if code == "math_exam":
@@ -250,6 +295,12 @@ def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int)
             VocabDailyLog.learn_date == date.today(),
         ).first()
         return min(target, (log.new_words_learned or 0) if log else 0)
+    if code == "math_review":
+        return min(target, _yesterday_reviewed(db, user_id, "数学"))
+    if code == "chi_review":
+        return min(target, _yesterday_reviewed(db, user_id, "语文"))
+    if code == "eng_review":
+        return min(target, _yesterday_reviewed(db, user_id, "英语"))
     return 0
 
 
