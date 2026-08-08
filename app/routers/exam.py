@@ -343,6 +343,7 @@ def wrong_practice_quiz(req: WrongPracticeQuizRequest, db: Session = Depends(get
     q = db.query(WrongRecord).filter(
         WrongRecord.user_id == req.user_id,
         or_(WrongRecord.is_mastered.is_(None), WrongRecord.is_mastered != True),
+        or_(WrongRecord.is_unanswered.is_(None), WrongRecord.is_unanswered != True),
     ).join(Question)
 
     if req.subject:

@@ -438,6 +438,8 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
             ).first()
             if not rec:
                 continue
+            if rec.is_unanswered:
+                continue  # 未作答的题不走修正流程，需先通过 answer-unanswered 作答
             if len(items) >= 3:
                 # 修正模式：整组判定（三道同类型全对才算修正）
                 if all_correct:
@@ -780,6 +782,8 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
         ).first()
         if not wr:
             raise HTTPException(404, "试卷错题记录不存在")
+        if wr.is_unanswered:
+            raise HTTPException(400, "未作答的题请先在错题本中作答，不能直接修正")
         q = wr.question
         from ..models.exam import Question as Q
         candidates = db.query(Q).filter(
