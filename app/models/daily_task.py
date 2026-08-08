@@ -10,8 +10,8 @@ class DailyTask(Base):
     """用户每日任务（强制 3 条 + 可选 3 条）"""
     __tablename__ = "daily_tasks"
     __table_args__ = (
-        UniqueConstraint("user_id", "task_date", "subject", "task_type",
-                         name="uq_user_date_subject_type"),
+        UniqueConstraint("user_id", "task_date", "task_code",
+                         name="uq_user_date_taskcode"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
