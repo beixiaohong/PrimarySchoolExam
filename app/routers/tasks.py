@@ -46,8 +46,8 @@ TASK_POOLS = {
          "ico": "🎓", "desc": "挑一道今天的题讲给家长听"},
     ],
     "语文": [
-        {"code": "chi_classical", "title": "背诵/默写 1 篇古诗文", "target": 1, "manual": False,
-         "ico": "📜", "desc": "古诗文模块完成新背或复习"},
+        {"code": "chi_classical", "title": "背诵古诗文（含新背+复习）", "target": 1, "manual": False,
+         "ico": "📜", "desc": "背诵中心完成新背或复习，每日必选"},
         {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
          "ico": "🖋️", "desc": "刷题中心做一套语文试卷"},
         {"code": "chi_review", "title": "复习 5 道昨日语文错题", "target": 5, "manual": False,
@@ -74,6 +74,9 @@ CONFIGURABLE_CODES = ["math_exam", "math_fix", "math_review", "chi_exam", "chi_c
                       "eng_exam", "eng_vocab", "eng_review",
                       "math_teach", "chi_read", "eng_dictation"]
 MIN_TARGET, MAX_TARGET = 1, 50
+
+# 必选任务：不允许被「换一个」替换，每天必须完成
+MANDATORY_CODES = {"chi_classical"}
 
 # 练习类任务（math_exam / chi_exam / eng_exam）的完成门槛：
 # 只有正确率 ≥60% 的提交才计入完成进度（与家长确认：当日任务完成需正确率达标，直接提交不行）
@@ -398,6 +401,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
             "progress": r.progress,
             "status": r.status,
             "manual": r.manual,
+            "mandatory": r.task_code in MANDATORY_CODES,
             "ico": cur["ico"],
             "desc": cur["desc"],
             "next_title": _display_title(nxt["title"], nxt_target, nxt["target"]),
@@ -430,6 +434,8 @@ def swap_task(req: SwapRequest, db: Session = Depends(get_db)):
     row = rows[req.subject]
     if row.status == "done":
         return _build_payload(db, req.user_id)  # 已完成的任务不允许更换
+    if row.task_code in MANDATORY_CODES:
+        raise HTTPException(400, "背诵为每日必选任务，不可更换")
     pool = TASK_POOLS[req.subject]
     idx = next((i for i, t in enumerate(pool) if t["code"] == row.task_code), 0)
     nxt = pool[(idx + 1) % len(pool)]

@@ -139,7 +139,8 @@
             <b class="dtask-title">{{t.title}}</b>
             <div class="dtask-desc">{{t.desc}}</div>
             <div class="dtask-actions">
-              <button class="btn btn-ghost btn-sm" :disabled="t.status==='done'" @click="swapDailyTask(t.subject)">换一个<span v-if="t.next_title" class="next-hint">：{{t.next_title}}</span></button>
+              <button v-if="!t.mandatory" class="btn btn-ghost btn-sm" :disabled="t.status==='done'" @click="swapDailyTask(t.subject)">换一个<span v-if="t.next_title" class="next-hint">：{{t.next_title}}</span></button>
+              <span v-if="t.mandatory" class="tag tag-red">必选</span>
               <span v-if="t.manual && t.status!=='done'" class="tag tag-orange">完成找家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">全勤 +1</span>
             </div>
