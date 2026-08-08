@@ -56,8 +56,8 @@ TASK_POOLS = {
          "ico": "🎙️", "desc": "大声朗读课文或古诗，完成后由家长确认"},
     ],
     "英语": [
-        {"code": "eng_vocab", "title": "学 5 个新单词", "target": 5, "manual": False,
-         "ico": "🔤", "desc": "背单词模块完成 5 个新词"},
+        {"code": "eng_vocab", "title": "学单词（含新学+复习）", "target": 5, "manual": False,
+         "ico": "🔤", "desc": "背单词模块完成新学或复习，每日必选"},
         {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
          "ico": "📝", "desc": "刷题中心做一套英语试卷"},
         {"code": "eng_review", "title": "复习 5 道昨日英语错题", "target": 5, "manual": False,
@@ -76,7 +76,7 @@ CONFIGURABLE_CODES = ["math_exam", "math_fix", "math_review", "chi_exam", "chi_c
 MIN_TARGET, MAX_TARGET = 1, 50
 
 # 必选任务：不允许被「换一个」替换，每天必须完成
-MANDATORY_CODES = {"chi_classical"}
+MANDATORY_CODES = {"chi_classical", "eng_vocab"}
 
 # 练习类任务（math_exam / chi_exam / eng_exam）的完成门槛：
 # 只有正确率 ≥60% 的提交才计入完成进度（与家长确认：当日任务完成需正确率达标，直接提交不行）
@@ -297,7 +297,8 @@ def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int)
             VocabDailyLog.user_id == user_id,
             VocabDailyLog.learn_date == date.today(),
         ).first()
-        return min(target, (log.new_words_learned or 0) if log else 0)
+        v = ((log.new_words_learned or 0) + (log.words_reviewed or 0)) if log else 0
+        return min(target, v)
     if code == "math_review":
         return min(target, _yesterday_reviewed(db, user_id, "数学"))
     if code == "chi_review":
@@ -435,7 +436,7 @@ def swap_task(req: SwapRequest, db: Session = Depends(get_db)):
     if row.status == "done":
         return _build_payload(db, req.user_id)  # 已完成的任务不允许更换
     if row.task_code in MANDATORY_CODES:
-        raise HTTPException(400, "背诵为每日必选任务，不可更换")
+        raise HTTPException(400, "该任务为每日必选，不可更换")
     pool = TASK_POOLS[req.subject]
     idx = next((i for i, t in enumerate(pool) if t["code"] == row.task_code), 0)
     nxt = pool[(idx + 1) % len(pool)]
