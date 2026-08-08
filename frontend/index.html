@@ -233,7 +233,7 @@
               <span class="ci">{{couponIcon(c.kind)}}</span>
               <div class="c-body">
                 <b>{{c.title}}</b>
-                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得，当前 {{c.progress_days}}/{{c.required_days}} 天</template></span>
+                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得，当前 {{c.progress_days}}/{{c.required_days}} 天</template><span class="more" style="font-size:11px"> · 中断超3天进度清零</span></span>
                 <span v-else>{{c.kind_label}} · 可直接使用，剩余 {{c.left}} 张</span>
                 <span v-if="c.reason" class="c-reason">🎯 {{c.reason}}</span>
               </div>
@@ -1449,7 +1449,7 @@
                 <span class="ci">{{couponIcon(c.kind)}}</span>
                 <div class="c-body">
                   <b>{{c.title}}</b>
-                  <span>{{c.kind_label}}<template v-if="c.required_days>0"> · 三科全勤 {{c.required_days}} 天得 1 张</template><template v-if="c.reason"> · 🎯 {{c.reason}}</template></span>
+                  <span>{{c.kind_label}}<template v-if="c.required_days>0"> · 三科全勤 {{c.required_days}} 天得 1 张<span class="more" style="font-size:11px"> · 中断超3天进度清零</span></template><template v-if="c.reason"> · 🎯 {{c.reason}}</template></span>
                   <span v-if="c.status==='active'">已获得 {{c.granted_count}} 张 · 剩余 {{c.left}} 张</span>
                   <span v-else>已停用（历史获得 {{c.granted_count}} 张）</span>
                 </div>

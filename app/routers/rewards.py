@@ -249,23 +249,34 @@ def inc_active_wish_progress(db: Session, user_id: str, n: int = 1):
 
 def sync_coupon_progress(db: Session, user_id: str):
     """每日任务刷新时调用：今天三科全勤 → 每张需天数的券当日累计 1 天，
-    达到 required_days 自动获得 1 张（进度清零，可继续累计下一张）"""
-    from datetime import date
+    达到 required_days 自动获得 1 张（进度清零，可继续累计下一张）。
+    中断超过 3 天未全勤 → 进度清零重新计算。"""
+    from datetime import date, timedelta
     from ..models.daily_task import DailyTask
     from ..models.reward import RewardCoupon
-    today = str(date.today())
+    today = date.today()
+    today_str = str(today)
     rows = db.query(DailyTask).filter(
-        DailyTask.user_id == user_id, DailyTask.task_date == date.today()).all()
+        DailyTask.user_id == user_id, DailyTask.task_date == today).all()
     if len(rows) < 3 or not all(r.status == "done" for r in rows):
         return  # 今天尚未全勤，不累计
     changed = False
     for c in db.query(RewardCoupon).filter(
             RewardCoupon.user_id == user_id, RewardCoupon.status == "active",
             RewardCoupon.required_days > 0).all():
-        if c.progress_date == today:
+        if c.progress_date == today_str:
             continue  # 今天已累计过
+        # 中断超过 3 天 → 进度清零
+        if c.progress_date and (c.progress_days or 0) > 0:
+            try:
+                from datetime import datetime as _dt
+                last = _dt.strptime(c.progress_date, "%Y-%m-%d").date()
+                if (today - last).days > 3:
+                    c.progress_days = 0
+            except Exception:
+                pass
         c.progress_days = (c.progress_days or 0) + 1
-        c.progress_date = today
+        c.progress_date = today_str
         if c.progress_days >= c.required_days:
             c.granted_count = (c.granted_count or 0) + 1
             c.progress_days = 0
