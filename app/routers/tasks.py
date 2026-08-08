@@ -47,7 +47,7 @@ TASK_POOLS = {
     ],
     "语文": [
         {"code": "chi_classical", "title": "背诵古诗文（含新背+复习）", "target": 1, "manual": False,
-         "ico": "📜", "desc": "背诵中心完成新背或复习，每日必选"},
+         "ico": "📜", "desc": "背诵中心完成新背和复习，每日必选"},
         {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
          "ico": "🖋️", "desc": "刷题中心做一套语文试卷"},
         {"code": "chi_review", "title": "复习 5 道昨日语文错题", "target": 5, "manual": False,
@@ -57,7 +57,7 @@ TASK_POOLS = {
     ],
     "英语": [
         {"code": "eng_vocab", "title": "学单词（含新学+复习）", "target": 5, "manual": False,
-         "ico": "🔤", "desc": "背单词模块完成新学或复习，每日必选"},
+         "ico": "🔤", "desc": "背单词模块完成新学和复习，每日必选"},
         {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
          "ico": "📝", "desc": "刷题中心做一套英语试卷"},
         {"code": "eng_review", "title": "复习 5 道昨日英语错题", "target": 5, "manual": False,
