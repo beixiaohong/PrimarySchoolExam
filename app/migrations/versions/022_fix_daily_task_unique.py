@@ -18,6 +18,9 @@ def upgrade(db):
 
     db.execute(text("PRAGMA foreign_keys=off"))
     try:
+        # 清理上次失败残留的临时表
+        db.execute(text("DROP TABLE IF EXISTS daily_tasks_old"))
+
         # 检查是否有 task_type 列
         cols_result = db.execute(text("PRAGMA table_info(daily_tasks)"))
         col_names = [row[1] for row in cols_result]
