@@ -10,8 +10,25 @@ from sqlalchemy import text
 
 
 def upgrade(db):
+    # 检查表是否存在
+    result = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_tasks'"))
+    if not result.fetchone():
+        # 表不存在，跳过（由 SQLAlchemy create_all 创建）
+        return
+
     db.execute(text("PRAGMA foreign_keys=off"))
     try:
+        # 检查是否有 task_type 列
+        cols_result = db.execute(text("PRAGMA table_info(daily_tasks)"))
+        col_names = [row[1] for row in cols_result]
+        has_task_type = 'task_type' in col_names
+
+        # 清理可能的重复数据（保留 id 最小的）
+        if has_task_type:
+            db.execute(text("""DELETE FROM daily_tasks WHERE id NOT IN (
+                SELECT MIN(id) FROM daily_tasks GROUP BY user_id, task_date, task_code
+            )"""))
+
         db.execute(text("ALTER TABLE daily_tasks RENAME TO daily_tasks_old"))
         db.execute(text("""CREATE TABLE daily_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,12 +48,31 @@ def upgrade(db):
         )"""))
         db.execute(text("CREATE INDEX ix_daily_tasks_user_id ON daily_tasks(user_id)"))
         db.execute(text("CREATE INDEX ix_daily_tasks_task_date ON daily_tasks(task_date)"))
+
         # 迁移旧数据
-        db.execute(text("""INSERT INTO daily_tasks
-            (id, user_id, task_date, subject, task_code, title, target, progress, status, manual, task_type, created_at, updated_at)
-            SELECT id, user_id, task_date, subject, task_code, title, target, progress, status, manual,
-                   COALESCE(task_type, 'mandatory'), created_at, updated_at
-            FROM daily_tasks_old"""))
+        if has_task_type:
+            db.execute(text("""INSERT OR IGNORE INTO daily_tasks
+                (id, user_id, task_date, subject, task_code, title, target, progress, status, manual, task_type, created_at, updated_at)
+                SELECT id, user_id, task_date, subject, task_code, title, target, progress, status, manual,
+                       COALESCE(task_type, 'mandatory'), created_at, updated_at
+                FROM daily_tasks_old"""))
+        else:
+            # 旧表没有 task_type 列，全部设为 mandatory
+            db.execute(text("""INSERT OR IGNORE INTO daily_tasks
+                (id, user_id, task_date, subject, task_code, title, target, progress, status, manual, task_type, created_at, updated_at)
+                SELECT id, user_id, task_date, subject, task_code, title, target, progress, status, manual,
+                       'mandatory', created_at, updated_at
+                FROM daily_tasks_old"""))
+
         db.execute(text("DROP TABLE daily_tasks_old"))
+        db.commit()
+    except Exception as e:
+        # 回滚：如果新表已创建但迁移失败，恢复旧表
+        db.execute(text("DROP TABLE IF EXISTS daily_tasks"))
+        try:
+            db.execute(text("ALTER TABLE daily_tasks_old RENAME TO daily_tasks"))
+        except Exception:
+            pass
+        raise e
     finally:
         db.execute(text("PRAGMA foreign_keys=on"))
