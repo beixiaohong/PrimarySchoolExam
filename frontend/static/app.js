@@ -12,7 +12,7 @@ createApp({
       masteredTotal: 0, wrongBadge: 0, diamonds: 0,
       // 首页
       dashboard: null, todayTasks: [],
-      dailyTasks: null, dailyTaskStats: { done_count: 0, total: 3, streak_days: 0 },
+      dailyTasks: null, dailyTaskStats: { done_count: 0, total: 3, streak_days: 0 }, makeupCards: 0,
       reviewQueue: { items: [] },
       queueToday: 0, queueTodayNames: '', queueTomorrow: 0, queueDayAfter: 0, queueLater: 0,
       vocabTotal: 0, vocabLearned: 0,
@@ -245,6 +245,12 @@ createApp({
     curChalQ() {
       const qs = this.chalOverlay.questions || [];
       return qs[this.chalOverlay.i] || { q: '', options: [], answer: '' };
+    },
+    mandatoryTasks() {
+      return (this.dailyTasks || []).filter(t => t.mandatory);
+    },
+    optionalTasks() {
+      return (this.dailyTasks || []).filter(t => !t.mandatory);
     },
   },
 
@@ -873,11 +879,6 @@ createApp({
         .then(d => this._applyDailyTasks(d, true))
         .catch(() => {});
     },
-    swapDailyTask(subject) {
-      this.api('/api/tasks/daily/swap', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
-        .then(d => this._applyDailyTasks(d, false))
-        .catch(e => this.showToast(e.message));
-    },
     claimDailyTask(subject) {
       this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
         .then(d => this._applyDailyTasks(d, true))
@@ -891,10 +892,15 @@ createApp({
     _applyDailyTasks(d, celebrate) {
       const prev = this.dailyTaskStats ? this.dailyTaskStats.done_count : 0;
       this.dailyTasks = (d && d.tasks) || [];
-      this.dailyTaskStats = { done_count: (d && d.done_count) || 0, total: (d && d.total) || 3, streak_days: (d && d.streak_days) || 0 };
+      this.dailyTaskStats = { done_count: (d && d.mandatory_done) || 0, total: (d && d.mandatory_total) || 3, streak_days: (d && d.streak_days) || 0 };
+      this.makeupCards = (d && d.makeup_cards) || 0;
       if (celebrate && this.dailyTaskStats.total && this.dailyTaskStats.done_count >= this.dailyTaskStats.total && prev < this.dailyTaskStats.total) {
-        this.showToast('🎉 三科任务全部完成，今天全勤！');
+        this.showToast('🎉 强制任务全完成，今天全勤！');
         this.remindMoodCheckin();
+      }
+      // 可选任务全完成 → 提示获得补签卡
+      if (celebrate && d && d.optional_done === d.optional_total && d.optional_total > 0) {
+        this.showToast('🎫 可选任务全完成，获得补签卡×1！');
       }
       if (celebrate && this.dailyTaskStats.done_count > prev) this.loadPet();
     },

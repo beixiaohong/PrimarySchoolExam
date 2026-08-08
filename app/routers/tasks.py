@@ -1,21 +1,22 @@
-"""每日任务 API：每科必做 1 项，每科提供多个任务类型可更换
+"""每日任务 API：3 强制 + 3 可选双轨制
 
-设计（与家长确认的规则）：
-- 数学/语文/英语 三科每天各必完成 1 个任务（全部完成才算当天全勤）
-- 每科有 3 个可选任务，孩子可以"换一个"循环切换
-- 能自动核验的任务（做题/订正/背词/古诗文）由真实学习数据驱动进度，
-  达到目标自动完成；需线下完成的任务（讲题/朗读/听写）提供"我完成了"按钮
-- 任务目标数量（如"做几套练习""学几个新词"）由家长在家长面板配置，
-  未配置时使用下方默认值（家长设置明天及以后的任务生效，
-  今天的未完成任务也会同步更新）
-- 连续全勤天数（streak）用于激励展示
+强制任务（每科 1 条，固定不变）：
+- 数学：完成 1 套数学练习
+- 语文：背诵古诗文（含新背+复习）
+- 英语：学单词（含新学+复习）
+→ 三科强制全部完成 = 当天全勤，计入卡券进度
+
+可选任务（系统每日从任务池随机生成 3 条）：
+→ 全部完成获得 1 张补签卡（可补签中断日）
+→ 不可更换，系统自动分配
 """
+import hashlib
 import json
 import logging
 import re
 from datetime import date, datetime, time as dtime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -26,6 +27,7 @@ from ..models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
 from ..models.vocab import VocabDailyLog
 from ..models.classical import ClassicalDailyLog
 from ..models.study_error import StudyError
+from ..models.makeup_card import MakeupCard, MakeupUsageLog
 
 logger = logging.getLogger(__name__)
 
@@ -33,68 +35,90 @@ router = APIRouter()
 
 SUBJECTS = ["数学", "语文", "英语"]
 
-# 每科任务池（顺序即"换一个"的循环顺序）
-TASK_POOLS = {
-    "数学": [
-        {"code": "math_exam", "title": "完成 1 套数学练习", "target": 1, "manual": False,
-         "ico": "🧮", "desc": "刷题中心做一套数学试卷"},
-        {"code": "math_fix", "title": "订正 10 道数学错题", "target": 10, "manual": False,
-         "ico": "📕", "desc": "错题本重做或标记已掌握（每道需做3道同类型题全对才算修正）"},
-        {"code": "math_review", "title": "复习 5 道昨日数学错题", "target": 5, "manual": False,
-         "ico": "🔄", "desc": "把昨天做错的数学题重做一遍"},
-        {"code": "math_teach", "title": "给家长讲 1 道题", "target": 1, "manual": True,
-         "ico": "🎓", "desc": "挑一道今天的题讲给家长听"},
-    ],
-    "语文": [
-        {"code": "chi_classical", "title": "背诵古诗文（含新背+复习）", "target": 1, "manual": False,
-         "ico": "📜", "desc": "背诵中心完成新背和复习，每日必选"},
-        {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
-         "ico": "🖋️", "desc": "刷题中心做一套语文试卷"},
-        {"code": "chi_review", "title": "复习 5 道昨日语文错题", "target": 5, "manual": False,
-         "ico": "🔄", "desc": "把昨天做错的语文题重做一遍"},
-        {"code": "chi_read", "title": "朗读课文 5 分钟", "target": 5, "manual": True,
-         "ico": "🎙️", "desc": "大声朗读课文或古诗，完成后由家长确认"},
-    ],
-    "英语": [
-        {"code": "eng_vocab", "title": "学单词（含新学+复习）", "target": 5, "manual": False,
-         "ico": "🔤", "desc": "背单词模块完成新学和复习，每日必选"},
-        {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
-         "ico": "📝", "desc": "刷题中心做一套英语试卷"},
-        {"code": "eng_review", "title": "复习 5 道昨日英语错题", "target": 5, "manual": False,
-         "ico": "🔄", "desc": "把昨天做错的英语题重做一遍"},
-        {"code": "eng_dictation", "title": "听写 5 个单词", "target": 5, "manual": True,
-         "ico": "✍️", "desc": "家长报词孩子写出来，完成后由家长确认"},
-    ],
+# ═══════════════ 强制任务（每科固定 1 条，不可更换） ═══════════════
+
+MANDATORY_TASKS = {
+    "数学": {"code": "math_exam", "title": "完成 1 套数学练习", "target": 1, "manual": False,
+             "ico": "🧮", "desc": "刷题中心做一套数学试卷"},
+    "语文": {"code": "chi_classical", "title": "背诵古诗文（含新背+复习）", "target": 1, "manual": False,
+             "ico": "📜", "desc": "背诵中心完成新背和复习"},
+    "英语": {"code": "eng_vocab", "title": "学单词（含新学+复习）", "target": 5, "manual": False,
+             "ico": "🔤", "desc": "背单词模块完成新学和复习"},
 }
 
-# 家长可配置目标数量的任务（自动任务由学习数据自动判定完成；
-# 手动任务 [讲题/朗读/听写] 无法自动核验，家长在家长面板设置数量，
-# 孩子完成后由家长在家长面板点「确认完成」）
-CONFIGURABLE_CODES = ["math_exam", "math_fix", "math_review", "chi_exam", "chi_classical", "chi_review",
-                      "eng_exam", "eng_vocab", "eng_review",
-                      "math_teach", "chi_read", "eng_dictation"]
+# ═══════════════ 可选任务池（系统每日随机抽 3 条） ═══════════════
+
+OPTIONAL_POOL = [
+    # 数学
+    {"code": "math_fix", "title": "订正 10 道数学错题", "target": 10, "manual": False,
+     "ico": "📕", "desc": "错题本重做或标记已掌握", "subject": "数学"},
+    {"code": "math_teach", "title": "给家长讲 1 道题", "target": 1, "manual": True,
+     "ico": "🎓", "desc": "挑一道今天的题讲给家长听", "subject": "数学"},
+    {"code": "math_challenge", "title": "数学 60 秒挑战赛 1 次", "target": 1, "manual": False,
+     "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对", "subject": "数学"},
+    # 语文
+    {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
+     "ico": "🖋️", "desc": "刷题中心做一套语文试卷", "subject": "语文"},
+    {"code": "chi_read", "title": "朗读课文 5 分钟", "target": 5, "manual": True,
+     "ico": "🎙️", "desc": "大声朗读课文或古诗，完成后由家长确认", "subject": "语文"},
+    {"code": "chi_dictation", "title": "默写 3 首古诗", "target": 3, "manual": False,
+     "ico": "✍️", "desc": "在背诵中心完成古诗文默写", "subject": "语文"},
+    # 英语
+    {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
+     "ico": "📝", "desc": "刷题中心做一套英语试卷", "subject": "英语"},
+    {"code": "eng_dictation", "title": "听写 10 个单词", "target": 10, "manual": False,
+     "ico": "👂", "desc": "在听写磨耳朵完成单词听写", "subject": "英语"},
+    {"code": "eng_challenge", "title": "英语 60 秒挑战赛 1 次", "target": 1, "manual": False,
+     "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对", "subject": "英语"},
+]
+
+# 家长可配置目标数量的任务
+CONFIGURABLE_CODES = [t["code"] for t in [
+    MANDATORY_TASKS["数学"], MANDATORY_TASKS["语文"], MANDATORY_TASKS["英语"],
+]] + [t["code"] for t in OPTIONAL_POOL]
+# 去重
+CONFIGURABLE_CODES = list(dict.fromkeys(CONFIGURABLE_CODES))
+
 MIN_TARGET, MAX_TARGET = 1, 50
 
-# 必选任务：不允许被「换一个」替换，每天必须完成
-MANDATORY_CODES = {"chi_classical", "eng_vocab"}
-
-# 练习类任务（math_exam / chi_exam / eng_exam）的完成门槛：
-# 只有正确率 ≥60% 的提交才计入完成进度（与家长确认：当日任务完成需正确率达标，直接提交不行）
+# 练习类任务的完成门槛
 TASK_PASS_SCORE = 60
 
 
+# ═══════════════ 每日可选任务生成（确定性随机） ═══════════════
+
+def _pick_daily_optional(user_id: str, today: date) -> list:
+    """基于日期+用户名确定性随机选 3 条可选任务（同一天同一用户结果固定）"""
+    seed = f"{user_id}:{today}:{'daily-optional'}"
+    h = int(hashlib.md5(seed.encode()).hexdigest(), 16)
+    pool = list(OPTIONAL_POOL)
+    picked = []
+    for i in range(3):
+        idx = (h >> (i * 8)) % len(pool)
+        picked.append(pool.pop(idx))
+        if not pool:
+            pool = list(OPTIONAL_POOL)  # 池子空了就重置
+    return picked
+
+
+# ═══════════════ 工具函数 ═══════════════
+
 def _default_target(code: str) -> int:
-    for subj, pool in TASK_POOLS.items():
-        for t in pool:
-            if t["code"] == code:
-                return t["target"]
+    for t in list(MANDATORY_TASKS.values()) + OPTIONAL_POOL:
+        if t["code"] == code:
+            return t["target"]
     return 1
 
 
-# ═══════════════ 家长设置（每日任务题目数量） ═══════════════
+def _display_title(pool_title: str, target: int, default_target: int) -> str:
+    if target == default_target:
+        return pool_title
+    return re.sub(r"\d+", str(target), pool_title, count=1)
+
+
+# ═══════════════ 家长设置 ═══════════════
 
 def _load_settings(db: Session, user_id: str) -> dict:
-    """读取家长设置：{task_code: target}，只含用户覆盖过的项"""
     row = db.execute(
         text("SELECT settings_json FROM parent_task_settings WHERE user_id=:u"),
         {"u": user_id}).fetchone()
@@ -112,7 +136,6 @@ def _load_settings(db: Session, user_id: str) -> dict:
 
 
 def _setting_target(settings: dict, code: str) -> int | None:
-    """设置值（未覆盖返回 None，调用方回落到默认值；浮点/字符串数值统一取整）"""
     val = settings.get(code)
     if val is None:
         return None
@@ -122,48 +145,32 @@ def _setting_target(settings: dict, code: str) -> int | None:
         return None
 
 
-def _display_title(pool_title: str, target: int, default_target: int) -> str:
-    """标题里的数量跟随家长设置：如"完成 1 套数学练习" + 目标 3 → "完成 3 套数学练习" """
-    if target == default_target:
-        return pool_title
-    return re.sub(r"\d+", str(target), pool_title, count=1)
-
-
 class SettingsRequest(BaseModel):
     user_id: str
-    settings: dict = Field(default_factory=dict,
-                           description='{"task_code": target}，仅需传想修改的项')
+    settings: dict = Field(default_factory=dict)
 
 
-@router.get("/settings", summary="获取每日任务目标数量（家长可配置项）")
-def get_task_settings(
-    user_id: str = Query(..., description="用户名"),
-    db: Session = Depends(get_db),
-):
-    """返回全部可配置项的当前生效值（家长覆盖或默认值）"""
+@router.get("/settings", summary="获取每日任务目标数量")
+def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
     user = _load_settings(db, user_id)
     items = []
+    all_tasks = list(MANDATORY_TASKS.values()) + OPTIONAL_POOL
     for code in CONFIGURABLE_CODES:
-        subj = next(s for s, pool in TASK_POOLS.items()
-                    if any(t["code"] == code for t in pool))
-        item = next(t for t in TASK_POOLS[subj] if t["code"] == code)
+        item = next((t for t in all_tasks if t["code"] == code), None)
+        if not item:
+            continue
+        subj = item.get("subject", "")
+        if not subj:
+            subj = next((s for s, t in MANDATORY_TASKS.items() if t["code"] == code), "")
         items.append({
-            "code": code,
-            "subject": subj,
-            "title": item["title"],
-            "default": item["target"],
-            "target": user.get(code, item["target"]),
+            "code": code, "subject": subj, "title": item["title"],
+            "default": item["target"], "target": user.get(code, item["target"]),
         })
     return {"items": items}
 
 
 @router.post("/settings", summary="保存每日任务目标数量（家长设置）")
 def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
-    """保存家长设置：校验 1-50 整数；同步更新今天未完成任务行的目标数量。
-
-    说明：家长设置优先于任务池默认值；今天的任务行（未完成）会立即
-    更新目标，已完成的不再追溯；明天起的任务按新设置生成。
-    """
     if not isinstance(req.settings, dict):
         raise HTTPException(400, "settings 必须为对象")
     clean = {}
@@ -179,16 +186,12 @@ def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
         clean[code] = v
     if not clean:
         return get_task_settings(req.user_id, db)
-
-    # 合并保存（与已有设置合并，保留未修改项）
     merged = _load_settings(db, req.user_id)
     merged.update(clean)
     db.execute(text(
         "INSERT INTO parent_task_settings (user_id, settings_json, updated_at) "
-        "VALUES (:u, :j, :t) "
-        "ON CONFLICT(user_id) DO UPDATE SET settings_json=:j, updated_at=:t"),
+        "VALUES (:u, :j, :t) ON CONFLICT(user_id) DO UPDATE SET settings_json=:j, updated_at=:t"),
         {"u": req.user_id, "j": json.dumps(merged), "t": datetime.now()})
-    # 同步更新今天未完成任务行的目标
     today = date.today()
     rows = db.query(DailyTask).filter(
         DailyTask.user_id == req.user_id, DailyTask.task_date == today).all()
@@ -199,148 +202,168 @@ def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
     return get_task_settings(req.user_id, db)
 
 
-class SwapRequest(BaseModel):
-    user_id: str
-    subject: str
-
-
-class ClaimRequest(BaseModel):
-    user_id: str
-    subject: str
-
+# ═══════════════ 进度追踪辅助 ═══════════════
 
 def _today_start() -> datetime:
     return datetime.combine(date.today(), dtime.min)
 
 
 def _today_attempts(db: Session, user_id: str, subject: str) -> int:
-    """今天正确率 ≥TASK_PASS_SCORE 的练习提交次数。
-
-    低于门槛的提交（正确率不够）不推进任务进度——做题记录照常保存
-    （错题本、学习统计仍依赖它），只是不算"完成任务"。
-    """
     return db.query(ExamAttempt).join(ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
-        ExamAttempt.user_id == user_id,
-        ExamRecord.subject == subject,
-        ExamAttempt.score >= TASK_PASS_SCORE,
-        ExamAttempt.created_at >= _today_start(),
+        ExamAttempt.user_id == user_id, ExamRecord.subject == subject,
+        ExamAttempt.score >= TASK_PASS_SCORE, ExamAttempt.created_at >= _today_start(),
     ).count()
 
 
 def _today_mastered(db: Session, user_id: str, subject: str) -> int:
-    """今天订正（标记已掌握）某学科错题的数量"""
     return db.query(WrongRecord).join(Question, WrongRecord.question_id == Question.id).filter(
-        WrongRecord.user_id == user_id,
-        Question.subject == subject,
-        WrongRecord.mastered_at != None,  # noqa: E711
-        WrongRecord.mastered_at >= _today_start(),
+        WrongRecord.user_id == user_id, Question.subject == subject,
+        WrongRecord.mastered_at != None, WrongRecord.mastered_at >= _today_start(),
     ).count()
 
 
-def _yesterday_start() -> datetime:
-    return datetime.combine(date.today() - timedelta(days=1), dtime.min)
-
-
-def _yesterday_end() -> datetime:
-    return datetime.combine(date.today(), dtime.min)
-
-
-def _yesterday_reviewed(db: Session, user_id: str, subject: str) -> int:
-    """昨天做错的题中，今天已复习（掌握或练习过）的数量。
-
-    覆盖 WrongRecord（试卷错题）+ StudyError（学习模块错题）。
-    """
-    # 试卷错题：昨天错的，今天已掌握
-    exam_reviewed = db.query(WrongRecord).join(Question, WrongRecord.question_id == Question.id).filter(
-        WrongRecord.user_id == user_id,
-        Question.subject == subject,
-        WrongRecord.wrong_at >= _yesterday_start(),
-        WrongRecord.wrong_at < _yesterday_end(),
-        WrongRecord.is_mastered == True,  # noqa: E712
-        WrongRecord.mastered_at >= _today_start(),
+def _today_challenge_count(db: Session, user_id: str, kind: str) -> int:
+    """今天某类挑战赛的完成次数"""
+    from ..models.sprint4 import ChallengeRecord
+    return db.query(ChallengeRecord).filter(
+        ChallengeRecord.user_id == user_id,
+        ChallengeRecord.kind == kind,
+        ChallengeRecord.created_at >= _today_start(),
     ).count()
-    # 学习模块错题：昨天错的，今天已掌握
-    source_map = {"数学": [], "英语": ["grammar", "vocab"], "语文": ["classical"]}
-    types = source_map.get(subject, [])
-    study_reviewed = 0
-    if types:
-        study_reviewed = db.query(StudyError).filter(
-            StudyError.user_id == user_id,
-            StudyError.source_type.in_(types),
-            StudyError.wrong_at >= _yesterday_start(),
-            StudyError.wrong_at < _yesterday_end(),
-            StudyError.is_mastered == True,  # noqa: E712
-            StudyError.mastered_at >= _today_start(),
-        ).count()
-    return exam_reviewed + study_reviewed
+
+
+def _today_dictation_words(db: Session, user_id: str) -> int:
+    """今天听写的单词数（从 VocabDailyLog 的 words_reviewed 字段近似）"""
+    log = db.query(VocabDailyLog).filter(
+        VocabDailyLog.user_id == user_id, VocabDailyLog.learn_date == date.today()
+    ).first()
+    return (log.words_reviewed or 0) if log else 0
+
+
+def _today_dictation_texts(db: Session, user_id: str) -> int:
+    """今天默写的古诗文数（从 ClassicalDailyLog 近似）"""
+    log = db.query(ClassicalDailyLog).filter(
+        ClassicalDailyLog.user_id == user_id, ClassicalDailyLog.learn_date == date.today()
+    ).first()
+    return (log.texts_reviewed or 0) if log else 0
 
 
 def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int) -> int:
-    """根据真实学习数据计算自动任务的当前进度（封顶为任务目标）"""
+    """根据真实学习数据计算任务进度（封顶为目标值）"""
+    # 强制任务
     if code == "math_exam":
         return min(target, _today_attempts(db, user_id, "数学"))
+    if code == "chi_classical":
+        log = db.query(ClassicalDailyLog).filter(
+            ClassicalDailyLog.user_id == user_id, ClassicalDailyLog.learn_date == date.today()
+        ).first()
+        v = ((log.texts_learned or 0) + (log.texts_reviewed or 0)) if log else 0
+        return min(target, v)
+    if code == "eng_vocab":
+        log = db.query(VocabDailyLog).filter(
+            VocabDailyLog.user_id == user_id, VocabDailyLog.learn_date == date.today()
+        ).first()
+        v = ((log.new_words_learned or 0) + (log.words_reviewed or 0)) if log else 0
+        return min(target, v)
+    # 可选任务
     if code == "math_fix":
         return min(target, _today_mastered(db, user_id, "数学"))
     if code == "chi_exam":
         return min(target, _today_attempts(db, user_id, "语文"))
-    if code == "chi_classical":
-        log = db.query(ClassicalDailyLog).filter(
-            ClassicalDailyLog.user_id == user_id,
-            ClassicalDailyLog.learn_date == date.today(),
-        ).first()
-        v = ((log.texts_learned or 0) + (log.texts_reviewed or 0)) if log else 0
-        return min(target, v)
     if code == "eng_exam":
         return min(target, _today_attempts(db, user_id, "英语"))
-    if code == "eng_vocab":
-        log = db.query(VocabDailyLog).filter(
-            VocabDailyLog.user_id == user_id,
-            VocabDailyLog.learn_date == date.today(),
-        ).first()
-        v = ((log.new_words_learned or 0) + (log.words_reviewed or 0)) if log else 0
-        return min(target, v)
-    if code == "math_review":
-        return min(target, _yesterday_reviewed(db, user_id, "数学"))
-    if code == "chi_review":
-        return min(target, _yesterday_reviewed(db, user_id, "语文"))
-    if code == "eng_review":
-        return min(target, _yesterday_reviewed(db, user_id, "英语"))
+    if code == "math_challenge":
+        return min(target, _today_challenge_count(db, user_id, "math"))
+    if code == "eng_challenge":
+        return min(target, _today_challenge_count(db, user_id, "word"))
+    if code == "eng_dictation":
+        return min(target, _today_dictation_words(db, user_id))
+    if code == "chi_dictation":
+        return min(target, _today_dictation_texts(db, user_id))
     return 0
 
 
+# ═══════════════ 任务行生成 ═══════════════
+
 def _ensure_today_rows(db: Session, user_id: str) -> dict:
-    """确保今天三科任务行存在（默认取每科第一个任务，目标数量应用家长设置）"""
+    """确保今天 6 条任务行存在（3 强制 + 3 可选）"""
     today = date.today()
-    rows = {r.subject: r for r in db.query(DailyTask).filter(
-        DailyTask.user_id == user_id, DailyTask.task_date == today).all()}
+    rows = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == today).all()
+    by_type = {}
+    for r in rows:
+        tt = getattr(r, 'task_type', 'mandatory') or 'mandatory'
+        by_type.setdefault(tt, {})[r.subject] = r
+
     settings = _load_settings(db, user_id)
+    changed = False
+
+    # 强制任务：每科 1 条
+    mandatory = by_type.get("mandatory", {})
     for subj in SUBJECTS:
-        if subj not in rows:
-            t = TASK_POOLS[subj][0]
+        if subj not in mandatory:
+            t = MANDATORY_TASKS[subj]
             row = DailyTask(
                 user_id=user_id, task_date=today, subject=subj,
                 task_code=t["code"], title=t["title"],
                 target=_setting_target(settings, t["code"]) or t["target"],
                 progress=0, status="pending", manual=t["manual"],
+                task_type="mandatory",
             )
             db.add(row)
-            rows[subj] = row
-    db.commit()
-    return rows
+            changed = True
+
+    # 可选任务：系统生成 3 条
+    optional = by_type.get("optional", {})
+    if not optional:
+        picked = _pick_daily_optional(user_id, today)
+        for i, t in enumerate(picked):
+            subj = t["subject"]
+            # 用序号做 subject 后缀避免唯一约束冲突：opt_0, opt_1, opt_2
+            slot = f"opt_{i}"
+            row = DailyTask(
+                user_id=user_id, task_date=today, subject=subj,
+                task_code=t["code"], title=t["title"],
+                target=_setting_target(settings, t["code"]) or t["target"],
+                progress=0, status="pending", manual=t["manual"],
+                task_type="optional",
+            )
+            db.add(row)
+            changed = True
+
+    if changed:
+        db.commit()
+
+    # 重新查询返回
+    all_rows = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == today).all()
+    return all_rows
+
+
+# ═══════════════ 全勤 & 连续天数（含补签卡） ═══════════════
+
+def _is_full_day(db: Session, user_id: str, d: date) -> bool:
+    """判断某天是否全勤（强制任务全部 done）"""
+    rows = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == d,
+        DailyTask.task_type == "mandatory",
+    ).all()
+    return len(rows) >= len(SUBJECTS) and all(r.status == "done" for r in rows)
+
+
+def _has_makeup_card(db: Session, user_id: str, d: date) -> bool:
+    """判断某天是否已使用补签卡"""
+    return db.query(MakeupUsageLog).filter(
+        MakeupUsageLog.user_id == user_id, MakeupUsageLog.target_date == d
+    ).count() > 0
 
 
 def _streak(db: Session, user_id: str) -> int:
-    """连续全勤天数：三科全部完成的日子连续计数"""
+    """连续全勤天数（含补签卡补签的日子）"""
     today = date.today()
-
-    def _full(d: date) -> bool:
-        rows = db.query(DailyTask).filter(
-            DailyTask.user_id == user_id, DailyTask.task_date == d).all()
-        return len(rows) >= len(SUBJECTS) and all(r.status == "done" for r in rows)
-
     streak = 0
-    d = today if _full(today) else today - timedelta(days=1)
-    while _full(d):
+    d = today if _is_full_day(db, user_id, today) else today - timedelta(days=1)
+    while _is_full_day(db, user_id, d) or _has_makeup_card(db, user_id, d):
         streak += 1
         d -= timedelta(days=1)
         if streak > 3660:
@@ -348,30 +371,84 @@ def _streak(db: Session, user_id: str) -> int:
     return streak
 
 
+# ═══════════════ 补签卡 ═══════════════
+
+def _get_makeup_balance(db: Session, user_id: str) -> int:
+    card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
+    return (card.balance if card else 0)
+
+
+def _grant_makeup_card(db: Session, user_id: str):
+    """完成全部可选任务 → 获得 1 张补签卡"""
+    card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
+    if not card:
+        card = MakeupCard(user_id=user_id, balance=0, total_earned=0, total_used=0)
+        db.add(card)
+        db.flush()
+    card.balance += 1
+    card.total_earned += 1
+    db.commit()
+
+
+@router.post("/makeup/use", summary="使用补签卡补签某天")
+def use_makeup_card(
+    req: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    user_id = req.get("user_id", "").strip()
+    target = req.get("target_date", "")
+    if not user_id or not target:
+        raise HTTPException(400, "需要 user_id 和 target_date")
+    try:
+        d = date.fromisoformat(target)
+    except ValueError:
+        raise HTTPException(400, "日期格式错误，用 YYYY-MM-DD")
+    if d >= date.today():
+        raise HTTPException(400, "只能补签过去的日期")
+    balance = _get_makeup_balance(db, user_id)
+    if balance <= 0:
+        raise HTTPException(400, "没有可用的补签卡")
+    if _has_makeup_card(db, user_id, d):
+        raise HTTPException(400, "该日期已补签过")
+    log = MakeupUsageLog(user_id=user_id, target_date=d)
+    db.add(log)
+    card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
+    card.balance -= 1
+    card.total_used += 1
+    db.commit()
+    return {"balance": card.balance, "target_date": target, "message": "补签成功！当天算全勤"}
+
+
+@router.get("/makeup/balance", summary="查询补签卡余额")
+def get_makeup_balance(user_id: str = Query(...), db: Session = Depends(get_db)):
+    return {"user_id": user_id, "balance": _get_makeup_balance(db, user_id)}
+
+
+# ═══════════════ 构建返回数据 ═══════════════
+
 def _build_payload(db: Session, user_id: str) -> dict:
-    """刷新今日任务：计算进度、自动完成、汇总全勤与连续天数"""
-    rows = _ensure_today_rows(db, user_id)
+    """刷新今日任务：计算进度、自动完成、汇总全勤"""
+    all_rows = _ensure_today_rows(db, user_id)
     settings = _load_settings(db, user_id)
-    # 遗留修复：旧版本写入的 task_code 若已不在任务池（如任务池调整），
-    # 展示与进度都会按池内第一个任务处理，这里同步回写存储，避免永久 pending 卡死
-    for subj, row in rows.items():
-        pool = TASK_POOLS[subj]
-        if not any(t["code"] == row.task_code for t in pool) and row.status != "done":
-            cur = pool[0]
-            row.task_code = cur["code"]
-            row.title = cur["title"]
-            row.target = _setting_target(settings, cur["code"]) or cur["target"]
-            row.manual = cur["manual"]
-            row.progress = 0
-    for subj, row in rows.items():
+
+    mandatory_rows = []
+    optional_rows = []
+    for r in all_rows:
+        tt = getattr(r, 'task_type', 'mandatory') or 'mandatory'
+        if tt == "mandatory":
+            mandatory_rows.append(r)
+        else:
+            optional_rows.append(r)
+
+    # 计算进度 & 自动完成
+    for row in all_rows:
         if row.status == "done":
             continue
         if not row.manual:
-            prog = _task_progress(db, user_id, subj, row.task_code, row.target)
+            prog = _task_progress(db, user_id, row.subject, row.task_code, row.target)
             row.progress = prog
             if prog >= row.target:
                 row.status = "done"
-                # 任务完成 → 进行中心愿进度 +1（Sprint 3 奖励闭环）
                 try:
                     from .rewards import inc_active_wish_progress
                     inc_active_wish_progress(db, user_id, 1)
@@ -379,97 +456,96 @@ def _build_payload(db: Session, user_id: str) -> dict:
                     pass
     db.commit()
 
-    # 全勤日 → 需天数的兑换券累计 1 天进度（同日去重，达标自动获得 1 张）
-    try:
-        from .rewards import sync_coupon_progress
-        sync_coupon_progress(db, user_id)
-    except Exception:
-        pass
+    # 检查可选任务是否全部完成 → 发补签卡
+    optional_done = all(r.status == "done" for r in optional_rows) if optional_rows else False
+    if optional_done and optional_rows:
+        # 检查今天是否已经发过（避免重复发放）
+        today_str = str(date.today())
+        card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
+        if card and getattr(card, 'updated_at', None):
+            last_grant = str(card.updated_at.date()) if card.updated_at else ""
+            if last_grant != today_str:
+                _grant_makeup_card(db, user_id)
+        elif not card:
+            _grant_makeup_card(db, user_id)
 
+    # 全勤日 → 卡券累计
+    mandatory_all_done = all(r.status == "done" for r in mandatory_rows) if mandatory_rows else False
+    if mandatory_all_done:
+        try:
+            from .rewards import sync_coupon_progress
+            sync_coupon_progress(db, user_id)
+        except Exception:
+            pass
+
+    # 组装返回
+    all_tasks_list = list(MANDATORY_TASKS.values()) + OPTIONAL_POOL
     tasks = []
-    for subj in SUBJECTS:
-        r = rows[subj]
-        pool = TASK_POOLS[subj]
-        idx = next((i for i, t in enumerate(pool) if t["code"] == r.task_code), 0)
-        cur = pool[idx]
-        nxt = pool[(idx + 1) % len(pool)]
-        nxt_target = _setting_target(settings, nxt["code"]) or nxt["target"]
+    for r in sorted(all_rows, key=lambda x: (0 if getattr(x, 'task_type', 'mandatory') == 'mandatory' else 1, x.subject)):
+        tt = getattr(r, 'task_type', 'mandatory') or 'mandatory'
+        cur = next((t for t in all_tasks_list if t["code"] == r.task_code), None)
+        if not cur:
+            continue
         tasks.append({
-            "subject": subj,
+            "subject": r.subject,
             "task_code": r.task_code,
             "title": _display_title(cur["title"], r.target, cur["target"]),
             "target": r.target,
             "progress": r.progress,
             "status": r.status,
             "manual": r.manual,
-            "mandatory": r.task_code in MANDATORY_CODES,
+            "mandatory": tt == "mandatory",
             "ico": cur["ico"],
             "desc": cur["desc"],
-            "next_title": _display_title(nxt["title"], nxt_target, nxt["target"]),
         })
 
-    done_count = sum(1 for r in rows.values() if r.status == "done")
+    mandatory_done = sum(1 for r in mandatory_rows if r.status == "done")
+    optional_done_count = sum(1 for r in optional_rows if r.status == "done")
     return {
         "date": str(date.today()),
         "tasks": tasks,
-        "done_count": done_count,
+        "mandatory_done": mandatory_done,
+        "mandatory_total": len(SUBJECTS),
+        "optional_done": optional_done_count,
+        "optional_total": len(optional_rows),
+        "done_count": mandatory_done,
         "total": len(SUBJECTS),
         "streak_days": _streak(db, user_id),
+        "makeup_cards": _get_makeup_balance(db, user_id),
     }
 
 
-@router.get("/daily", summary="今日任务（每科必做，可更换）")
-def get_daily(
-    user_id: str = Query(..., description="用户名"),
-    db: Session = Depends(get_db),
-):
+@router.get("/daily", summary="今日任务（3强制+3可选）")
+def get_daily(user_id: str = Query(...), db: Session = Depends(get_db)):
     return _build_payload(db, user_id)
 
 
-@router.post("/daily/swap", summary="更换某学科今天的任务")
-def swap_task(req: SwapRequest, db: Session = Depends(get_db)):
-    if req.subject not in TASK_POOLS:
-        raise HTTPException(400, "未知学科")
-    today = date.today()
-    rows = _ensure_today_rows(db, req.user_id)
-    row = rows[req.subject]
-    if row.status == "done":
-        return _build_payload(db, req.user_id)  # 已完成的任务不允许更换
-    if row.task_code in MANDATORY_CODES:
-        raise HTTPException(400, "该任务为每日必选，不可更换")
-    pool = TASK_POOLS[req.subject]
-    idx = next((i for i, t in enumerate(pool) if t["code"] == row.task_code), 0)
-    nxt = pool[(idx + 1) % len(pool)]
-    settings = _load_settings(db, req.user_id)
-    row.task_code = nxt["code"]
-    row.title = nxt["title"]
-    row.target = _setting_target(settings, nxt["code"]) or nxt["target"]
-    row.manual = nxt["manual"]
-    row.progress = 0
-    row.status = "pending"
-    db.commit()
-    return _build_payload(db, req.user_id)
+class ClaimRequest(BaseModel):
+    user_id: str
+    subject: str
 
 
-@router.post("/daily/claim", summary="手动确认完成某学科任务")
+@router.post("/daily/claim", summary="手动确认完成任务")
 def claim_task(req: ClaimRequest, db: Session = Depends(get_db)):
-    if req.subject not in TASK_POOLS:
-        raise HTTPException(400, "未知学科")
-    rows = _ensure_today_rows(db, req.user_id)
-    row = rows[req.subject]
+    today = date.today()
+    rows = db.query(DailyTask).filter(
+        DailyTask.user_id == req.user_id, DailyTask.task_date == today,
+        DailyTask.subject == req.subject, DailyTask.task_type == "mandatory",
+    ).all()
+    row = rows[0] if rows else None
+    if not row:
+        raise HTTPException(404, "未找到任务")
     if not row.manual:
         raise HTTPException(400, "该任务由学习数据自动判定，无需手动确认")
     if row.status == "done":
         return _build_payload(db, req.user_id)
     row.progress = row.target
     row.status = "done"
-    # 任务完成 → 进行中心愿进度 +1（Sprint 3 奖励闭环）
     try:
         from .rewards import inc_active_wish_progress
         inc_active_wish_progress(db, req.user_id, 1)
     except Exception:
         pass
-    # 任务完成 → 金币 +5（P2 金币宠物）
     try:
         from .pet import _grant_coins
         _grant_coins(db, req.user_id, 5, "完成任务")

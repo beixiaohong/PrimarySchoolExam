@@ -127,10 +127,10 @@
           <span v-if="notices.pending_redeem>0" class="nb-item nb-hot">🎉 心愿达标啦，快找家长兑现！</span>
         </div>
 
-        <!-- 每科必做：今日任务（每科完成 1 项即全勤，任务可更换） -->
-        <div class="section-title">✅ 每科必做 <span class="more">三科各完成 1 项即今日全勤 · 🔥已连续 {{dailyTaskStats.streak_days}} 天</span></div>
+        <!-- 强制任务：三科各1条，完成即全勤 -->
+        <div class="section-title">✅ 每日强制任务 <span class="more">三科全完成 = 今日全勤 · 🔥连续 {{dailyTaskStats.streak_days}} 天</span></div>
         <div class="grid-3" v-if="dailyTasks">
-          <div class="card dtask" :class="{done: t.status==='done'}" v-for="t in dailyTasks" :key="t.subject">
+          <div class="card dtask" :class="{done: t.status==='done'}" v-for="t in mandatoryTasks" :key="'m-'+t.subject+'-'+t.task_code">
             <div class="dtask-head">
               <span class="tag" :class="t.subject==='数学' ? 'tag-orange' : (t.subject==='语文' ? 'tag-green' : 'tag-blue')">{{t.subject}}</span>
               <span class="dtask-state" :class="{ok: t.status==='done'}">{{t.status==='done' ? '✅ 已完成' : t.progress + ' / ' + t.target}}</span>
@@ -139,8 +139,6 @@
             <b class="dtask-title">{{t.title}}</b>
             <div class="dtask-desc">{{t.desc}}</div>
             <div class="dtask-actions">
-              <button v-if="!t.mandatory" class="btn btn-ghost btn-sm" :disabled="t.status==='done'" @click="swapDailyTask(t.subject)">换一个<span v-if="t.next_title" class="next-hint">：{{t.next_title}}</span></button>
-              <span v-if="t.mandatory" class="tag tag-red">必选</span>
               <span v-if="t.manual && t.status!=='done'" class="tag tag-orange">完成找家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">全勤 +1</span>
             </div>
@@ -148,6 +146,27 @@
           </div>
         </div>
         <div v-else class="card"><div class="empty"><div class="em">🎯</div><h3>加载今日任务中…</h3></div></div>
+
+        <!-- 可选任务：系统每日生成3条，全完成获得补签卡 -->
+        <div class="section-title" style="margin-top:20px">🎯 每日可选任务 <span class="more">系统每日自动分配 · 全部完成获 🎫补签卡×1</span>
+          <span v-if="makeupCards>0" style="margin-left:12px;font-size:12px;color:#8B7CF6;font-weight:600">🎫 补签卡 ×{{makeupCards}}</span>
+        </div>
+        <div class="grid-3" v-if="dailyTasks">
+          <div class="card dtask" :class="{done: t.status==='done'}" v-for="(t,i) in optionalTasks" :key="'o-'+i+'-'+t.task_code">
+            <div class="dtask-head">
+              <span class="tag" :class="t.subject==='数学' ? 'tag-orange' : (t.subject==='语文' ? 'tag-green' : 'tag-blue')">{{t.subject}}</span>
+              <span class="dtask-state" :class="{ok: t.status==='done'}">{{t.status==='done' ? '✅ 已完成' : t.progress + ' / ' + t.target}}</span>
+            </div>
+            <div class="dtask-ico">{{t.ico}}</div>
+            <b class="dtask-title">{{t.title}}</b>
+            <div class="dtask-desc">{{t.desc}}</div>
+            <div class="dtask-actions">
+              <span v-if="t.manual && t.status!=='done'" class="tag tag-orange">完成找家长确认</span>
+              <span v-else-if="t.status==='done'" class="tag tag-green">已完成</span>
+            </div>
+            <div class="dtask-bar"><div class="dtask-bar-in" :style="{width: (t.target ? Math.min(100, t.progress / t.target * 100) : 0) + '%'}"></div></div>
+          </div>
+        </div>
 
         <!-- 今日任务包（点击卡片直接开始，无确认弹窗） -->
         <div class="section-title">🗂️ 今日任务包 <span class="more">点击卡片立即开始，按遗忘曲线自动安排</span></div>
@@ -233,7 +252,7 @@
               <span class="ci">{{couponIcon(c.kind)}}</span>
               <div class="c-body">
                 <b>{{c.title}}</b>
-                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得，当前 {{c.progress_days}}/{{c.required_days}} 天</template><span class="more" style="font-size:11px"> · 中断超3天进度清零</span></span>
+                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得，当前 {{c.progress_days}}/{{c.required_days}} 天</template><span class="more" style="font-size:11px"> · 7天内最多缺1天，超出从头计算</span></span>
                 <span v-else>{{c.kind_label}} · 可直接使用，剩余 {{c.left}} 张</span>
                 <span v-if="c.reason" class="c-reason">🎯 {{c.reason}}</span>
               </div>
@@ -1449,7 +1468,7 @@
                 <span class="ci">{{couponIcon(c.kind)}}</span>
                 <div class="c-body">
                   <b>{{c.title}}</b>
-                  <span>{{c.kind_label}}<template v-if="c.required_days>0"> · 三科全勤 {{c.required_days}} 天得 1 张<span class="more" style="font-size:11px"> · 中断超3天进度清零</span></template><template v-if="c.reason"> · 🎯 {{c.reason}}</template></span>
+                  <span>{{c.kind_label}}<template v-if="c.required_days>0"> · 三科全勤 {{c.required_days}} 天得 1 张<span class="more" style="font-size:11px"> · 7天内最多缺1天，超出从头计算</span></template><template v-if="c.reason"> · 🎯 {{c.reason}}</template></span>
                   <span v-if="c.status==='active'">已获得 {{c.granted_count}} 张 · 剩余 {{c.left}} 张</span>
                   <span v-else>已停用（历史获得 {{c.granted_count}} 张）</span>
                 </div>

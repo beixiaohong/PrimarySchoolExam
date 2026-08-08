@@ -1,4 +1,4 @@
-"""每日任务模型：每科必做一项，可更换任务"""
+"""每日任务模型：强制任务 + 可选任务双轨"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, UniqueConstraint
@@ -7,10 +7,11 @@ from ..database import Base
 
 
 class DailyTask(Base):
-    """用户每日任务（每学科一行，当天必做 1 项，可更换任务类型）"""
+    """用户每日任务（强制 3 条 + 可选 3 条）"""
     __tablename__ = "daily_tasks"
     __table_args__ = (
-        UniqueConstraint("user_id", "task_date", "subject", name="uq_user_date_subject"),
+        UniqueConstraint("user_id", "task_date", "subject", "task_type",
+                         name="uq_user_date_subject_type"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -23,5 +24,6 @@ class DailyTask(Base):
     progress = Column(Integer, default=0, comment="当前进度")
     status = Column(String(20), default="pending", comment="pending/done")
     manual = Column(Boolean, default=False, comment="True=需要手动确认完成")
+    task_type = Column(String(20), default="mandatory", comment="mandatory/optional")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

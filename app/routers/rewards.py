@@ -248,18 +248,48 @@ def inc_active_wish_progress(db: Session, user_id: str, n: int = 1):
 
 
 def sync_coupon_progress(db: Session, user_id: str):
-    """每日任务刷新时调用：今天三科全勤 → 每张需天数的券当日累计 1 天，
-    达到 required_days 自动获得 1 张（进度清零，可继续累计下一张）。
-    中断超过 3 天未全勤 → 进度清零重新计算。"""
+    """每日任务刷新时调用：今天强制任务全勤 → 每张需天数的券当日累计 1 天。
+    
+    规则：
+    - 达到 required_days 自动获得 1 张（进度清零，可继续累计下一张）
+    - 中断超过 3 天未全勤 → 进度清零
+    - 每 7 天最多允许 1 天缺卡，超出则进度从头统计
+    """
     from datetime import date, timedelta
     from ..models.daily_task import DailyTask
     from ..models.reward import RewardCoupon
+    from ..models.makeup_card import MakeupUsageLog
     today = date.today()
     today_str = str(today)
-    rows = db.query(DailyTask).filter(
-        DailyTask.user_id == user_id, DailyTask.task_date == today).all()
-    if len(rows) < 3 or not all(r.status == "done" for r in rows):
+
+    # 检查今天强制任务是否全勤
+    mandatory_rows = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == today,
+        DailyTask.task_type == "mandatory",
+    ).all()
+    if len(mandatory_rows) < 3 or not all(r.status == "done" for r in mandatory_rows):
         return  # 今天尚未全勤，不累计
+
+    # 检查最近 7 天的缺卡情况
+    miss_count = 0
+    for i in range(7):
+        d = today - timedelta(days=i)
+        if i == 0:
+            continue  # 今天已确认全勤
+        # 检查该天是否全勤（强制任务全 done）
+        day_rows = db.query(DailyTask).filter(
+            DailyTask.user_id == user_id, DailyTask.task_date == d,
+            DailyTask.task_type == "mandatory",
+        ).all()
+        day_full = len(day_rows) >= 3 and all(r.status == "done" for r in day_rows)
+        if not day_full:
+            # 检查是否用了补签卡
+            makeup = db.query(MakeupUsageLog).filter(
+                MakeupUsageLog.user_id == user_id, MakeupUsageLog.target_date == d
+            ).count()
+            if not makeup:
+                miss_count += 1
+
     changed = False
     for c in db.query(RewardCoupon).filter(
             RewardCoupon.user_id == user_id, RewardCoupon.status == "active",
@@ -275,6 +305,9 @@ def sync_coupon_progress(db: Session, user_id: str):
                     c.progress_days = 0
             except Exception:
                 pass
+        # 7 天内缺卡超过 1 天 → 进度清零
+        if miss_count > 1:
+            c.progress_days = 0
         c.progress_days = (c.progress_days or 0) + 1
         c.progress_date = today_str
         if c.progress_days >= c.required_days:

@@ -8,6 +8,7 @@ from .grammar import GrammarPoint, GrammarExercise
 from .study_error import StudyError
 from .user import User
 from .diamond import DiamondAccount, DiamondLedger
+from .makeup_card import MakeupCard, MakeupUsageLog
 
 __all__ = [
     "Word", "WordBook",
@@ -21,4 +22,5 @@ __all__ = [
     "StudyError",
     "User",
     "DiamondAccount", "DiamondLedger",
+    "MakeupCard", "MakeupUsageLog",
 ]
