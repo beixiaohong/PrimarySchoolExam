@@ -168,6 +168,24 @@ def toggle_coupon(cid: int, req: ToggleReq, db: Session = Depends(get_db)):
     return _coupon_out(c)
 
 
+@router.delete("/coupon/{cid}", summary="家长删除兑换券")
+def delete_coupon(cid: int, user_id: str = Query(...), db: Session = Depends(get_db)):
+    from ..models.reward import RewardCoupon
+    c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
+                                      RewardCoupon.user_id == user_id).first()
+    if not c:
+        raise HTTPException(404, "兑换券不存在")
+    # 检查是否可以删除：必须已停用，且没有未核销的券
+    if c.status != "archived":
+        raise HTTPException(400, "请先停用该券再删除")
+    left = (c.granted_count or 0) - (c.redeemed_count or 0)
+    if left > 0:
+        raise HTTPException(400, f"还有 {left} 张未核销的券，无法删除")
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
+
+
 # ═══════════════════ 心愿单 ═══════════════════
 
 @router.post("/wish", summary="孩子创建心愿（待家长确认；同时仅 1 个进行中）")
@@ -334,6 +352,7 @@ def sync_coupon_progress(db: Session, user_id: str):
 
     # 检查最近 7 天的缺卡情况
     miss_count = 0
+    active_days = 0  # 有任务记录的天数
     for i in range(7):
         d = today - timedelta(days=i)
         if i == 0:
@@ -343,6 +362,9 @@ def sync_coupon_progress(db: Session, user_id: str):
             DailyTask.user_id == user_id, DailyTask.task_date == d,
             DailyTask.task_type == "mandatory",
         ).all()
+        if not day_rows:
+            continue  # 该天无任务记录（用户未使用系统），不算缺卡
+        active_days += 1
         day_full = len(day_rows) >= 3 and all(r.status == "done" for r in day_rows)
         if not day_full:
             # 检查是否用了补签卡

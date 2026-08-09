@@ -28,6 +28,7 @@ from ..models.vocab import VocabDailyLog
 from ..models.classical import ClassicalDailyLog
 from ..models.study_error import StudyError
 from ..models.makeup_card import MakeupCard, MakeupUsageLog
+from ..models.custom_task import CustomTask
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +88,8 @@ CONFIGURABLE_CODES = list(dict.fromkeys(CONFIGURABLE_CODES))
 
 MIN_TARGET, MAX_TARGET = 1, 50
 
-# 练习类任务的完成门槛
-TASK_PASS_SCORE = 60
+# 练习类任务的完成门槛（分数≥70才算完成）
+TASK_PASS_SCORE = 70
 
 
 # ═══════════════ 每日可选任务生成（确定性随机） ═══════════════
@@ -668,3 +669,84 @@ def claim_task(req: ClaimRequest, db: Session = Depends(get_db)):
         pass
     db.commit()
     return _build_payload(db, req.user_id)
+
+
+# ═══════════════ 自定义任务（孩子提交 + 家长确认） ═══════════════
+
+class CustomTaskCreate(BaseModel):
+    user_id: str
+    title: str
+    subject: str = "其他"
+
+
+class CustomTaskAction(BaseModel):
+    task_id: int
+
+
+@router.post("/custom", summary="孩子创建自定义任务")
+def create_custom_task(req: CustomTaskCreate, db: Session = Depends(get_db)):
+    if not req.title.strip():
+        raise HTTPException(400, "任务标题不能为空")
+    task = CustomTask(
+        user_id=req.user_id,
+        title=req.title.strip()[:100],
+        subject=req.subject or "其他",
+        status="pending",
+    )
+    db.add(task)
+    db.commit()
+    return {"id": task.id, "title": task.title, "status": task.status}
+
+
+@router.get("/custom", summary="查看自定义任务列表")
+def list_custom_tasks(
+    user_id: str = Query(...),
+    status: str = Query(None, description="pending/confirmed/rejected，不传返回全部"),
+    db: Session = Depends(get_db),
+):
+    q = db.query(CustomTask).filter(CustomTask.user_id == user_id)
+    if status:
+        q = q.filter(CustomTask.status == status)
+    tasks = q.order_by(CustomTask.created_at.desc()).limit(50).all()
+    return [
+        {
+            "id": t.id,
+            "title": t.title,
+            "subject": t.subject,
+            "status": t.status,
+            "created_at": str(t.created_at) if t.created_at else None,
+            "confirmed_at": str(t.confirmed_at) if t.confirmed_at else None,
+        }
+        for t in tasks
+    ]
+
+
+@router.post("/custom/confirm", summary="家长确认自定义任务完成")
+def confirm_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
+    task = db.query(CustomTask).filter(CustomTask.id == req.task_id).first()
+    if not task:
+        raise HTTPException(404, "未找到该任务")
+    if task.status != "pending":
+        raise HTTPException(400, f"任务状态为 {task.status}，无法确认")
+    task.status = "confirmed"
+    task.confirmed_at = datetime.now()
+    # 奖励金币
+    try:
+        from .pet import _grant_coins
+        _grant_coins(db, task.user_id, 5, "完成自定义任务")
+    except Exception:
+        pass
+    db.commit()
+    return {"id": task.id, "status": "confirmed", "message": "已确认完成"}
+
+
+@router.post("/custom/reject", summary="家长驳回自定义任务")
+def reject_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
+    task = db.query(CustomTask).filter(CustomTask.id == req.task_id).first()
+    if not task:
+        raise HTTPException(404, "未找到该任务")
+    if task.status != "pending":
+        raise HTTPException(400, f"任务状态为 {task.status}，无法驳回")
+    task.status = "rejected"
+    db.commit()
+    return {"id": task.id, "status": "rejected", "message": "已驳回"}
