@@ -1629,7 +1629,8 @@ createApp({
       const mathOpts = all.filter(t => t.subject === '数学');
       const chiOpts = all.filter(t => t.subject === '语文');
       const engOpts = all.filter(t => t.subject === '英语');
-      this.taskDialog = { show: true, mandatory, optional, disabled, mathOpts, chiOpts, engOpts };
+      const subOpts = { math: mathOpts, chi: chiOpts, eng: engOpts };
+      this.taskDialog = { show: true, mandatory, optional, disabled, mathOpts, chiOpts, engOpts, subOpts };
     },
     _optForSubj(subj) {
       return this.allTaskOptions.filter(t => t.subject === subj);
