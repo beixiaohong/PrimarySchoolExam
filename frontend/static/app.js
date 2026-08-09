@@ -45,7 +45,7 @@ createApp({
       rewards: null,
       allCoupons: [], pendingWishes: [],
       newCoupon: { title: '', kind: 'custom', reason: '', requiredDays: 0 },
-      wishOverlay: { show: false, title: '', target: 5 },
+      wishOverlay: { show: false, title: '', target: 5, wish_type: 'task_count', daily_target: 3 },
       weeklyOverlay: { show: false }, weeklyLoading: false, weekly: null,
       shareImg: '', parentNote: '',
       // 家长功能（Sprint 6）：密码解锁 + 留言 + 学习数据 + 题数设置 + 成长记录
@@ -1608,13 +1608,14 @@ createApp({
         this.loadParentPanel(); this.loadRewards();
       }).catch(e => this.showToast(e.message));
     },
-    startWish() { this.wishOverlay.title = ''; this.wishOverlay.show = true; },
+    startWish() { this.wishOverlay.title = ''; this.wishOverlay.target = 5; this.wishOverlay.wish_type = 'task_count'; this.wishOverlay.daily_target = 3; this.wishOverlay.show = true; },
     submitWish() {
       const title = (this.wishOverlay.title || '').trim();
       if (!title) return this.showToast('写下你的心愿吧');
+      const payload = { user_id: this.user, title, target: Number(this.wishOverlay.target) || 5, wish_type: this.wishOverlay.wish_type, daily_target: Number(this.wishOverlay.daily_target) || 3 };
       this.api('/api/rewards/wish', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, title, target: Number(this.wishOverlay.target) || 5 }),
+        body: JSON.stringify(payload),
       }).then(() => {
         this.wishOverlay.show = false;
         this.loadRewards(); this.loadParentPanel();

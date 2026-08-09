@@ -239,7 +239,8 @@
             </div>
             <div class="progress" style="margin:8px 0"><i :style="{width: Math.min(100, rewards.wish.progress/rewards.wish.target*100)+'%'}"></i></div>
             <div class="wish-foot">
-              <span>{{rewards.wish.progress}} / {{rewards.wish.target}} · 每完成 1 个每日任务 +1</span>
+              <span v-if="rewards.wish.wish_type === 'optional_streak'">{{rewards.wish.progress}} / {{rewards.wish.target}} 天 · 每天完成 {{rewards.wish.daily_target || 3}} 个可选任务</span>
+              <span v-else>{{rewards.wish.progress}} / {{rewards.wish.target}} · 每完成 1 个每日任务 +1</span>
               <button v-if="rewards.wish.status==='pending_redeem'" class="btn btn-primary btn-sm" @click="showToast('去找家长兑现吧，家长可在「设置-家长管理」确认 🎉')">找家长兑现 →</button>
             </div>
           </div>
@@ -1568,11 +1569,29 @@
     <div class="wish-form">
       <label>心愿内容</label>
       <input v-model="wishOverlay.title" class="fill-input" maxlength="50" placeholder="例如：想要一套乐高 / 周末去吃冰淇淋">
-      <label style="margin-top:12px">需要完成几个每日任务？</label>
-      <select v-model="wishOverlay.target" class="fill-input" style="max-width:200px">
-        <option v-for="n in [3,5,7,10,14,20,30]" :key="n" :value="n">{{n}} 个任务</option>
+      <label style="margin-top:12px">完成方式</label>
+      <select v-model="wishOverlay.wish_type" class="fill-input" style="max-width:260px">
+        <option value="task_count">累计完成指定数量的每日任务</option>
+        <option value="optional_streak">连续N天每天完成指定数量可选任务</option>
       </select>
-      <div class="wish-tip">心愿会先请家长确认，确认后每完成 1 个每日任务进度 +1</div>
+      <template v-if="wishOverlay.wish_type === 'task_count'">
+        <label style="margin-top:12px">需要完成几个每日任务？</label>
+        <select v-model="wishOverlay.target" class="fill-input" style="max-width:200px">
+          <option v-for="n in [3,5,7,10,14,20,30]" :key="n" :value="n">{{n}} 个任务</option>
+        </select>
+        <div class="wish-tip">心愿会先请家长确认，确认后每完成 1 个每日任务进度 +1</div>
+      </template>
+      <template v-else>
+        <label style="margin-top:12px">连续几天？</label>
+        <select v-model="wishOverlay.target" class="fill-input" style="max-width:200px">
+          <option v-for="n in [3,5,7,10,14,21,30]" :key="n" :value="n">{{n}} 天</option>
+        </select>
+        <label style="margin-top:12px">每天完成几个可选任务？</label>
+        <select v-model="wishOverlay.daily_target" class="fill-input" style="max-width:200px">
+          <option v-for="n in [1,2,3,4,5]" :key="n" :value="n">{{n}} 个可选任务</option>
+        </select>
+        <div class="wish-tip">连续N天每天完成M个可选任务即达标，中断则重新计数</div>
+      </template>
       <div class="detail-actions" style="margin-top:16px">
         <button class="btn btn-primary" @click="submitWish()">许下心愿 ✨</button>
         <button class="btn btn-ghost" @click="wishOverlay.show=false">取消</button>
