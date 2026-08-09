@@ -1392,36 +1392,12 @@
           </div>
 
           <div class="pc-sec">
-            <div class="pc-title">📋 每日任务设置 <span class="more">开关任务、设置强制/可选、调整目标数量</span></div>
-            <!-- 强制任务选择 -->
-            <div class="pc-row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
-              <span style="font-size:13px;color:#3a4a6b;min-width:60px">强制任务：</span>
-              <span style="font-size:12px;color:#666">数学</span>
-              <select v-model="taskSettingsMandatory.math" class="fill-input" style="max-width:160px;font-size:12px">
-                <option v-for="opt in _tasksForSubject('数学')" :key="opt.code" :value="opt.code">{{_displayTaskTitle(opt)}}</option>
-              </select>
-              <span style="font-size:12px;color:#666">语文</span>
-              <select v-model="taskSettingsMandatory.chi" class="fill-input" style="max-width:160px;font-size:12px">
-                <option v-for="opt in _tasksForSubject('语文')" :key="opt.code" :value="opt.code">{{_displayTaskTitle(opt)}}</option>
-              </select>
-              <span style="font-size:12px;color:#666">英语</span>
-              <select v-model="taskSettingsMandatory.eng" class="fill-input" style="max-width:160px;font-size:12px">
-                <option v-for="opt in _tasksForSubject('英语')" :key="opt.code" :value="opt.code">{{_displayTaskTitle(opt)}}</option>
-              </select>
-            </div>
-            <!-- 各任务开关+目标 -->
-            <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap;gap:8px;align-items:center">
-              <label style="display:flex;align-items:center;gap:4px;min-width:180px;font-size:13px;color:#3a4a6b">
-                <input type="checkbox" v-model="ts.enabled" style="width:16px;height:16px">
-                {{ts.subject}} · {{_displayTaskTitle(ts)}}
-              </label>
-              <input v-model.number="ts.target" type="number" min="1" max="50" class="fill-input" style="max-width:70px" :disabled="!ts.enabled">
-              <span class="more">默认 {{ts.default}}</span>
-              <span v-if="ts.manual" class="more" style="color:#e67e22">需确认</span>
+            <div class="pc-title">📋 每日任务设置 <span class="more">管理强制任务和可选任务</span></div>
+            <div v-if="taskSettings.items && taskSettings.items.length" style="font-size:13px;color:#666;margin-bottom:8px">
+              共 {{taskSettings.items.length}} 个任务已配置
             </div>
             <div class="pc-row" style="margin-top:8px">
-              <button class="btn btn-primary btn-sm" @click="saveTaskSettings()">保存设置</button>
-              <span class="more">保存后今天的未完成任务立即生效</span>
+              <button class="btn btn-primary btn-sm" @click="showTaskSettingsDialog()">添加/修改任务</button>
             </div>
           </div>
 
@@ -1616,6 +1592,61 @@
       <div class="detail-actions" style="margin-top:16px">
         <button class="btn btn-primary" @click="submitWish()">许下心愿 ✨</button>
         <button class="btn btn-ghost" @click="wishOverlay.show=false">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 任务设置弹窗 ═══════════ -->
+<div class="quiz-overlay" v-if="taskDialog.show">
+  <div class="quiz-shell" style="max-width:500px">
+    <div class="quiz-top">
+      <span class="qname">📋 任务设置</span>
+      <button class="icon-btn" @click="taskDialog.show=false" title="关闭">✕</button>
+    </div>
+    <div style="padding:16px">
+      <!-- 强制任务 -->
+      <div style="margin-bottom:16px">
+        <div style="font-weight:bold;margin-bottom:8px;color:#3a4a6b">强制任务</div>
+        <div v-for="subj in ['数学','语文','英语']" :key="'m'+subj" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="min-width:40px;font-size:13px">{{subj}}</span>
+          <select v-model="taskDialog.mandatory[subj]" class="fill-input" style="flex:1;font-size:12px">
+            <option value="">-- 选择任务 --</option>
+            <option v-for="t in allTaskOptions" :key="'m'+subj+t.code" :value="t.code" v-if="!t.subject || t.subject===subj">{{t.title}}</option>
+          </select>
+        </div>
+      </div>
+      <!-- 可选任务 -->
+      <div style="margin-bottom:16px">
+        <div style="font-weight:bold;margin-bottom:8px;color:#3a4a6b">可选任务</div>
+        <div v-for="(opt, idx) in taskDialog.optional" :key="'opt'+idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <select v-model="opt.subject" class="fill-input" style="width:70px;font-size:12px">
+            <option value="数学">数学</option>
+            <option value="语文">语文</option>
+            <option value="英语">英语</option>
+          </select>
+          <select v-model="opt.code" class="fill-input" style="flex:1;min-width:120px;font-size:12px">
+            <option value="">-- 选择任务 --</option>
+            <option v-for="t in allTaskOptions" :key="'opt'+idx+t.code" :value="t.code" v-if="t.subject===opt.subject">{{t.title}}</option>
+          </select>
+          <input v-model.number="opt.target" type="number" min="1" max="50" class="fill-input" style="width:60px;font-size:12px" placeholder="数量">
+          <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.splice(idx,1)" style="padding:2px 8px">✕</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.push({subject:'数学',code:'',target:1})">+ 添加可选任务</button>
+      </div>
+      <!-- 已禁用任务 -->
+      <div style="margin-bottom:16px">
+        <div style="font-weight:bold;margin-bottom:8px;color:#3a4a6b">已禁用任务 <span style="font-weight:normal;color:#999">（勾选的任务不会出现在每日任务中）</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <label v-for="t in allTaskOptions" :key="'dis'+t.code" style="display:flex;align-items:center;gap:4px;font-size:12px">
+            <input type="checkbox" :value="t.code" v-model="taskDialog.disabled">
+            {{t.title}}
+          </label>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-primary" @click="saveTaskDialog()">保存</button>
+        <button class="btn btn-ghost" @click="taskDialog.show=false">取消</button>
       </div>
     </div>
   </div>

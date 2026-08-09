@@ -60,9 +60,9 @@ createApp({
       // 申诉（AI 判题复核 + 孩子「我做对了」家长二次确认）
       pendingAppeals: [],
       submitWrongIds: {}, submitWrongNew: {},
-      // 每日任务目标数量（家长设置）
+      // 每日任务设置
       taskSettings: { items: [] },
-      taskSettingsMandatory: { math: '', chi: '', eng: '' },
+      taskDialog: { show: false, mandatory: {}, optional: [], disabled: [] },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
@@ -252,6 +252,26 @@ createApp({
     },
     optionalTasks() {
       return (this.dailyTasks || []).filter(t => !t.mandatory);
+    },
+    allTaskOptions() {
+      // 所有可选任务选项（用于任务设置弹窗）
+      return [
+        { code: 'math_exam', title: '完成 1 套数学练习', subject: '数学' },
+        { code: 'chi_classical', title: '背诵古诗文', subject: '语文' },
+        { code: 'eng_vocab', title: '学单词', subject: '英语' },
+        { code: 'math_fix', title: '订正错题', subject: '数学' },
+        { code: 'math_teach', title: '给家长讲题', subject: '数学' },
+        { code: 'math_challenge', title: '数学60秒挑战赛', subject: '数学' },
+        { code: 'math_sync', title: '学习平板同步练习', subject: '数学' },
+        { code: 'chi_exam', title: '完成 1 套语文练习', subject: '语文' },
+        { code: 'chi_read', title: '朗读课文', subject: '语文' },
+        { code: 'chi_dictation', title: '默写古诗', subject: '语文' },
+        { code: 'chi_sync', title: '学习平板同步练习', subject: '语文' },
+        { code: 'eng_exam', title: '完成 1 套英语练习', subject: '英语' },
+        { code: 'eng_dictation', title: '听写单词', subject: '英语' },
+        { code: 'eng_challenge', title: '英语60秒挑战赛', subject: '英语' },
+        { code: 'eng_sync', title: '学习平板同步练习', subject: '英语' },
+      ];
     },
   },
 
@@ -1574,40 +1594,43 @@ createApp({
       this.api(`/api/tasks/settings?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
           this.taskSettings = d || { items: [] };
-          // 确保每个 item 有 enabled 字段
-          for (const it of this.taskSettings.items || []) {
-            if (it.enabled === undefined) it.enabled = true;
-          }
-          // 初始化强制任务选择（映射中文到英文key）
-          if (d && d.mandatory) {
-            const subjMap = { '数学': 'math', '语文': 'chi', '英语': 'eng' };
-            for (const [subj, code] of Object.entries(d.mandatory)) {
-              const key = subjMap[subj];
-              if (key) this.taskSettingsMandatory[key] = code;
-            }
-          }
         })
         .catch(() => { this.taskSettings = { items: [] }; });
     },
-    _tasksForSubject(subj) {
-      const items = (this.taskSettings && this.taskSettings.items) || [];
-      return items.filter(it => it && it.subject === subj);
+    showTaskSettingsDialog() {
+      // 初始化弹窗数据
+      const items = this.taskSettings.items || [];
+      const mandatory = {};
+      const disabled = [];
+      const optional = [];
+      // 从当前设置中提取
+      if (this.taskSettings.mandatory) {
+        Object.assign(mandatory, this.taskSettings.mandatory);
+      }
+      for (const it of items) {
+        if (it.enabled === false) disabled.push(it.code);
+      }
+      // 默认强制任务
+      if (!mandatory['数学']) mandatory['数学'] = 'math_exam';
+      if (!mandatory['语文']) mandatory['语文'] = 'chi_classical';
+      if (!mandatory['英语']) mandatory['英语'] = 'eng_vocab';
+      this.taskDialog = { show: true, mandatory, optional, disabled };
     },
-    saveTaskSettings() {
+    saveTaskDialog() {
       const targets = {};
       const enabled = {};
+      const { mandatory, optional, disabled } = this.taskDialog;
+      // 处理所有任务的目标数量
       for (const it of this.taskSettings.items || []) {
-        const v = Number(it.target);
-        if (!Number.isInteger(v) || v < 1 || v > 50) return this.showToast(`「${it.title}」的数量需为 1-50 的整数`);
-        targets[it.code] = v;
-        enabled[it.code] = it.enabled !== false;
+        targets[it.code] = it.target;
+        enabled[it.code] = !disabled.includes(it.code);
       }
-      // 映射英文key回中文subject
-      const subjMap = { math: '数学', chi: '语文', eng: '英语' };
-      const mandatory = {};
-      for (const [key, code] of Object.entries(this.taskSettingsMandatory)) {
-        const subj = subjMap[key];
-        if (subj && code) mandatory[subj] = code;
+      // 处理可选任务（新增的）
+      for (const opt of optional) {
+        if (opt.code && opt.target) {
+          targets[opt.code] = opt.target;
+          enabled[opt.code] = true;
+        }
       }
       const settings = { targets, enabled, mandatory };
       this.api('/api/tasks/settings', {
@@ -1615,18 +1638,9 @@ createApp({
         body: JSON.stringify({ user_id: this.user, settings }),
       }).then(d => {
         this.taskSettings = d || { items: [] };
-        for (const it of this.taskSettings.items || []) {
-          if (it.enabled === undefined) it.enabled = true;
-        }
-        if (d && d.mandatory) {
-          const subjMap2 = { '数学': 'math', '语文': 'chi', '英语': 'eng' };
-          for (const [subj, code] of Object.entries(d.mandatory)) {
-            const key = subjMap2[subj];
-            if (key) this.taskSettingsMandatory[key] = code;
-          }
-        }
-        this.loadDailyTasks(); // 立即刷新今日任务，家长能马上看到效果
-        this.showToast('每日任务设置已保存 ✅');
+        this.taskDialog.show = false;
+        this.loadDailyTasks();
+        this.showToast('任务设置已保存 ✅');
       }).catch(e => this.showToast(e.message));
     },
     createCoupon() {
