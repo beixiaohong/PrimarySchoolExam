@@ -62,7 +62,7 @@ createApp({
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务目标数量（家长设置）
       taskSettings: { items: [] },
-      taskSettingsMandatory: { '数学': '', '语文': '', '英语': '' },
+      taskSettingsMandatory: { math: '', chi: '', eng: '' },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
@@ -1578,9 +1578,13 @@ createApp({
           for (const it of this.taskSettings.items || []) {
             if (it.enabled === undefined) it.enabled = true;
           }
-          // 初始化强制任务选择
+          // 初始化强制任务选择（映射中文到英文key）
           if (d && d.mandatory) {
-            this.taskSettingsMandatory = { ...this.taskSettingsMandatory, ...d.mandatory };
+            const subjMap = { '数学': 'math', '语文': 'chi', '英语': 'eng' };
+            for (const [subj, code] of Object.entries(d.mandatory)) {
+              const key = subjMap[subj];
+              if (key) this.taskSettingsMandatory[key] = code;
+            }
           }
         })
         .catch(() => { this.taskSettings = { items: [] }; });
@@ -1598,7 +1602,14 @@ createApp({
         targets[it.code] = v;
         enabled[it.code] = it.enabled !== false;
       }
-      const settings = { targets, enabled, mandatory: this.taskSettingsMandatory };
+      // 映射英文key回中文subject
+      const subjMap = { math: '数学', chi: '语文', eng: '英语' };
+      const mandatory = {};
+      for (const [key, code] of Object.entries(this.taskSettingsMandatory)) {
+        const subj = subjMap[key];
+        if (subj && code) mandatory[subj] = code;
+      }
+      const settings = { targets, enabled, mandatory };
       this.api('/api/tasks/settings', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, settings }),
@@ -1608,7 +1619,11 @@ createApp({
           if (it.enabled === undefined) it.enabled = true;
         }
         if (d && d.mandatory) {
-          this.taskSettingsMandatory = { ...this.taskSettingsMandatory, ...d.mandatory };
+          const subjMap2 = { '数学': 'math', '语文': 'chi', '英语': 'eng' };
+          for (const [subj, code] of Object.entries(d.mandatory)) {
+            const key = subjMap2[subj];
+            if (key) this.taskSettingsMandatory[key] = code;
+          }
         }
         this.loadDailyTasks(); // 立即刷新今日任务，家长能马上看到效果
         this.showToast('每日任务设置已保存 ✅');
