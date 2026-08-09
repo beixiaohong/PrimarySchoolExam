@@ -257,14 +257,26 @@ def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int)
         log = db.query(ClassicalDailyLog).filter(
             ClassicalDailyLog.user_id == user_id, ClassicalDailyLog.learn_date == date.today()
         ).first()
-        v = ((log.texts_learned or 0) + (log.texts_reviewed or 0)) if log else 0
-        return min(target, v)
+        if not log:
+            return 0
+        learned = log.texts_learned or 0
+        reviewed = log.texts_reviewed or 0
+        # 必须新背+复习都完成才算进度
+        if learned > 0 and reviewed > 0:
+            return min(target, learned + reviewed)
+        return 0
     if code == "eng_vocab":
         log = db.query(VocabDailyLog).filter(
             VocabDailyLog.user_id == user_id, VocabDailyLog.learn_date == date.today()
         ).first()
-        v = ((log.new_words_learned or 0) + (log.words_reviewed or 0)) if log else 0
-        return min(target, v)
+        if not log:
+            return 0
+        new_learned = log.new_words_learned or 0
+        reviewed = log.words_reviewed or 0
+        # 必须新学+复习都完成才算进度（任一为0则进度为0）
+        if new_learned > 0 and reviewed > 0:
+            return min(target, new_learned + reviewed)
+        return 0
     # 可选任务
     if code == "math_fix":
         return min(target, _today_mastered(db, user_id, "数学"))
