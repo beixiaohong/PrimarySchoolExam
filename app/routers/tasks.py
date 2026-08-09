@@ -56,6 +56,8 @@ OPTIONAL_POOL = [
      "ico": "🎓", "desc": "挑一道今天的题讲给家长听", "subject": "数学"},
     {"code": "math_challenge", "title": "数学 60 秒挑战赛 1 次", "target": 1, "manual": False,
      "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对", "subject": "数学"},
+    {"code": "math_sync", "title": "学习平板完成同步练习", "target": 1, "manual": True,
+     "ico": "📱", "desc": "在学习平板完成数学同步练习后，找家长确认", "subject": "数学"},
     # 语文
     {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
      "ico": "🖋️", "desc": "刷题中心做一套语文试卷", "subject": "语文"},
@@ -63,6 +65,8 @@ OPTIONAL_POOL = [
      "ico": "🎙️", "desc": "大声朗读课文或古诗，完成后由家长确认", "subject": "语文"},
     {"code": "chi_dictation", "title": "默写 3 首古诗", "target": 3, "manual": False,
      "ico": "✍️", "desc": "在背诵中心完成古诗文默写", "subject": "语文"},
+    {"code": "chi_sync", "title": "学习平板完成同步练习", "target": 1, "manual": True,
+     "ico": "📱", "desc": "在学习平板完成语文同步练习后，找家长确认", "subject": "语文"},
     # 英语
     {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
      "ico": "📝", "desc": "刷题中心做一套英语试卷", "subject": "英语"},
@@ -70,6 +74,8 @@ OPTIONAL_POOL = [
      "ico": "👂", "desc": "在听写磨耳朵完成单词听写", "subject": "英语"},
     {"code": "eng_challenge", "title": "英语 60 秒挑战赛 1 次", "target": 1, "manual": False,
      "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对", "subject": "英语"},
+    {"code": "eng_sync", "title": "学习平板完成同步练习", "target": 1, "manual": True,
+     "ico": "📱", "desc": "在学习平板完成英语同步练习后，找家长确认", "subject": "英语"},
 ]
 
 # 家长可配置目标数量的任务
@@ -87,17 +93,22 @@ TASK_PASS_SCORE = 60
 
 # ═══════════════ 每日可选任务生成（确定性随机） ═══════════════
 
-def _pick_daily_optional(user_id: str, today: date) -> list:
+def _pick_daily_optional(user_id: str, today: date, settings: dict = None) -> list:
     """基于日期+用户名确定性随机选 3 条可选任务（同一天同一用户结果固定）"""
     seed = f"{user_id}:{today}:{'daily-optional'}"
     h = int(hashlib.md5(seed.encode()).hexdigest(), 16)
-    pool = list(OPTIONAL_POOL)
+    # 过滤掉已禁用的任务
+    pool = [t for t in OPTIONAL_POOL if _is_task_enabled(settings or {}, t["code"])]
+    if not pool:
+        pool = list(OPTIONAL_POOL)  # 全部禁用时回退到全量
     picked = []
     for i in range(3):
         idx = (h >> (i * 8)) % len(pool)
         picked.append(pool.pop(idx))
         if not pool:
-            pool = list(OPTIONAL_POOL)  # 池子空了就重置
+            pool = [t for t in OPTIONAL_POOL if _is_task_enabled(settings or {}, t["code"])]
+            if not pool:
+                pool = list(OPTIONAL_POOL)
     return picked
 
 
@@ -113,7 +124,14 @@ def _default_target(code: str) -> int:
 def _display_title(pool_title: str, target: int, default_target: int) -> str:
     if target == default_target:
         return pool_title
-    return re.sub(r"\d+", str(target), pool_title, count=1)
+    # 替换最后一个数字（避免误改固定数值如"60秒"）
+    parts = re.split(r"(\d+)", pool_title)
+    # parts 交替 [文本, 数字, 文本, 数字, ...]，从后往前找第一个数字段
+    for i in range(len(parts) - 2, -1, -1):
+        if parts[i].isdigit():
+            parts[i] = str(target)
+            break
+    return "".join(parts)
 
 
 # ═══════════════ 家长设置 ═══════════════
@@ -128,15 +146,31 @@ def _load_settings(db: Session, user_id: str) -> dict:
         data = json.loads(row[0] or "{}")
         if not isinstance(data, dict):
             return {}
-        return {k: int(v) for k, v in data.items()
-                if k in CONFIGURABLE_CODES and isinstance(v, (int, float))
-                and MIN_TARGET <= int(v) <= MAX_TARGET}
+        # 新格式：嵌套结构 {"targets": {...}, "enabled": {...}, "mandatory": {...}}
+        if "targets" in data and isinstance(data["targets"], dict):
+            targets = {k: int(v) for k, v in data["targets"].items()
+                       if k in CONFIGURABLE_CODES and isinstance(v, (int, float))
+                       and MIN_TARGET <= int(v) <= MAX_TARGET}
+            return {
+                "targets": targets,
+                "enabled": data.get("enabled", {}),  # {code: bool}
+                "mandatory": data.get("mandatory", {}),  # {subject: code}
+            }
+        # 旧格式：扁平结构 {code: int}，兼容转换
+        return {
+            "targets": {k: int(v) for k, v in data.items()
+                        if k in CONFIGURABLE_CODES and isinstance(v, (int, float))
+                        and MIN_TARGET <= int(v) <= MAX_TARGET},
+            "enabled": {},
+            "mandatory": {},
+        }
     except Exception:
-        return {}
+        return {"targets": {}, "enabled": {}, "mandatory": {}}
 
 
 def _setting_target(settings: dict, code: str) -> int | None:
-    val = settings.get(code)
+    targets = settings.get("targets", settings) if isinstance(settings.get("targets"), dict) else settings
+    val = targets.get(code)
     if val is None:
         return None
     try:
@@ -145,14 +179,34 @@ def _setting_target(settings: dict, code: str) -> int | None:
         return None
 
 
+def _is_task_enabled(settings: dict, code: str) -> bool:
+    """检查任务是否启用（默认全部启用）"""
+    enabled = settings.get("enabled", {})
+    if not enabled:
+        return True
+    return enabled.get(code, True)
+
+
+def _get_mandatory_code(settings: dict, subject: str) -> str | None:
+    """获取家长设置的该学科强制任务 code（None 表示用默认值）"""
+    mandatory = settings.get("mandatory", {})
+    code = mandatory.get(subject)
+    if code and code in CONFIGURABLE_CODES:
+        return code
+    return None
+
+
 class SettingsRequest(BaseModel):
     user_id: str
     settings: dict = Field(default_factory=dict)
 
 
-@router.get("/settings", summary="获取每日任务目标数量")
+@router.get("/settings", summary="获取每日任务配置（目标+启用+强制/可选）")
 def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
     user = _load_settings(db, user_id)
+    targets = user.get("targets", {})
+    enabled_map = user.get("enabled", {})
+    mandatory_map = user.get("mandatory", {})
     items = []
     all_tasks = list(MANDATORY_TASKS.values()) + OPTIONAL_POOL
     for code in CONFIGURABLE_CODES:
@@ -164,40 +218,76 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
             subj = next((s for s, t in MANDATORY_TASKS.items() if t["code"] == code), "")
         items.append({
             "code": code, "subject": subj, "title": item["title"],
-            "default": item["target"], "target": user.get(code, item["target"]),
+            "default": item["target"], "target": targets.get(code, item["target"]),
+            "enabled": enabled_map.get(code, True),
+            "manual": item.get("manual", False),
         })
-    return {"items": items}
+    current_mandatory = {}
+    for subj in SUBJECTS:
+        default_code = MANDATORY_TASKS[subj]["code"]
+        current_mandatory[subj] = mandatory_map.get(subj, default_code)
+    return {"items": items, "mandatory": current_mandatory}
 
 
-@router.post("/settings", summary="保存每日任务目标数量（家长设置）")
+@router.post("/settings", summary="保存每日任务配置（家长设置）")
 def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
     if not isinstance(req.settings, dict):
         raise HTTPException(400, "settings 必须为对象")
-    clean = {}
-    for code, val in req.settings.items():
-        if code not in CONFIGURABLE_CODES:
-            raise HTTPException(400, f"不支持的任务类型: {code}")
-        try:
-            v = int(val)
-        except (TypeError, ValueError):
-            raise HTTPException(400, f"{code} 的目标数量必须是整数")
-        if not MIN_TARGET <= v <= MAX_TARGET:
-            raise HTTPException(400, f"{code} 的目标数量需在 {MIN_TARGET}-{MAX_TARGET} 之间")
-        clean[code] = v
-    if not clean:
-        return get_task_settings(req.user_id, db)
-    merged = _load_settings(db, req.user_id)
-    merged.update(clean)
+
+    existing = _load_settings(db, req.user_id)
+    new_targets = dict(existing.get("targets", {}))
+    new_enabled = dict(existing.get("enabled", {}))
+    new_mandatory = dict(existing.get("mandatory", {}))
+
+    if "targets" in req.settings or "enabled" in req.settings or "mandatory" in req.settings:
+        # 新格式
+        if "targets" in req.settings and isinstance(req.settings["targets"], dict):
+            for code, val in req.settings["targets"].items():
+                if code not in CONFIGURABLE_CODES:
+                    raise HTTPException(400, f"不支持的任务类型: {code}")
+                try:
+                    v = int(val)
+                except (TypeError, ValueError):
+                    raise HTTPException(400, f"{code} 的目标数量必须是整数")
+                if not MIN_TARGET <= v <= MAX_TARGET:
+                    raise HTTPException(400, f"{code} 的目标数量需在 {MIN_TARGET}-{MAX_TARGET} 之间")
+                new_targets[code] = v
+        if "enabled" in req.settings and isinstance(req.settings["enabled"], dict):
+            for code, val in req.settings["enabled"].items():
+                if code not in CONFIGURABLE_CODES:
+                    raise HTTPException(400, f"不支持的任务类型: {code}")
+                new_enabled[code] = bool(val)
+        if "mandatory" in req.settings and isinstance(req.settings["mandatory"], dict):
+            for subj, code in req.settings["mandatory"].items():
+                if subj not in SUBJECTS:
+                    raise HTTPException(400, f"不支持的学科: {subj}")
+                if code not in CONFIGURABLE_CODES:
+                    raise HTTPException(400, f"不支持的任务类型: {code}")
+                new_mandatory[subj] = code
+    else:
+        # 旧格式兼容：{code: int}
+        for code, val in req.settings.items():
+            if code not in CONFIGURABLE_CODES:
+                raise HTTPException(400, f"不支持的任务类型: {code}")
+            try:
+                v = int(val)
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{code} 的目标数量必须是整数")
+            if not MIN_TARGET <= v <= MAX_TARGET:
+                raise HTTPException(400, f"{code} 的目标数量需在 {MIN_TARGET}-{MAX_TARGET} 之间")
+            new_targets[code] = v
+
+    clean = {"targets": new_targets, "enabled": new_enabled, "mandatory": new_mandatory}
     db.execute(text(
         "INSERT INTO parent_task_settings (user_id, settings_json, updated_at) "
         "VALUES (:u, :j, :t) ON CONFLICT(user_id) DO UPDATE SET settings_json=:j, updated_at=:t"),
-        {"u": req.user_id, "j": json.dumps(merged), "t": datetime.now()})
+        {"u": req.user_id, "j": json.dumps(clean), "t": datetime.now()})
     today = date.today()
     rows = db.query(DailyTask).filter(
         DailyTask.user_id == req.user_id, DailyTask.task_date == today).all()
     for r in rows:
-        if r.status != "done" and r.task_code in clean:
-            r.target = clean[r.task_code]
+        if r.status != "done" and r.task_code in new_targets:
+            r.target = new_targets[r.task_code]
     db.commit()
     return get_task_settings(req.user_id, db)
 
@@ -298,7 +388,7 @@ def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int)
 # ═══════════════ 任务行生成 ═══════════════
 
 def _ensure_today_rows(db: Session, user_id: str) -> dict:
-    """确保今天 6 条任务行存在（3 强制 + 3 可选）"""
+    """确保今天任务行存在（强制 + 可选，受家长配置影响）"""
     today = date.today()
     rows = db.query(DailyTask).filter(
         DailyTask.user_id == user_id, DailyTask.task_date == today).all()
@@ -310,34 +400,40 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
     settings = _load_settings(db, user_id)
     changed = False
 
-    # 强制任务：每科 1 条
+    # 强制任务：每科 1 条（使用家长设置的强制任务 code）
     mandatory = by_type.get("mandatory", {})
     for subj in SUBJECTS:
         if subj not in mandatory:
-            t = MANDATORY_TASKS[subj]
+            # 家长可覆盖每科的强制任务
+            override_code = _get_mandatory_code(settings, subj)
+            if override_code:
+                # 从 OPTIONAL_POOL 找任务定义
+                t = next((t for t in OPTIONAL_POOL if t["code"] == override_code), None)
+                if not t:
+                    t = MANDATORY_TASKS[subj]
+            else:
+                t = MANDATORY_TASKS[subj]
             row = DailyTask(
                 user_id=user_id, task_date=today, subject=subj,
                 task_code=t["code"], title=t["title"],
                 target=_setting_target(settings, t["code"]) or t["target"],
-                progress=0, status="pending", manual=t["manual"],
+                progress=0, status="pending", manual=t.get("manual", False),
                 task_type="mandatory",
             )
             db.add(row)
             changed = True
 
-    # 可选任务：系统生成 3 条
+    # 可选任务：系统生成 3 条（过滤掉已禁用的任务）
     optional = by_type.get("optional", {})
     if not optional:
-        picked = _pick_daily_optional(user_id, today)
+        picked = _pick_daily_optional(user_id, today, settings)
         for i, t in enumerate(picked):
             subj = t["subject"]
-            # 用序号做 subject 后缀避免唯一约束冲突：opt_0, opt_1, opt_2
-            slot = f"opt_{i}"
             row = DailyTask(
                 user_id=user_id, task_date=today, subject=subj,
                 task_code=t["code"], title=t["title"],
                 target=_setting_target(settings, t["code"]) or t["target"],
-                progress=0, status="pending", manual=t["manual"],
+                progress=0, status="pending", manual=t.get("manual", False),
                 task_type="optional",
             )
             db.add(row)
@@ -467,6 +563,13 @@ def _build_payload(db: Session, user_id: str) -> dict:
                 except Exception:
                     pass
     db.commit()
+
+    # 检查 optional_streak 类型许愿进度
+    try:
+        from .rewards import check_wish_optional_streak
+        check_wish_optional_streak(db, user_id)
+    except Exception:
+        pass
 
     # 检查可选任务是否全部完成 → 发补签卡
     optional_done = all(r.status == "done" for r in optional_rows) if optional_rows else False

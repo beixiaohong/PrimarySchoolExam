@@ -2065,10 +2065,11 @@ def number_operation_law(difficulty: int, grade: int):
     """运算律辨认与填空"""
     if difficulty <= 2:
         a, b = random.randint(2, 50), random.randint(2, 50)
+        c = random.randint(2, 30)
         variants = [
             (f"{a}+{b}={b}+{a}，运用了什么运算律？", "加法交换律"),
             (f"{a}×{b}={b}×{a}，运用了什么运算律？", "乘法交换律"),
-            (f"({a}+{b})+{random.randint(2,30)}={a}+({b}+{random.randint(2,30)})，运用了什么运算律？", "加法结合律"),
+            (f"({a}+{b})+{c}={a}+({b}+{c})，运用了什么运算律？", "加法结合律"),
         ]
         return random.choice(variants)
     elif difficulty <= 4:

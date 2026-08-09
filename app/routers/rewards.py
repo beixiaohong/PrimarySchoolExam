@@ -34,6 +34,8 @@ class WishReq(BaseModel):
     user_id: str
     title: str
     target: int = 10
+    wish_type: str = "task_count"  # task_count / optional_streak
+    daily_target: int = 3  # 每天需完成的可选任务数（仅 optional_streak）
 
 
 class ToggleReq(BaseModel):
@@ -69,6 +71,8 @@ def _wish_out(w):
         "id": w.id, "title": w.title, "progress": w.progress, "target": w.target,
         "status": w.status, "redeem_reason": w.redeem_reason or "",
         "created_at": str(w.created_at)[:10] if w.created_at else "",
+        "wish_type": getattr(w, 'wish_type', 'task_count') or 'task_count',
+        "daily_target": getattr(w, 'daily_target', 0) or 0,
     }
 
 
@@ -179,8 +183,11 @@ def create_wish(req: WishReq, db: Session = Depends(get_db)):
     if active:
         raise HTTPException(400, "已有进行中的心愿，完成或移除后才能换新的")
     target = max(1, min(100, req.target or 10))
+    wish_type = req.wish_type if req.wish_type in ("task_count", "optional_streak") else "task_count"
+    daily_target = max(1, min(10, req.daily_target or 3))
     w = WishItem(user_id=req.user_id, title=title[:100], target=target,
-                 progress=0, status="pending")
+                 progress=0, status="pending",
+                 wish_type=wish_type, daily_target=daily_target)
     db.add(w)
     db.commit()
     return _wish_out(w)
@@ -231,14 +238,69 @@ def archive_wish(wid: int, req: ToggleReq, db: Session = Depends(get_db)):
 
 
 def inc_active_wish_progress(db: Session, user_id: str, n: int = 1):
-    """每日任务完成时调用：进行中心愿 progress +n，达标自动转待兑现"""
+    """每日任务完成时调用：进行中心愿 progress +n，达标自动转待兑现。
+    对于 optional_streak 类型，由 check_wish_optional_streak 处理。
+    """
     from ..models.reward import WishItem
     w = db.query(WishItem).filter(
         WishItem.user_id == user_id, WishItem.status == "active",
     ).order_by(WishItem.id.desc()).first()
     if not w:
         return None
+    # optional_streak 类型由专门的函数处理
+    if getattr(w, 'wish_type', 'task_count') == 'optional_streak':
+        return check_wish_optional_streak(db, user_id)
     w.progress = (w.progress or 0) + n
+    if w.progress >= w.target:
+        w.progress = w.target
+        w.status = "pending_redeem"
+    w.updated_at = datetime.now()
+    db.commit()
+    return _wish_out(w)
+
+
+def check_wish_optional_streak(db: Session, user_id: str):
+    """检查今天可选任务完成情况，更新 optional_streak 类型许愿进度"""
+    from datetime import date, timedelta
+    from ..models.reward import WishItem
+    from ..models.daily_task import DailyTask
+    today = date.today()
+
+    w = db.query(WishItem).filter(
+        WishItem.user_id == user_id, WishItem.status == "active",
+        WishItem.wish_type == 'optional_streak',
+    ).order_by(WishItem.id.desc()).first()
+    if not w:
+        return None
+
+    daily_m = getattr(w, 'daily_target', 0) or 3  # 每天需完成的可选任务数
+    last_date = getattr(w, 'last_progress_date', None)
+
+    # 今天是否已处理过
+    if last_date == today:
+        return _wish_out(w)
+
+    # 统计今天可选任务完成数
+    optional_done = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == today,
+        DailyTask.task_type == "optional", DailyTask.status == "done",
+    ).count()
+
+    if optional_done >= daily_m:
+        # 达标：连续天数 +1
+        if last_date and (today - last_date).days == 1:
+            w.progress = (w.progress or 0) + 1
+        elif last_date and (today - last_date).days > 1:
+            # 中断了，从头开始
+            w.progress = 1
+        else:
+            w.progress = 1
+        w.last_progress_date = today
+    else:
+        # 未达标：如果昨天也没达标，中断连续
+        if last_date and (today - last_date).days > 1:
+            w.progress = 0
+
     if w.progress >= w.target:
         w.progress = w.target
         w.status = "pending_redeem"
