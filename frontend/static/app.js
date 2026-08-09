@@ -1362,9 +1362,10 @@ createApp({
       return { cartoon: '📺', snack: '🍪', sticker: '🌟', toy: '🧸', outing: '🎡', custom: '🎫' }[k] || '🎫';
     },
     _displayTaskTitle(ts) {
+      if (!ts) return '';
       // 替换标题中最后一个数字为 N（避免误改"60秒"等固定值）
       const title = ts.title || '';
-      if (ts.target === ts.default) return title;
+      if (!title || ts.target === ts.default) return title;
       const parts = title.split(/(\d+)/);
       for (let i = parts.length - 2; i >= 0; i--) {
         if (/^\d+$/.test(parts[i])) { parts[i] = 'N'; break; }
@@ -1585,7 +1586,8 @@ createApp({
         .catch(() => { this.taskSettings = { items: [] }; });
     },
     _tasksForSubject(subj) {
-      return (this.taskSettings.items || []).filter(it => it.subject === subj);
+      const items = (this.taskSettings && this.taskSettings.items) || [];
+      return items.filter(it => it && it.subject === subj);
     },
     saveTaskSettings() {
       const targets = {};
