@@ -62,7 +62,7 @@ createApp({
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务设置
       taskSettings: { items: [] },
-      taskDialog: { show: false, mandatory: {}, optional: [], disabled: [] },
+      taskDialog: { show: false, mandatory: { math: '', chi: '', eng: '' }, optional: [], disabled: [] },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
@@ -1600,21 +1600,28 @@ createApp({
     showTaskSettingsDialog() {
       // 初始化弹窗数据
       const items = this.taskSettings.items || [];
-      const mandatory = {};
+      const mandatory = { math: '', chi: '', eng: '' };
       const disabled = [];
       const optional = [];
-      // 从当前设置中提取
+      // 从当前设置中提取（映射中文到英文key）
+      const subjMap = { '数学': 'math', '语文': 'chi', '英语': 'eng' };
       if (this.taskSettings.mandatory) {
-        Object.assign(mandatory, this.taskSettings.mandatory);
+        for (const [subj, code] of Object.entries(this.taskSettings.mandatory)) {
+          const key = subjMap[subj];
+          if (key) mandatory[key] = code;
+        }
       }
       for (const it of items) {
         if (it.enabled === false) disabled.push(it.code);
       }
       // 默认强制任务
-      if (!mandatory['数学']) mandatory['数学'] = 'math_exam';
-      if (!mandatory['语文']) mandatory['语文'] = 'chi_classical';
-      if (!mandatory['英语']) mandatory['英语'] = 'eng_vocab';
+      if (!mandatory.math) mandatory.math = 'math_exam';
+      if (!mandatory.chi) mandatory.chi = 'chi_classical';
+      if (!mandatory.eng) mandatory.eng = 'eng_vocab';
       this.taskDialog = { show: true, mandatory, optional, disabled };
+    },
+    _tasksBySubj(subj) {
+      return this.allTaskOptions.filter(t => t.subject === subj);
     },
     saveTaskDialog() {
       const targets = {};
@@ -1632,7 +1639,14 @@ createApp({
           enabled[opt.code] = true;
         }
       }
-      const settings = { targets, enabled, mandatory };
+      // 映射英文key回中文subject
+      const subjMap = { math: '数学', chi: '语文', eng: '英语' };
+      const mandatoryOut = {};
+      for (const [key, code] of Object.entries(mandatory)) {
+        const subj = subjMap[key];
+        if (subj && code) mandatoryOut[subj] = code;
+      }
+      const settings = { targets, enabled, mandatory: mandatoryOut };
       this.api('/api/tasks/settings', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, settings }),
