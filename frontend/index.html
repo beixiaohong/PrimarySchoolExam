@@ -1605,24 +1605,27 @@
       <button class="icon-btn" @click="taskDialog.show=false" title="关闭">✕</button>
     </div>
     <div style="padding:16px">
-      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">强制任务（每科选一个）</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">强制任务（每科选一个，设置目标数量）</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="min-width:36px;font-size:13px">数学</span>
         <select v-model="taskDialog.mandatory.math" class="fill-input" style="flex:1;font-size:12px">
           <option v-for="t in taskDialog.mathOpts" :key="t.code" :value="t.code">{{t.title}}</option>
         </select>
+        <input v-model.number="taskDialog.mandatory.mathTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量">
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="min-width:36px;font-size:13px">语文</span>
         <select v-model="taskDialog.mandatory.chi" class="fill-input" style="flex:1;font-size:12px">
           <option v-for="t in taskDialog.chiOpts" :key="t.code" :value="t.code">{{t.title}}</option>
         </select>
+        <input v-model.number="taskDialog.mandatory.chiTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量">
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
         <span style="min-width:36px;font-size:13px">英语</span>
         <select v-model="taskDialog.mandatory.eng" class="fill-input" style="flex:1;font-size:12px">
           <option v-for="t in taskDialog.engOpts" :key="t.code" :value="t.code">{{t.title}}</option>
         </select>
+        <input v-model.number="taskDialog.mandatory.engTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量">
       </div>
       <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">可选任务（可添加多条）</div>
       <div v-for="(opt, idx) in taskDialog.optional" :key="idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">

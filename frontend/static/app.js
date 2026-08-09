@@ -1600,7 +1600,7 @@ createApp({
     showTaskSettingsDialog() {
       // 初始化弹窗数据
       const items = this.taskSettings.items || [];
-      const mandatory = { math: '', chi: '', eng: '' };
+      const mandatory = { math: '', chi: '', eng: '', mathTarget: 1, chiTarget: 1, engTarget: 5 };
       const disabled = [];
       const optional = [];
       // 从当前设置中提取（映射中文到英文key）
@@ -1610,6 +1610,12 @@ createApp({
           const key = subjMap[subj];
           if (key) mandatory[key] = code;
         }
+      }
+      // 从当前任务列表中提取强制任务的目标数量
+      for (const it of items) {
+        if (it.code === mandatory.math) mandatory.mathTarget = it.target || 1;
+        if (it.code === mandatory.chi) mandatory.chiTarget = it.target || 1;
+        if (it.code === mandatory.eng) mandatory.engTarget = it.target || 5;
       }
       for (const it of items) {
         if (it.enabled === false) disabled.push(it.code);
@@ -1637,6 +1643,10 @@ createApp({
         targets[it.code] = it.target;
         enabled[it.code] = !disabled.includes(it.code);
       }
+      // 设置强制任务的目标数量
+      if (mandatory.math) targets[mandatory.math] = mandatory.mathTarget || 1;
+      if (mandatory.chi) targets[mandatory.chi] = mandatory.chiTarget || 1;
+      if (mandatory.eng) targets[mandatory.eng] = mandatory.engTarget || 5;
       // 处理可选任务（新增的）
       for (const opt of optional) {
         if (opt.code && opt.target) {
