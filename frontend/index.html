@@ -1396,12 +1396,18 @@
             <!-- 强制任务选择 -->
             <div class="pc-row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
               <span style="font-size:13px;color:#3a4a6b;min-width:60px">强制任务：</span>
-              <template v-for="subj in ['数学','语文','英语']">
-                <span style="font-size:12px;color:#666">{{subj}}</span>
-                <select v-model="taskSettingsMandatory[subj]" class="fill-input" style="max-width:160px;font-size:12px">
-                  <option v-for="opt in _tasksForSubject(subj)" :key="opt.code" :value="opt.code">{{opt.title.replace(/\d+/, 'N')}}</option>
-                </select>
-              </template>
+              <span style="font-size:12px;color:#666">数学</span>
+              <select v-model="taskSettingsMandatory['数学']" class="fill-input" style="max-width:160px;font-size:12px">
+                <option v-for="opt in _tasksForSubject('数学')" :key="opt.code" :value="opt.code">{{_displayTaskTitle(opt)}}</option>
+              </select>
+              <span style="font-size:12px;color:#666">语文</span>
+              <select v-model="taskSettingsMandatory['语文']" class="fill-input" style="max-width:160px;font-size:12px">
+                <option v-for="opt in _tasksForSubject('语文')" :key="opt.code" :value="opt.code">{{_displayTaskTitle(opt)}}</option>
+              </select>
+              <span style="font-size:12px;color:#666">英语</span>
+              <select v-model="taskSettingsMandatory['英语']" class="fill-input" style="max-width:160px;font-size:12px">
+                <option v-for="opt in _tasksForSubject('英语')" :key="opt.code" :value="opt.code">{{_displayTaskTitle(opt)}}</option>
+              </select>
             </div>
             <!-- 各任务开关+目标 -->
             <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap;gap:8px;align-items:center">
