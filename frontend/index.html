@@ -1392,15 +1392,30 @@
           </div>
 
           <div class="pc-sec">
-            <div class="pc-title">📋 每日任务题目数量 <span class="more">孩子今天及以后的每日任务目标按此设置</span></div>
-            <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap">
-              <span style="min-width:150px;font-size:13px;color:#3a4a6b">{{ts.subject}} · {{ts.title.replace(/\d+/, 'N')}}</span>
-              <input v-model.number="ts.target" type="number" min="1" max="50" class="fill-input" style="max-width:80px">
+            <div class="pc-title">📋 每日任务设置 <span class="more">开关任务、设置强制/可选、调整目标数量</span></div>
+            <!-- 强制任务选择 -->
+            <div class="pc-row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
+              <span style="font-size:13px;color:#3a4a6b;min-width:60px">强制任务：</span>
+              <template v-for="subj in ['数学','语文','英语']">
+                <span style="font-size:12px;color:#666">{{subj}}</span>
+                <select v-model="taskSettingsMandatory[subj]" class="fill-input" style="max-width:160px;font-size:12px">
+                  <option v-for="opt in _tasksForSubject(subj)" :key="opt.code" :value="opt.code">{{opt.title.replace(/\d+/, 'N')}}</option>
+                </select>
+              </template>
+            </div>
+            <!-- 各任务开关+目标 -->
+            <div class="pc-row" v-for="ts in taskSettings.items" :key="ts.code" style="flex-wrap:wrap;gap:8px;align-items:center">
+              <label style="display:flex;align-items:center;gap:4px;min-width:180px;font-size:13px;color:#3a4a6b">
+                <input type="checkbox" v-model="ts.enabled" style="width:16px;height:16px">
+                {{ts.subject}} · {{_displayTaskTitle(ts)}}
+              </label>
+              <input v-model.number="ts.target" type="number" min="1" max="50" class="fill-input" style="max-width:70px" :disabled="!ts.enabled">
               <span class="more">默认 {{ts.default}}</span>
+              <span v-if="ts.manual" class="more" style="color:#e67e22">需确认</span>
             </div>
             <div class="pc-row" style="margin-top:8px">
               <button class="btn btn-primary btn-sm" @click="saveTaskSettings()">保存设置</button>
-              <span class="more">范围 1-50，保存后今天的未完成任务立即生效</span>
+              <span class="more">保存后今天的未完成任务立即生效</span>
             </div>
           </div>
 

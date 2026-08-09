@@ -62,6 +62,7 @@ createApp({
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务目标数量（家长设置）
       taskSettings: { items: [] },
+      taskSettingsMandatory: { '数学': '', '语文': '', '英语': '' },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
@@ -1360,6 +1361,16 @@ createApp({
     couponIcon(k) {
       return { cartoon: '📺', snack: '🍪', sticker: '🌟', toy: '🧸', outing: '🎡', custom: '🎫' }[k] || '🎫';
     },
+    _displayTaskTitle(ts) {
+      // 替换标题中最后一个数字为 N（避免误改"60秒"等固定值）
+      const title = ts.title || '';
+      if (ts.target === ts.default) return title;
+      const parts = title.split(/(\d+)/);
+      for (let i = parts.length - 2; i >= 0; i--) {
+        if (/^\d+$/.test(parts[i])) { parts[i] = 'N'; break; }
+      }
+      return parts.join('');
+    },
     loadRewards() {
       this.api(`/api/rewards/overview?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.rewards = d || { coupons: [], wish: null }; })
@@ -1560,24 +1571,45 @@ createApp({
     },
     loadTaskSettings() {
       this.api(`/api/tasks/settings?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.taskSettings = d || { items: [] }; })
+        .then(d => {
+          this.taskSettings = d || { items: [] };
+          // 确保每个 item 有 enabled 字段
+          for (const it of this.taskSettings.items || []) {
+            if (it.enabled === undefined) it.enabled = true;
+          }
+          // 初始化强制任务选择
+          if (d && d.mandatory) {
+            this.taskSettingsMandatory = { ...this.taskSettingsMandatory, ...d.mandatory };
+          }
+        })
         .catch(() => { this.taskSettings = { items: [] }; });
     },
+    _tasksForSubject(subj) {
+      return (this.taskSettings.items || []).filter(it => it.subject === subj);
+    },
     saveTaskSettings() {
-      // 每次保存提交全部 6 项，保证"改回默认值"也能生效
-      const changed = {};
+      const targets = {};
+      const enabled = {};
       for (const it of this.taskSettings.items || []) {
         const v = Number(it.target);
         if (!Number.isInteger(v) || v < 1 || v > 50) return this.showToast(`「${it.title}」的数量需为 1-50 的整数`);
-        changed[it.code] = v;
+        targets[it.code] = v;
+        enabled[it.code] = it.enabled !== false;
       }
+      const settings = { targets, enabled, mandatory: this.taskSettingsMandatory };
       this.api('/api/tasks/settings', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, settings: changed }),
+        body: JSON.stringify({ user_id: this.user, settings }),
       }).then(d => {
         this.taskSettings = d || { items: [] };
+        for (const it of this.taskSettings.items || []) {
+          if (it.enabled === undefined) it.enabled = true;
+        }
+        if (d && d.mandatory) {
+          this.taskSettingsMandatory = { ...this.taskSettingsMandatory, ...d.mandatory };
+        }
         this.loadDailyTasks(); // 立即刷新今日任务，家长能马上看到效果
-        this.showToast('每日任务数量已保存 ✅');
+        this.showToast('每日任务设置已保存 ✅');
       }).catch(e => this.showToast(e.message));
     },
     createCoupon() {
