@@ -1397,7 +1397,7 @@
               共 {{taskSettings.items.length}} 个任务已配置
             </div>
             <div class="pc-row" style="margin-top:8px">
-              <button class="btn btn-primary btn-sm" @click="showToast('任务设置功能正在升级中，请稍后再试')">管理任务</button>
+              <button class="btn btn-primary btn-sm" @click="showTaskSettingsDialog()">管理任务</button>
             </div>
           </div>
 
@@ -1597,20 +1597,55 @@
   </div>
 </div>
 
-<!-- ═══════════ 任务设置弹窗（暂时禁用） ═══════════ -->
-<!--
+<!-- ═══════════ 任务设置弹窗 ═══════════ -->
 <div class="quiz-overlay" v-if="taskDialog.show">
-  <div class="quiz-shell" style="max-width:500px">
+  <div class="quiz-shell" style="max-width:520px;max-height:85vh;overflow-y:auto">
     <div class="quiz-top">
       <span class="qname">📋 任务设置</span>
       <button class="icon-btn" @click="taskDialog.show=false" title="关闭">✕</button>
     </div>
     <div style="padding:16px">
-      弹窗内容暂时禁用
+      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">强制任务（每科选一个）</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="min-width:36px;font-size:13px">数学</span>
+        <select v-model="taskDialog.mandatory.math" class="fill-input" style="flex:1;font-size:12px">
+          <option v-for="t in taskDialog.mathOpts" :key="t.code" :value="t.code">{{t.title}}</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="min-width:36px;font-size:13px">语文</span>
+        <select v-model="taskDialog.mandatory.chi" class="fill-input" style="flex:1;font-size:12px">
+          <option v-for="t in taskDialog.chiOpts" :key="t.code" :value="t.code">{{t.title}}</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <span style="min-width:36px;font-size:13px">英语</span>
+        <select v-model="taskDialog.mandatory.eng" class="fill-input" style="flex:1;font-size:12px">
+          <option v-for="t in taskDialog.engOpts" :key="t.code" :value="t.code">{{t.title}}</option>
+        </select>
+      </div>
+      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">可选任务（可添加多条）</div>
+      <div v-for="(opt, idx) in taskDialog.optional" :key="idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <select v-model="opt.subject" class="fill-input" style="width:68px;font-size:12px" @change="opt.code=''">
+          <option value="数学">数学</option>
+          <option value="语文">语文</option>
+          <option value="英语">英语</option>
+        </select>
+        <select v-model="opt.code" class="fill-input" style="flex:1;min-width:120px;font-size:12px">
+          <option value="">-- 选择 --</option>
+          <option v-for="t in _optForSubj(opt.subject)" :key="t.code" :value="t.code">{{t.title}}</option>
+        </select>
+        <input v-model.number="opt.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px">
+        <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.splice(idx,1)" style="padding:2px 8px;font-size:12px">✕</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.push({subject:'数学',code:'',target:1})" style="margin-bottom:16px">+ 添加可选任务</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" @click="saveTaskDialog()">保存</button>
+        <button class="btn btn-ghost" @click="taskDialog.show=false">取消</button>
+      </div>
     </div>
   </div>
 </div>
--->
 
 <!-- ═══════════ 60 秒挑战赛浮层（Sprint 4） ═══════════ -->
 <div class="quiz-overlay" v-if="chalOverlay.show">

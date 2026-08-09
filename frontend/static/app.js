@@ -1618,9 +1618,14 @@ createApp({
       if (!mandatory.math) mandatory.math = 'math_exam';
       if (!mandatory.chi) mandatory.chi = 'chi_classical';
       if (!mandatory.eng) mandatory.eng = 'eng_vocab';
-      this.taskDialog = { show: true, mandatory, optional, disabled };
+      // 预计算各科选项（避免模板中调用方法）
+      const all = this.allTaskOptions;
+      const mathOpts = all.filter(t => t.subject === '数学');
+      const chiOpts = all.filter(t => t.subject === '语文');
+      const engOpts = all.filter(t => t.subject === '英语');
+      this.taskDialog = { show: true, mandatory, optional, disabled, mathOpts, chiOpts, engOpts };
     },
-    _tasksBySubj(subj) {
+    _optForSubj(subj) {
       return this.allTaskOptions.filter(t => t.subject === subj);
     },
     saveTaskDialog() {
