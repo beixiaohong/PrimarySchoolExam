@@ -314,7 +314,8 @@
             <div class="progress" style="margin:8px 0"><i :style="{width: Math.min(100, rewards.wish.progress/rewards.wish.target*100)+'%'}"></i></div>
             <div class="wish-foot">
               <span v-if="rewards.wish.wish_type === 'optional_streak'">{{rewards.wish.progress}} / {{rewards.wish.target}} 天 · 每天完成 {{rewards.wish.daily_target || 3}} 个可选任务</span>
-              <span v-else>{{rewards.wish.progress}} / {{rewards.wish.target}} · 每完成 1 个每日任务 +1</span>
+              <span v-else>{{rewards.wish.progress}} / {{rewards.wish.target}} · 每完成 1 个可选任务 +1</span>
+              <span v-if="rewards.wish.deadline" class="more" style="font-size:11px">截止 {{rewards.wish.deadline}}</span>
               <button v-if="rewards.wish.status==='pending_redeem'" class="btn btn-primary btn-sm" @click="showToast('去找家长兑现吧，家长可在「设置-家长管理」确认 🎉')">找家长兑现 →</button>
             </div>
           </div>
@@ -1523,8 +1524,8 @@
 
           <div class="pc-sec">
             <div class="pc-title">📋 每日任务设置 <span class="more">管理强制任务和可选任务</span></div>
-            <div v-if="taskSettings.items && taskSettings.items.length" style="font-size:13px;color:#666;margin-bottom:8px">
-              共 {{taskSettings.items.length}} 个任务已配置
+            <div v-if="taskSettings" style="font-size:13px;color:#666;margin-bottom:8px">
+              强制任务 3 科 · 可选任务 {{(taskSettings.optional || []).length}} 个已配置
             </div>
             <div class="pc-row" style="margin-top:8px">
               <button class="btn btn-primary btn-sm" @click="showTaskSettingsDialog()">管理任务</button>
@@ -1610,7 +1611,7 @@
             <div class="pc-title">🌟 心愿确认 <span class="more">孩子的心愿需要家长确认才能开始，达标后由家长兑现</span></div>
             <div class="pc-list" v-if="pendingWishes.length">
               <div class="pc-item" v-for="w in pendingWishes" :key="w.id" style="flex-wrap:wrap">
-                <div class="c-body" style="flex:1"><b>{{w.title}}</b><span>{{w.status==='pending' ? '待确认' : '已完成，待兑现'}} · 进度 {{w.progress}}/{{w.target}}</span></div>
+                <div class="c-body" style="flex:1"><b>{{w.title}}</b><span>{{w.status==='pending' ? '待确认' : '已完成，待兑现'}} · 进度 {{w.progress}}/{{w.target}}{{w.deadline ? ' · 截止 '+w.deadline : ''}}</span></div>
                 <input v-if="w.status==='pending_redeem'" v-model="w.redeemReason" class="fill-input" maxlength="50" placeholder="兑现理由（选填）" style="max-width:150px">
                 <button class="btn btn-success btn-sm" @click="confirmWish(w)">{{w.status==='pending' ? '确认开始' : '确认兑现'}}</button>
                 <button class="btn btn-ghost btn-sm" @click="archiveWish(w)">移除</button>
@@ -1726,6 +1727,9 @@
         </select>
         <div class="wish-tip">连续N天每天完成M个可选任务即达标，中断则重新计数</div>
       </template>
+      <label style="margin-top:12px">截止日期（选填）</label>
+      <input v-model="wishOverlay.deadline" type="date" class="fill-input" style="max-width:200px">
+      <div class="wish-tip">超过截止日期还未完成的心愿会自动过期；不填则不限期</div>
       <div class="detail-actions" style="margin-top:16px">
         <button class="btn btn-primary" @click="submitWish()">许下心愿 ✨</button>
         <button class="btn btn-ghost" @click="wishOverlay.show=false">取消</button>
@@ -1742,27 +1746,28 @@
       <button class="icon-btn" @click="taskDialog.show=false" title="关闭">✕</button>
     </div>
     <div style="padding:16px">
+      <div style="font-size:12px;color:#888;margin-bottom:10px;line-height:1.5">数量 = 每天要完成的目标（如试卷张数 / 题目数 / 次数）；任务标题里的数字会随数量自动变化</div>
       <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">强制任务（每科选一个，设置目标数量）</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="min-width:36px;font-size:13px">数学</span>
         <select v-model="taskDialog.mandatory.math" class="fill-input" style="flex:1;font-size:12px">
-          <option v-for="t in taskDialog.mathOpts" :key="t.code" :value="t.code">{{t.title}}</option>
+          <option v-for="t in taskDialog.mathOpts" :key="t.code" :value="t.code">{{taskOptTitle(t, taskDialog.mandatory.mathTarget)}}</option>
         </select>
-        <input v-model.number="taskDialog.mandatory.mathTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量">
+        <input v-model.number="taskDialog.mandatory.mathTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量（如试卷张数）">
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="min-width:36px;font-size:13px">语文</span>
         <select v-model="taskDialog.mandatory.chi" class="fill-input" style="flex:1;font-size:12px">
-          <option v-for="t in taskDialog.chiOpts" :key="t.code" :value="t.code">{{t.title}}</option>
+          <option v-for="t in taskDialog.chiOpts" :key="t.code" :value="t.code">{{taskOptTitle(t, taskDialog.mandatory.chiTarget)}}</option>
         </select>
-        <input v-model.number="taskDialog.mandatory.chiTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量">
+        <input v-model.number="taskDialog.mandatory.chiTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量（如试卷张数）">
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
         <span style="min-width:36px;font-size:13px">英语</span>
         <select v-model="taskDialog.mandatory.eng" class="fill-input" style="flex:1;font-size:12px">
-          <option v-for="t in taskDialog.engOpts" :key="t.code" :value="t.code">{{t.title}}</option>
+          <option v-for="t in taskDialog.engOpts" :key="t.code" :value="t.code">{{taskOptTitle(t, taskDialog.mandatory.engTarget)}}</option>
         </select>
-        <input v-model.number="taskDialog.mandatory.engTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量">
+        <input v-model.number="taskDialog.mandatory.engTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量（如试卷张数）">
       </div>
       <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">可选任务（可添加多条）</div>
       <div v-for="(opt, idx) in taskDialog.optional" :key="idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
@@ -1775,7 +1780,7 @@
           <option value="">-- 选择 --</option>
           <option v-for="t in taskDialog.subOpts[opt.subject]" :key="t.code" :value="t.code">{{t.title}}</option>
         </select>
-        <input v-model.number="opt.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px">
+        <input v-model.number="opt.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量">
         <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.splice(idx,1)" style="padding:2px 8px;font-size:12px">✕</button>
       </div>
       <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.push({subject:'math',code:'',target:1})" style="margin-bottom:16px">+ 添加可选任务</button>

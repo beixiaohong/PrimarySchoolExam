@@ -40,6 +40,7 @@ class WishReq(BaseModel):
     target: int = 10
     wish_type: str = "task_count"  # task_count / optional_streak
     daily_target: int = 3  # 每天需完成的可选任务数（仅 optional_streak）
+    deadline: str = ""  # 截止日期 YYYY-MM-DD（空=不限期）
 
 
 class ToggleReq(BaseModel):
@@ -77,7 +78,25 @@ def _wish_out(w):
         "created_at": str(w.created_at)[:10] if w.created_at else "",
         "wish_type": getattr(w, 'wish_type', 'task_count') or 'task_count',
         "daily_target": getattr(w, 'daily_target', 0) or 0,
+        "deadline": str(w.deadline)[:10] if getattr(w, 'deadline', None) else "",
     }
+
+
+def _expire_wishes(db: Session, user_id: str):
+    """将超过截止日期仍未完成的心愿置为 expired（幂等）"""
+    from datetime import date
+    from ..models.reward import WishItem
+    today = date.today()
+    expired = db.query(WishItem).filter(
+        WishItem.user_id == user_id,
+        WishItem.status.in_(("active", "pending")),
+        WishItem.deadline != None, WishItem.deadline < today,
+    ).all()
+    for w in expired:
+        w.status = "expired"
+        w.updated_at = datetime.now()
+    if expired:
+        db.commit()
 
 
 # ═══════════════════ 兑换券 ═══════════════════
@@ -85,6 +104,7 @@ def _wish_out(w):
 @router.get("/overview", summary="孩子侧奖励总览：可用券 + 进行中心愿 + 本周兑现数")
 def rewards_overview(user_id: str, db: Session = Depends(get_db)):
     from ..models.reward import RewardCoupon, WishItem
+    _expire_wishes(db, user_id)
     coupons = db.query(RewardCoupon).filter(
         RewardCoupon.user_id == user_id, RewardCoupon.status == "active",
     ).order_by(RewardCoupon.id.asc()).all()
@@ -110,6 +130,7 @@ def rewards_overview(user_id: str, db: Session = Depends(get_db)):
 @router.get("/parent-panel", summary="家长侧管理面板：全部兑换券 + 全部待处理心愿")
 def parent_panel(user_id: str, db: Session = Depends(get_db)):
     from ..models.reward import RewardCoupon, WishItem
+    _expire_wishes(db, user_id)
     coupons = db.query(RewardCoupon).filter(
         RewardCoupon.user_id == user_id,
     ).order_by(RewardCoupon.id.desc()).all()
@@ -211,9 +232,22 @@ def create_wish(req: WishReq, db: Session = Depends(get_db)):
     target = max(WISH_MIN_TARGET, min(100, req.target or 10))
     wish_type = req.wish_type if req.wish_type in ("task_count", "optional_streak") else "task_count"
     daily_target = max(1, min(10, req.daily_target or 3))
+    # 截止日期：须晚于今天，最长 365 天
+    deadline_val = None
+    if (req.deadline or "").strip():
+        from datetime import date, timedelta
+        try:
+            deadline_val = date.fromisoformat(req.deadline.strip())
+        except ValueError:
+            raise HTTPException(400, "截止日期格式应为 YYYY-MM-DD")
+        if deadline_val <= date.today():
+            raise HTTPException(400, "截止日期必须晚于今天")
+        if deadline_val > date.today() + timedelta(days=365):
+            raise HTTPException(400, "截止日期最长一年")
     w = WishItem(user_id=req.user_id, title=title[:100], target=target,
                  progress=0, status="pending",
-                 wish_type=wish_type, daily_target=daily_target)
+                 wish_type=wish_type, daily_target=daily_target,
+                 deadline=deadline_val)
     db.add(w)
     db.commit()
     return _wish_out(w)
@@ -267,10 +301,12 @@ def archive_wish(wid: int, req: ToggleReq, request: Request, db: Session = Depen
 
 
 def inc_active_wish_progress(db: Session, user_id: str, n: int = 1):
-    """每日任务完成时调用：进行中心愿 progress +n，达标自动转待兑现。
+    """可选任务完成时调用：进行中心愿 progress +n，达标自动转待兑现。
+    仅统计可选任务（强制任务不计入心愿进度）。
     对于 optional_streak 类型，由 check_wish_optional_streak 处理。
     """
     from ..models.reward import WishItem
+    _expire_wishes(db, user_id)
     w = db.query(WishItem).filter(
         WishItem.user_id == user_id, WishItem.status == "active",
     ).order_by(WishItem.id.desc()).first()
@@ -295,6 +331,7 @@ def check_wish_optional_streak(db: Session, user_id: str):
     from ..models.daily_task import DailyTask
     today = date.today()
 
+    _expire_wishes(db, user_id)
     w = db.query(WishItem).filter(
         WishItem.user_id == user_id, WishItem.status == "active",
         WishItem.wish_type == 'optional_streak',
@@ -348,11 +385,16 @@ def sync_coupon_progress(db: Session, user_id: str):
     - 连续 2 天以上无任何任务记录（刻意停用系统）视为中断 → 进度清零
     """
     from datetime import date, timedelta
+    from sqlalchemy import func
     from ..models.daily_task import DailyTask
     from ..models.reward import RewardCoupon
     from ..models.makeup_card import MakeupUsageLog
     today = date.today()
     today_str = str(today)
+
+    # 用户最早的任务记录日：此前的日期（未启用系统）不计缺卡/中断，避免新用户被误清零
+    first_day = db.query(func.min(DailyTask.task_date)).filter(
+        DailyTask.user_id == user_id).scalar()
 
     # 检查今天强制任务是否全勤
     mandatory_rows = db.query(DailyTask).filter(
@@ -369,6 +411,8 @@ def sync_coupon_progress(db: Session, user_id: str):
     interrupted = False
     for i in range(1, 7):
         d = today - timedelta(days=i)
+        if first_day and d < first_day:
+            continue  # 用户启用系统前的日期不纳入统计
         # 检查该天是否全勤（强制任务全 done）
         day_rows = db.query(DailyTask).filter(
             DailyTask.user_id == user_id, DailyTask.task_date == d,

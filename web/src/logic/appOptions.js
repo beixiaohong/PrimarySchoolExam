@@ -1844,11 +1844,11 @@ const appOptions = {
         this.loadParentPanel(); this.loadRewards();
       }).catch(e => this.showToast(e.message));
     },
-    startWish() { this.wishOverlay.title = ''; this.wishOverlay.target = 5; this.wishOverlay.wish_type = 'task_count'; this.wishOverlay.daily_target = 3; this.wishOverlay.show = true; },
+    startWish() { this.wishOverlay.title = ''; this.wishOverlay.target = 5; this.wishOverlay.wish_type = 'task_count'; this.wishOverlay.daily_target = 3; this.wishOverlay.deadline = ''; this.wishOverlay.show = true; },
     submitWish() {
       const title = (this.wishOverlay.title || '').trim();
       if (!title) return this.showToast('写下你的心愿吧');
-      const payload = { user_id: this.user, title, target: Number(this.wishOverlay.target) || 5, wish_type: this.wishOverlay.wish_type, daily_target: Number(this.wishOverlay.daily_target) || 3 };
+      const payload = { user_id: this.user, title, target: Number(this.wishOverlay.target) || 5, wish_type: this.wishOverlay.wish_type, daily_target: Number(this.wishOverlay.daily_target) || 3, deadline: this.wishOverlay.deadline || '' };
       this.api('/api/rewards/wish', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -1867,6 +1867,11 @@ const appOptions = {
           this.loadParentPanel(); this.loadRewards();
           this.showToast(w.status === 'pending' ? '心愿已确认开始，孩子加油 🌟' : '已兑现，太棒了 🎉');
         }).catch(e => this.showToast(e.message));
+    },
+    taskOptTitle(t, target) {
+      // 任务标题随目标数量动态变化：替换标题中最后一个数字（如“完成 1 套”→“完成 3 套”），与后端 _display_title 规则一致
+      const n = Number(target) || 1;
+      return String(t.title || '').replace(/\d+(?![\s\S]*\d)/, String(n));
     },
     archiveWish(w) {
       this.api(`/api/rewards/wish/${w.id}/archive`, {
@@ -2193,6 +2198,8 @@ const appOptions = {
           qid: q.qid, question: q.question,
           sub: (q.type_name || r.module_name || '') + (opts.mastery ? ' · 全对才掌握' : ''),
           options: q.options || [], answer: q.answer, explanation: q.explanation || '',
+          // exam/grammar 题后端不下发答案，逐题判分走 /api/study/check-answer
+          check_kind: (r.sub_kind === 'exam' || r.sub_kind === 'grammar') ? r.sub_kind : '',
           extra: { kind: w.kind, record_id: w.record_id }, text_id: q.text_id || 0,
         }));
         this.startQuiz({
@@ -2217,12 +2224,13 @@ const appOptions = {
               qid: q.qid, question: q.question,
               sub: (g.type_name ? '🎯 ' + g.type_name + ' · 全组全对才算修正' : '🎯 错题修正'),
               options: q.options || [], answer: q.answer, explanation: q.explanation || '',
+              check_kind: 'exam',  // 后端不下发答案，逐题判分走 /api/study/check-answer
               extra: { kind: 'exam', record_id: g.record_id }, text_id: 0,
             });
           });
         });
         this.startQuiz({
-          title: `🎯 错题修正 · ${this.subject}（${groups.length} 组 × 3 题）`,
+          title: `🎯 错题修正 · ${this.subject}（${groups.length} 组同类题）`,
           items, source: { mode: 'retry', retry: { kind: 'exam', record_id: 0 } },
         });
       }).catch(e => this.showToast(e.message));
@@ -2277,26 +2285,49 @@ const appOptions = {
     qOptClass(item, oi) {
       if (!item.answered) return '';
       const letter = 'ABCDEFGH'[oi];
-      if (letter === String(item.answer || '').trim().toUpperCase()) return 'correct';
+      // 后端判分题（无 answer）不高亮正确选项，避免看答案背题
+      if (item.answer != null && letter === String(item.answer || '').trim().toUpperCase()) return 'correct';
       if (item.selected === oi) return 'wrong';
       return '';
     },
-    pickOption(oi) {
+    async _serverCheck(it, userAnswer) {
+      // 防刷：答案不下发前端，作答后由后端判对错
+      try {
+        const r = await this.api('/api/study/check-answer', {
+          method: 'POST',
+          body: JSON.stringify({ user_id: this.user, kind: it.check_kind, qid: it.qid, user_answer: userAnswer }),
+        });
+        return !!r.correct;
+      } catch (e) { return false; }
+    },
+    async pickOption(oi) {
       const it = this.quiz.items[this.quiz.i];
-      if (it.answered) return;
+      if (it.answered || it.checking) return;
       it.selected = oi;
       const letter = 'ABCDEFGH'[oi];
-      it.correct = letter === String(it.answer || '').trim().toUpperCase();
       it.userAnswer = letter;
+      if (it.answer == null && it.check_kind) {
+        it.checking = true;
+        it.correct = await this._serverCheck(it, letter);
+        it.checking = false;
+      } else {
+        it.correct = letter === String(it.answer || '').trim().toUpperCase();
+      }
       this._afterAnswer(it);
     },
-    submitFill() {
+    async submitFill() {
       const it = this.quiz.items[this.quiz.i];
-      if (it.answered) return;
+      if (it.answered || it.checking) return;
       const ua = (this.quiz.fillText || '').trim();
       if (!ua) { this.showToast('请先输入答案'); return; }
       it.userAnswer = ua;
-      it.correct = this._matchAnswer(ua, it.answer);
+      if (it.answer == null && it.check_kind) {
+        it.checking = true;
+        it.correct = await this._serverCheck(it, ua);
+        it.checking = false;
+      } else {
+        it.correct = this._matchAnswer(ua, it.answer);
+      }
       this._afterAnswer(it);
     },
     _afterAnswer(it) {
@@ -2417,6 +2448,7 @@ const appOptions = {
             user_id: this.user,
             results: this.quiz.items.map(it => ({
               kind: it.extra.kind, record_id: it.extra.record_id, correct: it.correct,
+              qid: it.qid || 0,  // 后端按题目 id 重判，不信任前端 correct
               question: it.question, user_answer: it.userAnswer || '',
               correct_answer: it.answer || '', subject: this.subject,
             })),

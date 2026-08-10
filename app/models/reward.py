@@ -43,6 +43,7 @@ class WishItem(Base):
     wish_type = Column(String(20), default="task_count", comment="许愿类型：task_count/optional_streak")
     daily_target = Column(Integer, default=0, comment="每天需完成的可选任务数（仅 optional_streak 类型）")
     last_progress_date = Column(Date, nullable=True, comment="上次进度递增日期（用于连续天数判断）")
+    deadline = Column(Date, nullable=True, comment="截止日期（超过后未完成自动过期）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
 

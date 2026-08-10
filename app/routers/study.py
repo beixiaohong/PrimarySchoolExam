@@ -368,6 +368,7 @@ class PracticeSubmitItem(BaseModel):
     kind: str  # exam / study
     record_id: int
     correct: bool
+    qid: int = 0  # 题目 id（exam=Question.id）；后端以此重判，不信任前端 correct
     # ── AI 判题复核字段（本地判错的题需携带，供 AI 复核改判） ──
     question: str = ""
     user_answer: str = ""
@@ -391,6 +392,16 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
     """
     from datetime import datetime as _dt
     from collections import defaultdict
+
+    # ── 防刷：exam 类题以后端重判为准（不信任前端 correct，避免看答案抄写刷掌握） ──
+    exam_qids = [it.qid for it in req.results if it.kind == "exam" and it.qid]
+    if exam_qids:
+        from .exam import _check_answer as _exam_check
+        q_map = {q.id: q for q in db.query(Question).filter(Question.id.in_(exam_qids)).all()}
+        for it in req.results:
+            if it.kind == "exam" and it.qid in q_map:
+                q = q_map[it.qid]
+                it.correct = _exam_check(it.user_answer or "", (q.answer or "").strip(), q.options_json)
 
     # ── AI 判题复核（只升不降）：本地判错的题批量送 AI，AI 判对 → 改判正确 ──
     ai_approved: list = []
@@ -803,13 +814,13 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
             "kind": "exam",
             "question": c.question,
             "options": _parse_options(c.options_json),
-            "answer": c.answer,
+            # 防刷：不下发正确答案，逐题判分走 /api/study/check-answer
             "explanation": "",
             "type_name": c.type_name or "",
             "image_path": c.image_path or "",
             "exam_id": c.exam_id,
         } for c in candidates]
-        return {"kind": "exam", "module_name": q.type_name or "同类题",
+        return {"kind": "exam", "sub_kind": "exam", "module_name": q.type_name or "同类题",
                 "count": len(questions), "questions": questions}
 
     # ── 学习错题 ──
@@ -841,11 +852,11 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
             "kind": "study",
             "question": c.question,
             "options": _parse_options(c.options),
-            "answer": c.answer,
+            # 防刷：不下发正确答案，逐题判分走 /api/study/check-answer
             "explanation": c.explanation or "",
             "type_name": point.name if point else "语法练习",
         } for c in candidates]
-        return {"kind": "study", "module_name": point.name if point else "语法练习",
+        return {"kind": "study", "sub_kind": "grammar", "module_name": point.name if point else "语法练习",
                 "count": len(questions), "questions": questions}
 
     if e.source_type == "classical":
@@ -865,7 +876,7 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
             "type_name": "古诗文默写",
             "text_id": q["text_id"],
         } for q in qs]
-        return {"kind": "study", "module_name": f"《{text.title}》默写",
+        return {"kind": "study", "sub_kind": "classical", "module_name": f"《{text.title}》默写",
                 "count": len(questions), "questions": questions}
 
     if e.source_type == "vocab":
@@ -893,10 +904,45 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
             "explanation": "",
             "type_name": "单词听写",
         } for c in candidates]
-        return {"kind": "study", "module_name": "单词听写重练",
+        return {"kind": "study", "sub_kind": "vocab", "module_name": "单词听写重练",
                 "count": len(questions), "questions": questions}
 
     raise HTTPException(400, "未知的错题来源")
+
+
+class CheckAnswerRequest(BaseModel):
+    user_id: str
+    kind: str  # exam / grammar
+    qid: int
+    user_answer: str
+
+
+@router.post("/check-answer", summary="变式重练逐题判分（防刷：答案不下发前端）")
+def check_answer_api(req: CheckAnswerRequest, db: Session = Depends(get_db)):
+    """变式重练/错题修正的逐题判分：retry 接口不再下发正确答案，
+    前端作答后调此接口由后端判对错，避免看答案抄写刷掌握。
+    """
+    if req.kind == "exam":
+        q = db.query(Question).filter(Question.id == req.qid).first()
+        if not q:
+            raise HTTPException(404, "题目不存在")
+        from .exam import _check_answer
+        ok = _check_answer(req.user_answer or "", (q.answer or "").strip(), q.options_json)
+    elif req.kind == "grammar":
+        from ..models.grammar import GrammarExercise
+        ex = db.query(GrammarExercise).filter(GrammarExercise.id == req.qid).first()
+        if not ex:
+            raise HTTPException(404, "题目不存在")
+        ua = (req.user_answer or "").strip().lower()
+        ca = (ex.answer or "").strip().lower()
+        if ex.options:
+            ok = ua == ca  # 选择题按字母判
+        else:
+            from ..services.answer_check import fill_answer_correct
+            ok = ua == ca or fill_answer_correct(ua, ca)
+    else:
+        raise HTTPException(400, "kind 只能是 exam/grammar")
+    return {"correct": bool(ok)}
 
 
 def _parse_options(options_json: str) -> list:

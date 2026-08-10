@@ -403,9 +403,11 @@ def _today_attempts(db: Session, user_id: str, subject: str) -> int:
 
 
 def _today_mastered(db: Session, user_id: str, subject: str) -> int:
+    """今日通过重做答对而掌握的错题数（防刷：手动标记已掌握不计入，需正确答对 correct_streak>0）"""
     return db.query(WrongRecord).join(Question, WrongRecord.question_id == Question.id).filter(
         WrongRecord.user_id == user_id, Question.subject == subject,
         WrongRecord.mastered_at != None, WrongRecord.mastered_at >= _today_start(),
+        WrongRecord.correct_streak > 0,
     ).count()
 
 
@@ -732,11 +734,13 @@ def _build_payload(db: Session, user_id: str) -> dict:
             row.progress = prog
             if prog >= row.target:
                 row.status = "done"
-                try:
-                    from .rewards import inc_active_wish_progress
-                    inc_active_wish_progress(db, user_id, 1)
-                except Exception:
-                    pass
+                # 心愿进度仅统计可选任务（强制任务不计入）
+                if (getattr(row, 'task_type', 'mandatory') or 'mandatory') == "optional":
+                    try:
+                        from .rewards import inc_active_wish_progress
+                        inc_active_wish_progress(db, user_id, 1)
+                    except Exception:
+                        pass
     db.commit()
 
     # 检查 optional_streak 类型许愿进度
@@ -830,11 +834,7 @@ def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db
         return _build_payload(db, req.user_id)
     row.progress = row.target
     row.status = "done"
-    try:
-        from .rewards import inc_active_wish_progress
-        inc_active_wish_progress(db, req.user_id, 1)
-    except Exception:
-        pass
+    # 心愿进度仅统计可选任务，强制任务手动确认不计入
     try:
         from .pet import _grant_coins
         _grant_coins(db, req.user_id, 5, "完成任务")

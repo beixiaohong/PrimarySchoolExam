@@ -342,7 +342,8 @@ def wrong_practice_quiz(req: WrongPracticeQuizRequest, db: Session = Depends(get
     """从用户未掌握的错题中随机抽 count 道错题（默认 5），每道错题配 3 道同类型新题。
 
     - 「修正」规则：同类型 = type_code 相同（无 type_code 时退化为 category 相同）
-      且同学科、非原题；同类型题不足 3 道时用原题补齐（保证每组正好 3 道）
+      且同学科、非原题；同类型题不足 3 道时按实际数量返回（防刷：不用原题补齐，
+      避免背答案）
     - 返回分组结构，前端整组答题，整组全对才提交修正
       （/api/study/practice-submit 按 record_id 分组判定，全对直接掌握）
     """
@@ -374,9 +375,7 @@ def wrong_practice_quiz(req: WrongPracticeQuizRequest, db: Session = Depends(get
             pool = pool.filter(Question.category == qs.category)
         candidates = pool.order_by(Question.seq).all()
         picks = random.sample(candidates, min(3, len(candidates))) if candidates else []
-        # 不足 3 道用原题补齐，保证一组正好 3 道
-        while len(picks) < 3:
-            picks.append(qs)
+        # 防刷：同类型题不足 3 道时按实际数量返回，不用原题补齐（避免直接背答案）
 
         group_questions = [{
             "qid": qu.id,
@@ -384,7 +383,7 @@ def wrong_practice_quiz(req: WrongPracticeQuizRequest, db: Session = Depends(get
             "record_id": wr.id,
             "question": qu.question,
             "options": _parse_options_json(qu.options_json),
-            "answer": qu.answer,
+            # 防刷：不下发正确答案，逐题判分走 /api/study/check-answer
             "explanation": "",
             "type_name": qu.type_name or "",
             "subject": qu.subject,
