@@ -17,8 +17,9 @@ load_dotenv(BASE_DIR / ".env", override=False)
 
 # 数据存储目录
 DATA_DIR = BASE_DIR / "app" / "data"
-# SQLite 数据库文件路径
-DB_PATH = BASE_DIR / "primary_school.db"
+# SQLite 数据库文件路径（可用 DB_SQLITE_PATH 环境变量覆盖，测试用临时库）
+DB_PATH = Path(os.environ.get("DB_SQLITE_PATH", "")) if os.environ.get("DB_SQLITE_PATH", "").strip() \
+    else BASE_DIR / "primary_school.db"
 
 # ── 数据库驱动 ──
 DB_DRIVER = os.environ.get("DB_DRIVER", "sqlite").strip().lower()

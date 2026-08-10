@@ -125,7 +125,21 @@ npm run dev          # http://localhost:5173
 
 管理后台前端为 `frontend-admin/`（独立工程，/admin 访问），无需构建。
 
-## 八、项目结构
+## 八、自动化测试（pytest）
+
+API 回归测试位于 `tests/`，使用临时 SQLite 库，不依赖外部服务（AI 判题与邮件发送均已打桩），不污染真实数据库。
+
+```bash
+# 安装开发依赖（不影响生产 requirements.txt）
+pip install -r requirements-dev.txt
+
+# 运行全部测试
+python -m pytest tests -q
+```
+
+覆盖范围：系统冒烟（/health）、注册/昵称登录/验证码、家长密码守卫（X-Parent-Pwd）、任务配置读写、试卷生成/交卷判分/错题本、管理后台登录与接口。AI 相关接口依赖外部 API key，不纳入自动化测试。
+
+## 九、项目结构
 
 ```
 /home/PrimarySchoolExam/
@@ -146,6 +160,6 @@ npm run dev          # http://localhost:5173
 └── deploy.sh             # 一键部署脚本
 ```
 
-## 九、访问地址
+## 十、访问地址
 
 部署完成后浏览器访问：`https://www.你的域名.com`
