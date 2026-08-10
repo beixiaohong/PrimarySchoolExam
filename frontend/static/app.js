@@ -10,6 +10,8 @@ createApp({
       regTarget: '', regCode: '', regPwd: '', regNickname: '',
       rstTarget: '', rstCode: '', rstPwd: '',
       bindTarget: '', bindCode: '', authCooldown: 0, _authTimer: null,
+      // 天气（P3：首页卡片 + 城市配置）
+      weather: null, cityInput: '',
       // 导航
       tab: 'home',
       // 全局统计
@@ -340,6 +342,7 @@ createApp({
       this.saveUser();
       this.showToast(`欢迎回来，${r.user_id}！`);
       this.loadAuthInfo();
+      this.loadWeather();
       if (r.is_new || !r.grade) {
         this.showGradeModal = true;
       } else {
@@ -405,6 +408,33 @@ createApp({
       this.api(`/api/auth/me?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.authInfo = d || {}; })
         .catch(() => { this.authInfo = {}; });
+    },
+    loadWeather() {
+      // 首页天气卡：优先用户配置城市，后端回退 IP 定位/默认城市
+      this.api(`/api/weather/current?user_id=${encodeURIComponent(this.user || '')}`)
+        .then(d => { this.weather = d; if (d && d.city) this.cityInput = d.city; })
+        .catch(() => { this.weather = null; });
+    },
+    saveCity() {
+      const city = (this.cityInput || '').trim();
+      if (!city) { this.showToast('请输入城市'); return; }
+      this.api('/api/weather/city', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, city }),
+      }).then(() => {
+        this.showToast(`城市已保存：${city}`);
+        this.weather = null;
+        this.loadWeather();
+      }).catch(e => this.showToast(e.message));
+    },
+    wxDayLabel(fxDate) {
+      // 预报日期转「今天/明天/周几」
+      if (!fxDate) return '';
+      const d = new Date(fxDate + 'T00:00:00');
+      const diff = Math.round((d - new Date(new Date().toDateString())) / 86400000);
+      if (diff === 0) return '今天';
+      if (diff === 1) return '明天';
+      return '周' + '日一二三四五六'[d.getDay()];
     },
     logout() {
       localStorage.removeItem('zx_user');
@@ -2693,6 +2723,7 @@ createApp({
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;
       this.refreshAll();
       this.loadAuthInfo();
+      this.loadWeather();
     }
   },
 }).mount('#app');
