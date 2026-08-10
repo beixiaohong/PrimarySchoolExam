@@ -7,3 +7,4 @@ output/
 primary_school.db
 web/node_modules/
 web/dist/
+tools/mysql_backup_*.json

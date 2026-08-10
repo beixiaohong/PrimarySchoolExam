@@ -113,6 +113,10 @@ def main():
     # ── 逐表迁移 ──
     print("[3/4] 数据迁移（每批 %d 行）..." % BATCH)
     report = []
+    # SQLite 不强制外键，存量数据可能有孤儿行：迁移期间关闭外键检查（会话级，须与 INSERT 同连接）
+    mig_conn = mysql_engine.connect() if not args.dry_run else None
+    if mig_conn is not None:
+        mig_conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
     for name in ordered:
         if name not in model_tables:
             report.append((name, "SKIP-模型中不存在"))
@@ -132,10 +136,13 @@ def main():
         # 只保留目标表存在的列
         cleaned = [{k: v for k, v in dict(r).items() if k in dst_cols} for r in rows]
         if not args.dry_run:
-            with mysql_engine.begin() as conn:
-                for i in range(0, len(cleaned), BATCH):
-                    conn.execute(dst_table.insert(), cleaned[i:i + BATCH])
+            for i in range(0, len(cleaned), BATCH):
+                mig_conn.execute(dst_table.insert(), cleaned[i:i + BATCH])
+            mig_conn.commit()
         report.append((name, f"{len(cleaned)} 行" + ("（dry-run 未写入）" if args.dry_run else " 已写入")))
+    if mig_conn is not None:
+        mig_conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+        mig_conn.close()
 
     # ── 行数对账 ──
     print("[4/4] 行数对账报告")
