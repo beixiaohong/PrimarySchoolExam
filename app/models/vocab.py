@@ -11,11 +11,12 @@ class VocabProgress(Base):
     __tablename__ = "vocab_progress"
     __table_args__ = (
         UniqueConstraint("user_id", "word_id", name="uq_user_word"),
+        {"comment": "背单词进度：每用户每单词一条，艾宾浩斯曲线复习阶段"},
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     user_id = Column(String(50), nullable=False, comment="用户名")
-    word_id = Column(Integer, ForeignKey("words.id"), nullable=False)
+    word_id = Column(Integer, ForeignKey("words.id"), nullable=False, comment="单词 ID")
 
     # 状态: learning=学习中, mastered=已掌握
     status = Column(String(20), default="learning", comment="learning/mastered")
@@ -31,8 +32,8 @@ class VocabProgress(Base):
     wrong_count = Column(Integer, default=0, comment="累计答错次数")
     total_reviews = Column(Integer, default=0, comment="总复习次数")
 
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_at = Column(DateTime, default=datetime.now, comment="首次学习时间")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="最近更新时间")
 
     def __repr__(self):
         return f"<VocabProgress user={self.user_id} word_id={self.word_id} stage={self.review_stage}>"
@@ -43,13 +44,14 @@ class VocabDailyLog(Base):
     __tablename__ = "vocab_daily_log"
     __table_args__ = (
         UniqueConstraint("user_id", "learn_date", name="uq_user_date"),
+        {"comment": "背单词每日日志：当天新学/复习/答对答错统计"},
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(50), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
+    user_id = Column(String(50), nullable=False, comment="用户名")
     learn_date = Column(Date, nullable=False, comment="学习日期")
     new_words_learned = Column(Integer, default=0, comment="当天新学单词数")
     words_reviewed = Column(Integer, default=0, comment="当天复习单词数")
     correct_count = Column(Integer, default=0, comment="当天答对数")
     wrong_count = Column(Integer, default=0, comment="当天答错数")
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="最近更新时间")

@@ -13,8 +13,9 @@ from ..database import Base
 class User(Base):
     """用户档案"""
     __tablename__ = "users"
+    __table_args__ = {"comment": "用户档案：登录标识+年级学科偏好+认证信息（邮箱/手机/密码/昵称）"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     user_id = Column(String(64), nullable=False, unique=True, index=True,
                      comment="用户名（学生姓名/学号）")
 
@@ -44,7 +45,8 @@ class User(Base):
 class VipUser(Base):
     """VIP 名单（009 迁移建表，补模型供 MySQL 基线建表）：免费链失败后追加付费链"""
     __tablename__ = "vip_users"
+    __table_args__ = {"comment": "VIP 用户名单：AI 免费额度用尽后仍可调用付费链"}
 
-    user_id = Column(String(50), primary_key=True)
-    note = Column(String(100), nullable=False, default="")
-    created_at = Column(DateTime, default=datetime.now)
+    user_id = Column(String(50), primary_key=True, comment="用户名（主键，与 users.user_id 对应）")
+    note = Column(String(100), nullable=False, default="", comment="备注（开通原因/有效期说明）")
+    created_at = Column(DateTime, default=datetime.now, comment="加入 VIP 时间")

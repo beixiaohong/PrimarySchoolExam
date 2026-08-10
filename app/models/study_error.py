@@ -20,9 +20,10 @@ class StudyError(Base):
     __tablename__ = "study_errors"
     __table_args__ = (
         UniqueConstraint("user_id", "source_type", "source_id", name="uq_user_source"),
+        {"comment": "学习模块错题：语法练习/古诗文默写等答错题，与试卷错题分开存储"},
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     user_id = Column(String(64), nullable=False, index=True,
                      comment="用户标识（如学生姓名/学号）")
     source_type = Column(String(20), nullable=False,

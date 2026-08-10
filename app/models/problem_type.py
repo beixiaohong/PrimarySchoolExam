@@ -10,13 +10,14 @@ from ..database import Base
 class ProblemCategory(Base):
     """题目大类（如：计算题、应用题、图形与几何）"""
     __tablename__ = "problem_categories"
+    __table_args__ = {"comment": "题目大类：计算题/应用题/图形与几何等，下设具体题型"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     name = Column(String(50), nullable=False, unique=True, comment="大类名称")
     subject = Column(String(20), default="数学", comment="学科")
-    description = Column(String(200), default="")
-    sort_order = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
+    description = Column(String(200), default="", comment="大类说明")
+    sort_order = Column(Integer, default=0, comment="排序权重")
+    is_active = Column(Boolean, default=True, comment="是否启用")
 
     problem_types = relationship("ProblemType", back_populates="category", cascade="all, delete-orphan")
 
@@ -24,9 +25,10 @@ class ProblemCategory(Base):
 class ProblemType(Base):
     """具体题型（如：分数四则运算、行程问题、面积计算）"""
     __tablename__ = "problem_types"
+    __table_args__ = {"comment": "具体题型：分数四则运算/行程问题等，驱动数学出题生成器"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    category_id = Column(Integer, ForeignKey("problem_categories.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
+    category_id = Column(Integer, ForeignKey("problem_categories.id"), nullable=False, comment="所属大类 ID")
     name = Column(String(80), nullable=False, comment="题型名称")
     code = Column(String(50), nullable=False, unique=True, comment="题型编码，用于生成器映射")
     difficulty_min = Column(Integer, default=1, comment="最低难度")
@@ -34,10 +36,10 @@ class ProblemType(Base):
     grade_min = Column(Integer, default=1, comment="适用最低年级")
     grade_max = Column(Integer, default=6, comment="适用最高年级")
     params_schema = Column(Text, default="{}", comment="生成参数JSON Schema")
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, comment="是否启用")
     weight = Column(Integer, default=10, comment="出题权重")
-    description = Column(String(200), default="")
-    created_at = Column(DateTime, default=datetime.now)
+    description = Column(String(200), default="", comment="题型说明")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
     category = relationship("ProblemCategory", back_populates="problem_types")
 

@@ -19,8 +19,9 @@ class ExamRecord(Base):
     任何用户都可以对同一份试卷中的题目标记错题。
     """
     __tablename__ = "exam_records"
+    __table_args__ = {"comment": "试卷生成记录：一份试卷是公共资源，不绑定用户"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     user_id = Column(String(64), default="", index=True,
                      comment="生成者用户标识（历史遗留列，正式纳入 model 管理，见迁移 001）")
     subject = Column(String(20), nullable=False,
@@ -54,8 +55,9 @@ class Question(Base):
     错题标记通过 WrongRecord 表按用户独立记录。
     """
     __tablename__ = "questions"
+    __table_args__ = {"comment": "试卷题目：属于试卷本身不绑定用户，错题标记由 WrongRecord 按用户记录"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     exam_id = Column(Integer, ForeignKey("exam_records.id"), nullable=False,
                      comment="所属试卷ID")
     seq = Column(Integer, nullable=False,
@@ -106,9 +108,10 @@ class WrongRecord(Base):
     __tablename__ = "wrong_records"
     __table_args__ = (
         UniqueConstraint("user_id", "question_id", name="uq_user_question"),
+        {"comment": "用户错题记录：每用户每题一条，支持练习统计与掌握标记"},
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     user_id = Column(String(64), nullable=False, index=True,
                      comment="用户标识（如学生姓名/学号）")
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False,
@@ -144,8 +147,9 @@ class WrongRecord(Base):
 class ExamAttempt(Base):
     """用户做题记录（一次完整的答题过程）"""
     __tablename__ = "exam_attempts"
+    __table_args__ = {"comment": "做题记录：用户一次完整答题过程，含得分与用时"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     user_id = Column(String(64), nullable=False, index=True,
                      comment="用户标识")
     exam_id = Column(Integer, ForeignKey("exam_records.id"), nullable=False,
@@ -173,8 +177,9 @@ class ExamAttempt(Base):
 class AttemptAnswer(Base):
     """单次做题中每道题的作答详情"""
     __tablename__ = "attempt_answers"
+    __table_args__ = {"comment": "作答详情：单次做题中每道题的用户答案与对错"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     attempt_id = Column(Integer, ForeignKey("exam_attempts.id"), nullable=False,
                         comment="所属做题记录ID")
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False,
