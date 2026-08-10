@@ -972,7 +972,7 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 
 /* Modal 规范统一：非做题类浮层使用半透明遮罩 + 点击空白关闭（overlay-pop） */
 .quiz-overlay.overlay-pop{background:rgba(22,32,58,.45);backdrop-filter:blur(2px)}
-.quiz-overlay.overlay-pop .quiz-shell{animation:popIn .22s ease;box-shadow:0 16px 48px rgba(22,32,58,.22)}
+.quiz-overlay.overlay-pop .quiz-shell{animation:popIn .22s ease;box-shadow:0 16px 48px rgba(22,32,58,.22);background:var(--card,#fff);border-radius:16px;padding:16px}
 
 /* 绑定引导条（昵称登录未绑定邮箱/手机时展示） */
 .bind-guide{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:linear-gradient(135deg,#EEF3FF,#F8FAFF);border:1.5px solid #CFDCF9;border-radius:14px;padding:12px 16px;margin-top:12px;font-size:13px;color:#3A4A7B}

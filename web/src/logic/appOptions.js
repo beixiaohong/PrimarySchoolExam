@@ -1745,6 +1745,13 @@ const appOptions = {
       for (const it of items) {
         if (it.enabled === false) disabled.push(it.code);
       }
+      // 回显家长已添加的可选任务（后端 settings.optional 存 code 列表）
+      for (const code of this.taskSettings.optional || []) {
+        const def = this.allTaskOptions.find(o => o.code === code);
+        if (!def) continue;
+        const item = items.find(i => i.code === code);
+        optional.push({ subject: subjMap[def.subject] || 'math', code, target: item ? item.target : 1 });
+      }
       // 默认强制任务
       if (!mandatory.math) mandatory.math = 'math_exam';
       if (!mandatory.chi) mandatory.chi = 'chi_classical';
@@ -1796,7 +1803,9 @@ const appOptions = {
         const subj = subjMap[key];
         if (subj && code) mandatoryOut[subj] = code;
       }
-      const settings = { targets, enabled, mandatory: mandatoryOut };
+      // 家长添加的可选任务 code 列表（去重去空）
+      const optionalCodes = [...new Set(optional.filter(o => o.code).map(o => o.code))];
+      const settings = { targets, enabled, mandatory: mandatoryOut, optional: optionalCodes };
       this.api('/api/tasks/settings', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, settings }),

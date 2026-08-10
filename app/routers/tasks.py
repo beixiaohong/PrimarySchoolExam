@@ -168,6 +168,8 @@ def _load_settings(db: Session, user_id: str) -> dict:
                 "enabled": data.get("enabled", {}),  # {code: bool}
                 "mandatory": data.get("mandatory", {}),  # {subject: code}
                 "quotas": data.get("quotas", {}),  # {daily_new_words: int, ...}
+                "optional": [c for c in data.get("optional", [])  # 家长添加的可选任务 code 列表
+                             if isinstance(c, str) and c in CONFIGURABLE_CODES],
             }
         # 旧格式：扁平结构 {code: int}，兼容转换
         return {
@@ -177,9 +179,10 @@ def _load_settings(db: Session, user_id: str) -> dict:
             "enabled": {},
             "mandatory": {},
             "quotas": {},
+            "optional": [],
         }
     except Exception:
-        return {"targets": {}, "enabled": {}, "mandatory": {}, "quotas": {}}
+        return {"targets": {}, "enabled": {}, "mandatory": {}, "quotas": {}, "optional": []}
 
 
 def _setting_target(settings: dict, code: str) -> int | None:
@@ -207,6 +210,17 @@ def _get_mandatory_code(settings: dict, subject: str) -> str | None:
     code = mandatory.get(subject)
     if code and code in CONFIGURABLE_CODES:
         return code
+    return None
+
+
+def _task_def_by_code(code: str) -> dict | None:
+    """按 code 查任务定义（含强制任务，补全 subject 字段）"""
+    for subj, t in MANDATORY_TASKS.items():
+        if t["code"] == code:
+            return {**t, "subject": subj}
+    for t in OPTIONAL_POOL:
+        if t["code"] == code:
+            return t
     return None
 
 
@@ -241,7 +255,8 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
         default_code = MANDATORY_TASKS[subj]["code"]
         current_mandatory[subj] = mandatory_map.get(subj, default_code)
     quotas = {k: int(user.get("quotas", {}).get(k, d)) for k, (_, _, d) in QUOTA_KEYS.items()}
-    return {"items": items, "mandatory": current_mandatory, "quotas": quotas}
+    return {"items": items, "mandatory": current_mandatory, "quotas": quotas,
+            "optional": user.get("optional", [])}
 
 
 def _bounded_target(code: str, v: int) -> int:
@@ -275,6 +290,20 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     new_enabled = dict(existing.get("enabled", {}))
     new_mandatory = dict(existing.get("mandatory", {}))
     new_quotas = dict(existing.get("quotas", {}))
+    new_optional = list(existing.get("optional", []))
+
+    # 家长添加的可选任务（code 列表，独立字段，可与其它字段分开提交）
+    if "optional" in req.settings:
+        if not isinstance(req.settings["optional"], list):
+            raise HTTPException(400, "optional 必须为数组")
+        seen, opt = set(), []
+        for code in req.settings["optional"]:
+            if not isinstance(code, str) or code not in CONFIGURABLE_CODES:
+                raise HTTPException(400, f"不支持的任务类型: {code}")
+            if code not in seen:
+                seen.add(code)
+                opt.append(code)
+        new_optional = opt
 
     if "targets" in req.settings or "enabled" in req.settings or "mandatory" in req.settings \
             or "quotas" in req.settings:
@@ -332,7 +361,8 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
             new_targets[code] = _bounded_target(code, v)
 
     clean = {"targets": new_targets, "enabled": new_enabled,
-             "mandatory": new_mandatory, "quotas": new_quotas}
+             "mandatory": new_mandatory, "quotas": new_quotas,
+             "optional": new_optional}
     # 可移植 upsert（SQLite/MySQL 方言兼容，不用 ON CONFLICT）
     _params = {"u": req.user_id, "j": json.dumps(clean), "t": datetime.now()}
     exists = db.execute(text("SELECT 1 FROM parent_task_settings WHERE user_id=:u"),
@@ -348,6 +378,11 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     for r in rows:
         if r.status != "done" and r.task_code in new_targets:
             r.target = new_targets[r.task_code]
+    # 可选任务配置变更：删除今日未完成的可选行，下次 /daily 按新配置重新生成
+    if new_optional != list(existing.get("optional", [])):
+        for r in rows:
+            if getattr(r, "task_type", "") == "optional" and r.status != "done":
+                db.delete(r)
     db.commit()
     return get_task_settings(req.user_id, db)
 
@@ -556,10 +591,16 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
             db.add(row)
             changed = True
 
-    # 可选任务：系统生成 3 条（过滤掉已禁用的任务）
+    # 可选任务：优先生成家长配置的，未配置时系统随机抽 3 条（过滤已禁用）
     optional = by_type.get("optional", {})
     if not optional:
-        picked = _pick_daily_optional(user_id, today, settings)
+        picked = []
+        for c in settings.get("optional", []):
+            t = _task_def_by_code(c)
+            if t and _is_task_enabled(settings, c):
+                picked.append(t)
+        if not picked:
+            picked = _pick_daily_optional(user_id, today, settings)
         for i, t in enumerate(picked):
             subj = t["subject"]
             row = DailyTask(

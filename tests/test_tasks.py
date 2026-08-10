@@ -4,11 +4,11 @@ UID = "任务测试生"
 PARENT_PWD = "8888"
 
 
-def _ensure_parent_pwd(client):
-    r = client.get("/api/parent/status", params={"user_id": UID})
+def _ensure_parent_pwd(client, uid=UID):
+    r = client.get("/api/parent/status", params={"user_id": uid})
     if not r.json()["has_password"]:
         r = client.post("/api/parent/setup", json={
-            "user_id": UID, "password": PARENT_PWD,
+            "user_id": uid, "password": PARENT_PWD,
             "hint_question": "测试密保？", "hint_answer": "测试答案",
         })
         assert r.status_code == 200
@@ -73,6 +73,36 @@ def test_settings_unconfigurable_codes_ignored(client):
     # 真正非法的 code 仍然报错
     r = client.post("/api/tasks/settings", json={
         "user_id": UID, "settings": {"targets": {"not_a_task": 1}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 400
+
+
+def test_optional_config_roundtrip(client):
+    """可选任务：家长配置 → settings 回显 → 今日任务按配置生成"""
+    uid = "可选任务配置生"
+    _ensure_parent_pwd(client, uid)
+    codes = ["math_fix", "chi_read"]
+
+    # 保存可选任务列表 + 目标数
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid,
+        "settings": {"optional": codes, "targets": {"math_fix": 5}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    assert r.json()["optional"] == codes
+
+    # 重新读设置：回显仍在（重开配置弹窗可见）
+    r = client.get("/api/tasks/settings", params={"user_id": uid})
+    assert r.json()["optional"] == codes
+
+    # 今日任务列表包含家长配置的可选任务
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    opt_codes = {t["task_code"] for t in r.json()["tasks"] if not t["mandatory"]}
+    assert set(codes) <= opt_codes
+
+    # 非法 code 被拒
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"optional": ["not_a_task"]},
     }, headers={"X-Parent-Pwd": PARENT_PWD})
     assert r.status_code == 400
 
