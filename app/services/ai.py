@@ -30,6 +30,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+from . import sysconfig
+
 logger = logging.getLogger("ai")
 
 TIMEOUT_SEC = 10  # 默认超时；提供商可覆盖（cfg["timeout"]）
@@ -191,17 +193,17 @@ def _config_provider(name: str) -> dict:
         "model": p["model"],
     }
     if name == "zhipu":
-        cfg["api_key"] = os.environ.get("ZHIPU_API_KEY", "").strip()
-        cfg["model"] = os.environ.get("AI_MODEL", p["model"])
-        cfg["base_url"] = os.environ.get("AI_BASE_URL", p["base_url"]).rstrip("/")
+        cfg["api_key"] = sysconfig.get("ZHIPU_API_KEY", "").strip()
+        cfg["model"] = sysconfig.get("AI_MODEL", p["model"])
+        cfg["base_url"] = sysconfig.get("AI_BASE_URL", p["base_url"]).rstrip("/")
         cfg["fallback_model"] = p.get("fallback_model", "")
     elif name == "deepseek":
-        cfg["api_key"] = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        cfg["api_key"] = sysconfig.get("DEEPSEEK_API_KEY", "").strip()
     elif name == "relay":
         # 中转站：RELAY_API_KEY / RELAY_BASE_URL / RELAY_MODEL 均可覆盖；未配置 Key 自动跳过
-        cfg["api_key"] = os.environ.get(p.get("env_key", "RELAY_API_KEY"), "").strip()
-        cfg["model"] = os.environ.get(p.get("env_model", "RELAY_MODEL"), p["model"])
-        cfg["base_url"] = os.environ.get(p.get("env_base", "RELAY_BASE_URL"), p["base_url"]).rstrip("/")
+        cfg["api_key"] = sysconfig.get(p.get("env_key", "RELAY_API_KEY"), "").strip()
+        cfg["model"] = sysconfig.get(p.get("env_model", "RELAY_MODEL"), p["model"])
+        cfg["base_url"] = sysconfig.get(p.get("env_base", "RELAY_BASE_URL"), p["base_url"]).rstrip("/")
     if p.get("timeout"):
         cfg["timeout"] = p["timeout"]  # 推理模型需更长超时
     if p.get("extra_params"):

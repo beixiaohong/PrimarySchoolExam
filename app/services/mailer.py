@@ -4,10 +4,11 @@
 SMTP_SSL + 30s 超时 + 最多 3 次重试（认证失败/收件人拒绝不重试）。
 """
 import logging
-import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+from . import sysconfig
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,8 @@ MAX_RETRY = 3
 
 
 def mail_configured() -> bool:
-    """邮件通道是否可用（发件地址与授权码都已配置）"""
-    return bool(os.environ.get("MAIL_ADDRESS") and os.environ.get("MAIL_PASSWORD"))
+    """邮件通道是否可用（发件地址与授权码都已配置，支持后台在线覆盖）"""
+    return bool(sysconfig.get("MAIL_ADDRESS") and sysconfig.get("MAIL_PASSWORD"))
 
 
 def send_email(
@@ -35,8 +36,8 @@ def send_email(
         body_template = "您的验证码是：{code}，5 分钟内有效。如非本人操作请忽略。"
 
     body = body_template.format(code=code)
-    sender_email = os.environ.get("MAIL_ADDRESS", "")
-    sender_password = os.environ.get("MAIL_PASSWORD", "")
+    sender_email = sysconfig.get("MAIL_ADDRESS")
+    sender_password = sysconfig.get("MAIL_PASSWORD")
 
     if not sender_email or not sender_password:
         logger.error("邮件配置不完整：MAIL_ADDRESS 或 MAIL_PASSWORD 未设置")
@@ -48,9 +49,9 @@ def send_email(
     message["Subject"] = subject
     message.attach(MIMEText(body, "plain", "utf-8"))
 
-    server_host = os.environ.get("MAIL_SERVER", "smtp.qiye.163.com")
+    server_host = sysconfig.get("MAIL_SERVER", "smtp.qiye.163.com")
     try:
-        server_port = int(os.environ.get("MAIL_PORT", "465"))
+        server_port = int(sysconfig.get("MAIL_PORT", "465"))
     except ValueError:
         server_port = 465
 

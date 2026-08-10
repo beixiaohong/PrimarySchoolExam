@@ -17,15 +17,25 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models.user import User
+from ..services import sysconfig
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-QWEATHER_API_KEY = os.environ.get("QWEATHER_API_KEY", "").strip()
-QWEATHER_API_HOST = (os.environ.get("QWEATHER_API_HOST", "").strip() or "api.qweather.com")
-IPINFO_API_TOKEN = os.environ.get("IPINFO_API_TOKEN", "").strip()
 DEFAULT_CITY = os.environ.get("WEATHER_DEFAULT_CITY", "").strip() or "北京"
+
+
+def _api_key() -> str:
+    return sysconfig.get("QWEATHER_API_KEY")
+
+
+def _api_host() -> str:
+    return sysconfig.get("QWEATHER_API_HOST") or "api.qweather.com"
+
+
+def _ipinfo_token() -> str:
+    return sysconfig.get("IPINFO_API_TOKEN")
 
 _CACHE_TTL = 4 * 3600      # 天气缓存 4 小时
 _IP_CACHE_TTL = 4 * 3600   # IP 定位缓存 4 小时
@@ -34,7 +44,7 @@ _ip_cache: dict = {}
 
 
 def weather_configured() -> bool:
-    return bool(QWEATHER_API_KEY)
+    return bool(_api_key())
 
 
 class CitySaveReq(BaseModel):
@@ -64,8 +74,9 @@ def _get_city_by_ip(ip: str) -> str:
             return city
     try:
         url = f"https://ipinfo.io/{ip}/json"
-        if IPINFO_API_TOKEN:
-            url += f"?token={IPINFO_API_TOKEN}"
+        token = _ipinfo_token()
+        if token:
+            url += f"?token={token}"
         data = requests.get(url, timeout=5).json()
         city = data.get("city") or DEFAULT_CITY
         _ip_cache[ip] = (city, now)
@@ -79,7 +90,7 @@ def _get_city_by_ip(ip: str) -> str:
 
 def _fetch_weather(city_query: str) -> dict:
     """GeoAPI 查城市 → 实时天气 + 3 日预报"""
-    params_key = {"key": QWEATHER_API_KEY}
+    params_key = {"key": _api_key()}
     try:
         geo = requests.get(
             "https://geoapi.qweather.com/v2/city/lookup",
@@ -90,10 +101,10 @@ def _fetch_weather(city_query: str) -> dict:
         location_id, city_name = loc["id"], loc.get("name", city_query)
 
         now_data = requests.get(
-            f"https://{QWEATHER_API_HOST}/v7/weather/now",
+            f"https://{_api_host()}/v7/weather/now",
             params={**params_key, "location": location_id}, timeout=10).json()
         forecast_data = requests.get(
-            f"https://{QWEATHER_API_HOST}/v7/weather/3d",
+            f"https://{_api_host()}/v7/weather/3d",
             params={**params_key, "location": location_id}, timeout=10).json()
 
         return {
