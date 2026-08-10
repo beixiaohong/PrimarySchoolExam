@@ -20,7 +20,9 @@ cd /home/PrimarySchoolExam
 sudo bash deploy.sh
 ```
 
-脚本自动完成：创建虚拟环境 → 安装依赖 → 配置 systemd → 配置 nginx → 启动服务。
+脚本自动完成：创建虚拟环境 → 安装依赖 → 构建 P5 前端（web/dist，无 Node 时回退旧版前端不阻塞）→ 配置 systemd（自动注入 `.env` 环境变量）→ 配置 nginx → 启动服务 → `/health` 健康自检（失败即报错退出）。
+
+> 部署前请先创建 `.env`（参考 `.env.example`：`DB_DRIVER`/MySQL 连接、AI API key、邮件配置等），否则应用将使用默认 SQLite 与内置配置。
 
 ### 常见问题：status=217/USER
 
@@ -100,6 +102,9 @@ ss -tlnp | grep -E ':80|:443|:8000'
 ```bash
 cd /home/PrimarySchoolExam
 git pull
+# 前端（web/）有改动时需重新构建，否则线上仍是旧版前端
+cd web && npm ci && npm run build
+cd ..
 systemctl restart exam-app
 ```
 

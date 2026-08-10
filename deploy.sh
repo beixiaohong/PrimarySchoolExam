@@ -70,6 +70,26 @@ mkdir -p "$APP_DIR/data"
 mkdir -p "$APP_DIR/output"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || true
 
+# ---------- 3.5 检查 .env（DB_DRIVER/AI key/邮件等由它注入） ----------
+if [ ! -f "$APP_DIR/.env" ]; then
+    warn "未找到 $APP_DIR/.env，请先创建（参考 .env.example：DB_DRIVER/AI_API_KEY/邮件配置等）"
+fi
+
+# ---------- 3.6 构建 P5 前端（web/dist，缺失时回退旧版前端） ----------
+info "检查前端构建产物..."
+if [ -f "$APP_DIR/web/dist/index.html" ]; then
+    info "web/dist 已存在，跳过前端构建"
+elif command -v npm &>/dev/null && [ -f "$APP_DIR/web/package.json" ]; then
+    info "构建 P5 前端（npm ci + vite build）..."
+    (cd "$APP_DIR/web" && npm ci --no-audit --no-fund && npm run build) \
+        && info "前端构建完成" \
+        || warn "前端构建失败，将回退旧版前端（不阻塞部署）"
+    chown -R "$APP_USER:$APP_USER" "$APP_DIR/web/dist" 2>/dev/null || true
+else
+    warn "未安装 Node.js/npm 且 web/dist 不存在，将使用旧版前端；"
+    warn "如需 P5 前端：安装 Node 18+ 后执行 cd $APP_DIR/web && npm ci && npm run build"
+fi
+
 # ---------- 4. 配置 systemd 服务 ----------
 info "配置 systemd 服务..."
 cat > /etc/systemd/system/${APP_NAME}.service <<EOF
@@ -85,6 +105,7 @@ ExecStart=${APP_DIR}/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${APP
 Restart=always
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-${APP_DIR}/.env
 
 [Install]
 WantedBy=multi-user.target
@@ -150,6 +171,15 @@ else
     error "应用启动失败，查看日志: journalctl -u ${APP_NAME} -n 50"
 fi
 
+# 健康检查自检
+if command -v curl &>/dev/null; then
+    if curl -fsS "http://127.0.0.1:${APP_PORT}/health" >/dev/null 2>&1; then
+        info "健康检查通过 (/health)"
+    else
+        error "健康检查失败: curl http://127.0.0.1:${APP_PORT}/health，查看日志: journalctl -u ${APP_NAME} -n 50"
+    fi
+fi
+
 info "启动 Nginx..."
 systemctl enable nginx
 systemctl restart nginx
@@ -188,5 +218,9 @@ echo "    重启Nginx: systemctl restart nginx"
 echo ""
 echo "  更新代码后:"
 echo "    cd ${APP_DIR} && git pull"
+echo "    cd web && npm ci && npm run build   # 前端有改动时需重新构建"
 echo "    systemctl restart ${APP_NAME}"
+echo ""
+echo "  运行自动化测试（需先 pip install -r requirements-dev.txt）:"
+echo "    ${APP_DIR}/venv/bin/python -m pytest tests -q"
 echo ""
