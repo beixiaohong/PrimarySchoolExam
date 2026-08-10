@@ -5,6 +5,11 @@ createApp({
     return {
       // 登录
       user: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
+      // 认证（P2：注册/登录/重置/绑定）
+      authMode: 'login', loginPwd: '', authInfo: {},
+      regTarget: '', regCode: '', regPwd: '', regNickname: '',
+      rstTarget: '', rstCode: '', rstPwd: '',
+      bindTarget: '', bindCode: '', authCooldown: 0, _authTimer: null,
       // 导航
       tab: 'home',
       // 全局统计
@@ -121,6 +126,11 @@ createApp({
   },
 
   computed: {
+    isAccountCredential() {
+      // 账号为邮箱/手机号时需要密码；昵称走快捷入口
+      const a = (this.username || '').trim();
+      return /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(a) || /^1\d{10}$/.test(a);
+    },
     greeting() {
       const h = new Date().getHours();
       return h < 6 ? '夜深了' : h < 12 ? '早上好' : h < 18 ? '下午好' : '晚上好';
@@ -302,32 +312,106 @@ createApp({
       if (this.user) localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject }));
     },
 
-    /* ─────────── 登录 / 退出 ─────────── */
+    /* ─────────── 登录 / 注册 / 退出 ─────────── */
     login() {
+      const account = this.username.trim();
+      if (!account) return;
+      if (!this.isAccountCredential) return this.nicknameLogin();
+      if (!this.loginPwd) { this.showToast('请输入密码'); return; }
+      this.api('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ account, password: this.loginPwd }),
+      }).then(r => this.onLoginOk(r)).catch(e => this.showToast(e.message));
+    },
+    nicknameLogin() {
+      // 存量昵称账号快捷入口（受 ALLOW_NICKNAME_LOGIN 开关控制）
       const name = this.username.trim();
-      if (!name) return;
       this.api('/api/user/login', {
         method: 'POST',
         body: JSON.stringify({ user_id: name }),
-      }).then(r => {
-        this.user = name;
-        this.streakDays = r.streak_days || 0;
-        this.grade = r.grade || 6;
-        this.subject = r.subject || '英语';
-        this.saveUser();
-        this.showToast(`欢迎回来，${name}！`);
-        if (r.is_new || !r.grade) {
-          this.showGradeModal = true;
-        } else {
-          this.refreshAll();
-        }
+      }).then(r => this.onLoginOk(Object.assign({ user_id: name }, r)))
+        .catch(e => this.showToast(e.message));
+    },
+    onLoginOk(r) {
+      this.user = r.user_id;
+      this.streakDays = r.streak_days || 0;
+      this.grade = r.grade || 6;
+      this.subject = r.subject || '英语';
+      this.saveUser();
+      this.showToast(`欢迎回来，${r.user_id}！`);
+      this.loadAuthInfo();
+      if (r.is_new || !r.grade) {
+        this.showGradeModal = true;
+      } else {
+        this.refreshAll();
+      }
+    },
+    register() {
+      const target = this.regTarget.trim();
+      if (!target || this.regCode.trim().length < 6 || !this.regPwd) return;
+      this.api('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          target, code: this.regCode.trim(), password: this.regPwd,
+          nickname: this.regNickname.trim() || null,
+        }),
+      }).then(r => { this.regCode = ''; this.regPwd = ''; this.onLoginOk(r); })
+        .catch(e => this.showToast(e.message));
+    },
+    sendAuthCode(purpose, target) {
+      const t = (target || '').trim();
+      if (!t || this.authCooldown > 0) return;
+      this.api('/api/auth/send-code', {
+        method: 'POST',
+        body: JSON.stringify({ target: t, purpose }),
+      }).then(() => {
+        this.showToast('验证码已发送，请注意查收');
+        this.startAuthCooldown();
       }).catch(e => this.showToast(e.message));
+    },
+    startAuthCooldown() {
+      this.authCooldown = 60;
+      clearInterval(this._authTimer);
+      this._authTimer = setInterval(() => {
+        if (--this.authCooldown <= 0) clearInterval(this._authTimer);
+      }, 1000);
+    },
+    resetPassword() {
+      const target = this.rstTarget.trim();
+      if (!target || this.rstCode.trim().length < 6 || !this.rstPwd) return;
+      this.api('/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ target, code: this.rstCode.trim(), new_password: this.rstPwd }),
+      }).then(() => {
+        this.showToast('密码已重置，请用新密码登录');
+        this.username = target; this.rstTarget = ''; this.rstCode = ''; this.rstPwd = '';
+        this.authMode = 'login';
+      }).catch(e => this.showToast(e.message));
+    },
+    bindAccount() {
+      const target = this.bindTarget.trim();
+      if (!this.user || !target || this.bindCode.trim().length < 6) return;
+      this.api('/api/auth/bind', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, target, code: this.bindCode.trim() }),
+      }).then(() => {
+        this.showToast('绑定成功 🎉');
+        this.bindTarget = ''; this.bindCode = '';
+        this.loadAuthInfo();
+      }).catch(e => this.showToast(e.message));
+    },
+    loadAuthInfo() {
+      if (!this.user) return;
+      this.api(`/api/auth/me?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.authInfo = d || {}; })
+        .catch(() => { this.authInfo = {}; });
     },
     logout() {
       localStorage.removeItem('zx_user');
       sessionStorage.removeItem('zx_parent_open');
       sessionStorage.removeItem('zx_parent_pwd');
       this.user = ''; this.username = ''; this.tab = 'home'; this.showGradeModal = false;
+      this.loginPwd = ''; this.authInfo = {}; this.authMode = 'login';
     },
 
     /* ─────────── 导航 ─────────── */
@@ -2608,6 +2692,7 @@ createApp({
       this.subject = saved.subject || '英语';
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;
       this.refreshAll();
+      this.loadAuthInfo();
     }
   },
 }).mount('#app');

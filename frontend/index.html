@@ -6,22 +6,80 @@
 <title>智学学堂 · 全学科学习中心</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234E7CF6'/><text x='50' y='72' font-size='56' text-anchor='middle'>📘</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
-<link rel="stylesheet" href="/static/style.css?v=36">
+<link rel="stylesheet" href="/static/style.css?v=37">
 </head>
 <body>
 <div id="app">
-<!-- ═══════════════════ 登录屏（填用户名即用） ═══════════════════ -->
+<!-- ═══════════════════ 登录屏（注册登录 · 昵称快捷入口） ═══════════════════ -->
 <div class="login-page" v-if="!user">
   <div class="login-card">
     <div class="login-logo">📘</div>
     <h1>智学学堂</h1>
     <p class="sub">全学科学习中心 · 刷题 · 背诵 · 错题闭环</p>
-    <div class="field">
-      <label>你的名字</label>
-      <input v-model="username" placeholder="输入名字即可开始，如：小明" @keyup.enter="login">
+    <div class="auth-tabs" v-if="authMode!=='reset'">
+      <button :class="{active: authMode==='login'}" @click="authMode='login'">登录</button>
+      <button :class="{active: authMode==='register'}" @click="authMode='register'">注册</button>
     </div>
-    <button class="btn btn-primary btn-lg login-btn" :disabled="!username.trim()" @click="login">进入学习 →</button>
-    <p class="login-tip">无需注册，直接填写用户名即可使用</p>
+
+    <!-- 登录 -->
+    <template v-if="authMode==='login'">
+      <div class="field">
+        <label>账号</label>
+        <input v-model="username" placeholder="邮箱 / 手机号 / 昵称" @keyup.enter="login">
+      </div>
+      <div class="field" v-if="isAccountCredential">
+        <label>密码</label>
+        <input v-model="loginPwd" type="password" placeholder="请输入密码" @keyup.enter="login">
+      </div>
+      <button class="btn btn-primary btn-lg login-btn" :disabled="!username.trim()" @click="login">进入学习 →</button>
+      <p class="login-tip" v-if="!isAccountCredential && username.trim()">老账号：输入名字即可直接进入</p>
+      <p class="login-tip link" @click="authMode='reset'">忘记密码？</p>
+    </template>
+
+    <!-- 注册 -->
+    <template v-if="authMode==='register'">
+      <div class="field">
+        <label>邮箱或手机号</label>
+        <input v-model="regTarget" placeholder="用于接收验证码">
+      </div>
+      <div class="field">
+        <label>验证码</label>
+        <div class="code-row">
+          <input v-model="regCode" placeholder="6 位验证码" maxlength="6">
+          <button class="btn btn-ghost btn-sm" :disabled="authCooldown>0 || !regTarget.trim()" @click="sendAuthCode('register', regTarget)">{{authCooldown>0 ? authCooldown+'s' : '获取验证码'}}</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>设置密码</label>
+        <input v-model="regPwd" type="password" placeholder="以后登录用">
+      </div>
+      <div class="field">
+        <label>昵称（可选）</label>
+        <input v-model="regNickname" placeholder="不填则用账号作为昵称">
+      </div>
+      <button class="btn btn-primary btn-lg login-btn" :disabled="!regTarget.trim() || regCode.trim().length<6 || !regPwd" @click="register">注册并开始学习 →</button>
+    </template>
+
+    <!-- 重置密码 -->
+    <template v-if="authMode==='reset'">
+      <div class="field">
+        <label>已注册的邮箱/手机号</label>
+        <input v-model="rstTarget" placeholder="注册时用的邮箱或手机号">
+      </div>
+      <div class="field">
+        <label>验证码</label>
+        <div class="code-row">
+          <input v-model="rstCode" placeholder="6 位验证码" maxlength="6">
+          <button class="btn btn-ghost btn-sm" :disabled="authCooldown>0 || !rstTarget.trim()" @click="sendAuthCode('reset', rstTarget)">{{authCooldown>0 ? authCooldown+'s' : '获取验证码'}}</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>新密码</label>
+        <input v-model="rstPwd" type="password" placeholder="设置新密码">
+      </div>
+      <button class="btn btn-primary btn-lg login-btn" :disabled="!rstTarget.trim() || rstCode.trim().length<6 || !rstPwd" @click="resetPassword">重置密码 →</button>
+      <p class="login-tip link" @click="authMode='login'">← 返回登录</p>
+    </template>
   </div>
 </div>
 
@@ -1294,6 +1352,23 @@
           <p class="card-desc">当前年级：{{grade}}年级 · 每年9月自动升一年级 · 学习数据按用户名保存在本地服务器</p>
         </div>
         <div class="card" style="max-width:640px;margin-top:16px">
+          <div class="card-head"><b>🔐 账号安全</b><span class="more">绑定邮箱/手机号后可跨设备登录与找回密码</span></div>
+          <div class="info-row"><span>邮箱</span><b>{{authInfo.email || '未绑定'}}</b></div>
+          <div class="info-row"><span>手机号</span><b>{{authInfo.phone || '未绑定'}}</b></div>
+          <div class="info-row"><span>登录密码</span><b>{{authInfo.has_password ? '已设置' : '未设置'}}</b></div>
+          <div v-if="!authInfo.email || !authInfo.phone" style="margin-top:12px">
+            <div class="pc-title">{{authInfo.email ? '📱 绑定手机号' : '📧 绑定邮箱'}}</div>
+            <div class="pc-row">
+              <input v-model="bindTarget" class="fill-input" :placeholder="authInfo.email ? '输入手机号' : '输入邮箱'" style="max-width:220px">
+              <button class="btn btn-ghost btn-sm" :disabled="authCooldown>0 || !bindTarget.trim()" @click="sendAuthCode('bind', bindTarget)">{{authCooldown>0 ? authCooldown+'s' : '获取验证码'}}</button>
+            </div>
+            <div class="pc-row" style="margin-top:8px">
+              <input v-model="bindCode" class="fill-input" maxlength="6" placeholder="验证码" style="max-width:140px">
+              <button class="btn btn-primary btn-sm" :disabled="!bindTarget.trim() || bindCode.trim().length<6" @click="bindAccount()">绑定</button>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="max-width:640px;margin-top:16px">
           <div class="card-head"><b>📚 学习数据</b></div>
           <div class="info-row"><span>连续学习</span><b>🔥 {{streakDays}} 天</b></div>
           <div class="info-row"><span>累计单词</span><b>{{vocabStats.learned_count||0}} / {{vocabStats.total_words||0}}</b></div>
@@ -2012,6 +2087,6 @@
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="/static/app.js?v=36"></script>
+<script src="/static/app.js?v=37"></script>
 </body>
 </html>
