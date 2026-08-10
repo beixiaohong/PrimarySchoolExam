@@ -7,6 +7,7 @@ from .classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
 from .grammar import GrammarPoint, GrammarExercise
 from .study_error import StudyError
 from .user import User, VipUser
+from .auth import AuthCode
 from .diamond import DiamondAccount, DiamondLedger
 from .makeup_card import MakeupCard, MakeupUsageLog
 from .custom_task import CustomTask
@@ -32,6 +33,7 @@ __all__ = [
     "GrammarPoint", "GrammarExercise",
     "StudyError",
     "User", "VipUser",
+    "AuthCode",
     "DiamondAccount", "DiamondLedger",
     "MakeupCard", "MakeupUsageLog",
     "CustomTask",
