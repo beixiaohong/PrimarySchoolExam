@@ -579,6 +579,9 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
 
     settings = _load_settings(db, user_id)
     changed = False
+    # 唯一键为 user_id+task_date+task_code（不含 task_type）：
+    # 记录今日已有/本次新增的任务 code，避免同 code 重复插入撞唯一索引
+    existing_codes = {r.task_code for r in rows}
 
     # 强制任务：每科 1 条（使用家长设置的强制任务 code）
     mandatory = by_type.get("mandatory", {})
@@ -601,11 +604,10 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
                 task_type="mandatory",
             )
             db.add(row)
+            existing_codes.add(t["code"])
             changed = True
 
     # 可选任务：家长配置的全部生成（今日缺哪条补哪条），未配置时系统随机抽 3 条（过滤已禁用）
-    existing_optional_codes = {r.task_code for r in rows
-                               if (getattr(r, 'task_type', '') == 'optional')}
     picked = []
     for c in settings.get("optional", []):
         t = _task_def_by_code(c)
@@ -614,8 +616,8 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
     if not picked and not by_type.get("optional"):
         picked = _pick_daily_optional(user_id, today, settings)
     for t in picked:
-        if t["code"] in existing_optional_codes:
-            continue  # 今日已有该任务行（含已完成），不重复生成
+        if t["code"] in existing_codes:
+            continue  # 今日已有该任务行（含强制/已完成），不重复生成
         row = DailyTask(
             user_id=user_id, task_date=today, subject=t["subject"],
             task_code=t["code"], title=t["title"],
@@ -624,6 +626,7 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
             task_type="optional",
         )
         db.add(row)
+        existing_codes.add(t["code"])
         changed = True
 
     if changed:

@@ -177,6 +177,24 @@ def test_optional_backfill_missing_rows(client):
     assert set(codes) <= opt
 
 
+def test_optional_conflicts_with_mandatory(client):
+    """可选任务配了与强制任务相同的 code（如 math_exam）：不撞唯一索引，不重复生成"""
+    uid = "可选冲突测试生"
+    _ensure_parent_pwd(client, uid)
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"optional": ["math_exam", "chi_exam"]},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+
+    # 重复请求不得 500（旧代码会因 uq_user_date_taskcode 报 IntegrityError）
+    for _ in range(2):
+        r = client.get("/api/tasks/daily", params={"user_id": uid})
+        assert r.status_code == 200, r.text
+    codes = [t["task_code"] for t in r.json()["tasks"]]
+    assert codes.count("math_exam") == 1  # 强制行保留，不再生成可选行
+    assert "chi_exam" in codes
+
+
 def test_makeup_card_granted_once(client):
     """补签卡：每天只发 1 张，重复刷新不重复发放"""
     from datetime import date
