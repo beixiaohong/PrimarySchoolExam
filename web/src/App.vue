@@ -158,6 +158,12 @@
           <button v-if="wrongBadge>0" class="tr-item tr-warn" @click="goTab('wrong')">📕 <b>{{wrongBadge}}</b> 道错题待消灭</button>
         </div>
 
+        <!-- 绑定引导（P5：昵称登录且未绑定邮箱/手机时提醒） -->
+        <div class="bind-guide" v-if="authInfo && !authInfo.email && !authInfo.phone">
+          <span>🔒 绑定邮箱或手机号，可跨设备登录与找回密码</span>
+          <button class="bg-btn" @click="goTab('settings')">去绑定 →</button>
+        </div>
+
         <!-- 天气卡片（P3：实时天气 + 3 日预报，4h 缓存） -->
         <div class="card weather-card" v-if="weather">
           <div class="card-head"><b>🌤️ {{weather.city}}</b><span class="more">{{weather.cached ? '缓存数据' : '实时数据'}} · 更新于 {{(weather.update_time || '').slice(11, 16)}}</span></div>
