@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..config import ALLOW_NICKNAME_LOGIN
 from ..database import get_db
 from ..models.user import User
 from ..models.vocab import VocabDailyLog
@@ -31,9 +32,11 @@ class GradeUpdateRequest(BaseModel):
     grade: int
 
 
-@router.post("/login", summary="用户登录登记（填用户名即用）")
+@router.post("/login", summary="用户登录登记（昵称快捷入口）")
 def user_login(req: UserLoginRequest, db: Session = Depends(get_db)):
     """登记用户（不存在则创建），返回用户档案与学习概览"""
+    if not ALLOW_NICKNAME_LOGIN:
+        raise HTTPException(403, "昵称登录已关闭，请使用邮箱/手机号账号登录")
     uid = req.user_id.strip()
     if not uid:
         raise HTTPException(400, "用户名不能为空")

@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from .database import init_db
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth
 from .services.init_data import ensure_initial_data
 
 # 定义前端静态资源目录路径
@@ -45,6 +45,7 @@ app.include_router(classical.router, prefix="/api/classical", tags=["古诗文�
 app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"])
 app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"])
 app.include_router(user.router, prefix="/api/user", tags=["用户系统"])
+app.include_router(auth.router, prefix="/api/auth", tags=["用户认证"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["每日任务"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI 能力"])
 app.include_router(mood.router, prefix="/api/mood", tags=["心情打卡"])
