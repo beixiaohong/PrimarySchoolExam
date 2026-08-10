@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import get_db, random_order
 from ..models.study_error import StudyError
 from ..models.exam import WrongRecord, Question, ExamAttempt
 from ..models.vocab import VocabProgress, VocabDailyLog
@@ -790,13 +790,13 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
             Q.subject == q.subject,
             Q.type_code == q.type_code,
             Q.id != q.id,
-        ).order_by(func.random()).limit(req.count).all()
+        ).order_by(random_order()).limit(req.count).all()
         if len(candidates) < req.count:
             extra = db.query(Q).filter(
                 Q.subject == q.subject,
                 Q.id != q.id,
                 Q.id.notin_([c.id for c in candidates]),
-            ).order_by(func.random()).limit(req.count - len(candidates)).all()
+            ).order_by(random_order()).limit(req.count - len(candidates)).all()
             candidates = candidates + extra
         questions = [{
             "qid": c.id,
@@ -828,12 +828,12 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
         candidates = db.query(GrammarExercise).filter(
             GrammarExercise.grammar_point_id == ex.grammar_point_id,
             GrammarExercise.id != ex.id,
-        ).order_by(func.random()).limit(req.count).all()
+        ).order_by(random_order()).limit(req.count).all()
         if len(candidates) < req.count:
             extra = db.query(GrammarExercise).filter(
                 GrammarExercise.id != ex.id,
                 GrammarExercise.id.notin_([c.id for c in candidates]),
-            ).order_by(func.random()).limit(req.count - len(candidates)).all()
+            ).order_by(random_order()).limit(req.count - len(candidates)).all()
             candidates = candidates + extra
         point = db.query(GrammarPoint).filter(GrammarPoint.id == ex.grammar_point_id).first()
         questions = [{
@@ -877,12 +877,12 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
         candidates = db.query(Word).filter(
             Word.book_id == orig.book_id,
             Word.id != orig.id,
-        ).order_by(func.random()).limit(req.count).all()
+        ).order_by(random_order()).limit(req.count).all()
         if len(candidates) < req.count:
             extra = db.query(Word).filter(
                 Word.id != orig.id,
                 Word.id.notin_([c.id for c in candidates]),
-            ).order_by(func.random()).limit(req.count - len(candidates)).all()
+            ).order_by(random_order()).limit(req.count - len(candidates)).all()
             candidates = candidates + extra
         questions = [{
             "qid": c.id,

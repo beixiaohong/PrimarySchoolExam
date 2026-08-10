@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import get_db, random_order
 
 router = APIRouter(tags=["dictation"])
 
@@ -43,14 +43,14 @@ def dictation_words(user_id: str = Query(...), count: int = Query(10, ge=3, le=2
         known = {r[0] for r in db.query(VocabProgress.word_id).filter(
             VocabProgress.user_id == user_id).limit(500).all()}
         if known:
-            extra = db.query(Word).filter(~Word.id.in_(known)).order_by(func.random()).limit(count - len(picked)).all()
+            extra = db.query(Word).filter(~Word.id.in_(known)).order_by(random_order()).limit(count - len(picked)).all()
         else:
-            extra = db.query(Word).order_by(func.random()).limit(count - len(picked)).all()
+            extra = db.query(Word).order_by(random_order()).limit(count - len(picked)).all()
         picked += list(extra)
 
     # 3) 仍不足 → 全部词库随机
     if len(picked) < count:
-        picked += db.query(Word).order_by(func.random()).limit(count - len(picked)).all()
+        picked += db.query(Word).order_by(random_order()).limit(count - len(picked)).all()
 
     random.shuffle(picked)
     return {"items": [{"id": w.id, "word": w.word, "meaning": w.meaning or "",

@@ -1,15 +1,14 @@
-"""SQLite 数据库连接与会话管理"""
+"""数据库连接与会话管理（SQLite / MySQL 双驱动，由 .env 的 DB_DRIVER 控制）"""
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-from .config import DATABASE_URL
+from .config import DATABASE_URL, DB_DRIVER
 
-# 创建 SQLAlchemy 引擎实例
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},  # SQLite 多线程需要
-    echo=False,
-)
+# SQLite 需要 check_same_thread；MySQL 无需额外参数
+if DB_DRIVER == "sqlite":
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, echo=False)
+else:
+    engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, pool_recycle=3600)
 
 # 创建数据库会话工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -29,8 +28,16 @@ def get_db():
         db.close()
 
 
+def random_order():
+    """随机排序函数（方言兼容）：SQLite 用 random()，MySQL 用 rand()"""
+    from sqlalchemy import func
+    return func.rand() if DB_DRIVER != "sqlite" else func.random()
+
+
 def _ensure_columns():
     """轻量迁移：为已有表补充新增列（SQLite create_all 不会改已有表）"""
+    if DB_DRIVER != "sqlite":
+        return  # MySQL 侧由迁移脚本（inspector 幂等加列）接管
     # 定义需要检查并补齐的列变更列表
     migrations = [
         # (表名, 列名, 定义)

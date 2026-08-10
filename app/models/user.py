@@ -29,3 +29,12 @@ class User(Base):
 
     def __repr__(self):
         return f"<User {self.user_id} grade={self.grade}>"
+
+
+class VipUser(Base):
+    """VIP 名单（009 迁移建表，补模型供 MySQL 基线建表）：免费链失败后追加付费链"""
+    __tablename__ = "vip_users"
+
+    user_id = Column(String(50), primary_key=True)
+    note = Column(String(100), nullable=False, default="")
+    created_at = Column(DateTime, default=datetime.now)

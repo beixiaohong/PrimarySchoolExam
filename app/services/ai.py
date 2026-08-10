@@ -23,7 +23,6 @@
 import json
 import logging
 import os
-import sqlite3
 import threading
 import time
 import urllib.error
@@ -42,19 +41,18 @@ VIP_CACHE_TTL = 60          # VIP 名单内存缓存秒数
 PAID_DAILY_LIMIT = 100      # 付费链：每个 VIP user_id 每天最多调用次数（防刷）
 
 
-def _vip_db_path() -> Path:
-    """VIP 名单数据库路径（项目根 primary_school.db）"""
-    return Path(__file__).resolve().parent.parent.parent / "primary_school.db"
-
-
 def _load_vip_users() -> set:
-    """从 vip_users 表读取名单；失败返回空集（不阻断启动/调用）"""
+    """从 vip_users 表读取名单（走当前数据库驱动，兼容 SQLite/MySQL）；
+    失败返回空集（不阻断启动/调用）"""
     try:
-        conn = sqlite3.connect(str(_vip_db_path()))
+        from sqlalchemy import text
+        from ..database import SessionLocal
+        db = SessionLocal()
         try:
-            return {r[0] for r in conn.execute("SELECT user_id FROM vip_users")}
+            rows = db.execute(text("SELECT user_id FROM vip_users")).fetchall()
+            return {r[0] for r in rows}
         finally:
-            conn.close()
+            db.close()
     except Exception as e:
         logger.warning("读取 VIP 名单失败: %s", e)
         return set()

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import get_db, random_order
 
 router = APIRouter(tags=["cards"])
 
@@ -93,7 +93,7 @@ def draw_cards(user_id: str = Query(...), db: Session = Depends(get_db)):
     # 未掌握单词（最多取 200 个随机样本）
     mastered_ids = {r[0] for r in db.query(VocabProgress.word_id).filter(
         VocabProgress.user_id == user_id, VocabProgress.status == "mastered").all()}
-    all_words = db.query(Word).order_by(func.random()).limit(200).all()
+    all_words = db.query(Word).order_by(random_order()).limit(200).all()
     pool += [{"title": w.word, "sub": f"{w.pos or ''} {w.meaning or ''}".strip()[:20],
               "emoji": "🔤", "desc": f"还差一步就掌握的单词「{w.word}」，去背单词里找找它吧！"}
              for w in all_words if w.id not in mastered_ids]
@@ -101,14 +101,14 @@ def draw_cards(user_id: str = Query(...), db: Session = Depends(get_db)):
     # 未掌握古诗文
     mastered_texts = {r[0] for r in db.query(ClassicalProgress.text_id).filter(
         ClassicalProgress.user_id == user_id, ClassicalProgress.status == "mastered").all()}
-    all_texts = db.query(ClassicalText).order_by(func.random()).limit(100).all()
+    all_texts = db.query(ClassicalText).order_by(random_order()).limit(100).all()
     pool += [{"title": t.title, "sub": f"{t.dynasty or ''}·{t.author or ''}",
               "emoji": "📜", "desc": f"古诗文《{t.title}》还没有点亮，去背诵中心看看吧！"}
              for t in all_texts if t.id not in mastered_texts]
 
     # 未练习题型
     done_types = {r[0] for r in db.query(Question.type_code).distinct().all()}
-    all_types = db.query(ProblemType).order_by(func.random()).limit(60).all()
+    all_types = db.query(ProblemType).order_by(random_order()).limit(60).all()
     pool += [{"title": t.name or t.code, "sub": "题型", "emoji": "🧮",
               "desc": f"题型「{t.name or t.code}」还没有练过，试试新题型吧！"}
              for t in all_types if t.code not in done_types]
