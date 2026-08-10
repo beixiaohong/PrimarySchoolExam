@@ -11,8 +11,10 @@ from .migrations.runner import run_migrations
 from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin
 from .services.init_data import ensure_initial_data
 
-# 定义前端静态资源目录路径
+# 定义前端静态资源目录路径（旧版单体前端，web/dist 不存在时回退使用）
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+# P5 工程化前端构建产物（Vite build 输出，优先托管）
+WEB_DIST_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
 # 管理后台前端目录（独立工程，/admin 路径挂载）
 ADMIN_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-admin"
 # 定义输出目录路径（用于存储生成的试卷等文件）
@@ -70,8 +72,11 @@ app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"])
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
 
-# 前端静态资源（样式、脚本）
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
+# 前端静态资源：优先挂载 P5 构建产物 web/dist（含 hash 资源），否则回退旧版 frontend/static
+if WEB_DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(WEB_DIST_DIR / "assets")), name="web-assets")
+else:
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
 
 # 静态资源（图片、音频）
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
@@ -84,7 +89,9 @@ if ADMIN_FRONTEND_DIR.exists():
 
 @app.get("/", tags=["系统"], include_in_schema=False)
 def index():
-    """前端首页"""
+    """前端首页：优先 P5 构建产物，回退旧版单体前端"""
+    if (WEB_DIST_DIR / "index.html").exists():
+        return FileResponse(WEB_DIST_DIR / "index.html")
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
