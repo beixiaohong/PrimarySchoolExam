@@ -12,9 +12,12 @@
     python tools/sqlite_to_mysql.py --dry-run        # 只输出对账报告，不写库
     python tools/sqlite_to_mysql.py                  # 全量迁移
     python tools/sqlite_to_mysql.py --tables users,daily_tasks   # 指定表
+    python tools/sqlite_to_mysql.py --ensure-admin   # 迁移后补建初始管理员（admins 为空时）
 """
 import argparse
+import hashlib
 import os
+import secrets
 import sys
 from contextlib import nullcontext
 from datetime import datetime
@@ -64,12 +67,35 @@ def _topo_sort(tables: dict, inspector_fk: dict) -> list:
     return order
 
 
+def _ensure_admin(engine) -> None:
+    """admins 表为空时补建初始管理员（027 被预置为已执行不会自动建）"""
+    salt = secrets.token_hex(16)
+    pwd = os.environ.get("ADMIN_INIT_PASSWORD", "").strip() or "Admin@123"
+    dk = hashlib.pbkdf2_hmac("sha256", pwd.encode(), salt.encode(), 120_000)
+    with Session(engine) as db:
+        cnt = db.execute(text("SELECT COUNT(*) FROM admins")).scalar()
+        if cnt:
+            print("[admin] admins 已有账号，跳过")
+            return
+        db.execute(text(
+            "INSERT INTO admins (username, password_hash, role, created_at) "
+            "VALUES (:u, :p, 'super', NOW())"),
+            {"u": "admin", "p": f"pbkdf2$120000${salt}${dk.hex()}"})
+        db.commit()
+    print("[admin] 已创建初始管理员 admin（密码取 ADMIN_INIT_PASSWORD，默认 Admin@123）")
+
+
 def main():
     ap = argparse.ArgumentParser(description="SQLite → MySQL 数据迁移")
     ap.add_argument("--dry-run", action="store_true", help="只报告行数，不写入")
     ap.add_argument("--tables", default="", help="仅迁移指定表（逗号分隔）")
     ap.add_argument("--sqlite", default=str(DB_PATH), help="SQLite 文件路径（默认项目 primary_school.db）")
+    ap.add_argument("--ensure-admin", action="store_true", help="迁移后补建初始管理员")
     args = ap.parse_args()
+
+    if args.ensure_admin:
+        _ensure_admin(create_engine(DATABASE_URL, pool_pre_ping=True))
+        return
 
     if not Path(args.sqlite).exists():
         sys.exit(f"SQLite 文件不存在: {args.sqlite}")
