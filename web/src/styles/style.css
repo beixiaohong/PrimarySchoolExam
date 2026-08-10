@@ -960,3 +960,16 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .wl-amt.down{color:var(--danger,#FF3B30)}
 .wl-time{color:var(--text-3,#9aa0ae);font-size:12px}
 @media (max-width:560px){.wallet-cards{grid-template-columns:1fr}}
+
+/* 今日提醒条（首页 hero 下方，聚合待办） */
+.today-remind{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:linear-gradient(135deg,#FFF8EC,#FFFDF6);border:1.5px solid #FBE3B8;border-radius:14px;padding:12px 16px;margin-top:14px}
+.today-remind .tr-ico{font-size:18px}
+.tr-item{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1.5px solid #F0D9A8;background:#fff;font-size:13px;color:#7A5B1E;cursor:pointer;transition:.15s}
+.tr-item:hover{border-color:#F5A623;box-shadow:0 3px 10px rgba(245,166,35,.18)}
+.tr-item b{color:#D97706;font-size:15px}
+.tr-item.tr-warn{color:#8a3d3d;border-color:#F3C1C1}
+.tr-item.tr-warn b{color:#E5484D}
+
+/* Modal 规范统一：非做题类浮层使用半透明遮罩 + 点击空白关闭（overlay-pop） */
+.quiz-overlay.overlay-pop{background:rgba(22,32,58,.45);backdrop-filter:blur(2px)}
+.quiz-overlay.overlay-pop .quiz-shell{animation:popIn .22s ease;box-shadow:0 16px 48px rgba(22,32,58,.22)}

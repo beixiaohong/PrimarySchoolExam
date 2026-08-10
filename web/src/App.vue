@@ -151,6 +151,13 @@
           </div>
         </div>
 
+        <!-- 今日提醒条（P5：聚合待办提醒，点击直达） -->
+        <div class="today-remind" v-if="taskRemain>0 || wrongBadge>0">
+          <span class="tr-ico">⏰</span>
+          <button v-if="taskRemain>0" class="tr-item" @click="scrollToTasks">📋 还差 <b>{{taskRemain}}</b> 项任务全勤</button>
+          <button v-if="wrongBadge>0" class="tr-item tr-warn" @click="goTab('wrong')">📕 <b>{{wrongBadge}}</b> 道错题待消灭</button>
+        </div>
+
         <!-- 天气卡片（P3：实时天气 + 3 日预报，4h 缓存） -->
         <div class="card weather-card" v-if="weather">
           <div class="card-head"><b>🌤️ {{weather.city}}</b><span class="more">{{weather.cached ? '缓存数据' : '实时数据'}} · 更新于 {{(weather.update_time || '').slice(11, 16)}}</span></div>
@@ -1630,7 +1637,7 @@
 </div>
 
 <!-- ═══════════ 成长周报浮层（Sprint 3） ═══════════ -->
-<div class="quiz-overlay" v-if="weeklyOverlay.show">
+<div class="quiz-overlay overlay-pop" v-if="weeklyOverlay.show" @click.self="weeklyOverlay.show=false">
   <div class="quiz-shell weekly-shell">
     <div class="quiz-top">
       <span class="qname">📮 上周成长周报</span>
@@ -1681,7 +1688,7 @@
 </div>
 
 <!-- ═══════════ 许愿弹窗（Sprint 3） ═══════════ -->
-<div class="quiz-overlay" v-if="wishOverlay.show">
+<div class="quiz-overlay overlay-pop" v-if="wishOverlay.show" @click.self="wishOverlay.show=false">
   <div class="quiz-shell wish-shell">
     <div class="quiz-top">
       <span class="qname">🌟 许一个心愿</span>
@@ -1722,7 +1729,7 @@
 </div>
 
 <!-- ═══════════ 任务设置弹窗 ═══════════ -->
-<div class="quiz-overlay" v-if="taskDialog.show">
+<div class="quiz-overlay overlay-pop" v-if="taskDialog.show" @click.self="taskDialog.show=false">
   <div class="quiz-shell" style="max-width:520px;max-height:85vh;overflow-y:auto">
     <div class="quiz-top">
       <span class="qname">📋 任务设置</span>
@@ -1775,7 +1782,7 @@
 </div>
 
 <!-- ═══════════ 60 秒挑战赛浮层（Sprint 4） ═══════════ -->
-<div class="quiz-overlay" v-if="chalOverlay.show">
+<div class="quiz-overlay overlay-pop" v-if="chalOverlay.show" @click.self="closeChal()">
   <div class="quiz-shell chal-shell">
     <div class="quiz-top">
       <span class="qname">⚡ 60 秒挑战赛</span>
@@ -1820,7 +1827,7 @@
 </div>
 
 <!-- ═══════════ 学期目标浮层（Sprint 4） ═══════════ -->
-<div class="quiz-overlay" v-if="goalOverlay.show">
+<div class="quiz-overlay overlay-pop" v-if="goalOverlay.show" @click.self="goalOverlay.show=false">
   <div class="quiz-shell goal-shell">
     <div class="quiz-top">
       <span class="qname">🎯 学期目标</span>
@@ -1860,7 +1867,7 @@
 </div>
 
 <!-- ═══════════ 小老师浮层（Sprint 4） ═══════════ -->
-<div class="quiz-overlay" v-if="teachOverlay.show">
+<div class="quiz-overlay overlay-pop" v-if="teachOverlay.show" @click.self="closeTeach()">
   <div class="quiz-shell teach-shell">
     <div class="quiz-top">
       <span class="qname">🎓 小老师课堂 <em v-if="teachOverlay.cards.length>1" class="ts-prog">{{teachOverlay.idx+1}} / {{teachOverlay.cards.length}}</em></span>
@@ -1906,7 +1913,7 @@
 </div>
 
 <!-- ═══════════ 7 天复习验证浮层（Sprint 4） ═══════════ -->
-<div class="quiz-overlay" v-if="recheckOverlay.show">
+<div class="quiz-overlay overlay-pop" v-if="recheckOverlay.show" @click.self="recheckOverlay.show=false">
   <div class="quiz-shell teach-shell">
     <div class="quiz-top">
       <span class="qname">🔁 复习验证</span>
@@ -2164,6 +2171,13 @@ export default {
       if (this.$route && this.$route.params.tab !== t) {
         this.$router.replace('/' + t).catch(() => {})
       }
+    },
+    // 今日提醒条：滚动到任务卡区域
+    scrollToTasks() {
+      this.$nextTick(() => {
+        const el = document.querySelector('.task-card') || document.querySelector('.section-title')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
     },
   },
   watch: {
