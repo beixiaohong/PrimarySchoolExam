@@ -18,7 +18,7 @@ from datetime import date, datetime, time as dtime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -161,7 +161,8 @@ def _load_settings(db: Session, user_id: str) -> dict:
         # 新格式：嵌套结构 {"targets": {...}, "enabled": {...}, "mandatory": {...}, "quotas": {...}}
         if "targets" in data and isinstance(data["targets"], dict):
             targets = {k: int(v) for k, v in data["targets"].items()
-                       if k in CONFIGURABLE_CODES and isinstance(v, (int, float))
+                       if (k in CONFIGURABLE_CODES or k in _UNCONFIGURABLE_CODES)
+                       and isinstance(v, (int, float))
                        and MIN_TARGET <= int(v) <= MAX_TARGET}
             return {
                 "targets": targets,
@@ -174,7 +175,8 @@ def _load_settings(db: Session, user_id: str) -> dict:
         # 旧格式：扁平结构 {code: int}，兼容转换
         return {
             "targets": {k: int(v) for k, v in data.items()
-                        if k in CONFIGURABLE_CODES and isinstance(v, (int, float))
+                        if (k in CONFIGURABLE_CODES or k in _UNCONFIGURABLE_CODES)
+                        and isinstance(v, (int, float))
                         and MIN_TARGET <= int(v) <= MAX_TARGET},
             "enabled": {},
             "mandatory": {},
@@ -255,6 +257,17 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
         default_code = MANDATORY_TASKS[subj]["code"]
         current_mandatory[subj] = mandatory_map.get(subj, default_code)
     quotas = {k: int(user.get("quotas", {}).get(k, d)) for k, (_, _, d) in QUOTA_KEYS.items()}
+    # 背诵类任务不在可配置列表，但作为强制任务时仍需返回 target 供前端回显数量
+    for code in _UNCONFIGURABLE_CODES:
+        item = next((t for t in all_tasks if t["code"] == code), None)
+        if not item:
+            continue
+        subj = next((s for s, t in MANDATORY_TASKS.items() if t["code"] == code), "")
+        items.append({
+            "code": code, "subject": subj, "title": item["title"],
+            "default": item["target"], "target": targets.get(code, item["target"]),
+            "enabled": True, "manual": item.get("manual", False),
+        })
     return {"items": items, "mandatory": current_mandatory, "quotas": quotas,
             "optional": user.get("optional", [])}
 
@@ -306,13 +319,12 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
         new_optional = opt
 
     if "targets" in req.settings or "enabled" in req.settings or "mandatory" in req.settings \
-            or "quotas" in req.settings:
+            or "quotas" in req.settings or "optional" in req.settings:
         # 新格式
         if "targets" in req.settings and isinstance(req.settings["targets"], dict):
             for code, val in req.settings["targets"].items():
-                if code in _UNCONFIGURABLE_CODES:
-                    continue  # 背诵类固定全量完成语义，静默忽略（前端可能连带提交）
-                if code not in CONFIGURABLE_CODES:
+                # 背诵类也允许保存目标数（仅展示用，完成判定仍为全量背诵+复习）
+                if code not in CONFIGURABLE_CODES and code not in _UNCONFIGURABLE_CODES:
                     raise HTTPException(400, f"不支持的任务类型: {code}")
                 try:
                     v = int(val)
@@ -350,9 +362,7 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     else:
         # 旧格式兼容：{code: int}
         for code, val in req.settings.items():
-            if code in _UNCONFIGURABLE_CODES:
-                continue  # 背诵类固定全量完成语义，静默忽略
-            if code not in CONFIGURABLE_CODES:
+            if code not in CONFIGURABLE_CODES and code not in _UNCONFIGURABLE_CODES:
                 raise HTTPException(400, f"不支持的任务类型: {code}")
             try:
                 v = int(val)
@@ -593,27 +603,28 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
             db.add(row)
             changed = True
 
-    # 可选任务：优先生成家长配置的，未配置时系统随机抽 3 条（过滤已禁用）
-    optional = by_type.get("optional", {})
-    if not optional:
-        picked = []
-        for c in settings.get("optional", []):
-            t = _task_def_by_code(c)
-            if t and _is_task_enabled(settings, c):
-                picked.append(t)
-        if not picked:
-            picked = _pick_daily_optional(user_id, today, settings)
-        for i, t in enumerate(picked):
-            subj = t["subject"]
-            row = DailyTask(
-                user_id=user_id, task_date=today, subject=subj,
-                task_code=t["code"], title=t["title"],
-                target=_setting_target(settings, t["code"]) or t["target"],
-                progress=0, status="pending", manual=t.get("manual", False),
-                task_type="optional",
-            )
-            db.add(row)
-            changed = True
+    # 可选任务：家长配置的全部生成（今日缺哪条补哪条），未配置时系统随机抽 3 条（过滤已禁用）
+    existing_optional_codes = {r.task_code for r in rows
+                               if (getattr(r, 'task_type', '') == 'optional')}
+    picked = []
+    for c in settings.get("optional", []):
+        t = _task_def_by_code(c)
+        if t and _is_task_enabled(settings, c):
+            picked.append(t)
+    if not picked and not by_type.get("optional"):
+        picked = _pick_daily_optional(user_id, today, settings)
+    for t in picked:
+        if t["code"] in existing_optional_codes:
+            continue  # 今日已有该任务行（含已完成），不重复生成
+        row = DailyTask(
+            user_id=user_id, task_date=today, subject=t["subject"],
+            task_code=t["code"], title=t["title"],
+            target=_setting_target(settings, t["code"]) or t["target"],
+            progress=0, status="pending", manual=t.get("manual", False),
+            task_type="optional",
+        )
+        db.add(row)
+        changed = True
 
     if changed:
         db.commit()
@@ -662,17 +673,27 @@ def _get_makeup_balance(db: Session, user_id: str) -> int:
     return (card.balance if card else 0)
 
 
-def _grant_makeup_card(db: Session, user_id: str):
-    """完成全部可选任务 → 获得 1 张补签卡"""
+def _grant_makeup_card(db: Session, user_id: str) -> bool:
+    """完成全部可选任务 → 获得 1 张补签卡。
+
+    原子发放：仅当 last_grant_date 非今天时才更新成功，
+    并发请求（如登录后多次 /daily）不会重复发卡。返回是否发放成功。
+    """
+    today = date.today()
     card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
     if not card:
-        card = MakeupCard(user_id=user_id, balance=0, total_earned=0, total_used=0)
-        db.add(card)
-        db.flush()
-    card.balance += 1
-    card.total_earned += 1
-    card.last_grant_date = date.today()
+        db.add(MakeupCard(user_id=user_id, balance=0, total_earned=0, total_used=0))
+        db.commit()
+    n = db.query(MakeupCard).filter(
+        MakeupCard.user_id == user_id,
+        or_(MakeupCard.last_grant_date == None, MakeupCard.last_grant_date != today),
+    ).update({
+        "balance": MakeupCard.balance + 1,
+        "total_earned": MakeupCard.total_earned + 1,
+        "last_grant_date": today,
+    }, synchronize_session=False)
     db.commit()
+    return n > 0
 
 
 @router.post("/makeup/use", summary="使用补签卡补签某天")

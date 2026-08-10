@@ -127,3 +127,76 @@ def test_custom_task_flow(client):
     # 重复确认被拒
     r = client.post("/api/tasks/custom/confirm", json={"task_id": task_id})
     assert r.status_code == 400
+
+
+def test_recitation_target_roundtrip(client):
+    """背诵类强制任务的数量可保存回显，重开设置弹窗不重置"""
+    uid = "背诵数量测试生"
+    _ensure_parent_pwd(client, uid)
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid,
+        "settings": {"targets": {"chi_classical": 4, "eng_vocab": 8}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+
+    r = client.get("/api/tasks/settings", params={"user_id": uid})
+    items = {i["code"]: i for i in r.json()["items"]}
+    assert items["chi_classical"]["target"] == 4
+    assert items["eng_vocab"]["target"] == 8
+
+
+def test_optional_backfill_missing_rows(client):
+    """可选任务：今日缺失的行按家长配置补齐（不是只在无行时生成）"""
+    from datetime import date
+    from app.database import SessionLocal
+    from app.models.daily_task import DailyTask
+
+    uid = "可选补齐测试生"
+    _ensure_parent_pwd(client, uid)
+    codes = ["math_fix", "chi_read", "chi_dictation"]
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"optional": codes},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200
+    client.get("/api/tasks/daily", params={"user_id": uid})  # 首次生成
+
+    # 删掉一条未完成的可选行 → 下次 /daily 应补齐
+    db = SessionLocal()
+    try:
+        row = db.query(DailyTask).filter(
+            DailyTask.user_id == uid, DailyTask.task_date == date.today(),
+            DailyTask.task_code == "chi_dictation").first()
+        assert row
+        db.delete(row)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    opt = {t["task_code"] for t in r.json()["tasks"] if not t["mandatory"]}
+    assert set(codes) <= opt
+
+
+def test_makeup_card_granted_once(client):
+    """补签卡：每天只发 1 张，重复刷新不重复发放"""
+    from datetime import date
+    from app.database import SessionLocal
+    from app.models.daily_task import DailyTask
+    from app.routers.tasks import _build_payload, _get_makeup_balance
+
+    uid = "补签卡防重测试生"
+    client.get("/api/tasks/daily", params={"user_id": uid})  # 生成今日任务
+    db = SessionLocal()
+    try:
+        base = _get_makeup_balance(db, uid)
+        # 全部可选任务置为完成 → 触发发补签卡
+        for row in db.query(DailyTask).filter(
+                DailyTask.user_id == uid, DailyTask.task_date == date.today(),
+                DailyTask.task_type == "optional").all():
+            row.status = "done"
+        db.commit()
+        _build_payload(db, uid)
+        _build_payload(db, uid)  # 重复调用（模拟登录后多次请求）
+        assert _get_makeup_balance(db, uid) == base + 1
+    finally:
+        db.close()
