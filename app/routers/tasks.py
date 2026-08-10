@@ -281,6 +281,8 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
         # 新格式
         if "targets" in req.settings and isinstance(req.settings["targets"], dict):
             for code, val in req.settings["targets"].items():
+                if code in _UNCONFIGURABLE_CODES:
+                    continue  # 背诵类固定全量完成语义，静默忽略（前端可能连带提交）
                 if code not in CONFIGURABLE_CODES:
                     raise HTTPException(400, f"不支持的任务类型: {code}")
                 try:
@@ -290,6 +292,8 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
                 new_targets[code] = _bounded_target(code, v)
         if "enabled" in req.settings and isinstance(req.settings["enabled"], dict):
             for code, val in req.settings["enabled"].items():
+                if code in _UNCONFIGURABLE_CODES:
+                    continue  # 强制背诵类任务不允许禁用，静默忽略
                 if code not in CONFIGURABLE_CODES:
                     raise HTTPException(400, f"不支持的任务类型: {code}")
                 new_enabled[code] = bool(val)
@@ -297,7 +301,8 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
             for subj, code in req.settings["mandatory"].items():
                 if subj not in SUBJECTS:
                     raise HTTPException(400, f"不支持的学科: {subj}")
-                if code not in CONFIGURABLE_CODES:
+                # 允许该科默认强制任务（如 chi_classical/eng_vocab，不在可配置列表但合法）
+                if code not in CONFIGURABLE_CODES and code != MANDATORY_TASKS[subj]["code"]:
                     raise HTTPException(400, f"不支持的任务类型: {code}")
                 new_mandatory[subj] = code
         # 每日额度（家长配置：新学单词数 / 新背古诗文数）
@@ -316,6 +321,8 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     else:
         # 旧格式兼容：{code: int}
         for code, val in req.settings.items():
+            if code in _UNCONFIGURABLE_CODES:
+                continue  # 背诵类固定全量完成语义，静默忽略
             if code not in CONFIGURABLE_CODES:
                 raise HTTPException(400, f"不支持的任务类型: {code}")
             try:

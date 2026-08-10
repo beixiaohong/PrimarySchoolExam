@@ -264,7 +264,7 @@ const appOptions = {
       return (this.dailyTasks || []).filter(t => !t.mandatory);
     },
     allTaskOptions() {
-      // 所有可选任务选项（用于任务设置弹窗）
+      // 所有任务选项（用于任务设置弹窗；背诵/学单词仅供强制任务下拉，不可作为可选任务）
       return [
         { code: 'math_exam', title: '完成 1 套数学练习', subject: '数学' },
         { code: 'chi_classical', title: '背诵古诗文', subject: '语文' },
@@ -1749,12 +1749,17 @@ const appOptions = {
       if (!mandatory.math) mandatory.math = 'math_exam';
       if (!mandatory.chi) mandatory.chi = 'chi_classical';
       if (!mandatory.eng) mandatory.eng = 'eng_vocab';
-      // 预计算各科选项（避免模板中调用方法）
+      // 预计算各科选项（避免模板中调用方法）；可选任务下拉排除背诵类全量任务
       const all = this.allTaskOptions;
+      const UNCONFIGURABLE = ['chi_classical', 'eng_vocab'];
       const mathOpts = all.filter(t => t.subject === '数学');
       const chiOpts = all.filter(t => t.subject === '语文');
       const engOpts = all.filter(t => t.subject === '英语');
-      const subOpts = { math: mathOpts, chi: chiOpts, eng: engOpts };
+      const subOpts = {
+        math: mathOpts.filter(t => !UNCONFIGURABLE.includes(t.code)),
+        chi: chiOpts.filter(t => !UNCONFIGURABLE.includes(t.code)),
+        eng: engOpts.filter(t => !UNCONFIGURABLE.includes(t.code)),
+      };
       this.taskDialog = { show: true, mandatory, optional, disabled, mathOpts, chiOpts, engOpts, subOpts };
     },
     _optForSubj(subj) {
@@ -1764,8 +1769,11 @@ const appOptions = {
       const targets = {};
       const enabled = {};
       const { mandatory, optional, disabled } = this.taskDialog;
+      // 背诵类固定「全量完成」语义，不可配置目标数/禁用，提交时跳过
+      const UNCONFIGURABLE = ['chi_classical', 'eng_vocab'];
       // 处理所有任务的目标数量
       for (const it of this.taskSettings.items || []) {
+        if (UNCONFIGURABLE.includes(it.code)) continue;
         targets[it.code] = it.target;
         enabled[it.code] = !disabled.includes(it.code);
       }
@@ -1776,6 +1784,7 @@ const appOptions = {
       // 处理可选任务（新增的）
       for (const opt of optional) {
         if (opt.code && opt.target) {
+          if (UNCONFIGURABLE.includes(opt.code)) continue;
           targets[opt.code] = opt.target;
           enabled[opt.code] = true;
         }

@@ -56,6 +56,27 @@ def test_task_settings_guard(client):
     assert item["target"] == new_target
 
 
+def test_settings_unconfigurable_codes_ignored(client):
+    """背诵类（chi_classical/eng_vocab）被连带提交时静默忽略，不得报「不支持的任务类型」"""
+    _ensure_parent_pwd(client)
+    r = client.post("/api/tasks/settings", json={
+        "user_id": UID,
+        "settings": {
+            # 模拟前端弹窗整体提交：targets/enabled 含背诵类，mandatory 带默认强制任务
+            "targets": {"chi_classical": 1, "eng_vocab": 5, "math_exam": 2},
+            "enabled": {"chi_classical": True, "eng_vocab": True, "math_exam": True},
+            "mandatory": {"数学": "math_exam", "语文": "chi_classical", "英语": "eng_vocab"},
+        },
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+
+    # 真正非法的 code 仍然报错
+    r = client.post("/api/tasks/settings", json={
+        "user_id": UID, "settings": {"targets": {"not_a_task": 1}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 400
+
+
 def test_custom_task_flow(client):
     """自定义任务：孩子创建 → pending → 家长确认"""
     r = client.post("/api/tasks/custom",
