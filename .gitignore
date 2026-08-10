@@ -5,3 +5,5 @@ output/
 *.log
 .env
 primary_school.db
+web/node_modules/
+web/dist/
