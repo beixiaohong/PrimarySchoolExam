@@ -1,0 +1,46 @@
+/* 管理后台样式 */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: #F5F7FA; }
+.muted { color: #909399; font-size: 12px; }
+
+/* 登录页 */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+.login-card { width: 360px; background: #fff; border-radius: 16px; padding: 36px 32px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+.login-card h2 { margin: 0 0 4px; font-size: 20px; text-align: center; }
+.login-card .sub { text-align: center; color: #909399; font-size: 13px; margin: 0 0 24px; }
+
+/* 布局 */
+.shell { height: 100vh; }
+.aside { background: #fff; border-right: 1px solid #EBEEF5; }
+.logo { height: 60px; display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 17px; border-bottom: 1px solid #F0F2F5; }
+.menu { border-right: none; }
+.menu .mi { font-style: normal; margin-right: 6px; }
+.header { background: #fff; border-bottom: 1px solid #EBEEF5; display: flex;
+  align-items: center; gap: 10px; }
+.header .spacer { flex: 1; }
+.admin-name { color: #606266; font-size: 13px; margin-right: 6px; }
+.main { padding: 18px; overflow: auto; }
+
+/* 仪表盘 */
+.stat-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.stat-card { flex: 1; min-width: 150px; background: #fff; border-radius: 12px; padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 4px; border: 1px solid #EBEEF5; }
+.stat-card b { font-size: 26px; color: #303133; }
+.stat-card span { font-size: 12.5px; color: #909399; }
+.chart-row { display: flex; gap: 14px; flex-wrap: wrap; }
+.chart-card { flex: 1; min-width: 380px; background: #fff; border-radius: 12px;
+  border: 1px solid #EBEEF5; padding: 12px; }
+.chart { width: 100%; height: 280px; }
+
+/* 用户管理 */
+.toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
+.pager { margin-top: 14px; justify-content: flex-end; }
+
+/* 三方配置 */
+.cfg-group { background: #fff; border: 1px solid #EBEEF5; border-radius: 12px;
+  padding: 14px 16px; margin-bottom: 14px; }
+.cfg-group h3 { margin: 0 0 10px; font-size: 15px; }
+.cfg-group code { background: #F5F7FA; padding: 2px 8px; border-radius: 6px; font-size: 12.5px; }

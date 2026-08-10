@@ -13,6 +13,8 @@ from .services.init_data import ensure_initial_data
 
 # 定义前端静态资源目录路径
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+# 管理后台前端目录（独立工程，/admin 路径挂载）
+ADMIN_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-admin"
 # 定义输出目录路径（用于存储生成的试卷等文件）
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 # 确保输出目录存在
@@ -74,11 +76,22 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="
 # 静态资源（图片、音频）
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 
+# 管理后台前端（独立工程，/admin 访问，静态资源走 /admin-static；目录缺失时不挂载）
+if ADMIN_FRONTEND_DIR.exists():
+    app.mount("/admin-static", StaticFiles(directory=str(ADMIN_FRONTEND_DIR / "static")),
+              name="admin-static")
+
 
 @app.get("/", tags=["系统"], include_in_schema=False)
 def index():
     """前端首页"""
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/admin", tags=["系统"], include_in_schema=False)
+def admin_index():
+    """管理后台首页"""
+    return FileResponse(ADMIN_FRONTEND_DIR / "index.html")
 
 
 @app.get("/health", tags=["系统"])
