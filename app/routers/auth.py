@@ -150,17 +150,22 @@ def _consume_code(db: Session, purpose: str, target: str, code: str) -> None:
     db.commit()
 
 
-def _login_payload(db: Session, user: User) -> dict:
-    """登录成功后的统一返回（与 /api/user/login 对齐）"""
-    user.last_login_at = datetime.now()
-    user.last_login_date = date.today()
-    db.commit()
+def _login_payload(db: Session, user: User, is_new: bool = False) -> dict:
+    """登录成功后的统一返回（与 /api/user/login 对齐）
+
+    is_new=True 时登录时间已在创建时写入，跳过同事务 UPDATE
+    （代理环境下 INSERT 后立即 UPDATE 同一行不稳定）。
+    """
+    if not is_new:
+        user.last_login_at = datetime.now()
+        user.last_login_date = date.today()
+        db.commit()
     _auto_upgrade_grade(db)
     return {
         "user_id": user.user_id,
         "grade": user.grade,
         "subject": user.subject,
-        "is_new": False,
+        "is_new": is_new,
         "streak_days": _streak(db, user.user_id),
         "created_at": user.created_at.strftime("%Y-%m-%d") if user.created_at else "",
         "message": "欢迎回来！",
@@ -217,7 +222,7 @@ def register(req: RegisterReq, db: Session = Depends(get_db)):
         user_id=uid, nickname=nickname or uid, auth_type=channel,
         password_hash=_hash_pwd(req.password),
         grade=6, subject="英语",
-        last_login_date=date.today(),
+        last_login_at=datetime.now(), last_login_date=date.today(),
     )
     if channel == "email":
         user.email, user.email_verified = target, True
@@ -225,7 +230,7 @@ def register(req: RegisterReq, db: Session = Depends(get_db)):
         user.phone, user.phone_verified = target, True
     db.add(user)
     db.commit()
-    return _login_payload(db, user)
+    return _login_payload(db, user, is_new=True)
 
 
 @router.post("/login", summary="账号密码登录（邮箱/手机号/昵称）")

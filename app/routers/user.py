@@ -43,22 +43,25 @@ def user_login(req: UserLoginRequest, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.user_id == uid).first()
     is_new = False
+    now = datetime.now()
     if not user:
+        # 新建时一次性写全登录时间，避免同事务 INSERT 后再 UPDATE（代理环境下不稳定）
         user = User(user_id=uid, grade=req.grade or 6, subject=req.subject or "英语",
-                    last_login_date=date.today())
+                    auth_type="nickname", nickname=uid,
+                    last_login_at=now, last_login_date=date.today())
         db.add(user)
-        db.flush()
+        db.commit()
         is_new = True
-
-    # 仅当调用方显式传了 grade/subject 时才覆盖（登录页不再传这两个字段）
-    if req.grade is not None:
-        user.grade = req.grade
-    if req.subject is not None:
-        user.subject = req.subject
-    user.last_login_at = datetime.now()
-    if user.last_login_date != date.today():
-        user.last_login_date = date.today()
-    db.commit()
+    else:
+        # 仅当调用方显式传了 grade/subject 时才覆盖（登录页不再传这两个字段）
+        if req.grade is not None:
+            user.grade = req.grade
+        if req.subject is not None:
+            user.subject = req.subject
+        user.last_login_at = now
+        if user.last_login_date != date.today():
+            user.last_login_date = date.today()
+        db.commit()
 
     # 启动时检查是否需要自动升年级（每年9月1号）
     _auto_upgrade_grade(db)
