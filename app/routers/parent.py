@@ -15,12 +15,13 @@ import hmac
 import secrets
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..services.ai import rate_limit
+from ..services.parent_guard import ensure_parent_pwd
 
 router = APIRouter()
 
@@ -28,6 +29,9 @@ PBKDF2_ITER = 200_000
 PWD_MIN, PWD_MAX = 4, 32
 HINT_MAX = 100
 UNLOCK_LIMIT = 10  # 10 次 / 10 分钟
+
+# 试卷难度档位（防刷：家长可设下限，孩子选低于下限时强制提升）
+DIFFICULTY_LEVELS = ["基础", "提高", "拔高"]
 
 
 def _hash_pwd(pwd: str) -> str:
@@ -92,6 +96,7 @@ class ExamSettingsReq(BaseModel):
     math_min: int = 5
     chi_min: int = 5
     eng_min: int = 5
+    difficulty_min: str = "基础"  # 试卷难度下限：基础/提高/拔高
 
 
 def _validate_pwd(pwd: str):
@@ -255,21 +260,29 @@ def child_stats(user_id: str, db: Session = Depends(get_db)):
 
 # ═══════════════════ 试卷最少题数 ═══════════════════
 
-@router.get("/exam-settings", summary="获取每科试卷最少题数")
+@router.get("/exam-settings", summary="获取每科试卷最少题数与难度下限")
 def get_exam_settings(user_id: str, db: Session = Depends(get_db)):
     from ..models.parent import ExamMinCount
     row = db.query(ExamMinCount).filter_by(user_id=user_id).first()
     if not row:
-        return {"math_min": 5, "chi_min": 5, "eng_min": 5}
-    return {"math_min": row.math_min, "chi_min": row.chi_min, "eng_min": row.eng_min}
+        return {"math_min": 5, "chi_min": 5, "eng_min": 5,
+                "difficulty_min": "基础", "difficulty_levels": DIFFICULTY_LEVELS}
+    return {"math_min": row.math_min, "chi_min": row.chi_min, "eng_min": row.eng_min,
+            "difficulty_min": row.difficulty_min or "基础",
+            "difficulty_levels": DIFFICULTY_LEVELS}
 
 
-@router.post("/exam-settings", summary="保存每科试卷最少题数（生成试卷时强制下限）")
-def save_exam_settings(req: ExamSettingsReq, db: Session = Depends(get_db)):
+@router.post("/exam-settings", summary="保存试卷最少题数与难度下限（需家长密码）")
+def save_exam_settings(req: ExamSettingsReq, request: Request, db: Session = Depends(get_db)):
     from ..models.parent import ExamMinCount
+    ensure_parent_pwd(db, req.user_id, request)
 
     def _bounded(v):
         return max(1, min(50, int(v)))
+
+    dmin = (req.difficulty_min or "基础").strip()
+    if dmin not in DIFFICULTY_LEVELS:
+        raise HTTPException(400, f"难度下限只能是 {DIFFICULTY_LEVELS}")
 
     row = db.query(ExamMinCount).filter_by(user_id=req.user_id).first()
     if not row:
@@ -278,9 +291,11 @@ def save_exam_settings(req: ExamSettingsReq, db: Session = Depends(get_db)):
     row.math_min = _bounded(req.math_min)
     row.chi_min = _bounded(req.chi_min)
     row.eng_min = _bounded(req.eng_min)
+    row.difficulty_min = dmin
     row.updated_at = datetime.now()
     db.commit()
-    return {"math_min": row.math_min, "chi_min": row.chi_min, "eng_min": row.eng_min}
+    return {"math_min": row.math_min, "chi_min": row.chi_min, "eng_min": row.eng_min,
+            "difficulty_min": row.difficulty_min}
 
 
 # ═══════════════════ 提醒汇总（孩子端首页提醒条 / 家长端待办） ═══════════════════

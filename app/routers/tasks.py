@@ -16,12 +16,13 @@ import logging
 import re
 from datetime import date, datetime, time as dtime, timedelta
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..services.parent_guard import ensure_parent_pwd
 from ..models.daily_task import DailyTask
 from ..models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
 from ..models.vocab import VocabDailyLog
@@ -39,12 +40,12 @@ SUBJECTS = ["数学", "语文", "英语"]
 # ═══════════════ 强制任务（每科固定 1 条，不可更换） ═══════════════
 
 MANDATORY_TASKS = {
-    "数学": {"code": "math_exam", "title": "完成 1 套数学练习", "target": 1, "manual": False,
-             "ico": "🧮", "desc": "刷题中心做一套数学试卷"},
-    "语文": {"code": "chi_classical", "title": "背诵古诗文（含新背+复习）", "target": 1, "manual": False,
-             "ico": "📜", "desc": "背诵中心完成新背和复习"},
-    "英语": {"code": "eng_vocab", "title": "学单词（含新学+复习）", "target": 5, "manual": False,
-             "ico": "🔤", "desc": "背单词模块完成新学和复习"},
+    "数学": {"code": "math_exam", "title": "完成数学练习", "target": 2, "manual": False,
+             "ico": "🧮", "desc": "刷题中心完成数学试卷（套数由家长配置，每套正确率需 ≥70%）"},
+    "语文": {"code": "chi_classical", "title": "背诵古诗文（新背+复习全部完成）", "target": 1, "manual": False,
+             "ico": "📜", "desc": "背诵中心完成今日新背内容与全部到期复习"},
+    "英语": {"code": "eng_vocab", "title": "学单词（新学+复习全部完成）", "target": 5, "manual": False,
+             "ico": "🔤", "desc": "背单词模块完成今日新学单词与全部到期复习"},
 }
 
 # ═══════════════ 可选任务池（系统每日随机抽 3 条） ═══════════════
@@ -79,14 +80,24 @@ OPTIONAL_POOL = [
      "ico": "📱", "desc": "在学习平板完成英语同步练习后，找家长确认", "subject": "英语"},
 ]
 
-# 家长可配置目标数量的任务
+# 家长可配置目标数量的任务（背诵类固定「全量完成」语义，不可配置目标数）
+_UNCONFIGURABLE_CODES = {"chi_classical", "eng_vocab"}
 CONFIGURABLE_CODES = [t["code"] for t in [
     MANDATORY_TASKS["数学"], MANDATORY_TASKS["语文"], MANDATORY_TASKS["英语"],
 ]] + [t["code"] for t in OPTIONAL_POOL]
-# 去重
-CONFIGURABLE_CODES = list(dict.fromkeys(CONFIGURABLE_CODES))
+# 去重并排除不可配置项
+CONFIGURABLE_CODES = [c for c in dict.fromkeys(CONFIGURABLE_CODES)
+                      if c not in _UNCONFIGURABLE_CODES]
 
 MIN_TARGET, MAX_TARGET = 1, 50
+# 按任务单独设置的目标下限（默认为空：数值由家长配置，系统只提供能力）
+CODE_MIN_TARGET = {}
+
+# 家长可配置的每日额度（quotas）：{键: (最小值, 最大值, 默认值)}
+QUOTA_KEYS = {
+    "daily_new_words": (1, 100, 20),   # 每日新学单词数
+    "daily_new_texts": (1, 50, 5),     # 每日新背古诗文数
+}
 
 # 练习类任务的完成门槛（分数≥70才算完成）
 TASK_PASS_SCORE = 70
@@ -147,7 +158,7 @@ def _load_settings(db: Session, user_id: str) -> dict:
         data = json.loads(row[0] or "{}")
         if not isinstance(data, dict):
             return {}
-        # 新格式：嵌套结构 {"targets": {...}, "enabled": {...}, "mandatory": {...}}
+        # 新格式：嵌套结构 {"targets": {...}, "enabled": {...}, "mandatory": {...}, "quotas": {...}}
         if "targets" in data and isinstance(data["targets"], dict):
             targets = {k: int(v) for k, v in data["targets"].items()
                        if k in CONFIGURABLE_CODES and isinstance(v, (int, float))
@@ -156,6 +167,7 @@ def _load_settings(db: Session, user_id: str) -> dict:
                 "targets": targets,
                 "enabled": data.get("enabled", {}),  # {code: bool}
                 "mandatory": data.get("mandatory", {}),  # {subject: code}
+                "quotas": data.get("quotas", {}),  # {daily_new_words: int, ...}
             }
         # 旧格式：扁平结构 {code: int}，兼容转换
         return {
@@ -164,9 +176,10 @@ def _load_settings(db: Session, user_id: str) -> dict:
                         and MIN_TARGET <= int(v) <= MAX_TARGET},
             "enabled": {},
             "mandatory": {},
+            "quotas": {},
         }
     except Exception:
-        return {"targets": {}, "enabled": {}, "mandatory": {}}
+        return {"targets": {}, "enabled": {}, "mandatory": {}, "quotas": {}}
 
 
 def _setting_target(settings: dict, code: str) -> int | None:
@@ -227,20 +240,44 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
     for subj in SUBJECTS:
         default_code = MANDATORY_TASKS[subj]["code"]
         current_mandatory[subj] = mandatory_map.get(subj, default_code)
-    return {"items": items, "mandatory": current_mandatory}
+    quotas = {k: int(user.get("quotas", {}).get(k, d)) for k, (_, _, d) in QUOTA_KEYS.items()}
+    return {"items": items, "mandatory": current_mandatory, "quotas": quotas}
 
 
-@router.post("/settings", summary="保存每日任务配置（家长设置）")
-def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
+def _bounded_target(code: str, v: int) -> int:
+    """目标数上下限校验：全局 1-50，个别任务可另设下限"""
+    lo = max(MIN_TARGET, CODE_MIN_TARGET.get(code, MIN_TARGET))
+    if not lo <= v <= MAX_TARGET:
+        raise HTTPException(400, f"{code} 的目标数量需在 {lo}-{MAX_TARGET} 之间")
+    return v
+
+
+def get_daily_quota(db: Session, user_id: str, key: str) -> int:
+    """读家长配置的每日额度（quotas），未配置时返回默认值"""
+    lo, hi, default = QUOTA_KEYS[key]
+    settings = _load_settings(db, user_id)
+    try:
+        v = int(settings.get("quotas", {}).get(key, default))
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, v))
+
+
+@router.post("/settings", summary="保存每日任务配置（家长设置，需家长密码）")
+def save_task_settings(req: SettingsRequest, request: Request, db: Session = Depends(get_db)):
     if not isinstance(req.settings, dict):
         raise HTTPException(400, "settings 必须为对象")
+    # 防刷：任务配置是家长权限，孩子不得自行调低目标/禁用任务
+    ensure_parent_pwd(db, req.user_id, request)
 
     existing = _load_settings(db, req.user_id)
     new_targets = dict(existing.get("targets", {}))
     new_enabled = dict(existing.get("enabled", {}))
     new_mandatory = dict(existing.get("mandatory", {}))
+    new_quotas = dict(existing.get("quotas", {}))
 
-    if "targets" in req.settings or "enabled" in req.settings or "mandatory" in req.settings:
+    if "targets" in req.settings or "enabled" in req.settings or "mandatory" in req.settings \
+            or "quotas" in req.settings:
         # 新格式
         if "targets" in req.settings and isinstance(req.settings["targets"], dict):
             for code, val in req.settings["targets"].items():
@@ -250,9 +287,7 @@ def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
                     v = int(val)
                 except (TypeError, ValueError):
                     raise HTTPException(400, f"{code} 的目标数量必须是整数")
-                if not MIN_TARGET <= v <= MAX_TARGET:
-                    raise HTTPException(400, f"{code} 的目标数量需在 {MIN_TARGET}-{MAX_TARGET} 之间")
-                new_targets[code] = v
+                new_targets[code] = _bounded_target(code, v)
         if "enabled" in req.settings and isinstance(req.settings["enabled"], dict):
             for code, val in req.settings["enabled"].items():
                 if code not in CONFIGURABLE_CODES:
@@ -265,6 +300,19 @@ def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
                 if code not in CONFIGURABLE_CODES:
                     raise HTTPException(400, f"不支持的任务类型: {code}")
                 new_mandatory[subj] = code
+        # 每日额度（家长配置：新学单词数 / 新背古诗文数）
+        if "quotas" in req.settings and isinstance(req.settings["quotas"], dict):
+            for key, val in req.settings["quotas"].items():
+                if key not in QUOTA_KEYS:
+                    raise HTTPException(400, f"不支持的额度类型: {key}")
+                lo, hi, _ = QUOTA_KEYS[key]
+                try:
+                    v = int(val)
+                except (TypeError, ValueError):
+                    raise HTTPException(400, f"{key} 必须是整数")
+                if not lo <= v <= hi:
+                    raise HTTPException(400, f"{key} 需在 {lo}-{hi} 之间")
+                new_quotas[key] = v
     else:
         # 旧格式兼容：{code: int}
         for code, val in req.settings.items():
@@ -274,15 +322,19 @@ def save_task_settings(req: SettingsRequest, db: Session = Depends(get_db)):
                 v = int(val)
             except (TypeError, ValueError):
                 raise HTTPException(400, f"{code} 的目标数量必须是整数")
-            if not MIN_TARGET <= v <= MAX_TARGET:
-                raise HTTPException(400, f"{code} 的目标数量需在 {MIN_TARGET}-{MAX_TARGET} 之间")
-            new_targets[code] = v
+            new_targets[code] = _bounded_target(code, v)
 
-    clean = {"targets": new_targets, "enabled": new_enabled, "mandatory": new_mandatory}
-    db.execute(text(
-        "INSERT INTO parent_task_settings (user_id, settings_json, updated_at) "
-        "VALUES (:u, :j, :t) ON CONFLICT(user_id) DO UPDATE SET settings_json=:j, updated_at=:t"),
-        {"u": req.user_id, "j": json.dumps(clean), "t": datetime.now()})
+    clean = {"targets": new_targets, "enabled": new_enabled,
+             "mandatory": new_mandatory, "quotas": new_quotas}
+    # 可移植 upsert（SQLite/MySQL 方言兼容，不用 ON CONFLICT）
+    _params = {"u": req.user_id, "j": json.dumps(clean), "t": datetime.now()}
+    exists = db.execute(text("SELECT 1 FROM parent_task_settings WHERE user_id=:u"),
+                        {"u": req.user_id}).fetchone()
+    if exists:
+        db.execute(text("UPDATE parent_task_settings SET settings_json=:j, updated_at=:t WHERE user_id=:u"), _params)
+    else:
+        db.execute(text("INSERT INTO parent_task_settings (user_id, settings_json, updated_at) "
+                        "VALUES (:u, :j, :t)"), _params)
     today = date.today()
     rows = db.query(DailyTask).filter(
         DailyTask.user_id == req.user_id, DailyTask.task_date == today).all()
@@ -300,10 +352,12 @@ def _today_start() -> datetime:
 
 
 def _today_attempts(db: Session, user_id: str, subject: str) -> int:
-    return db.query(ExamAttempt).join(ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
+    """今日达标的做卷次数（同卷重做只计 1 次，防刷）"""
+    return db.query(func.count(func.distinct(ExamAttempt.exam_id))).join(
+        ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
         ExamAttempt.user_id == user_id, ExamRecord.subject == subject,
         ExamAttempt.score >= TASK_PASS_SCORE, ExamAttempt.created_at >= _today_start(),
-    ).count()
+    ).scalar() or 0
 
 
 def _today_mastered(db: Session, user_id: str, subject: str) -> int:
@@ -339,35 +393,106 @@ def _today_dictation_texts(db: Session, user_id: str) -> int:
     return (log.texts_reviewed or 0) if log else 0
 
 
+def _user_grade(db: Session, user_id: str) -> int:
+    """取用户年级（背诵任务按年级圈定词库/篇目）"""
+    from ..models.user import User
+    u = db.query(User).filter_by(user_id=user_id).first()
+    return (u.grade if u and u.grade else 6)
+
+
+def _vocab_all_done(db: Session, user_id: str) -> tuple:
+    """英语单词「全量完成」判定：今日新学全部完成 且 到期复习全部完成。
+
+    返回 (done, new_done, review_done, learned_today, reviewed_today)。
+    - 新学完成：新学额度用完（今日新学数达标或词库已无可学新词）
+    - 复习完成：无剩余到期复习词（复习提交后 next_review_date 均推进到明天及以后）
+    """
+    from ..models.word import Word, WordBook
+    from ..models.vocab import VocabProgress
+    today = date.today()
+    grade = _user_grade(db, user_id)
+    book_ids = [b.id for b in db.query(WordBook).filter(WordBook.grade == grade).all()]
+    if not book_ids:
+        return True, True, True, 0, 0  # 无词库视为完成，不阻塞全勤
+    word_q = db.query(Word.id).filter(Word.book_id.in_(book_ids))
+
+    # 到期复习剩余数（复习后 next_review_date 均 > 今日）
+    review_left = db.query(VocabProgress).filter(
+        VocabProgress.user_id == user_id,
+        VocabProgress.status == "learning",
+        VocabProgress.next_review_date <= today,
+        VocabProgress.word_id.in_(word_q),
+    ).count()
+
+    log = db.query(VocabDailyLog).filter(
+        VocabDailyLog.user_id == user_id, VocabDailyLog.learn_date == today).first()
+    learned_today = (log.new_words_learned or 0) if log else 0
+    reviewed_today = (log.words_reviewed or 0) if log else 0
+
+    if learned_today >= get_daily_quota(db, user_id, "daily_new_words"):
+        new_done = True
+    else:
+        # 词库中是否还有未学新词（无新词可学也视为完成）
+        learned_ids = db.query(VocabProgress.word_id).filter(
+            VocabProgress.user_id == user_id).subquery()
+        unlearned = db.query(Word.id).filter(
+            Word.book_id.in_(book_ids), ~Word.id.in_(db.query(learned_ids))).count()
+        new_done = unlearned == 0
+
+    review_done = review_left == 0
+    return (new_done and review_done), new_done, review_done, learned_today, reviewed_today
+
+
+def _classical_all_done(db: Session, user_id: str) -> tuple:
+    """古诗文「全量完成」判定：今日新背全部完成 且 到期复习全部完成。
+
+    返回 (done, new_done, review_done, learned_today, reviewed_today)。
+    """
+    from ..models.classical import ClassicalText, ClassicalProgress
+    today = date.today()
+    grade = _user_grade(db, user_id)
+
+    review_left = db.query(ClassicalProgress).filter(
+        ClassicalProgress.user_id == user_id,
+        ClassicalProgress.status == "learning",
+        ClassicalProgress.next_review_date <= today,
+    ).count()
+
+    log = db.query(ClassicalDailyLog).filter(
+        ClassicalDailyLog.user_id == user_id, ClassicalDailyLog.learn_date == today).first()
+    learned_today = (log.texts_learned or 0) if log else 0
+    reviewed_today = (log.texts_reviewed or 0) if log else 0
+
+    if learned_today >= get_daily_quota(db, user_id, "daily_new_texts"):
+        new_done = True
+    else:
+        learned_ids = db.query(ClassicalProgress.text_id).filter(
+            ClassicalProgress.user_id == user_id).subquery()
+        unlearned = db.query(ClassicalText.id).filter(
+            ClassicalText.grade <= grade,
+            ~ClassicalText.id.in_(db.query(learned_ids))).count()
+        new_done = unlearned == 0
+
+    review_done = review_left == 0
+    return (new_done and review_done), new_done, review_done, learned_today, reviewed_today
+
+
 def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int) -> int:
     """根据真实学习数据计算任务进度（封顶为目标值）"""
     # 强制任务
     if code == "math_exam":
         return min(target, _today_attempts(db, user_id, "数学"))
     if code == "chi_classical":
-        log = db.query(ClassicalDailyLog).filter(
-            ClassicalDailyLog.user_id == user_id, ClassicalDailyLog.learn_date == date.today()
-        ).first()
-        if not log:
-            return 0
-        learned = log.texts_learned or 0
-        reviewed = log.texts_reviewed or 0
-        # 必须新背+复习都完成才算进度
-        if learned > 0 and reviewed > 0:
-            return min(target, learned + reviewed)
-        return 0
+        done, _, _, learned, reviewed = _classical_all_done(db, user_id)
+        if done:
+            return target
+        # 未全部完成：展示进度但永不达标（新背+复习必须全部完成）
+        return min(target - 1, learned + reviewed)
     if code == "eng_vocab":
-        log = db.query(VocabDailyLog).filter(
-            VocabDailyLog.user_id == user_id, VocabDailyLog.learn_date == date.today()
-        ).first()
-        if not log:
-            return 0
-        new_learned = log.new_words_learned or 0
-        reviewed = log.words_reviewed or 0
-        # 必须新学+复习都完成才算进度（任一为0则进度为0）
-        if new_learned > 0 and reviewed > 0:
-            return min(target, new_learned + reviewed)
-        return 0
+        done, _, _, learned, reviewed = _vocab_all_done(db, user_id)
+        if done:
+            return target
+        return min(target - 1, learned + reviewed)
     # 可选任务
     if code == "math_fix":
         return min(target, _today_mastered(db, user_id, "数学"))
@@ -496,6 +621,7 @@ def _grant_makeup_card(db: Session, user_id: str):
         db.flush()
     card.balance += 1
     card.total_earned += 1
+    card.last_grant_date = date.today()
     db.commit()
 
 
@@ -575,14 +701,11 @@ def _build_payload(db: Session, user_id: str) -> dict:
     # 检查可选任务是否全部完成 → 发补签卡
     optional_done = all(r.status == "done" for r in optional_rows) if optional_rows else False
     if optional_done and optional_rows:
-        # 检查今天是否已经发过（避免重复发放）
+        # 检查今天是否已经发过（用专用字段 last_grant_date，避免 updated_at 误判）
         today_str = str(date.today())
         card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
-        if card and getattr(card, 'updated_at', None):
-            last_grant = str(card.updated_at.date()) if card.updated_at else ""
-            if last_grant != today_str:
-                _grant_makeup_card(db, user_id)
-        elif not card:
+        last_grant = str(card.last_grant_date) if (card and getattr(card, "last_grant_date", None)) else ""
+        if last_grant != today_str:
             _grant_makeup_card(db, user_id)
 
     # 全勤日 → 卡券累计
@@ -641,8 +764,10 @@ class ClaimRequest(BaseModel):
     subject: str
 
 
-@router.post("/daily/claim", summary="手动确认完成任务")
-def claim_task(req: ClaimRequest, db: Session = Depends(get_db)):
+@router.post("/daily/claim", summary="手动确认完成任务（需家长密码）")
+def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db)):
+    # 防刷：手动确认属于家长权限，孩子不得自批
+    ensure_parent_pwd(db, req.user_id, request)
     today = date.today()
     rows = db.query(DailyTask).filter(
         DailyTask.user_id == req.user_id, DailyTask.task_date == today,

@@ -54,6 +54,12 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
                 req.english_count = max(req.english_count, m.eng_min or 0)
             elif req.subject == "语文":
                 req.english_count = max(req.english_count, m.chi_min or 0)
+            # 防刷：难度下限（孩子选低于下限时强制提升；综合卷不受限）
+            from .parent import DIFFICULTY_LEVELS
+            dmin = (m.difficulty_min or "基础") if hasattr(m, "difficulty_min") else "基础"
+            if req.difficulty in DIFFICULTY_LEVELS and dmin in DIFFICULTY_LEVELS:
+                if DIFFICULTY_LEVELS.index(req.difficulty) < DIFFICULTY_LEVELS.index(dmin):
+                    req.difficulty = dmin
 
     if req.subject == "数学":
         filepath, questions_data = _generate_math_exam(req, db)
@@ -419,6 +425,15 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
     if not user_id or not exam_id or not answers:
         raise HTTPException(400, "缺少 user_id / exam_id / answers")
 
+    # 防刷：提交耗时过短判为无效（每题至少 3 秒；未上报时长时不拦截，兼容旧前端）
+    duration = req.get("duration_sec") or 0
+    try:
+        duration = float(duration)
+    except (TypeError, ValueError):
+        duration = 0
+    if duration > 0 and duration < len(answers) * 3:
+        raise HTTPException(400, "提交太快啦，认真做完再交卷哦")
+
     record = db.query(ExamRecord).get(exam_id)
     if not record:
         raise HTTPException(404, "试卷不存在")
@@ -498,7 +513,8 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
             "question_id": q.id,
             "seq": q.seq,
             "question": q.question,
-            "correct_answer": correct_ans,
+            # 防刷：错题不回传正确答案（避免重做背答案刷满分），订正走错题本
+            "correct_answer": correct_ans if is_correct else "",
             "user_answer": user_ans,
             "is_correct": is_correct,
         })

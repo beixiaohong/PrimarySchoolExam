@@ -24,6 +24,7 @@ router = APIRouter()
 
 APPEAL_LIMIT = 20  # 次/小时/用户（防刷屏）
 APPEAL_LIMIT_WIN = 3600
+APPEAL_DAILY_LIMIT = 5  # 次/日/用户（防反复申诉抬分）
 
 
 class AppealCreateReq(BaseModel):
@@ -56,6 +57,16 @@ def create_appeal(req: AppealCreateReq, db: Session = Depends(get_db)):
         raise HTTPException(400, "source 仅支持 exam / retry")
     if not rate_limit(f"appeal:{req.user_id}", APPEAL_LIMIT, APPEAL_LIMIT_WIN):
         raise HTTPException(429, "申诉提交太频繁啦，歇一歇再来")
+
+    # 每日限额：防反复申诉抬分（DB 计数今日申诉数）
+    from datetime import date
+    day_start = datetime.combine(date.today(), datetime.min.time())
+    today_cnt = db.query(AnswerAppeal).filter(
+        AnswerAppeal.user_id == req.user_id,
+        AnswerAppeal.created_at >= day_start,
+    ).count()
+    if today_cnt >= APPEAL_DAILY_LIMIT:
+        raise HTTPException(429, f"今日申诉次数已达上限（{APPEAL_DAILY_LIMIT} 次），请明天再来")
 
     # 去重：同题同作答且未处理 → 返回已有申诉
     dup = db.query(AnswerAppeal).filter(

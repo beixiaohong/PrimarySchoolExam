@@ -127,7 +127,9 @@ def get_today_words(
         VocabDailyLog.learn_date == today
     ).first()
     already_new_today = today_log.new_words_learned if today_log else 0
-    remaining_new = max(0, NEW_WORDS_PER_DAY - already_new_today)
+    # 每日新学额度由家长配置（默认 NEW_WORDS_PER_DAY）
+    from .tasks import get_daily_quota
+    remaining_new = max(0, get_daily_quota(db, user_id, "daily_new_words") - already_new_today)
 
     new_words = []
     if remaining_new > 0:

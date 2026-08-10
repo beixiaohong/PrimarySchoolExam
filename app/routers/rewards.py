@@ -9,16 +9,20 @@
 """
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..services.parent_guard import ensure_parent_pwd
 
 router = APIRouter()
 
 COUPON_KINDS = {"cartoon": "动画时间", "snack": "零食券", "sticker": "贴纸券",
                 "toy": "玩具券", "outing": "外出券", "custom": "自定义"}
+
+# 心愿目标数值由家长把关（确认/兑现均需家长密码），系统只限范围不强制下限
+WISH_MIN_TARGET = 1
 
 
 class CouponReq(BaseModel):
@@ -119,9 +123,10 @@ def parent_panel(user_id: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/coupon", summary="家长创建兑换券")
-def create_coupon(req: CouponReq, db: Session = Depends(get_db)):
+@router.post("/coupon", summary="家长创建兑换券（需家长密码）")
+def create_coupon(req: CouponReq, request: Request, db: Session = Depends(get_db)):
     from ..models.reward import RewardCoupon
+    ensure_parent_pwd(db, req.user_id, request)
     title = (req.title or "").strip()
     if not title:
         raise HTTPException(400, "券名不能为空")
@@ -139,9 +144,10 @@ def create_coupon(req: CouponReq, db: Session = Depends(get_db)):
     return _coupon_out(c)
 
 
-@router.post("/coupon/{cid}/redeem", summary="家长核销一张兑换券")
-def redeem_coupon(cid: int, req: ToggleReq, db: Session = Depends(get_db)):
+@router.post("/coupon/{cid}/redeem", summary="家长核销一张兑换券（需家长密码）")
+def redeem_coupon(cid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
     from ..models.reward import RewardCoupon
+    ensure_parent_pwd(db, req.user_id, request)
     c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
                                       RewardCoupon.user_id == req.user_id).first()
     if not c:
@@ -156,9 +162,10 @@ def redeem_coupon(cid: int, req: ToggleReq, db: Session = Depends(get_db)):
     return _coupon_out(c)
 
 
-@router.post("/coupon/{cid}/toggle", summary="家长启用/停用兑换券")
-def toggle_coupon(cid: int, req: ToggleReq, db: Session = Depends(get_db)):
+@router.post("/coupon/{cid}/toggle", summary="家长启用/停用兑换券（需家长密码）")
+def toggle_coupon(cid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
     from ..models.reward import RewardCoupon
+    ensure_parent_pwd(db, req.user_id, request)
     c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
                                       RewardCoupon.user_id == req.user_id).first()
     if not c:
@@ -168,9 +175,10 @@ def toggle_coupon(cid: int, req: ToggleReq, db: Session = Depends(get_db)):
     return _coupon_out(c)
 
 
-@router.delete("/coupon/{cid}", summary="家长删除兑换券")
-def delete_coupon(cid: int, user_id: str = Query(...), db: Session = Depends(get_db)):
+@router.delete("/coupon/{cid}", summary="家长删除兑换券（需家长密码）")
+def delete_coupon(cid: int, request: Request, user_id: str = Query(...), db: Session = Depends(get_db)):
     from ..models.reward import RewardCoupon
+    ensure_parent_pwd(db, user_id, request)
     c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
                                       RewardCoupon.user_id == user_id).first()
     if not c:
@@ -200,7 +208,7 @@ def create_wish(req: WishReq, db: Session = Depends(get_db)):
     ).first()
     if active:
         raise HTTPException(400, "已有进行中的心愿，完成或移除后才能换新的")
-    target = max(1, min(100, req.target or 10))
+    target = max(WISH_MIN_TARGET, min(100, req.target or 10))
     wish_type = req.wish_type if req.wish_type in ("task_count", "optional_streak") else "task_count"
     daily_target = max(1, min(10, req.daily_target or 3))
     w = WishItem(user_id=req.user_id, title=title[:100], target=target,
@@ -211,9 +219,10 @@ def create_wish(req: WishReq, db: Session = Depends(get_db)):
     return _wish_out(w)
 
 
-@router.post("/wish/{wid}/confirm", summary="家长确认心愿开始进行")
-def confirm_wish(wid: int, req: ToggleReq, db: Session = Depends(get_db)):
+@router.post("/wish/{wid}/confirm", summary="家长确认心愿开始进行（需家长密码）")
+def confirm_wish(wid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
     from ..models.reward import WishItem
+    ensure_parent_pwd(db, req.user_id, request)
     w = db.query(WishItem).filter(WishItem.id == wid,
                                   WishItem.user_id == req.user_id).first()
     if not w:
@@ -225,9 +234,10 @@ def confirm_wish(wid: int, req: ToggleReq, db: Session = Depends(get_db)):
     return _wish_out(w)
 
 
-@router.post("/wish/{wid}/redeem", summary="家长确认兑现心愿")
-def redeem_wish(wid: int, req: RedeemReq, db: Session = Depends(get_db)):
+@router.post("/wish/{wid}/redeem", summary="家长确认兑现心愿（需家长密码）")
+def redeem_wish(wid: int, req: RedeemReq, request: Request, db: Session = Depends(get_db)):
     from ..models.reward import WishItem
+    ensure_parent_pwd(db, req.user_id, request)
     w = db.query(WishItem).filter(WishItem.id == wid,
                                   WishItem.user_id == req.user_id).first()
     if not w:
@@ -241,9 +251,10 @@ def redeem_wish(wid: int, req: RedeemReq, db: Session = Depends(get_db)):
     return _wish_out(w)
 
 
-@router.post("/wish/{wid}/archive", summary="移除心愿（已兑现的记录保留）")
-def archive_wish(wid: int, req: ToggleReq, db: Session = Depends(get_db)):
+@router.post("/wish/{wid}/archive", summary="移除心愿（需家长密码；已兑现的记录保留）")
+def archive_wish(wid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
     from ..models.reward import WishItem
+    ensure_parent_pwd(db, req.user_id, request)
     w = db.query(WishItem).filter(WishItem.id == wid,
                                   WishItem.user_id == req.user_id).first()
     if not w:
@@ -334,6 +345,7 @@ def sync_coupon_progress(db: Session, user_id: str):
     - 达到 required_days 自动获得 1 张（进度清零，可继续累计下一张）
     - 中断超过 3 天未全勤 → 进度清零
     - 每 7 天最多允许 1 天缺卡，超出则进度从头统计
+    - 连续 2 天以上无任何任务记录（刻意停用系统）视为中断 → 进度清零
     """
     from datetime import date, timedelta
     from ..models.daily_task import DailyTask
@@ -353,17 +365,21 @@ def sync_coupon_progress(db: Session, user_id: str):
     # 检查最近 7 天的缺卡情况
     miss_count = 0
     active_days = 0  # 有任务记录的天数
-    for i in range(7):
+    no_record_streak = 0   # 连续无记录天数（防刷：刻意停用系统规避缺卡统计）
+    interrupted = False
+    for i in range(1, 7):
         d = today - timedelta(days=i)
-        if i == 0:
-            continue  # 今天已确认全勤
         # 检查该天是否全勤（强制任务全 done）
         day_rows = db.query(DailyTask).filter(
             DailyTask.user_id == user_id, DailyTask.task_date == d,
             DailyTask.task_type == "mandatory",
         ).all()
         if not day_rows:
-            continue  # 该天无任务记录（用户未使用系统），不算缺卡
+            no_record_streak += 1
+            if no_record_streak >= 2:
+                interrupted = True  # 连续 2 天以上无记录 → 视为中断
+            continue
+        no_record_streak = 0
         active_days += 1
         day_full = len(day_rows) >= 3 and all(r.status == "done" for r in day_rows)
         if not day_full:
@@ -389,8 +405,8 @@ def sync_coupon_progress(db: Session, user_id: str):
                     c.progress_days = 0
             except Exception:
                 pass
-        # 7 天内缺卡超过 1 天 → 进度清零
-        if miss_count > 1:
+        # 7 天内缺卡超过 1 天 或 连续无记录中断 → 进度清零
+        if miss_count > 1 or interrupted:
             c.progress_days = 0
         c.progress_days = (c.progress_days or 0) + 1
         c.progress_date = today_str

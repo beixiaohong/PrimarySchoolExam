@@ -15,6 +15,7 @@ class MakeupCard(Base):
     balance = Column(Integer, default=0, comment="当前可用补签卡数量")
     total_earned = Column(Integer, default=0, comment="累计获得数量")
     total_used = Column(Integer, default=0, comment="累计使用数量")
+    last_grant_date = Column(Date, nullable=True, comment="最近一次发放日期（每日去重用，防刷）")
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 

@@ -20,6 +20,9 @@ def upgrade(db):
     try:
         # 清理上次失败残留的临时表
         db.execute(text("DROP TABLE IF EXISTS daily_tasks_old"))
+        # SQLite 重命名表不会同步改索引名：先丢弃旧索引，避免重建同名索引冲突
+        db.execute(text("DROP INDEX IF EXISTS ix_daily_tasks_user_id"))
+        db.execute(text("DROP INDEX IF EXISTS ix_daily_tasks_task_date"))
 
         # 检查是否有 task_type 列
         cols_result = db.execute(text("PRAGMA table_info(daily_tasks)"))
@@ -49,8 +52,8 @@ def upgrade(db):
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, task_date, task_code)
         )"""))
-        db.execute(text("CREATE INDEX ix_daily_tasks_user_id ON daily_tasks(user_id)"))
-        db.execute(text("CREATE INDEX ix_daily_tasks_task_date ON daily_tasks(task_date)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_daily_tasks_user_id ON daily_tasks(user_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_daily_tasks_task_date ON daily_tasks(task_date)"))
 
         # 迁移旧数据
         if has_task_type:

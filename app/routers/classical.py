@@ -300,7 +300,9 @@ def get_today_task(
         ClassicalDailyLog.learn_date == today,
     ).first()
     already_new = today_log.texts_learned if today_log else 0
-    remaining = max(0, NEW_TEXTS_PER_DAY - already_new)
+    # 每日新背额度由家长配置（默认 NEW_TEXTS_PER_DAY）
+    from .tasks import get_daily_quota
+    remaining = max(0, get_daily_quota(db, user_id, "daily_new_texts") - already_new)
 
     new_items = []
     if remaining > 0:

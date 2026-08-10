@@ -278,7 +278,13 @@ createApp({
   methods: {
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
-      return fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts))
+      // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
+      const headers = { 'Content-Type': 'application/json' };
+      try {
+        const pp = sessionStorage.getItem('zx_parent_pwd');
+        if (pp) headers['X-Parent-Pwd'] = pp;
+      } catch (e) { /* 隐私模式等异常忽略 */ }
+      return fetch(path, Object.assign({ headers }, opts))
         .then(async r => {
           const t = await r.text();
           let d = t;
@@ -320,6 +326,7 @@ createApp({
     logout() {
       localStorage.removeItem('zx_user');
       sessionStorage.removeItem('zx_parent_open');
+      sessionStorage.removeItem('zx_parent_pwd');
       this.user = ''; this.username = ''; this.tab = 'home'; this.showGradeModal = false;
     },
 
@@ -1456,6 +1463,7 @@ createApp({
     /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
     exitParentMode() {
       sessionStorage.removeItem('zx_parent_open');
+      sessionStorage.removeItem('zx_parent_pwd');
       this.parentPhase = 'locked';
       this._resetPwdForm();
       this.loadRewards(); // 刷新孩子端数据（券状态等）
@@ -1486,6 +1494,7 @@ createApp({
         this._resetPwdForm();
         this.parentPhase = 'open';
         sessionStorage.setItem('zx_parent_open', '1');
+        sessionStorage.setItem('zx_parent_pwd', pwd);
         this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('家长密码已设置，家长管理已解锁 🔓');
       }).catch(e => this.showToast(e.message));
@@ -1499,6 +1508,7 @@ createApp({
         this._resetPwdForm();
         this.parentPhase = 'open';
         sessionStorage.setItem('zx_parent_open', '1');
+        sessionStorage.setItem('zx_parent_pwd', pwd);
         this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('欢迎回来，家长 👋');
       }).catch(e => this.showToast(e.message));
@@ -1511,6 +1521,7 @@ createApp({
         body: JSON.stringify({ user_id: this.user, hint_answer: resetA.trim(), new_password: resetPwd }),
       }).then(() => {
         this._resetPwdForm();
+        sessionStorage.removeItem('zx_parent_pwd');
         this.parentPhase = 'locked';
         this.showToast('密码已重置，请用新密码解锁 🔓');
       }).catch(e => this.showToast(e.message));
@@ -1524,6 +1535,8 @@ createApp({
         body: JSON.stringify({ user_id: this.user, old_password: old, new_password: new1 }),
       }).then(() => {
         this._resetPwdForm();
+        // 家长面板处于解锁态时同步更新本地缓存密码，避免后续敏感接口 403
+        if (sessionStorage.getItem('zx_parent_open') === '1') sessionStorage.setItem('zx_parent_pwd', new1);
         this.showToast('家长密码已修改 ✅');
       }).catch(e => this.showToast(e.message));
     },
