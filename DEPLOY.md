@@ -103,7 +103,29 @@ git pull
 systemctl restart exam-app
 ```
 
-## 七、项目结构
+## 七、P5 工程化前端（web/）
+
+孩子端新前端位于 `web/`（Vite + Vue 3 + Pinia），构建产物 `web/dist` 由后端直接托管：
+存在时访问 `/` 自动使用新前端，不存在时回退旧版 `frontend/`。
+
+```bash
+# 服务器需 Node.js 18+（仅构建时需要）
+cd /home/PrimarySchoolExam/web
+npm install
+npm run build        # 产物输出到 web/dist
+systemctl restart exam-app
+```
+
+本地开发联调（热更新 + /api 代理到 8000）：
+
+```bash
+cd web
+npm run dev          # http://localhost:5173
+```
+
+管理后台前端为 `frontend-admin/`（独立工程，/admin 访问），无需构建。
+
+## 八、项目结构
 
 ```
 /home/PrimarySchoolExam/
@@ -114,7 +136,9 @@ systemctl restart exam-app
 │   ├── schemas/          # 请求/响应模型
 │   └── services/         # 业务逻辑（出题、生成docx）
 ├── frontend/
-│   └── index.html        # Vue3 单文件前端
+│   └── index.html        # 旧版单体前端（web/dist 缺失时回退）
+├── frontend-admin/       # 管理后台前端（/admin）
+├── web/                  # P5 工程化前端（Vite+Vue3，构建到 web/dist）
 ├── data/                 # SQLite 数据库 + CSV 数据
 ├── output/               # 生成的试卷文件
 ├── venv/                 # Python 虚拟环境
@@ -122,6 +146,6 @@ systemctl restart exam-app
 └── deploy.sh             # 一键部署脚本
 ```
 
-## 八、访问地址
+## 九、访问地址
 
 部署完成后浏览器访问：`https://www.你的域名.com`
