@@ -25,10 +25,40 @@ EBBINGHAUS_INTERVALS = [1, 2, 4, 7, 15, 30]
 NEW_WORDS_PER_DAY = 20
 
 
-def _get_grade_books(db: Session, grade: int) -> List[int]:
-    """获取指定年级的所有词库ID"""
-    books = db.query(WordBook).filter(WordBook.grade == grade).all()
+def _get_grade_books(db: Session, grade: int, user_id: Optional[str] = None) -> List[int]:
+    """获取指定年级的词库ID：默认只开当前学期，include_next 开启时预支下学期"""
+    from .tasks import _load_study_flags
+    from ..services.semester import current_semester, next_semester
+
+    semesters = [current_semester()]
+    if user_id and _load_study_flags(db, user_id).get("include_next"):
+        semesters.append(next_semester())
+
+    books = db.query(WordBook).filter(
+        WordBook.grade == grade,
+        WordBook.semester.in_(semesters),
+    ).all()
+    if not books:
+        # 兜底：该年级当前学期无册（数据未就绪）时回退全量，避免无词可学
+        books = db.query(WordBook).filter(WordBook.grade == grade).all()
     return [b.id for b in books]
+
+
+def _sync_unit_filter(db: Session, user_id: str, book_ids: List[int]):
+    """课堂同步：sync_mode 开启时返回英语当前进度的 (book_id, unit)，否则 None"""
+    from .tasks import _load_study_flags
+    if not _load_study_flags(db, user_id).get("sync_mode"):
+        return None
+    from ..models.middle import TeachingProgress
+    prog = db.query(TeachingProgress).filter(
+        TeachingProgress.user_id == user_id,
+        TeachingProgress.subject == "英语",
+    ).first()
+    if not prog or not prog.book_id or not prog.chapter:
+        return None
+    if prog.book_id not in book_ids:
+        return None
+    return prog.book_id, prog.chapter
 
 
 def _get_today_log(db: Session, user_id: str, today: date) -> VocabDailyLog:
@@ -85,7 +115,7 @@ def get_today_words(
 ):
     """获取今日学习任务：新词 + 待复习词"""
     today = date.today()
-    book_ids = _get_grade_books(db, grade)
+    book_ids = _get_grade_books(db, grade, user_id)
 
     if not book_ids:
         return TodayTaskOut(new_words=[], review_words=[], stats={
@@ -129,11 +159,35 @@ def get_today_words(
 
     new_words = []
     if remaining_new > 0:
-        # 按难度排序取未学过的词
-        new_candidates = db.query(Word).filter(
+        # 按难度排序取未学过的词；sync_mode 开启时先按当前 unit 同步，额度不足回退全量
+        base_q = db.query(Word).filter(
             Word.book_id.in_(book_ids),
             ~Word.id.in_(db.query(learned_word_ids))
-        ).order_by(Word.difficulty, Word.id).limit(remaining_new).all()
+        )
+        from .tasks import _load_study_flags
+        flags = _load_study_flags(db, user_id)
+        sync = _sync_unit_filter(db, user_id, book_ids)
+        # xsc_bridge：六年级升初衔接，新学批次按 7:3 混入七年级词
+        bridge_n = remaining_new * 3 // 10 if (grade == 6 and flags.get("xsc_bridge")) else 0
+        main_n = remaining_new - bridge_n
+
+        main_candidates = []
+        if sync:
+            sync_book_id, sync_unit = sync
+            main_candidates = base_q.filter(
+                Word.book_id == sync_book_id,
+                Word.unit == sync_unit,
+            ).order_by(Word.difficulty, Word.id).limit(main_n).all()
+        if not sync or len(main_candidates) < main_n:
+            main_candidates = base_q.order_by(Word.difficulty, Word.id).limit(main_n).all()
+
+        new_candidates = list(main_candidates)
+        if bridge_n:
+            bridge_books = db.query(WordBook.id).filter(WordBook.grade == 7)
+            new_candidates += db.query(Word).filter(
+                Word.book_id.in_(bridge_books),
+                ~Word.id.in_(db.query(learned_word_ids)),
+            ).order_by(Word.difficulty, Word.id).limit(bridge_n).all()
 
         for w in new_candidates:
             new_words.append(VocabWordOut(
@@ -439,7 +493,7 @@ def vocab_session_quiz(
                 VocabProgress.user_id == user_id,
                 VocabProgress.word_id.in_(ids)).all():
             stages[p.word_id] = p.review_stage
-    book_ids = _get_grade_books(db, grade) or [w.book_id for w in words]
+    book_ids = _get_grade_books(db, grade, user_id) or [w.book_id for w in words]
     sentence_cache = [s for (s,) in db.query(Sentence.sentence_en).all() if s]
     items = []
     for w in words:
@@ -535,7 +589,7 @@ def get_vocab_stats(
 ):
     """获取用户词汇学习统计"""
     today = date.today()
-    book_ids = _get_grade_books(db, grade)
+    book_ids = _get_grade_books(db, grade, user_id)
 
     if not book_ids:
         return VocabStatsOut(
@@ -598,7 +652,7 @@ def get_progress(
     db: Session = Depends(get_db),
 ):
     """查看用户所有单词的学习进度"""
-    book_ids = _get_grade_books(db, grade)
+    book_ids = _get_grade_books(db, grade, user_id)
     if not book_ids:
         return []
 

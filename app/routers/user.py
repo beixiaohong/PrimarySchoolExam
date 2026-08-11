@@ -63,8 +63,10 @@ def user_login(req: UserLoginRequest, db: Session = Depends(get_db)):
             user.last_login_date = date.today()
         db.commit()
 
-    # 启动时检查是否需要自动升年级（每年9月1号）
+    # 启动时检查是否需要自动升年级（每年9月1号）；升级后返回 promoted 供前端弹窗
+    prev_grade = user.grade
     _auto_upgrade_grade(db)
+    promoted = (not is_new) and bool(prev_grade) and bool(user.grade) and user.grade > prev_grade
 
     # 连续学习天数：词汇 + 古诗文 日志合并取最大
     streak = _streak(db, uid)
@@ -74,6 +76,9 @@ def user_login(req: UserLoginRequest, db: Session = Depends(get_db)):
         "grade": user.grade,
         "subject": user.subject,
         "is_new": is_new,
+        "promoted": promoted,
+        "prev_grade": prev_grade if promoted else None,
+        "new_grade": user.grade if promoted else None,
         "streak_days": streak,
         "created_at": user.created_at.strftime("%Y-%m-%d") if user.created_at else "",
         "message": "欢迎回来！" if not is_new else "欢迎加入，今天开始学习吧！",

@@ -188,6 +188,23 @@ def _load_settings(db: Session, user_id: str) -> dict:
         return {"targets": {}, "enabled": {}, "mandatory": {}, "quotas": {}, "optional": []}
 
 
+def _load_study_flags(db: Session, user_id: str) -> dict:
+    """读取 settings_json 原始内容，供学习开关使用
+
+    顶层字段：include_next(预习下学期)、sync_mode(课堂同步)、xsc_bridge(小升初衔接)
+    """
+    row = db.execute(
+        text("SELECT settings_json FROM parent_task_settings WHERE user_id=:u"),
+        {"u": user_id}).fetchone()
+    if not row:
+        return {}
+    try:
+        data = json.loads(row[0] or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def _setting_target(settings: dict, code: str) -> int | None:
     targets = settings.get("targets", settings) if isinstance(settings.get("targets"), dict) else settings
     val = targets.get(code)
@@ -288,7 +305,9 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
             "enabled": True, "manual": item.get("manual", False),
         })
     return {"items": items, "mandatory": current_mandatory, "quotas": quotas,
-            "optional": user.get("optional", [])}
+            "optional": user.get("optional", []),
+            "study_flags": {k: bool(_load_study_flags(db, user_id).get(k, False))
+                            for k in STUDY_FLAG_KEYS}}
 
 
 def _bounded_target(code: str, v: int) -> int:
@@ -310,12 +329,20 @@ def get_daily_quota(db: Session, user_id: str, key: str) -> int:
     return max(lo, min(hi, v))
 
 
+# 学习开关（settings_json 顶层 bool）：预习下学期 / 课堂同步 / 小升初衔接
+STUDY_FLAG_KEYS = ("include_next", "sync_mode", "xsc_bridge")
+
+
 @router.post("/settings", summary="保存每日任务配置（家长设置，需家长密码）")
 def save_task_settings(req: SettingsRequest, request: Request, db: Session = Depends(get_db)):
     if not isinstance(req.settings, dict):
         raise HTTPException(400, "settings 必须为对象")
     # 防刷：任务配置是家长权限，孩子不得自行调低目标/禁用任务
     ensure_parent_pwd(db, req.user_id, request)
+
+    # 学习开关单独提取（bool，可独立提交）
+    flag_updates = {k: bool(req.settings[k]) for k in STUDY_FLAG_KEYS if k in req.settings}
+    _payload = {k: v for k, v in req.settings.items() if k not in STUDY_FLAG_KEYS}
 
     existing = _load_settings(db, req.user_id)
     new_targets = dict(existing.get("targets", {}))
@@ -325,11 +352,11 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     new_optional = list(existing.get("optional", []))
 
     # 家长添加的可选任务（code 列表，独立字段，可与其它字段分开提交）
-    if "optional" in req.settings:
-        if not isinstance(req.settings["optional"], list):
+    if "optional" in _payload:
+        if not isinstance(_payload["optional"], list):
             raise HTTPException(400, "optional 必须为数组")
         seen, opt = set(), []
-        for code in req.settings["optional"]:
+        for code in _payload["optional"]:
             if not isinstance(code, str) or code not in CONFIGURABLE_CODES:
                 raise HTTPException(400, f"不支持的任务类型: {code}")
             if code not in seen:
@@ -337,11 +364,11 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
                 opt.append(code)
         new_optional = opt
 
-    if "targets" in req.settings or "enabled" in req.settings or "mandatory" in req.settings \
-            or "quotas" in req.settings or "optional" in req.settings:
+    if "targets" in _payload or "enabled" in _payload or "mandatory" in _payload \
+            or "quotas" in _payload or "optional" in _payload:
         # 新格式
-        if "targets" in req.settings and isinstance(req.settings["targets"], dict):
-            for code, val in req.settings["targets"].items():
+        if "targets" in _payload and isinstance(_payload["targets"], dict):
+            for code, val in _payload["targets"].items():
                 # 背诵类也允许保存目标数（仅展示用，完成判定仍为全量背诵+复习）
                 if code not in CONFIGURABLE_CODES and code not in _UNCONFIGURABLE_CODES:
                     raise HTTPException(400, f"不支持的任务类型: {code}")
@@ -350,15 +377,15 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
                 except (TypeError, ValueError):
                     raise HTTPException(400, f"{code} 的目标数量必须是整数")
                 new_targets[code] = _bounded_target(code, v)
-        if "enabled" in req.settings and isinstance(req.settings["enabled"], dict):
-            for code, val in req.settings["enabled"].items():
+        if "enabled" in _payload and isinstance(_payload["enabled"], dict):
+            for code, val in _payload["enabled"].items():
                 if code in _UNCONFIGURABLE_CODES:
                     continue  # 强制背诵类任务不允许禁用，静默忽略
                 if code not in CONFIGURABLE_CODES:
                     raise HTTPException(400, f"不支持的任务类型: {code}")
                 new_enabled[code] = bool(val)
-        if "mandatory" in req.settings and isinstance(req.settings["mandatory"], dict):
-            for subj, val in req.settings["mandatory"].items():
+        if "mandatory" in _payload and isinstance(_payload["mandatory"], dict):
+            for subj, val in _payload["mandatory"].items():
                 if subj not in SUBJECTS:
                     raise HTTPException(400, f"不支持的学科: {subj}")
                 # 兼容旧格式单 code 字符串；只存追加项，默认强制任务后端保证存在
@@ -374,8 +401,8 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
                         extra.append(code)
                 new_mandatory[subj] = extra
         # 每日额度（家长配置：新学单词数 / 新背古诗文数）
-        if "quotas" in req.settings and isinstance(req.settings["quotas"], dict):
-            for key, val in req.settings["quotas"].items():
+        if "quotas" in _payload and isinstance(_payload["quotas"], dict):
+            for key, val in _payload["quotas"].items():
                 if key not in QUOTA_KEYS:
                     raise HTTPException(400, f"不支持的额度类型: {key}")
                 lo, hi, _ = QUOTA_KEYS[key]
@@ -386,9 +413,9 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
                 if not lo <= v <= hi:
                     raise HTTPException(400, f"{key} 需在 {lo}-{hi} 之间")
                 new_quotas[key] = v
-    else:
+    elif _payload:
         # 旧格式兼容：{code: int}
-        for code, val in req.settings.items():
+        for code, val in _payload.items():
             if code not in CONFIGURABLE_CODES and code not in _UNCONFIGURABLE_CODES:
                 raise HTTPException(400, f"不支持的任务类型: {code}")
             try:
@@ -400,6 +427,12 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     clean = {"targets": new_targets, "enabled": new_enabled,
              "mandatory": new_mandatory, "quotas": new_quotas,
              "optional": new_optional}
+    # 学习开关持久化（顶层字段；未提交的保持原值）
+    flags = _load_study_flags(db, req.user_id)
+    flags.update(flag_updates)
+    for k in STUDY_FLAG_KEYS:
+        if k in flags:
+            clean[k] = bool(flags[k])
     # 可移植 upsert（SQLite/MySQL 方言兼容，不用 ON CONFLICT）
     _params = {"u": req.user_id, "j": json.dumps(clean), "t": datetime.now()}
     exists = db.execute(text("SELECT 1 FROM parent_task_settings WHERE user_id=:u"),

@@ -504,13 +504,32 @@ def get_today_task(
 
     new_items = []
     if remaining > 0:
+        # 学期解锁：只开「全」+ 当前学期篇目，include_next 预支下学期
+        from ..services.semester import current_semester, next_semester
+        from .tasks import _load_study_flags
+        semesters = ["全", current_semester()]
+        if _load_study_flags(db, user_id).get("include_next"):
+            semesters.append(next_semester())
+
         learned_ids = db.query(ClassicalProgress.text_id).filter(
             ClassicalProgress.user_id == user_id
         ).subquery()
+        # xsc_bridge：六年级升初衔接，新背批次按 7:3 混入七年级篇目
+        flags = _load_study_flags(db, user_id)
+        bridge_n = remaining * 3 // 10 if (grade == 6 and flags.get("xsc_bridge")) else 0
+        main_n = remaining - bridge_n
         candidates = db.query(ClassicalText).filter(
             ClassicalText.grade <= grade,
+            ClassicalText.semester.in_(semesters),
             ~ClassicalText.id.in_(db.query(learned_ids)),
-        ).order_by(ClassicalText.grade, ClassicalText.title).limit(remaining).all()
+        ).order_by(ClassicalText.grade, ClassicalText.title).limit(main_n).all()
+        if bridge_n:
+            candidates += db.query(ClassicalText).filter(
+                ClassicalText.grade == 7,
+                ClassicalText.semester.in_(semesters),
+                ~ClassicalText.id.in_(db.query(learned_ids)),
+                ClassicalText.id.notin_([t.id for t in candidates]),
+            ).order_by(ClassicalText.grade, ClassicalText.title).limit(bridge_n).all()
 
         for t in candidates:
             new_items.append({
