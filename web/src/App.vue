@@ -80,11 +80,20 @@
     <h2>👋 欢迎来到智学学堂</h2>
     <p>请选择你当前的年级，后续每年9月会自动升级哦</p>
     <div class="grade-grid">
-      <button v-for="g in [3,4,5,6,7,8,9]" :key="g"
+      <button v-for="g in [1,2,3,4,5,6,7,8,9]" :key="g"
               class="grade-btn" :class="{active: grade===g}"
               @click="grade=g">{{g}}年级</button>
     </div>
     <button class="btn btn-primary btn-lg" style="margin-top:20px;width:100%" @click="selectInitialGrade">开始学习 →</button>
+  </div>
+</div>
+
+<!-- 升年级引导（登录后 promoted） -->
+<div class="grade-modal-overlay" v-if="promotedInfo">
+  <div class="grade-modal">
+    <h2>🎉 恭喜，你升级啦！</h2>
+    <p>9月1日自动升级：你从 {{promotedInfo.prev_grade}}年级升入了 <b>{{promotedInfo.new_grade}}年级</b>，新学期的学习内容已解锁</p>
+    <button class="btn btn-primary btn-lg" style="margin-top:20px;width:100%" @click="closePromoted()">开始{{promotedInfo.new_grade}}年级的学习 →</button>
   </div>
 </div>
 
@@ -115,9 +124,7 @@
   <div class="main">
     <header class="topbar">
       <div class="subject-pills" v-if="tab==='practice' || tab==='wrong'">
-        <button :class="{active: subject==='数学'}" @click="switchSubject('数学')">数学</button>
-        <button :class="{active: subject==='语文'}" @click="switchSubject('语文')">语文</button>
-        <button :class="{active: subject==='英语'}" @click="switchSubject('英语')">英语</button>
+        <button v-for="s in subjectOptions" :key="s" :class="{active: subject===s}" @click="switchSubject(s)">{{s}}</button>
       </div>
       <button class="icon-btn" @click="showToast('🔔 暂无新通知，加油学习！')">🔔</button>
       <div class="me">
@@ -416,7 +423,7 @@
             <div class="form-grid">
               <div class="form-item">
                 <label>学科</label>
-                <select v-model="subject" @change="onSubjectChange"><option>数学</option><option>语文</option><option>英语</option></select>
+                <select v-model="subject" @change="onSubjectChange"><option v-for="s in subjectOptions" :key="'gen-'+s">{{s}}</option></select>
               </div>
               <div class="form-item">
                 <label>题数</label>
@@ -1231,7 +1238,7 @@
             </div>
             <div class="form-item"><label>年级</label>
               <select v-model="aiQuiz.grade">
-                <option v-for="g in [3,4,5,6,7,8,9]" :value="g">{{g}}年级</option>
+                <option v-for="g in [1,2,3,4,5,6,7,8,9]" :key="'aiq-'+g" :value="g">{{g}}年级</option>
               </select>
             </div>
           </div>
@@ -1383,8 +1390,8 @@
           <div class="card-head"><b>👤 个人信息</b></div>
           <div class="form-grid" style="margin-top:16px">
             <div class="form-item"><label>用户名</label><input :value="user" disabled style="background:var(--bg)"></div>
-            <div class="form-item"><label>年级</label><select v-model="grade" @change="onGradeChange"><option v-for="g in [3,4,5,6,7,8,9]" :value="g">{{g}}年级</option></select></div>
-            <div class="form-item"><label>默认学科</label><select v-model="subject" @change="onSubjectChange"><option>数学</option><option>语文</option><option>英语</option></select></div>
+            <div class="form-item"><label>年级</label><select v-model="grade" @change="onGradeChange"><option v-for="g in [1,2,3,4,5,6,7,8,9]" :key="'set-'+g" :value="g">{{g}}年级</option></select></div>
+            <div class="form-item"><label>默认学科</label><select v-model="subject" @change="onSubjectChange"><option v-for="s in subjectOptions" :key="'def-'+s">{{s}}</option></select></div>
           </div>
           <p class="card-desc">当前年级：{{grade}}年级 · 每年9月自动升一年级 · 学习数据按用户名保存在本地服务器</p>
         </div>
@@ -1532,6 +1539,40 @@
               <button class="btn btn-primary btn-sm" @click="saveExamSettings()">保存</button>
             </div>
             <p class="pc-hint">范围 1-50 题。比如数学设 20，孩子怎么选都不会少于 20 题</p>
+          </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">📅 学习同步设置 <span class="more">学期解锁 · 课堂同步 · 小升初衔接</span></div>
+            <div class="pc-row" style="justify-content:space-between">
+              <span style="font-size:13px;color:#3a4a6b">预习下学期（提前解锁下学期词书/古诗文）</span>
+              <button class="btn btn-sm" :class="studyFlags.include_next ? 'btn-primary' : 'btn-ghost'" @click="toggleStudyFlag('include_next')">{{studyFlags.include_next ? '已开启' : '已关闭'}}</button>
+            </div>
+            <div class="pc-row" style="justify-content:space-between">
+              <span style="font-size:13px;color:#3a4a6b">课堂同步（背单词/听写按教学进度的当前单元）</span>
+              <button class="btn btn-sm" :class="studyFlags.sync_mode ? 'btn-primary' : 'btn-ghost'" @click="toggleStudyFlag('sync_mode')">{{studyFlags.sync_mode ? '已开启' : '已关闭'}}</button>
+            </div>
+            <div class="pc-row" style="justify-content:space-between" v-if="grade===6">
+              <span style="font-size:13px;color:#3a4a6b">小升初衔接（六年级新学批次混入 30% 七年级内容）</span>
+              <button class="btn btn-sm" :class="studyFlags.xsc_bridge ? 'btn-primary' : 'btn-ghost'" @click="toggleStudyFlag('xsc_bridge')">{{studyFlags.xsc_bridge ? '已开启' : '已关闭'}}</button>
+            </div>
+            <p class="pc-hint">预习：提前学下学期内容；课堂同步需先在下方设置教学进度；衔接仅六年级生效</p>
+          </div>
+
+          <div class="pc-sec">
+            <div class="pc-title">📖 教学进度 <span class="more">孩子英语当前词书/单元，课堂同步按此出题</span></div>
+            <div class="pc-row" style="flex-wrap:wrap;gap:8px">
+              <select v-model.number="teachProgress.book_id" class="fill-input" style="max-width:220px" @change="onTeachBookChange()">
+                <option :value="0">选择词书</option>
+                <option v-for="b in teachBooks" :key="b.book_id" :value="b.book_id">{{b.book_name}}（{{b.semester}}学期）</option>
+              </select>
+              <select v-model="teachProgress.chapter" class="fill-input" style="max-width:130px">
+                <option value="">选择单元</option>
+                <option v-for="u in teachUnitOptions" :key="u">{{u}}</option>
+              </select>
+              <button class="btn btn-primary btn-sm" @click="saveTeachProgress()">保存进度</button>
+            </div>
+            <p class="pc-hint" v-if="teachProgressText">当前进度：{{teachProgressText}}</p>
+            <p class="pc-hint" v-else>尚未设置；开启「课堂同步」后，背单词/听写只出当前单元的词汇，额度不足时回退全量</p>
           </div>
 
           <div class="pc-sec">

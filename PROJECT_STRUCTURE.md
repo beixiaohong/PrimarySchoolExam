@@ -1,6 +1,6 @@
 # 智学学堂 · 项目结构与工作量评估
 
-> 最后更新：2026-08-11
+> 最后更新：2026-08-12（初中九科 + 学期解锁 + 课堂同步落地）
 
 ---
 
@@ -13,7 +13,7 @@
 | 前端 | Vue 3 + Vite 工程化（web/） | SPA，构建产物 web/dist 由后端托管；frontend/ 旧版已废弃 |
 | AI 接入 | 智谱 GLM / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档生成 | python-docx + matplotlib + edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | tests/ 目录 48 个回归用例，临时 SQLite 隔离 |
+| 测试 | pytest + FastAPI TestClient | tests/ 目录 57 个回归用例，临时 SQLite 隔离 |
 
 ---
 
@@ -42,7 +42,7 @@ app/config.py                   # 全局配置：数据库路径、输出目录�
 app/database.py                 # SQLAlchemy 引擎、会话工厂、Base 声明、init_db()
 ```
 
-### app/models/ — 数据模型（21 个文件）
+### app/models/ — 数据模型（22 个文件）
 
 ```
 app/models/__init__.py          # 统一导出所有模型
@@ -52,7 +52,8 @@ app/models/phrase.py            # Phrase + Sentence — 英语词组与句子
 app/models/problem_type.py      # ProblemCategory + ProblemType — 数学题型分类树
 app/models/exam.py              # ExamRecord/Question/WrongRecord/ExamAttempt/AttemptAnswer — 试卷与错题
 app/models/vocab.py             # VocabProgress + VocabDailyLog — 背单词进度（艾宾浩斯曲线）
-app/models/classical.py         # ClassicalText + ClassicalProgress + ClassicalDailyLog — 古诗文背诵
+app/models/classical.py         # ClassicalText + ClassicalProgress + ClassicalDailyLog — 古诗文背诵（含 semester 学期字段）
+app/models/middle.py            # MiddleQuestion + TeachingProgress — 初中六科静态题库与教学进度
 app/models/grammar.py           # GrammarPoint + GrammarExercise — 英语语法知识点与练习
 app/models/study_error.py       # StudyError — 学习模块错题（背诵/语法/听写，独立于试卷错题）
 app/models/daily_task.py        # DailyTask — 每日任务（三科，家长可配置目标数）
@@ -128,6 +129,8 @@ app/services/figure_renderer.py # matplotlib 数学图形生成
 app/services/init_data.py       # 种子数据初始化（题型/单词/词组/古诗文）
 app/services/judge.py           # AI 答案复核/重判服务
 app/services/math_generator.py  # 数学出题器（24+ 题型，注册表模式 @register）
+app/services/middle_generator.py # 初中六科出题器（物理/化学/生物/道德与法治/历史/地理，静态题库抽题）
+app/services/semester.py        # 学期判断公共函数（9-1月=上/2-8月=下）
 ```
 
 ### app/migrations/ — 数据库迁移系统
@@ -135,7 +138,7 @@ app/services/math_generator.py  # 数学出题器（24+ 题型，注册表模式
 ```
 app/migrations/__init__.py
 app/migrations/runner.py        # 迁移执行器（启动时自动运行，幂等执行）
-app/migrations/versions/        # 28 个版本化迁移脚本
+app/migrations/versions/        # 33 个版本化迁移脚本
     001_exam_records_user_id.py    # 对齐 exam_records.user_id 列
     002_classical_seed.py          # 导入古诗文种子数据（1-6 年级）
     003_daily_tasks.py             # 创建 daily_tasks 表
@@ -164,17 +167,25 @@ app/migrations/versions/        # 28 个版本化迁移脚本
     026_user_auth.py               # 用户认证（邮箱/密码/验证码，方言兼容）
     027_admin.py                   # 管理员账号表 + 初始 admin
     028_wish_deadline.py           # 心愿截止日期字段
+    029_classical_semester.py      # classical_texts 加 semester 列（MySQL-only）
+    030_teaching_progress.py       # 教学进度表 teaching_progress（MySQL-only）
+    031_problem_type_chapter.py    # problem_types 加 textbook_chapter 列（MySQL-only）
+    032_classical_middle_seed.py   # 初中必背古诗文 48 篇种子（grade 7-9，MySQL-only）
+    033_middle_question_seed.py    # 初中六科题库种子（每科 20 题，MySQL-only）
 ```
 
 **MySQL 基线策略**（runner.py）：001-025 均为 SQLite 方言存量迁移，
 MySQL 侧由 `Base.metadata.create_all` 直接建表，启动时自动把这些版本预置为已执行；
-026 及之后的迁移必须用方言兼容写法（两种驱动都会真实执行）。
+026-028 用方言兼容写法（两种驱动都会真实执行）；
+**029 及之后为 MySQL-only 迁移**：SQLite 驱动直接跳过并标记已应用（表结构由 create_all 兜底），
+种子类数据在测试环境由用例自行插入。
 数据迁移工具见 tools/sqlite_to_mysql.py（逐表迁移 + 行数对账 + --ensure-admin 补建管理员）。
 
 ### app/data/ — 种子数据
 
 ```
 app/data/words_primary_school.csv      # 1,968 个小学英语单词（人教版 3-6 年级）
+app/data/words_middle_school.csv       # 434 个初中英语单词（人教版 7-9 年级，种子版需人工扩充）
 app/data/phrases_primary_school.csv    # 118 个英语词组
 app/data/sentences_primary_school.csv  # 77 个英语句子
 ```
@@ -219,6 +230,7 @@ tests/test_auth_user.py         # 注册/登录/验证码/频控
 tests/test_exam.py              # 出卷/判分/错题本/自动难度定档（含去空题口径）/30%错题题型
 tests/test_tasks.py             # 每日任务/多强制任务 roundtrip/补签卡
 tests/test_recite.py            # 背诵多轮无上限 + session-quiz 理解型检测
+tests/test_middle.py            # 初中九科：六科出卷+年级守卫/mid_*题型/学期过滤+include_next/progress守卫+sync_mode/xsc_bridge/promoted
 tests/test_parent.py            # 家长密码守卫/留言
 tests/test_rewards.py           # 奖励券/心愿/练习判分
 tests/test_admin.py             # 管理员登录与后台接口

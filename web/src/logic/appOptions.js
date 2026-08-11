@@ -3,6 +3,10 @@ const appOptions = {
     return {
       // 登录
       user: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
+      promotedInfo: null,   // 升年级引导弹窗（登录响应 promoted）
+      // 学习同步（家长面板）：预习/课堂同步/小升初衔接 + 教学进度
+      studyFlags: { include_next: false, sync_mode: false, xsc_bridge: false },
+      teachBooks: [], teachProgressItems: [], teachProgress: { book_id: 0, chapter: '' },
       // 认证（P2：注册/登录/重置/绑定）
       authMode: 'login', loginPwd: '', authInfo: {},
       regTarget: '', regCode: '', regPwd: '', regNickname: '',
@@ -130,6 +134,20 @@ const appOptions = {
       // 账号为邮箱/手机号时需要密码；昵称走快捷入口
       const a = (this.username || '').trim();
       return /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(a) || /^1\d{10}$/.test(a);
+    },
+    subjectOptions() {
+      // 九科：初中（grade>=7）额外显示物理/化学/生物/道德与法治/历史/地理
+      const base = ['数学', '语文', '英语'];
+      return this.grade >= 7 ? base.concat(['物理', '化学', '生物', '道德与法治', '历史', '地理']) : base;
+    },
+    teachUnitOptions() {
+      const b = (this.teachBooks || []).find(x => x.book_id === this.teachProgress.book_id);
+      return b ? b.units : [];
+    },
+    teachProgressText() {
+      const it = (this.teachProgressItems || []).find(x => x.subject === '英语');
+      if (!it || (!it.book_name && !it.chapter)) return '';
+      return [it.book_name, it.chapter].filter(Boolean).join(' · ');
     },
     greeting() {
       const h = new Date().getHours();
@@ -341,11 +359,18 @@ const appOptions = {
       this.showToast(`欢迎回来，${r.user_id}！`);
       this.loadAuthInfo();
       this.loadWeather();
+      // 升年级引导：9月1日自动升级后登录弹窗
+      if (r.promoted) {
+        this.promotedInfo = { prev_grade: r.prev_grade || (r.new_grade || r.grade) - 1, new_grade: r.new_grade || r.grade };
+      }
       if (r.is_new || !r.grade) {
         this.showGradeModal = true;
       } else {
         this.refreshAll();
       }
+    },
+    closePromoted() {
+      this.promotedInfo = null;
     },
     register() {
       const target = this.regTarget.trim();
@@ -474,6 +499,7 @@ const appOptions = {
       this.saveUser();
     },
     onGradeChange() {
+      this._normalizeSubjectForGrade();
       this.saveUser();
       this.api('/api/user/grade', {
         method: 'POST',
@@ -482,10 +508,17 @@ const appOptions = {
     },
     selectInitialGrade() {
       this.showGradeModal = false;
+      this._normalizeSubjectForGrade();
       this.api('/api/user/grade', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, grade: this.grade }),
       }).then(() => { this.saveUser(); this.refreshAll(); }).catch(() => { this.refreshAll(); });
+    },
+    _normalizeSubjectForGrade() {
+      // 降回小学年级时，初中专属学科回退为英语
+      if (this.grade < 7 && ['物理', '化学', '生物', '道德与法治', '历史', '地理'].indexOf(this.subject) >= 0) {
+        this.subject = '英语';
+      }
     },
     onSubjectChange() {
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;
@@ -1538,6 +1571,7 @@ const appOptions = {
         }).catch(() => { this.allCoupons = []; this.pendingWishes = []; });
       this.loadTaskSettings();
       this.loadAppeals();
+      this.loadTeachPanel();
     },
     /* ─────────── 孩子申诉（AI 判题复核 + 家长二次确认）─────────── */
     loadAppeals() {
@@ -1731,8 +1765,53 @@ const appOptions = {
       this.api(`/api/tasks/settings?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
           this.taskSettings = d || { items: [] };
+          this.studyFlags = Object.assign(
+            { include_next: false, sync_mode: false, xsc_bridge: false },
+            (d && d.study_flags) || {},
+          );
         })
         .catch(() => { this.taskSettings = { items: [] }; });
+    },
+    /* ─────────── 学习同步（预习/课堂同步/衔接开关 + 教学进度） ─────────── */
+    toggleStudyFlag(key) {
+      const next = !this.studyFlags[key];
+      this.api('/api/tasks/settings', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, settings: { [key]: next } }),
+      }).then(d => {
+        this.studyFlags[key] = next;
+        if (d && d.study_flags) this.studyFlags = Object.assign(this.studyFlags, d.study_flags);
+        const label = { include_next: '预习下学期', sync_mode: '课堂同步', xsc_bridge: '小升初衔接' }[key] || key;
+        this.showToast((next ? '已开启：' : '已关闭：') + label);
+      }).catch(e => this.showToast(e.message));
+    },
+    loadTeachPanel() {
+      this.api(`/api/study/progress/options?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}&subject=英语`)
+        .then(d => { this.teachBooks = (d && d.books) || []; })
+        .catch(() => { this.teachBooks = []; });
+      this.api(`/api/study/progress?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => {
+          this.teachProgressItems = (d && d.items) || [];
+          const eng = this.teachProgressItems.find(x => x.subject === '英语');
+          if (eng) this.teachProgress = { book_id: eng.book_id || 0, chapter: eng.chapter || '' };
+        }).catch(() => { this.teachProgressItems = []; });
+    },
+    onTeachBookChange() {
+      // 切册后当前单元不在新册内则清空
+      if (this.teachProgress.chapter && this.teachUnitOptions.indexOf(this.teachProgress.chapter) < 0) {
+        this.teachProgress.chapter = '';
+      }
+    },
+    saveTeachProgress() {
+      this.api('/api/study/progress', {
+        method: 'PUT',
+        body: JSON.stringify({
+          user_id: this.user, subject: '英语',
+          book_id: this.teachProgress.book_id || 0,
+          chapter: this.teachProgress.chapter || '',
+        }),
+      }).then(() => { this.showToast('教学进度已保存'); this.loadTeachPanel(); })
+        .catch(e => this.showToast(e.message));
     },
     showTaskSettingsDialog() {
       // 初始化弹窗数据
