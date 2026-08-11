@@ -1,7 +1,8 @@
 """试卷生成 API 路由
 
 功能：
-  - 生成数学/英语试卷（Word下载），题目自动入库（试卷不绑定用户）
+  - 生成九科试卷（Word下载），题目自动入库（试卷不绑定用户）
+    小学三科：数学/英语/语文；初中新增六科：物理/化学/生物/道德与法治/历史/地理
   - 查看试卷记录、试卷题目
   - 标记/取消错题（按用户）、标记已掌握
   - 错题列表查询（按用户）
@@ -28,6 +29,7 @@ from ..schemas.exam import (
     ExamCreateRequest, ExamOut, QuestionOut, WrongRecordOut,
     MarkWrongRequest, WrongPracticeRequest,
 )
+from ..services.middle_generator import MIDDLE_SUBJECTS
 
 router = APIRouter()
 
@@ -160,8 +162,13 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
         filepath, questions_data = _generate_english_exam(req, db)
     elif req.subject == "语文":
         filepath, questions_data = _generate_chinese_exam(req, db)
+    elif req.subject in MIDDLE_SUBJECTS:
+        # 初中六科：仅 7-9 年级可出
+        if req.grade < 7:
+            raise HTTPException(400, f"{req.subject}为初中科目，需 7 年级及以上")
+        filepath, questions_data = _generate_middle_exam(req, db)
     else:
-        raise HTTPException(400, "学科仅支持：数学 / 英语 / 语文")
+        raise HTTPException(400, "学科仅支持：数学 / 英语 / 语文 / 物理 / 化学 / 生物 / 道德与法治 / 历史 / 地理")
 
     from datetime import datetime as _dt
     title = req.title or f"{_dt.now().strftime('%y%m%d%H%M%S')}{req.subject}{len(questions_data)}题{req.difficulty}卷"
@@ -1243,6 +1250,43 @@ def _generate_chinese_exam(req: ExamCreateRequest, db: Session):
             questions_data.append({
                 "seq": seq,
                 "category": "语文",
+                "type_code": etype,
+                "type_name": type_name,
+                "question": item["question"],
+                "answer": item["answer"],
+                "options": item.get("options"),
+                "difficulty": 1,
+            })
+    return filepath, questions_data
+
+
+def _generate_middle_exam(req: ExamCreateRequest, db: Session):
+    """生成初中六科（物理/化学/生物/道德与法治/历史/地理）试卷，返回 (文件路径, 题目数据列表)"""
+    from ..services.middle_generator import generate_middle_exam, TYPE_NAMES, MIDDLE_SUBJECTS
+    from ..services.docx_service import build_english_docx
+    from ..services.semester import stage_label
+
+    exercises = generate_middle_exam(
+        subject=req.subject,
+        grade=req.grade,
+        count=req.english_count,
+        db=db,
+    )
+    default_title = f"{stage_label(req.grade)}{req.grade}年级{req.subject}练习"
+    filepath = build_english_docx(
+        exercises, req.grade, title=req.title or default_title,
+        type_names={"choice": f"{req.subject}选择题"}, filename_prefix=req.subject,
+    )
+
+    questions_data = []
+    seq = 0
+    for etype, items in exercises.items():
+        type_name = TYPE_NAMES.get(etype, etype)
+        for item in items:
+            seq += 1
+            questions_data.append({
+                "seq": seq,
+                "category": req.subject,
                 "type_code": etype,
                 "type_name": type_name,
                 "question": item["question"],

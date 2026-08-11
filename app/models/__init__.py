@@ -22,6 +22,7 @@ from .focus import FocusSession
 from .mood import MoodCheckin
 from .ai_usage import AIUsageLog, WeeklyReport, AiQa
 from .sprint4 import ChallengeRecord, TeachingRecord
+from .middle import MiddleQuestion, TeachingProgress
 
 __all__ = [
     "Word", "WordBook",
@@ -49,4 +50,5 @@ __all__ = [
     "MoodCheckin",
     "AIUsageLog", "WeeklyReport", "AiQa",
     "ChallengeRecord", "TeachingRecord",
+    "MiddleQuestion", "TeachingProgress",
 ]

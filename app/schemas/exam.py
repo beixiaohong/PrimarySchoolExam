@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class ExamCreateRequest(BaseModel):
     """试卷生成请求（不绑定用户，试卷为公共资源）"""
-    subject: str = Field(..., description="学科：数学/英语")
+    subject: str = Field(..., description="学科：数学/英语/语文/物理/化学/生物/道德与法治/历史/地理（后六科仅 7-9 年级）")
     title: Optional[str] = Field(None, description="试卷标题，不填则自动生成")
     grade: int = Field(6, ge=1, le=9)
     difficulty: str = Field("综合", description="基础/提高/拔高/综合")

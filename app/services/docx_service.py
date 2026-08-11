@@ -45,8 +45,9 @@ def build_math_docx(
     section.left_margin = Cm(2.5)
     section.right_margin = Cm(2.5)
 
-    # 标题
-    title_text = title or f"小学{grade}年级数学练习（{difficulty}）"
+    # 标题（学段按年级判断：1-6 小学 / 7-9 初中）
+    from .semester import stage_label
+    title_text = title or f"{stage_label(grade)}{grade}年级数学练习（{difficulty}）"
     h = doc.add_heading(title_text, level=1)
     h.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -136,7 +137,8 @@ def build_english_docx(
     section.left_margin = Cm(2.5)
     section.right_margin = Cm(2.5)
 
-    title_text = title or f"小学{grade}年级英语练习"
+    from .semester import stage_label
+    title_text = title or f"{stage_label(grade)}{grade}年级英语练习"
     h = doc.add_heading(title_text, level=1)
     h.alignment = WD_ALIGN_PARAGRAPH.CENTER
 

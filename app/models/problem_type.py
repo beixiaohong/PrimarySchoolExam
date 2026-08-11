@@ -38,6 +38,7 @@ class ProblemType(Base):
     params_schema = Column(Text, default="{}", comment="生成参数JSON Schema")
     is_active = Column(Boolean, default=True, comment="是否启用")
     weight = Column(Integer, default=10, comment="出题权重")
+    textbook_chapter = Column(String(100), default="", comment="教材章节映射，如 五年级上·第3单元·小数除法（迁移 031 新增）")
     description = Column(String(200), default="", comment="题型说明")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 

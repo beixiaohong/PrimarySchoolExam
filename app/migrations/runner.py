@@ -2,7 +2,10 @@
 
 MySQL 基线策略：001-025 旧迁移均为 SQLite 方言（建表/重建表/种子数据），
 MySQL 侧改由 Base.metadata.create_all 直接建表，启动时把存量迁移版本
-预置为已执行；此后的新迁移需用方言兼容写法（两种驱动都会执行）。
+预置为已执行。
+
+MySQL-only 策略（029+）：生产环境为 MySQL，029 及之后的迁移只为 MySQL 编写；
+SQLite 驱动（仅测试环境）直接跳过并标记为已执行，表结构由 create_all 兜底。
 """
 import importlib
 import logging
@@ -26,6 +29,9 @@ MIGRATIONS_TABLE = Table(
 )
 
 VERSIONS_DIR = "app.migrations.versions"
+
+# 029 起为 MySQL-only 迁移：SQLite（仅测试环境）跳过，建表靠 create_all
+MYSQL_ONLY_BASELINE = "029"
 
 
 def run_migrations() -> list:
@@ -53,6 +59,19 @@ def run_migrations() -> list:
     with Session(engine) as db:
         for row in db.execute(text("SELECT version FROM schema_migrations")):
             applied.add(row[0])
+
+    # SQLite（测试环境）：MySQL-only 迁移不执行，直接标记为已应用
+    if DB_DRIVER == "sqlite":
+        with Session(engine) as db:
+            for name in versions:
+                if name >= MYSQL_ONLY_BASELINE and name not in applied:
+                    logger.info("SQLite 跳过 MySQL-only 迁移: %s", name)
+                    db.execute(
+                        text("INSERT INTO schema_migrations (version, applied_at) VALUES (:v, :t)"),
+                        {"v": name, "t": datetime.now()},
+                    )
+                    applied.add(name)
+            db.commit()
 
     executed = []
     for name in versions:
