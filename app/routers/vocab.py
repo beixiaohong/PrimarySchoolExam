@@ -1,4 +1,6 @@
 """背单词路由 - 艾宾浩斯记忆曲线"""
+import random
+import re
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
@@ -116,20 +118,14 @@ def get_today_words(
                     review_stage=p.review_stage,
                 ))
 
-    # 2. 获取今日新词（排除已学过的）
+    # 2. 获取新词（排除已学过的）：不限制每日轮数，每轮按额度返回下一批未学词
     learned_word_ids = db.query(VocabProgress.word_id).filter(
         VocabProgress.user_id == user_id
     ).subquery()
 
-    # 今天已经学过的词
-    today_log = db.query(VocabDailyLog).filter(
-        VocabDailyLog.user_id == user_id,
-        VocabDailyLog.learn_date == today
-    ).first()
-    already_new_today = today_log.new_words_learned if today_log else 0
-    # 每日新学额度由家长配置（默认 NEW_WORDS_PER_DAY）
+    # 每轮新学额度由家长配置（默认 NEW_WORDS_PER_DAY）
     from .tasks import get_daily_quota
-    remaining_new = max(0, get_daily_quota(db, user_id, "daily_new_words") - already_new_today)
+    remaining_new = get_daily_quota(db, user_id, "daily_new_words")
 
     new_words = []
     if remaining_new > 0:
@@ -273,6 +269,183 @@ def submit_review(
 
     db.commit()
     return {"updated": len(results), "details": results}
+
+
+# ═══════════════════════════════════════════════════════════
+# 背诵会话检测：混合题型（默写 + 理解型），理解题随复习阶段递增
+# ═══════════════════════════════════════════════════════════
+
+_VOCAB_UNDERSTAND_TYPES = ["meaning_choice", "reverse_choice", "context_fill", "spelling_choice"]
+
+
+def _vocab_choice_item(w: Word, kind: str, question: str, correct: str,
+                       distractors: list, context: str) -> Optional[dict]:
+    """组装选择题；干扰项去重后不足则降级选项数，无干扰项则弃用"""
+    ds = []
+    for d in distractors:
+        d = (d or "").strip()
+        if d and d != correct and d not in ds:
+            ds.append(d)
+    if not ds:
+        return None
+    options = [correct] + random.sample(ds, min(3, len(ds)))
+    random.shuffle(options)
+    return {
+        "word_id": w.id, "word": w.word,
+        "kind": "choice", "q_type": kind,
+        "question": question, "answer": correct,
+        "options": options, "context": context,
+    }
+
+
+def _vocab_distractor_pool(db: Session, book_ids: list, field: str, exclude: str,
+                           limit: int = 60) -> list:
+    """从同年级词库取干扰项（释义或单词）"""
+    col = Word.meaning if field == "meaning" else Word.word
+    rows = db.query(col).filter(Word.book_id.in_(book_ids)).all()
+    pool = []
+    for (v,) in rows:
+        v = (v or "").strip()
+        if v and v != exclude and v not in pool:
+            pool.append(v)
+    random.shuffle(pool)
+    return pool[:limit]
+
+
+def _spelling_variants(word: str, n: int = 3) -> list:
+    """拼写干扰项：相邻换位/字母替换/删增"""
+    letters = "abcdefghijklmnopqrstuvwxyz"
+    variants = set()
+    w = word.strip()
+    if len(w) < 2:
+        return []
+    for _ in range(60):
+        if len(variants) >= n:
+            break
+        op = random.choice(["swap", "replace", "delete", "insert"])
+        s = list(w)
+        if op == "swap" and len(s) >= 2:
+            i = random.randrange(len(s) - 1)
+            s[i], s[i + 1] = s[i + 1], s[i]
+        elif op == "replace":
+            i = random.randrange(len(s))
+            s[i] = random.choice([c for c in letters if c != s[i]])
+        elif op == "delete" and len(s) > 2:
+            s.pop(random.randrange(len(s)))
+        elif op == "insert":
+            s.insert(random.randrange(len(s) + 1), random.choice(letters))
+        v = "".join(s)
+        if v != w:
+            variants.add(v)
+    return list(variants)[:n]
+
+
+def _vocab_session_items_for_word(db: Session, w: Word, stage: int,
+                                 book_ids: list, sentence_cache: list) -> list:
+    """每词 4 题：stage0 全默写 → stage1 2+2 → stage2-3 1+3 → stage4+ 全理解"""
+    if stage <= 0:
+        n_dict = 4
+    elif stage == 1:
+        n_dict = 2
+    elif stage <= 3:
+        n_dict = 1
+    else:
+        n_dict = 0
+    items = []
+    for _ in range(n_dict):
+        items.append({
+            "word_id": w.id, "word": w.word,
+            "kind": "fill", "q_type": "dictate",
+            "question": f"根据释义默写单词：{w.meaning}"
+                        + (f"（音标：{w.phonetic}）" if w.phonetic else ""),
+            "answer": w.word, "options": None,
+            "context": "服务端判分，忽略大小写",
+        })
+    under_pool = _VOCAB_UNDERSTAND_TYPES[:]
+    random.shuffle(under_pool)
+    meaning_pool = None
+    word_pool = None
+    for t in under_pool:
+        if len(items) >= 4:
+            break
+        item = None
+        if t == "meaning_choice":
+            meaning_pool = meaning_pool or _vocab_distractor_pool(db, book_ids, "meaning", w.meaning)
+            item = _vocab_choice_item(
+                w, t, f"单词 「{w.word}」 的中文释义是？", (w.meaning or "").strip(),
+                meaning_pool, "选择正确释义")
+        elif t == "reverse_choice":
+            word_pool = word_pool or _vocab_distractor_pool(db, book_ids, "word", w.word)
+            item = _vocab_choice_item(
+                w, t, f"「{w.meaning}」对应的英文单词是？", (w.word or "").strip(),
+                word_pool, "选择正确单词")
+        elif t == "context_fill":
+            # 从句子库查含该词的句子抠空；无合适句回退释义选择
+            pat = re.compile(r"\b" + re.escape(w.word) + r"\b", re.IGNORECASE)
+            sents = [s for s in sentence_cache if pat.search(s)]
+            if sents:
+                sent = random.choice(sents)
+                blanked = pat.sub("____", sent, count=1)
+                item = _vocab_choice_item(
+                    w, t, f"选择正确的单词填入句子：{blanked}", (w.word or "").strip(),
+                    word_pool or _vocab_distractor_pool(db, book_ids, "word", w.word),
+                    "语境填空")
+            else:
+                meaning_pool = meaning_pool or _vocab_distractor_pool(db, book_ids, "meaning", w.meaning)
+                item = _vocab_choice_item(
+                    w, "meaning_choice", f"单词 「{w.word}」 的中文释义是？",
+                    (w.meaning or "").strip(), meaning_pool, "选择正确释义")
+        elif t == "spelling_choice":
+            variants = _spelling_variants(w.word, 3)
+            item = _vocab_choice_item(
+                w, t, f"「{w.meaning}」的正确拼写是？", (w.word or "").strip(),
+                variants, "拼写辨析")
+        if item:
+            items.append(item)
+    # 理解题生成失败时用默写题补足 4 题
+    while len(items) < 4:
+        items.append({
+            "word_id": w.id, "word": w.word,
+            "kind": "fill", "q_type": "dictate",
+            "question": f"根据释义默写单词：{w.meaning}",
+            "answer": w.word, "options": None,
+            "context": "服务端判分，忽略大小写",
+        })
+    return items[:4]
+
+
+@router.get("/session-quiz", summary="背诵会话检测：每词 4 题混合题型（理解题随复习阶段递增）")
+def vocab_session_quiz(
+    user_id: str = Query(...),
+    word_ids: str = Query(..., description="单词ID，逗号分隔"),
+    mode: str = Query("new", description="new=新学 / review=复习"),
+    grade: int = Query(6),
+    db: Session = Depends(get_db),
+):
+    from ..models.phrase import Sentence
+    ids = []
+    for s in (word_ids or "").split(","):
+        s = s.strip()
+        if s.isdigit():
+            ids.append(int(s))
+    if not ids:
+        raise HTTPException(400, "word_ids 不能为空")
+    words = db.query(Word).filter(Word.id.in_(ids)).all()
+    if not words:
+        raise HTTPException(404, "单词不存在")
+    stages = {}
+    if mode != "new":
+        for p in db.query(VocabProgress).filter(
+                VocabProgress.user_id == user_id,
+                VocabProgress.word_id.in_(ids)).all():
+            stages[p.word_id] = p.review_stage
+    book_ids = _get_grade_books(db, grade) or [w.book_id for w in words]
+    sentence_cache = [s for (s,) in db.query(Sentence.sentence_en).all() if s]
+    items = []
+    for w in words:
+        items.extend(_vocab_session_items_for_word(db, w, stages.get(w.id, 0),
+                                                   book_ids, sentence_cache))
+    return {"items": items}
 
 
 # ═══════════════════════════════════════════════════════════

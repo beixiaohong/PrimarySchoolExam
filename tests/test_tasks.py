@@ -195,6 +195,80 @@ def test_optional_conflicts_with_mandatory(client):
     assert "chi_exam" in codes
 
 
+def test_mandatory_multiple_roundtrip(client):
+    """强制任务支持每科追加多个：保存 → 回显 → 今日任务全部生成"""
+    uid = "多强制配置生"
+    _ensure_parent_pwd(client, uid)
+    mandatory = {
+        "数学": ["math_fix", "math_challenge"],
+        "语文": ["chi_exam", "chi_dictation"],
+        "英语": ["eng_dictation"],
+    }
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"mandatory": mandatory},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+
+    # 回显：读回配置，追加项原样返回（默认任务不进配置）
+    r = client.get("/api/tasks/settings", params={"user_id": uid})
+    assert r.json()["mandatory"] == mandatory
+
+    # 今日任务：每科默认强制任务 + 全部追加项都生成，且均为 mandatory
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    assert r.status_code == 200, r.text
+    tasks = r.json()["tasks"]
+    mand_codes = {t["task_code"] for t in tasks if t["mandatory"]}
+    # 三科默认任务固定保留
+    assert {"math_exam", "chi_classical", "eng_vocab"} <= mand_codes
+    # 追加项全部出现
+    for subj_codes in mandatory.values():
+        assert set(subj_codes) <= mand_codes
+    # 无重复行
+    all_codes = [t["task_code"] for t in tasks if t["mandatory"]]
+    assert len(all_codes) == len(set(all_codes))
+
+
+def test_mandatory_default_code_dropped(client):
+    """提交里带默认任务 code（如 math_exam）被静默去掉，不与默认行重复"""
+    uid = "多强制去重生"
+    _ensure_parent_pwd(client, uid)
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid,
+        "settings": {"mandatory": {"数学": ["math_exam", "math_fix"]}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    r = client.get("/api/tasks/settings", params={"user_id": uid})
+    assert r.json()["mandatory"]["数学"] == ["math_fix"]
+
+
+def test_mandatory_legacy_str_compat(client):
+    """旧格式单 code 字符串兼容：读回时归一化为列表"""
+    uid = "多强制旧格式生"
+    _ensure_parent_pwd(client, uid)
+    # 旧格式：每科为单个字符串
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"mandatory": {"语文": "chi_exam"}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    r = client.get("/api/tasks/settings", params={"user_id": uid})
+    assert r.json()["mandatory"]["语文"] == ["chi_exam"]
+
+
+def test_mandatory_invalid_code_rejected(client):
+    """追加不存在的 code 或跨学科 code 被拒"""
+    uid = "多强制非法生"
+    _ensure_parent_pwd(client, uid)
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"mandatory": {"数学": ["not_a_task"]}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 400
+    # 跨学科：把语文任务塞进数学
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"mandatory": {"数学": ["chi_exam"]}},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 400
+
+
 def test_makeup_card_granted_once(client):
     """补签卡：每天只发 1 张，重复刷新不重复发放"""
     from datetime import date

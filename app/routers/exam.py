@@ -19,7 +19,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -30,6 +30,101 @@ from ..schemas.exam import (
 )
 
 router = APIRouter()
+
+
+# ═══════════════ 自动难度与错题题型分布 ═══════════════
+
+def _auto_difficulty(db: Session, user_id: str, subject: str) -> str:
+    """按该科最近 5 次交卷平均分自动定难度档；无记录默认「综合」
+
+    平均分口径：去掉未作答的空题，按「正确数/实际作答题数」折算百分制，
+    避免空题拉低分数导致难度误判；整卷未作答的记录不计入平均。
+    """
+    attempts = db.query(ExamAttempt).join(
+        ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
+        ExamAttempt.user_id == user_id, ExamRecord.subject == subject,
+    ).order_by(ExamAttempt.id.desc()).limit(5).all()
+    if not attempts:
+        return "综合"
+    # 逐题作答明细：统计每次实际作答题数与正确数（空题剔除）
+    ans_rows = db.query(
+        AttemptAnswer.attempt_id,
+        func.count(AttemptAnswer.id),
+        func.sum(case((AttemptAnswer.is_correct == True, 1), else_=0)),  # noqa: E712
+    ).filter(
+        AttemptAnswer.attempt_id.in_([a.id for a in attempts]),
+        AttemptAnswer.user_answer != "",
+        AttemptAnswer.user_answer.isnot(None),
+    ).group_by(AttemptAnswer.attempt_id).all()
+    stat_map = {aid: (answered, correct or 0) for aid, answered, correct in ans_rows}
+    scores = []
+    for a in attempts:
+        answered, correct = stat_map.get(a.id, (0, 0))
+        if answered <= 0:
+            continue  # 整卷空题不计入平均
+        scores.append(correct * 100 / answered)
+    if not scores:
+        return "综合"
+    avg = sum(scores) / len(scores)
+    if avg >= 80:
+        return "拔高"
+    if avg >= 70:
+        return "提高"
+    if avg >= 60:
+        return "综合"
+    return "基础"
+
+
+def _wrong_type_counts(db: Session, user_id: str, subject: str) -> Dict[str, int]:
+    """统计用户未掌握错题的题型分布 {type_code: 错题数}"""
+    rows = db.query(Question.type_code, func.count(WrongRecord.id)).join(
+        WrongRecord, WrongRecord.question_id == Question.id).filter(
+        WrongRecord.user_id == user_id, Question.subject == subject,
+        WrongRecord.is_mastered == False,  # noqa: E712
+        Question.type_code != "",
+    ).group_by(Question.type_code).all()
+    return {c: n for c, n in rows if c}
+
+
+def _random_type_quotas(total: int, all_types: List[str], difficulty: str,
+                          hard_types: List[str]) -> Dict[str, int]:
+    """随机部分的题型配额：难度档微调权重（拔高/提高偏应用题型，基础偏基础题型）"""
+    if total < 1 or not all_types:
+        return {}
+    weights = {t: (2 if difficulty in ("拔高", "提高") else 1) if t in hard_types
+               else (1 if difficulty in ("拔高", "提高") else 2) if difficulty == "基础"
+               else 1 for t in all_types}
+    tw = sum(weights.values()) or 1
+    quotas = {t: int(total * weights[t] / tw) for t in all_types}
+    # 余数补到权重最高的题型，保证总数 == total
+    diff = total - sum(quotas.values())
+    order = sorted(all_types, key=lambda t: weights[t], reverse=True)
+    i = 0
+    while diff > 0 and order:
+        quotas[order[i % len(order)]] += 1
+        diff -= 1
+        i += 1
+    return {t: n for t, n in quotas.items() if n > 0}
+
+
+def _wrong_type_quotas(n30: int, wrong_counts: Dict[str, int],
+                       valid_types: List[str]) -> Dict[str, int]:
+    """错题题型部分配额：按错题数占比分配 n30 题量，仅限合法题型"""
+    if n30 < 1:
+        return {}
+    wc = {t: n for t, n in wrong_counts.items() if t in valid_types}
+    tw = sum(wc.values())
+    if not wc or tw <= 0:
+        return {}
+    quotas = {t: int(n30 * n / tw) for t, n in wc.items()}
+    diff = n30 - sum(quotas.values())
+    order = sorted(wc, key=wc.get, reverse=True)
+    i = 0
+    while diff > 0 and order:
+        quotas[order[i % len(order)]] += 1
+        diff -= 1
+        i += 1
+    return {t: n for t, n in quotas.items() if n > 0}
 
 
 # ═══════════════════════════════════════════════════════════
@@ -54,12 +149,10 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
                 req.english_count = max(req.english_count, m.eng_min or 0)
             elif req.subject == "语文":
                 req.english_count = max(req.english_count, m.chi_min or 0)
-            # 防刷：难度下限（孩子选低于下限时强制提升；综合卷不受限）
-            from .parent import DIFFICULTY_LEVELS
-            dmin = (m.difficulty_min or "基础") if hasattr(m, "difficulty_min") else "基础"
-            if req.difficulty in DIFFICULTY_LEVELS and dmin in DIFFICULTY_LEVELS:
-                if DIFFICULTY_LEVELS.index(req.difficulty) < DIFFICULTY_LEVELS.index(dmin):
-                    req.difficulty = dmin
+        # 难度由最近成绩自动定档（忽略客户端传入的 difficulty/题型筛选）
+        req.difficulty = _auto_difficulty(db, req.user_id, req.subject)
+    req.math_categories = None
+    req.english_types = None
 
     if req.subject == "数学":
         filepath, questions_data = _generate_math_exam(req, db)
@@ -766,19 +859,41 @@ def _wrong_record_to_out(wr: WrongRecord, db: Session = None) -> WrongRecordOut:
 
 
 def _generate_math_exam(req: ExamCreateRequest, db: Session):
-    """生成数学试卷，返回 (文件路径, 题目数据列表)"""
-    from ..services.math_generator import generate_math_problems
+    """生成数学试卷，返回 (文件路径, 题目数据列表)
+
+    70/30 分布：30% 题量按未掌握错题题型生成，其余随机。
+    """
+    from ..services.math_generator import generate_math_problems, _get_available_types
     from ..services.docx_service import build_math_docx
 
-    problems = generate_math_problems(
-        grade=req.grade,
-        difficulty=req.difficulty,
-        categories=req.math_categories,
-        problem_types=None,
-        count=req.math_count,
-        include_answer=True,
-        db=db,
-    )
+    problems = []
+    remaining = req.math_count
+    if req.user_id and remaining >= 3:
+        wrong_counts = _wrong_type_counts(db, req.user_id, req.subject)
+        avail = _get_available_types(db, req.grade, None, None) or []
+        valid_types = [t["code"] for t in avail] or list(wrong_counts.keys())
+        wq = _wrong_type_quotas(round(remaining * 0.3), wrong_counts, valid_types)
+        if wq:
+            problems = generate_math_problems(
+                grade=req.grade,
+                difficulty=req.difficulty,
+                categories=None,
+                problem_types=list(wq.keys()),
+                count=sum(wq.values()),
+                include_answer=True,
+                db=db,
+            )
+            remaining -= len(problems)
+    if remaining > 0:
+        problems += generate_math_problems(
+            grade=req.grade,
+            difficulty=req.difficulty,
+            categories=req.math_categories,
+            problem_types=None,
+            count=remaining,
+            include_answer=True,
+            db=db,
+        )
     filepath = build_math_docx(problems, req.grade, req.difficulty, title=req.title)
 
     questions_data = []
@@ -797,9 +912,11 @@ def _generate_math_exam(req: ExamCreateRequest, db: Session):
     return filepath, questions_data
 
 
-def _build_typed_paper(target: int, types_used: List[str], gen_fn) -> Dict[str, list]:
+def _build_typed_paper(target: int, types_used: List[str], gen_fn,
+                       quotas: Dict[str, int] = None) -> Dict[str, list]:
     """按目标总题数精确生成分题型试卷（英语/语文共用）。
 
+    - quotas 非空：按外部「题型→题数」配额生成（如 70/30 错题分布）
     - target < 题型数：只使用前 target 个题型，每题型 1 题
     - 否则：带余数均分（前 rem 个题型各多 1 题），保证总数 == target
     - 生成结果按题目文本去重；不足时向所有题型追加补齐（最多 3 轮）
@@ -808,12 +925,19 @@ def _build_typed_paper(target: int, types_used: List[str], gen_fn) -> Dict[str, 
     """
     if target < 1:
         return {}
-    if len(types_used) > target:
-        types_used = types_used[:target]
-
-    # 带余数均分配额
-    base, rem = divmod(target, len(types_used)) if types_used else (0, 0)
-    quotas = {t: base + (1 if i < rem else 0) for i, t in enumerate(types_used)}
+    if quotas:
+        # 外部配额：过滤非法/零配额题型，types_used 取配额键（补齐轮用）
+        quotas = {t: n for t, n in quotas.items() if t in types_used and n > 0}
+        if quotas:
+            types_used = list(quotas.keys())
+        else:
+            quotas = None
+    if not quotas:
+        if len(types_used) > target:
+            types_used = types_used[:target]
+        # 带余数均分配额
+        base, rem = divmod(target, len(types_used)) if types_used else (0, 0)
+        quotas = {t: base + (1 if i < rem else 0) for i, t in enumerate(types_used)}
 
     # 相同配额分组调用，减少生成器调用次数
     groups = {}
@@ -877,13 +1001,28 @@ def _build_typed_paper(target: int, types_used: List[str], gen_fn) -> Dict[str, 
     return {k: v for k, v in result.items() if v}
 
 
+def _paper_type_quotas(req: ExamCreateRequest, db: Session, all_types: List[str],
+                       hard_types: List[str]) -> Dict[str, int]:
+    """试卷题型配额：30% 题量按未掌握错题题型，70% 随机（按难度档微调权重）"""
+    count = req.english_count
+    wq: Dict[str, int] = {}
+    if req.user_id and count >= 3:
+        wrong_counts = _wrong_type_counts(db, req.user_id, req.subject)
+        wq = _wrong_type_quotas(round(count * 0.3), wrong_counts, all_types)
+    n_rand = count - sum(wq.values())
+    merged = dict(wq)
+    for t, n in _random_type_quotas(n_rand, all_types, req.difficulty, hard_types).items():
+        merged[t] = merged.get(t, 0) + n
+    return merged
+
+
 def _generate_english_exam(req: ExamCreateRequest, db: Session):
     """生成英语试卷，返回 (文件路径, 题目数据列表)"""
     from ..services.english_generator import generate_english_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
     from ..services.docx_service import build_english_docx
 
-    # 确定实际使用的题型列表
-    types_used = req.english_types if req.english_types else ALL_EXERCISE_TYPES[:]
+    # 题型由系统按成绩自动分配（忽略客户端题型筛选）
+    types_used = ALL_EXERCISE_TYPES[:]
 
     def _gen(types, count):
         return generate_english_exam(
@@ -894,7 +1033,9 @@ def _generate_english_exam(req: ExamCreateRequest, db: Session):
             db=db,
         )
 
-    exercises = _build_typed_paper(req.english_count, types_used, _gen)
+    hard_types = ["cloze", "unscramble_sentence", "grammar_choice"]
+    quotas = _paper_type_quotas(req, db, types_used, hard_types)
+    exercises = _build_typed_paper(req.english_count, types_used, _gen, quotas=quotas)
     filepath = build_english_docx(exercises, req.grade, title=req.title)
 
     questions_data = []
@@ -1075,7 +1216,7 @@ def _generate_chinese_exam(req: ExamCreateRequest, db: Session):
     from ..services.chinese_generator import generate_chinese_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
     from ..services.docx_service import build_english_docx
 
-    types_used = req.english_types if req.english_types else ALL_EXERCISE_TYPES[:]
+    types_used = ALL_EXERCISE_TYPES[:]
 
     def _gen(types, count):
         return generate_chinese_exam(
@@ -1085,7 +1226,9 @@ def _generate_chinese_exam(req: ExamCreateRequest, db: Session):
             db=db,
         )
 
-    exercises = _build_typed_paper(req.english_count, types_used, _gen)
+    hard_types = ["sentence_rewrite", "reading_comp", "poetry_translate"]
+    quotas = _paper_type_quotas(req, db, types_used, hard_types)
+    exercises = _build_typed_paper(req.english_count, types_used, _gen, quotas=quotas)
     filepath = build_english_docx(
         exercises, req.grade, title=req.title,
         type_names=TYPE_NAMES, filename_prefix="语文",

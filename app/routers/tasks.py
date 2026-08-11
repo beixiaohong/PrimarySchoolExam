@@ -93,10 +93,11 @@ MIN_TARGET, MAX_TARGET = 1, 50
 # 按任务单独设置的目标下限（默认为空：数值由家长配置，系统只提供能力）
 CODE_MIN_TARGET = {}
 
-# 家长可配置的每日额度（quotas）：{键: (最小值, 最大值, 默认值)}
+# 家长可配置的背诵额度（quotas）：{键: (最小值, 最大值, 默认值)}
+# 语义为「每轮新学数量」：不限制每日轮数，学完一轮可立即开下一轮
 QUOTA_KEYS = {
-    "daily_new_words": (1, 100, 20),   # 每日新学单词数
-    "daily_new_texts": (1, 50, 5),     # 每日新背古诗文数
+    "daily_new_words": (1, 100, 20),   # 每轮新学单词数
+    "daily_new_texts": (1, 50, 5),     # 每轮新背古诗文数
 }
 
 # 练习类任务的完成门槛（分数≥70才算完成）
@@ -167,7 +168,7 @@ def _load_settings(db: Session, user_id: str) -> dict:
             return {
                 "targets": targets,
                 "enabled": data.get("enabled", {}),  # {code: bool}
-                "mandatory": data.get("mandatory", {}),  # {subject: code}
+                "mandatory": _normalize_mandatory(data.get("mandatory", {})),  # {subject: [追加codes]}
                 "quotas": data.get("quotas", {}),  # {daily_new_words: int, ...}
                 "optional": [c for c in data.get("optional", [])  # 家长添加的可选任务 code 列表
                              if isinstance(c, str) and c in CONFIGURABLE_CODES],
@@ -206,13 +207,30 @@ def _is_task_enabled(settings: dict, code: str) -> bool:
     return enabled.get(code, True)
 
 
-def _get_mandatory_code(settings: dict, subject: str) -> str | None:
-    """获取家长设置的该学科强制任务 code（None 表示用默认值）"""
-    mandatory = settings.get("mandatory", {})
-    code = mandatory.get(subject)
-    if code and code in CONFIGURABLE_CODES:
-        return code
-    return None
+def _normalize_mandatory(raw) -> dict:
+    """将存储的 mandatory 归一化为 {subject: [追加codes]}（兼容旧格式单 code 字符串）"""
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for subj, val in raw.items():
+        if subj not in SUBJECTS:
+            continue
+        codes = [val] if isinstance(val, str) else (val if isinstance(val, list) else [])
+        cleaned = []
+        for c in codes:
+            if isinstance(c, str) and c and c not in cleaned:
+                cleaned.append(c)
+        out[subj] = cleaned
+    return out
+
+
+def _get_mandatory_codes(settings: dict, subject: str) -> list:
+    """该科强制任务 code 列表：默认任务固定保留 + 家长追加项（去重）"""
+    codes = [MANDATORY_TASKS[subject]["code"]]
+    for c in settings.get("mandatory", {}).get(subject, []):
+        if c not in codes:
+            codes.append(c)
+    return codes
 
 
 def _task_def_by_code(code: str) -> dict | None:
@@ -254,8 +272,9 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
         })
     current_mandatory = {}
     for subj in SUBJECTS:
-        default_code = MANDATORY_TASKS[subj]["code"]
-        current_mandatory[subj] = mandatory_map.get(subj, default_code)
+        # 返回家长追加的强制任务 code 列表（默认任务后端保证存在，不存配置）
+        current_mandatory[subj] = [c for c in mandatory_map.get(subj, [])
+                                   if isinstance(c, str)]
     quotas = {k: int(user.get("quotas", {}).get(k, d)) for k, (_, _, d) in QUOTA_KEYS.items()}
     # 背诵类任务不在可配置列表，但作为强制任务时仍需返回 target 供前端回显数量
     for code in _UNCONFIGURABLE_CODES:
@@ -339,13 +358,21 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
                     raise HTTPException(400, f"不支持的任务类型: {code}")
                 new_enabled[code] = bool(val)
         if "mandatory" in req.settings and isinstance(req.settings["mandatory"], dict):
-            for subj, code in req.settings["mandatory"].items():
+            for subj, val in req.settings["mandatory"].items():
                 if subj not in SUBJECTS:
                     raise HTTPException(400, f"不支持的学科: {subj}")
-                # 允许该科默认强制任务（如 chi_classical/eng_vocab，不在可配置列表但合法）
-                if code not in CONFIGURABLE_CODES and code != MANDATORY_TASKS[subj]["code"]:
-                    raise HTTPException(400, f"不支持的任务类型: {code}")
-                new_mandatory[subj] = code
+                # 兼容旧格式单 code 字符串；只存追加项，默认强制任务后端保证存在
+                codes = [val] if isinstance(val, str) else (val if isinstance(val, list) else [])
+                extra = []
+                for code in codes:
+                    if code == MANDATORY_TASKS[subj]["code"]:
+                        continue
+                    t = _task_def_by_code(code)
+                    if not t or t.get("subject") != subj:
+                        raise HTTPException(400, f"不支持的任务类型: {code}")
+                    if code not in extra:
+                        extra.append(code)
+                new_mandatory[subj] = extra
         # 每日额度（家长配置：新学单词数 / 新背古诗文数）
         if "quotas" in req.settings and isinstance(req.settings["quotas"], dict):
             for key, val in req.settings["quotas"].items():
@@ -388,6 +415,12 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     for r in rows:
         if r.status != "done" and r.task_code in new_targets:
             r.target = new_targets[r.task_code]
+    # 强制任务追加列表变更：删除今日未完成且已不在（默认+追加）列表中的强制行
+    for r in rows:
+        if getattr(r, "task_type", "") == "mandatory" and r.status != "done":
+            valid = _get_mandatory_codes({"mandatory": new_mandatory}, r.subject)
+            if r.task_code not in valid:
+                db.delete(r)
     # 可选任务配置变更：删除今日未完成的可选行，下次 /daily 按新配置重新生成
     if new_optional != list(existing.get("optional", [])):
         for r in rows:
@@ -583,19 +616,12 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
     # 记录今日已有/本次新增的任务 code，避免同 code 重复插入撞唯一索引
     existing_codes = {r.task_code for r in rows}
 
-    # 强制任务：每科 1 条（使用家长设置的强制任务 code）
-    mandatory = by_type.get("mandatory", {})
+    # 强制任务：默认每科 1 条 + 家长追加项（每条 code 一行）
     for subj in SUBJECTS:
-        if subj not in mandatory:
-            # 家长可覆盖每科的强制任务
-            override_code = _get_mandatory_code(settings, subj)
-            if override_code:
-                # 从 OPTIONAL_POOL 找任务定义
-                t = next((t for t in OPTIONAL_POOL if t["code"] == override_code), None)
-                if not t:
-                    t = MANDATORY_TASKS[subj]
-            else:
-                t = MANDATORY_TASKS[subj]
+        for code in _get_mandatory_codes(settings, subj):
+            if code in existing_codes:
+                continue  # 今日已有该 code 行（含与可选配置重叠），不重复生成
+            t = _task_def_by_code(code) or MANDATORY_TASKS[subj]
             row = DailyTask(
                 user_id=user_id, task_date=today, subject=subj,
                 task_code=t["code"], title=t["title"],
@@ -820,7 +846,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
         "date": str(date.today()),
         "tasks": tasks,
         "mandatory_done": mandatory_done,
-        "mandatory_total": len(SUBJECTS),
+        "mandatory_total": len(mandatory_rows),
         "optional_done": optional_done_count,
         "optional_total": len(optional_rows),
         "done_count": mandatory_done,

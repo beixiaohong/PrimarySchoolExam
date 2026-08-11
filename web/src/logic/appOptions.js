@@ -67,7 +67,7 @@ const appOptions = {
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务设置
       taskSettings: { items: [] },
-      taskDialog: { show: false, mandatory: { math: '', chi: '', eng: '' }, optional: [], disabled: [] },
+      taskDialog: { show: false, defaults: [], extra: [], optional: [], disabled: [] },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
@@ -1106,13 +1106,12 @@ const appOptions = {
       i >= 0 ? this.selectedTypes.splice(i, 1) : this.selectedTypes.push(t);
     },
     generateExam() {
-      const body = { subject: this.subject, grade: this.grade, difficulty: this.genDifficulty, user_id: this.user };
+      // 难度与题型由后端按最近成绩自动决定，前端不再提交
+      const body = { subject: this.subject, grade: this.grade, user_id: this.user };
       if (this.subject === '数学') {
         body.math_count = this.genCount;
-        body.math_categories = this.selectedCategories.length ? this.selectedCategories.slice() : null;
       } else {
         body.english_count = this.genCount;
-        body.english_types = this.selectedTypes.length ? this.selectedTypes.slice() : null;
       }
       this.generating = true;
       fetch('/api/exam/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -1289,7 +1288,7 @@ const appOptions = {
     },
     startWordSession(mode) {
       const words = mode === 'new' ? (this.vocabToday.new_words || []) : (this.vocabToday.review_words || []);
-      if (!words.length) { this.showToast(mode === 'new' ? '今日新词已学完，明天再来吧' : '今日没有到期复习的单词'); return; }
+      if (!words.length) { this.showToast(mode === 'new' ? '词库已全部学完，太棒了！' : '今日没有到期复习的单词'); return; }
       this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [] };
       this.$nextTick(() => setTimeout(() => this.wordSpeak(), 350));
     },
@@ -1301,24 +1300,44 @@ const appOptions = {
       if (ws.i < ws.words.length - 1) { ws.i++; ws.revealed = false; this.$nextTick(() => setTimeout(() => this.wordSpeak(), 200)); }
       else { ws.phase = 'dictate'; this.startWordDictate(); }
     },
-    /* 默写环节：翻完卡片后听写一遍，全对才算完成（错词重默直到全对） */
+    /* 检测环节：翻完卡片后混合题检测（默写+理解型），任一题错整轮重学 */
+    _quizItemsFromSession(items) {
+      // 后端 session-quiz 题目 → 通用 quiz 项；选择题答案转字母供本地判分
+      return (items || []).map(q => {
+        if ((q.options || []).length) {
+          const ansIdx = q.options.indexOf(q.answer);
+          return {
+            qid: q.word_id || 0, text_id: q.text_id || 0,
+            question: q.question, sub: '🌟 ' + (q.context || ''),
+            options: q.options, answer: 'ABCDEFGH'[Math.max(ansIdx, 0)],
+            _answerText: q.answer, explanation: '',
+          };
+        }
+        return {
+          qid: q.word_id || 0, text_id: q.text_id || 0,
+          question: q.question, sub: q.context || '',
+          placeholder: q.word_id ? '请输入英文单词' : '默写内容',
+          options: [], answer: q.answer, explanation: '',
+        };
+      });
+    },
     startWordDictate() {
       const ws = this.wordSession;
       this.dtOk = {};
-      const items = ws.words.map(w => ({
-        qid: w.word_id, text_id: 0,
-        question: `✍️ 听写：${w.pos ? w.pos + ' ' : ''}${w.meaning}`,
-        sub: w.phonetic ? '🔉 ' + w.phonetic : '',
-        placeholder: '请输入英文单词', options: [], answer: w.word, explanation: '',
-      }));
-      this.startQuiz({
-        title: '✍️ 默写检测 · ' + (ws.mode === 'new' ? '新词听写' : '复习听写'),
-        items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode },
-      });
+      const ids = ws.words.map(w => w.word_id).join(',');
+      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${ids}&mode=${ws.mode}&grade=${this.grade}`)
+        .then(r => {
+          const items = this._quizItemsFromSession(r.items);
+          if (!items.length) { ws.active = false; this.showToast('检测题生成失败，请重试'); return; }
+          this.startQuiz({
+            title: '✍️ 背诵检测 · ' + (ws.mode === 'new' ? '新词' : '复习'),
+            items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode },
+          });
+        }).catch(e => { ws.active = false; this.showToast(e.message); });
     },
     startTextSession(mode) {
       const raw = mode === 'new' ? (this.classicalToday.new_texts || []) : (this.classicalToday.review_texts || []);
-      if (!raw.length) { this.showToast(mode === 'new' ? '今日新篇已背完，明天再来吧' : '今日没有到期复习的篇目'); return; }
+      if (!raw.length) { this.showToast(mode === 'new' ? '篇目库已全部背完，太棒了！' : '今日没有到期复习的篇目'); return; }
       this.textSession = {
         active: true, done: false, phase: 'card', mode,
         texts: raw.map(x => ({ ...x, dynasty: x.dynasty || '' })),
@@ -1334,27 +1353,20 @@ const appOptions = {
       if (ts.i < ts.texts.length - 1) { ts.i++; this.$nextTick(() => setTimeout(() => this.textSpeak(), 200)); }
       else { ts.phase = 'dictate'; this.startTextDictate(); }
     },
-    /* 默写环节：翻完卡片后填空默写，全对才算完成（错句重默直到全对） */
+    /* 检测环节：翻完卡片后混合题检测（默写+理解型），任一题错整轮重学 */
     startTextDictate() {
       const ts = this.textSession;
       this.dtOk = {};
-      const qs = [];
-      const tasks = ts.texts.map(t =>
-        this.api(`/api/classical/quiz?grade=${this.grade}&text_id=${t.text_id}&count=2`)
-          .then(rows => { (rows || []).forEach(q => qs.push(q)); }).catch(() => {})
-      );
-      Promise.all(tasks).then(() => {
-        if (!qs.length) { ts.active = false; this.showToast('默写题生成失败，请重试'); return; }
-        const items = qs.map(q => ({
-          qid: 0, text_id: q.text_id, question: q.question,
-          sub: '📜 ' + (q.context || '默写'),
-          placeholder: '默写内容', options: [], answer: q.answer, explanation: '',
-        }));
-        this.startQuiz({
-          title: '✍️ 默写检测 · ' + (ts.mode === 'new' ? '新篇默写' : '复习默写'),
-          items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode },
-        });
-      });
+      const ids = ts.texts.map(t => t.text_id).join(',');
+      this.api(`/api/classical/session-quiz?user_id=${encodeURIComponent(this.user)}&text_ids=${ids}&mode=${ts.mode}`)
+        .then(r => {
+          const items = this._quizItemsFromSession(r.items);
+          if (!items.length) { ts.active = false; this.showToast('检测题生成失败，请重试'); return; }
+          this.startQuiz({
+            title: '✍️ 背诵检测 · ' + (ts.mode === 'new' ? '新篇' : '复习'),
+            items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode },
+          });
+        }).catch(e => { ts.active = false; this.showToast(e.message); });
     },
     openTextDetail(t) {
       this.textDetail = { show: true, id: t.id, title: t.title, author: t.author || '', dynasty: t.dynasty || '', grade: t.grade, text_type: t.text_type || 'poem', content: t.content };
@@ -1725,22 +1737,32 @@ const appOptions = {
     showTaskSettingsDialog() {
       // 初始化弹窗数据
       const items = this.taskSettings.items || [];
-      const mandatory = { math: '', chi: '', eng: '', mathTarget: 1, chiTarget: 1, engTarget: 5 };
       const disabled = [];
       const optional = [];
       // 从当前设置中提取（映射中文到英文key）
       const subjMap = { '数学': 'math', '语文': 'chi', '英语': 'eng' };
+      const revMap = { math: '数学', chi: '语文', eng: '英语' };
+      const DEFAULTS = { math: 'math_exam', chi: 'chi_classical', eng: 'eng_vocab' };
+      // 每科默认强制任务：固定保留不可删，仅可调数量
+      const defaults = ['math', 'chi', 'eng'].map(key => {
+        const code = DEFAULTS[key];
+        const def = this.allTaskOptions.find(o => o.code === code)
+          || { code, title: code, subject: revMap[key] };
+        const item = items.find(i => i.code === code);
+        return { subject: revMap[key], code, def, target: item ? item.target : (key === 'eng' ? 5 : 1) };
+      });
+      // 回显家长追加的强制任务（后端 settings.mandatory 存 {学科: [追加codes]}）
+      const extra = [];
       if (this.taskSettings.mandatory) {
-        for (const [subj, code] of Object.entries(this.taskSettings.mandatory)) {
+        for (const [subj, codes] of Object.entries(this.taskSettings.mandatory)) {
           const key = subjMap[subj];
-          if (key) mandatory[key] = code;
+          if (!key) continue;
+          for (const code of (Array.isArray(codes) ? codes : [codes])) {
+            if (!code || code === DEFAULTS[key]) continue;
+            const item = items.find(i => i.code === code);
+            extra.push({ subject: key, code, target: item ? item.target : 1 });
+          }
         }
-      }
-      // 从当前任务列表中提取强制任务的目标数量
-      for (const it of items) {
-        if (it.code === mandatory.math) mandatory.mathTarget = it.target || 1;
-        if (it.code === mandatory.chi) mandatory.chiTarget = it.target || 1;
-        if (it.code === mandatory.eng) mandatory.engTarget = it.target || 5;
       }
       for (const it of items) {
         if (it.enabled === false) disabled.push(it.code);
@@ -1752,22 +1774,15 @@ const appOptions = {
         const item = items.find(i => i.code === code);
         optional.push({ subject: subjMap[def.subject] || 'math', code, target: item ? item.target : 1 });
       }
-      // 默认强制任务
-      if (!mandatory.math) mandatory.math = 'math_exam';
-      if (!mandatory.chi) mandatory.chi = 'chi_classical';
-      if (!mandatory.eng) mandatory.eng = 'eng_vocab';
       // 预计算各科选项（避免模板中调用方法）；可选任务下拉排除背诵类全量任务
       const all = this.allTaskOptions;
       const UNCONFIGURABLE = ['chi_classical', 'eng_vocab'];
-      const mathOpts = all.filter(t => t.subject === '数学');
-      const chiOpts = all.filter(t => t.subject === '语文');
-      const engOpts = all.filter(t => t.subject === '英语');
       const subOpts = {
-        math: mathOpts.filter(t => !UNCONFIGURABLE.includes(t.code)),
-        chi: chiOpts.filter(t => !UNCONFIGURABLE.includes(t.code)),
-        eng: engOpts.filter(t => !UNCONFIGURABLE.includes(t.code)),
+        math: all.filter(t => t.subject === '数学' && !UNCONFIGURABLE.includes(t.code)),
+        chi: all.filter(t => t.subject === '语文' && !UNCONFIGURABLE.includes(t.code)),
+        eng: all.filter(t => t.subject === '英语' && !UNCONFIGURABLE.includes(t.code)),
       };
-      this.taskDialog = { show: true, mandatory, optional, disabled, mathOpts, chiOpts, engOpts, subOpts };
+      this.taskDialog = { show: true, defaults, extra, optional, disabled, subOpts };
     },
     _optForSubj(subj) {
       return this.allTaskOptions.filter(t => t.subject === subj);
@@ -1775,8 +1790,8 @@ const appOptions = {
     saveTaskDialog() {
       const targets = {};
       const enabled = {};
-      const { mandatory, optional, disabled } = this.taskDialog;
-      // 背诵类固定「全量完成」语义，不可配置目标数/禁用，提交时跳过
+      const { defaults, extra, optional, disabled } = this.taskDialog;
+      // 背诵类固定「全量完成」语义，不可作为可选/追加任务，但默认强制行的数量仍回传供回显
       const UNCONFIGURABLE = ['chi_classical', 'eng_vocab'];
       // 处理所有任务的目标数量
       for (const it of this.taskSettings.items || []) {
@@ -1784,10 +1799,21 @@ const appOptions = {
         targets[it.code] = it.target;
         enabled[it.code] = !disabled.includes(it.code);
       }
-      // 设置强制任务的目标数量
-      if (mandatory.math) targets[mandatory.math] = mandatory.mathTarget || 1;
-      if (mandatory.chi) targets[mandatory.chi] = mandatory.chiTarget || 1;
-      if (mandatory.eng) targets[mandatory.eng] = mandatory.engTarget || 5;
+      // 默认强制任务的目标数量（含背诵类回显数量）
+      for (const d of defaults) {
+        targets[d.code] = d.target || 1;
+      }
+      // 追加的强制任务：目标数 + 按学科归组为 {学科: [追加codes]}
+      const subjMap = { math: '数学', chi: '语文', eng: '英语' };
+      const mandatoryOut = { '数学': [], '语文': [], '英语': [] };
+      for (const ex of extra) {
+        if (!ex.code) continue;
+        if (UNCONFIGURABLE.includes(ex.code)) continue;
+        targets[ex.code] = ex.target || 1;
+        enabled[ex.code] = true;
+        const subj = subjMap[ex.subject];
+        if (subj && !mandatoryOut[subj].includes(ex.code)) mandatoryOut[subj].push(ex.code);
+      }
       // 处理可选任务（新增的）
       for (const opt of optional) {
         if (opt.code && opt.target) {
@@ -1795,13 +1821,6 @@ const appOptions = {
           targets[opt.code] = opt.target;
           enabled[opt.code] = true;
         }
-      }
-      // 映射英文key回中文subject
-      const subjMap = { math: '数学', chi: '语文', eng: '英语' };
-      const mandatoryOut = {};
-      for (const [key, code] of Object.entries(mandatory)) {
-        const subj = subjMap[key];
-        if (subj && code) mandatoryOut[subj] = code;
       }
       // 家长添加的可选任务 code 列表（去重去空）
       const optionalCodes = [...new Set(optional.filter(o => o.code).map(o => o.code))];
@@ -2502,53 +2521,32 @@ const appOptions = {
         // "任务已完成"提示延迟到下次刷新（如切换学科）才弹出
         p.then(() => { this.loadAnalysis(); this.loadDailyTasks(); }).catch(() => {});
       } else if (src.mode === 'dictate') {
-        // 默写检测：全对才算通过
+        // 背诵检测：任一题错（含选择类本地判分）→ 本轮未完成，整轮从头重学
         const wrongs = this.quiz.items.filter(it => !it.correct);
         this.quiz.items.forEach(it => { if (it.correct) this.dtOk[it.qid] = it.userAnswer; });
-        if (src.kind === 'text' && wrongs.length) {
-          // 古诗文默写错了：标记为错题，直接换一首，不再重默
+        if (wrongs.length) {
+          // 错题同步记入错题本（占诗文/单词各自来源）
           const errorItems = wrongs.map(it => ({
-            source_type: 'classical', source_id: it.text_id, module_name: '古诗文默写',
-            question: it.question, user_answer: it.userAnswer, correct_answer: it.answer,
+            source_type: src.kind === 'text' ? 'classical' : 'vocab',
+            source_id: src.kind === 'text' ? it.text_id : it.qid,
+            module_name: src.kind === 'text' ? '古诗文背诵' : '单词背诵',
+            question: it.question, user_answer: it.userAnswer,
+            correct_answer: it._answerText || it.answer,
             explanation: it.sub || '',
           }));
           this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: errorItems }) })
-            .then(() => {
-              this.showToast('默写有错，已记入错题本，换一首继续加油！');
-              const ts = this.textSession;
-              ts.active = false;
-              this.quiz.active = false;
-              this.loadAnalysis();
-              this.loadDailyTasks();
-              this.refreshAll();
-            }).catch(() => {
-              this.quiz.active = false;
-              const ts = this.textSession;
-              ts.active = false;
-              this.refreshAll();
-            });
-          return;
-        }
-        if (wrongs.length) {
-          // 单词听写错了：也记入错题本（source_type=vocab）
-          if (src.kind === 'word') {
-            const vocabErrors = wrongs.map(it => ({
-              source_type: 'vocab', source_id: it.qid, module_name: '单词听写',
-              question: it.question, user_answer: it.userAnswer, correct_answer: it.answer,
-              explanation: '',
-            }));
-            this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: vocabErrors }) })
-              .then(() => { this.loadAnalysis(); }).catch(() => {});
+            .then(() => { this.loadAnalysis(); }).catch(() => {});
+          this.quiz.active = false;
+          this.showToast('有错误，本轮未完成，从头重新学习！');
+          if (src.kind === 'text') {
+            const ts = this.textSession;
+            ts.phase = 'card'; ts.i = 0; ts.okCount = 0; ts.failCount = 0; ts.results = [];
+            this.$nextTick(() => setTimeout(() => this.textSpeak(), 300));
+          } else {
+            const ws = this.wordSession;
+            ws.phase = 'card'; ws.i = 0; ws.revealed = false; ws.okCount = 0; ws.results = [];
+            this.$nextTick(() => setTimeout(() => this.wordSpeak(), 300));
           }
-          this.showToast(`还有 ${wrongs.length} 处没默写对，再默一遍！`);
-          this.startQuiz({
-            title: this.quiz.title,
-            items: wrongs.map(it => ({
-              qid: it.qid, text_id: it.text_id, question: it.question, sub: it.sub,
-              placeholder: it.placeholder, options: [], answer: it.answer, explanation: '',
-            })),
-            source: src,
-          });
           return;
         }
         // 全部默写正确 → 提交后端（后端再核验，全对才真正记录进度）

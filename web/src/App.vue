@@ -419,24 +419,12 @@
                 <select v-model="subject" @change="onSubjectChange"><option>数学</option><option>语文</option><option>英语</option></select>
               </div>
               <div class="form-item">
-                <label>难度</label>
-                <select v-model="genDifficulty"><option>基础</option><option>提高</option><option>拔高</option><option>综合</option></select>
-              </div>
-              <div class="form-item">
                 <label>题数</label>
                 <input type="number" v-model.number="genCount" min="1" max="200">
               </div>
-              <div class="form-item" v-if="subject==='数学'">
-                <label>题型大类（不选则全部）</label>
-                <div class="chip-check">
-                  <label v-for="c in mathCategories" :key="c" :class="{on: selectedCategories.includes(c)}" @click.prevent="toggleCategory(c)"><input type="checkbox" :value="c" v-model="selectedCategories"> {{c}}</label>
-                </div>
-              </div>
-              <div class="form-item full" v-else>
-                <label>{{subject==='英语' ? '题型（不选则全部）' : '题型（不选则全部）'}}</label>
-                <div class="chip-check">
-                  <label v-for="t in engTypes" :key="t.code" :class="{on: selectedTypes.includes(t.code)}" @click.prevent="toggleType(t.code)"><input type="checkbox" :value="t.code" v-model="selectedTypes"> {{t.name}}</label>
-                </div>
+              <div class="form-item full">
+                <label>出题策略</label>
+                <div style="font-size:13px;color:var(--text-2);line-height:1.7">难度根据最近成绩自动调整；约 30% 题目针对未掌握的错题题型</div>
               </div>
             </div>
             <div style="margin-top:22px;display:flex;gap:12px">
@@ -542,7 +530,7 @@
           <div class="grid-2">
             <div class="card recite-card">
               <div class="card-head"><b>📖 今日新词</b><span class="tag tag-blue">{{vocabToday.stats.new_remaining}} 个待学</span></div>
-              <p class="card-desc">每天 20 个新单词，按艾宾浩斯遗忘曲线科学安排复习</p>
+              <p class="card-desc">每轮学 {{vocabToday.stats.new_remaining}} 个新单词，学完可再来一轮，不限次数</p>
               <button class="btn btn-primary btn-lg recite-btn" :disabled="vocabToday.stats.new_remaining<=0" @click="startWordSession('new')">开始学习新词 →</button>
             </div>
             <div class="card recite-card">
@@ -568,7 +556,7 @@
           <div class="grid-2">
             <div class="card recite-card">
               <div class="card-head"><b>📜 今日新篇</b><span class="tag tag-blue">{{classicalToday.stats.new_remaining}} 篇待背</span></div>
-              <p class="card-desc">每天 5 篇古诗文，先读熟再背诵，逐步内化</p>
+              <p class="card-desc">每轮背 {{classicalToday.stats.new_remaining}} 篇古诗文，背完可再来一轮，不限次数</p>
               <button class="btn btn-primary btn-lg recite-btn" :disabled="classicalToday.stats.new_remaining<=0" @click="startTextSession('new')">开始背诵 →</button>
             </div>
             <div class="card recite-card">
@@ -1747,28 +1735,26 @@
     </div>
     <div style="padding:16px">
       <div style="font-size:12px;color:#888;margin-bottom:10px;line-height:1.5">数量 = 每天要完成的目标（如试卷张数 / 题目数 / 次数）；任务标题里的数字会随数量自动变化</div>
-      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">强制任务（每科选一个，设置目标数量）</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span style="min-width:36px;font-size:13px">数学</span>
-        <select v-model="taskDialog.mandatory.math" class="fill-input" style="flex:1;font-size:12px">
-          <option v-for="t in taskDialog.mathOpts" :key="t.code" :value="t.code">{{taskOptTitle(t, taskDialog.mandatory.mathTarget)}}</option>
-        </select>
-        <input v-model.number="taskDialog.mandatory.mathTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量（如试卷张数）">
+      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">强制任务（每科默认任务固定，可再添加多个）</div>
+      <div v-for="d in taskDialog.defaults" :key="'def-'+d.code" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="min-width:36px;font-size:13px">{{d.subject}}</span>
+        <span class="fill-input" style="flex:1;font-size:12px;display:flex;align-items:center;gap:6px">{{taskOptTitle(d.def, d.target)}}<i class="tag tag-gray" style="font-style:normal">默认</i></span>
+        <input v-model.number="d.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量">
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span style="min-width:36px;font-size:13px">语文</span>
-        <select v-model="taskDialog.mandatory.chi" class="fill-input" style="flex:1;font-size:12px">
-          <option v-for="t in taskDialog.chiOpts" :key="t.code" :value="t.code">{{taskOptTitle(t, taskDialog.mandatory.chiTarget)}}</option>
+      <div v-for="(ex, idx) in taskDialog.extra" :key="'ex-'+idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <select v-model="ex.subject" class="fill-input" style="width:68px;font-size:12px" @change="ex.code=''">
+          <option value="math">数学</option>
+          <option value="chi">语文</option>
+          <option value="eng">英语</option>
         </select>
-        <input v-model.number="taskDialog.mandatory.chiTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量（如试卷张数）">
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-        <span style="min-width:36px;font-size:13px">英语</span>
-        <select v-model="taskDialog.mandatory.eng" class="fill-input" style="flex:1;font-size:12px">
-          <option v-for="t in taskDialog.engOpts" :key="t.code" :value="t.code">{{taskOptTitle(t, taskDialog.mandatory.engTarget)}}</option>
+        <select v-model="ex.code" class="fill-input" style="flex:1;min-width:120px;font-size:12px">
+          <option value="">-- 选择 --</option>
+          <option v-for="t in taskDialog.subOpts[ex.subject]" :key="t.code" :value="t.code">{{t.title}}</option>
         </select>
-        <input v-model.number="taskDialog.mandatory.engTarget" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量（如试卷张数）">
+        <input v-model.number="ex.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量">
+        <button class="btn btn-ghost btn-sm" @click="taskDialog.extra.splice(idx,1)" style="padding:2px 8px;font-size:12px">✕</button>
       </div>
+      <button class="btn btn-ghost btn-sm" @click="taskDialog.extra.push({subject:'math',code:'',target:1})" style="margin-bottom:16px">+ 添加强制任务</button>
       <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">可选任务（可添加多条）</div>
       <div v-for="(opt, idx) in taskDialog.optional" :key="idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
         <select v-model="opt.subject" class="fill-input" style="width:68px;font-size:12px" @change="opt.code=''">

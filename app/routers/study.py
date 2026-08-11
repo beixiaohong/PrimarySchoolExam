@@ -239,7 +239,9 @@ def _build_subject_task(db: Session, user_id: str, grade: int, subject: str, tod
                 VocabDailyLog.user_id == user_id,
                 VocabDailyLog.learn_date == today,
             ).first()
-            vocab["new_words"] = max(0, 20 - (today_log.new_words_learned if today_log else 0))
+            # 不限每日轮数：展示每轮新学额度（家长配置）
+            from .tasks import get_daily_quota
+            vocab["new_words"] = get_daily_quota(db, user_id, "daily_new_words")
             vocab["review_words"] = vocab["due_today"]
             vocab["streak_days"] = _vocab_streak(db, user_id)
 
@@ -262,8 +264,9 @@ def _build_subject_task(db: Session, user_id: str, grade: int, subject: str, tod
             ClassicalDailyLog.user_id == user_id,
             ClassicalDailyLog.learn_date == today,
         ).first()
-        new_done_today = today_log.texts_learned if today_log else 0
-        classical["new_texts"] = max(0, 5 - new_done_today)
+        # 不限每日轮数：展示每轮新背额度（家长配置）
+        from .tasks import get_daily_quota
+        classical["new_texts"] = get_daily_quota(db, user_id, "daily_new_texts")
         classical["review_texts"] = classical["due_today"]
         classical["streak_days"] = _classical_streak(db, user_id)
 
