@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -520,13 +521,13 @@ def get_today_task(
         main_n = remaining - bridge_n
         candidates = db.query(ClassicalText).filter(
             ClassicalText.grade <= grade,
-            ClassicalText.semester.in_(semesters),
+            or_(ClassicalText.semester.is_(None), ClassicalText.semester.in_(semesters)),
             ~ClassicalText.id.in_(db.query(learned_ids)),
         ).order_by(ClassicalText.grade, ClassicalText.title).limit(main_n).all()
         if bridge_n:
             candidates += db.query(ClassicalText).filter(
                 ClassicalText.grade == 7,
-                ClassicalText.semester.in_(semesters),
+                or_(ClassicalText.semester.is_(None), ClassicalText.semester.in_(semesters)),
                 ~ClassicalText.id.in_(db.query(learned_ids)),
                 ClassicalText.id.notin_([t.id for t in candidates]),
             ).order_by(ClassicalText.grade, ClassicalText.title).limit(bridge_n).all()
