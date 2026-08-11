@@ -1924,7 +1924,7 @@ const appOptions = {
       }).then(() => {
         this.newCoupon.title = ''; this.newCoupon.reason = ''; this.newCoupon.requiredDays = 0;
         this.loadParentPanel(); this.loadRewards();
-        this.showToast(requiredDays > 0 ? `已添加：孩子三科全勤 ${requiredDays} 天获得后才会在孩子端展示 🎫` : '兑换券已添加，孩子已即时获得 🎫');
+        this.showToast(requiredDays > 0 ? `已添加：三科全勤 ${requiredDays} 天获取后才计入成长奖励记录 🎫` : '兑换券已添加，孩子已即时获得 🎫');
       }).catch(e => this.showToast(e.message));
     },
     redeemCoupon(c) {

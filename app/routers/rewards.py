@@ -107,7 +107,6 @@ def rewards_overview(user_id: str, db: Session = Depends(get_db)):
     _expire_wishes(db, user_id)
     coupons = db.query(RewardCoupon).filter(
         RewardCoupon.user_id == user_id, RewardCoupon.status == "active",
-        RewardCoupon.granted_count > 0,  # 孩子侧只展示已获取的券，创建未达标时不出现
     ).order_by(RewardCoupon.id.asc()).all()
     wish = db.query(WishItem).filter(
         WishItem.user_id == user_id,
@@ -480,6 +479,7 @@ def reward_timeline(user_id: str, db: Session = Depends(get_db)):
         })
     coupons = db.query(RewardCoupon).filter(
         RewardCoupon.user_id == user_id, RewardCoupon.status == "active",
+        RewardCoupon.granted_count > 0,  # 只记录已获取的券，创建未达标不进时间线
     ).order_by(RewardCoupon.created_at.desc()).all()
     for c in coupons:
         items.append({
