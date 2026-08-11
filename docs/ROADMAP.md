@@ -16,7 +16,7 @@
 | 年级体系 | 支持 1-12 年级；每年 9 月 1 日自动升年级 | app/routers/user.py `_auto_upgrade_grade` |
 | 出卷年级 | 已支持 1-9 年级（`grade: ge=1, le=9`） | app/schemas/exam.py `ExamCreateRequest` |
 | 数学题型 | ProblemType 带 grade_min/grade_max，出卷按年级过滤；**已播种 5 个初中题型**（mid_quadratic_eq/mid_linear_func/mid_pythagorean/mid_inequality/mid_probability，7-9 年级） | app/services/math_generator.py、app/services/init_data.py |
-| 英语词库 | WordBook 已有 版本/年级/学期 三维，Word 已有 unit 字段；现有数据为人教版 PEP 3-6 年级（1968 词） | app/models/word.py、app/data/words_primary_school.csv |
+| 英语词库 | WordBook 已有 版本/年级/学期 三维，Word 已有 unit 字段；现有数据为人教版 PEP 3-6 年级（1969 词） | app/models/word.py、app/data/words_primary_school.csv |
 | 古诗文 | ClassicalText.grade 支持 1-9，种子数据覆盖 1-6 年级 | app/models/classical.py、迁移 002_classical_seed.py |
 | 内容检索 | vocab 新学只取当前年级词书，古诗文 /today 按 `grade <= 当前年级`，内容随年级自然解锁，但无学期区分 | app/routers/vocab.py、classical.py |
 | 已知缺口 | 无学期维度解锁；无「当前教学进度（单元）」概念；无初中英语词汇与语文篇目数据；试卷标题硬编码「小学」 | docx_service.py L49/L139 等 |

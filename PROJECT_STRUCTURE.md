@@ -280,7 +280,8 @@ output/*.docx                   # 生成的试卷文档
 
 ### 1. 前端迁移到 Vue 组件化（Vite + SFC）
 
-**当前状态**：单文件 SPA，index.html 1900 行 + app.js 2500 行 + style.css 900 行，所有页面逻辑集中在一个 JS 文件，无组件拆分。
+**当前状态**：已完成。生产前端已迁移到 web/（Vue 3 + Vite + vue-router + pinia），
+App.vue ~2,200 行 + logic/appOptions.js ~2,800 行；旧版 frontend/ 已废弃存档。
 
 **工作内容**：
 - 搭建 Vite + Vue 3 工程化脚手架（vue-router、pinia）
@@ -299,7 +300,8 @@ output/*.docx                   # 生成的试卷文档
 
 ### 2. 数据库从 SQLite 迁移到 MySQL
 
-**当前状态**：SQLite + SQLAlchemy ORM，20 个迁移脚本，所有 SQL 均为 SQLite 语法（如 `DATE('now')`、`IFNULL`、`INSERT OR IGNORE`）。
+**当前状态**：已完成。生产环境运行 MySQL 8（utf8mb4），DB_DRIVER 切换驱动，
+迁移脚本已扩至 28 个（026+ 方言兼容），数据经 tools/sqlite_to_mysql.py 全量迁移并对账。
 
 **工作内容**：
 - 部署 MySQL 实例 + 创建数据库
@@ -320,7 +322,8 @@ output/*.docx                   # 生成的试卷文档
 
 ### 3. 增加完整代码注释
 
-**当前状态**：约 97 个 Python 文件 + 2500 行 JS + 1900 行 HTML + 900 行 CSS，部分核心文件有简要注释，但大部分缺少函数级文档字符串和模块说明。
+**当前状态**：部分完成。约 100+ 个 Python 文件 + web/ 前端（App.vue ~2,200 行 + appOptions.js ~2,800 行），
+核心模块（models/services/主要 routers）已补模块与方法级注释，部分工具脚本与前端仍缺注释。
 
 **工作内容**：
 - 所有 models 添加字段级注释（docstring 或 comment）
