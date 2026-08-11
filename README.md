@@ -1,48 +1,113 @@
-#试卷系统
+# 智学学堂（PrimarySchoolExam）
+
+面向小学家庭的智能学习平台：**孩子自主刷题背诵 + 家长远程管控 + 游戏化激励**。
+覆盖数学 / 语文 / 英语三科，自动生成试卷、科学安排背诵复习、AI 讲解答疑，
+让每天的 30 分钟家庭学习有内容、有标准、有反馈。
+
+---
+
+## 一、功能全景
+
+### 1. 刷题中心（智能出卷）
+- 三科一键生成试卷，Word 文档下载（python-docx 排版，数学题自动配图）
+- **智能难度**：按该科最近 5 次交卷平均分自动定档（≥80 拔高 / 70-80 提高 / 60-70 综合 / <60 基础；平均分去掉未作答的空题，整卷空题不计入）
+- **智能题型分布**：约 70% 随机题型 + 约 30% 针对未掌握的错题题型
+- 在线做题即时判分（填空容错解析），答错的题自动进入错题本
+- 英语语法专项练习（按知识点/题型筛选）
+
+### 2. 错题体系
+- 试卷错题 + 学习模块错题（背诵/听写/语法）双轨收录
+- 错题专项重练、明日复习队列、连续答对 3 次自动标记已掌握
+- 答题申诉：孩子觉得判错可提交申诉，AI 复核 + 家长二次确认
+
+### 3. 背诵中心
+- **背单词**：艾宾浩斯遗忘曲线安排复习；多轮无上限新学（每轮按家长配置额度）
+- **背古诗文**：1-6 年级必背篇目，先读熟再检测
+- **理解型检测**（session-quiz）：单词每词 4 题、古诗文每篇 3 题，
+  题型随复习阶段加深（从默写为主逐步过渡到释义选择、语境填空、排序、作者辨析等理解题）
+- 出错整轮重学：检测有错则本轮判未完成，从卡片阶段重新学习
+- 听写磨耳朵：edge-tts 朗读 + 拼写校验
+
+### 4. 每日任务
+- 三科默认强制任务（数学练习 / 古诗文背诵 / 单词学习）固定保留
+- 家长可**每科追加多个**强制任务，全部强制任务完成才算全勤
+- 可选任务池（家长配置）、全勤奖励补签卡、昨日错题复习任务
+
+### 5. 激励系统
+- 金币宠物：答题/任务赚金币，喂养虚拟宠物升级
+- 成就徽章墙（13+ 种）、成长树可视化、知识卡图鉴
+- 奖励券与心愿：家长发券，孩子兑换心愿
+- 60 秒限时挑战赛（口算/单词）、小老师模式（费曼学习法讲题）
+- 心情打卡与趋势预警、番茄专注钟、学期目标倒计时
+
+### 6. 家长端
+- 家长密码守卫（敏感操作需 X-Parent-Pwd 验证）
+- 任务设置：强制任务追加、目标数量、每日背诵额度（每轮新学数）
+- 考试最低题数下限、每周成长周报与家长留言、学习数据查看
+
+### 7. AI 能力（钻石计费，1 万 token = 1 钻石）
+- AI 错题讲解、每周学情周报、鼓励语
+- 十万个为什么（多轮对话 + 缓存）、AI 趣味出题、个性化学习助手
+- 多供应商路由（智谱免费额度 → Relay 备用 → DeepSeek 付费），答案 AI 复核
+
+### 8. 账号与管理
+- 邮箱验证码注册 / 登录 / 重置密码，兼容昵称快捷登录（可配置开关）
+- 管理员后台：用户管理、数据看板、操作日志
+- 每年 9 月 1 日自动升年级，年级支持 1-12
+
+---
+
+## 二、技术架构
+
+| 层 | 技术 | 说明 |
+|---|---|---|
+| 后端 | FastAPI + Uvicorn | Python 3.12，31 个 API 路由模块 |
+| 数据库 | MySQL 8（生产，utf8mb4）/ SQLite（开发） | SQLAlchemy 2.0 ORM + 自建迁移系统（28 个版本脚本） |
+| 前端 | Vue 3 + Vite 工程化（`web/`） | SPA，构建产物 `web/dist` 由后端托管 |
+| AI | 智谱 / Relay / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
+| 文档与媒体 | python-docx / matplotlib / edge-tts | 试卷 Word、数学图形、TTS 音频 |
+| 测试 | pytest + FastAPI TestClient | 48 个回归用例，临时 SQLite 隔离，AI/邮件全打桩 |
+
+---
+
+## 三、快速开始
+
+### 本地开发（SQLite）
+
+```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python --version          # 确认显示 3.12.x
-python -m pip install --upgrade pip
 pip install -r requirements.txt
+python run.py            # 启动后端 http://localhost:8000
+```
 
-python -m venv .venv
-source .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+前端（可选，生产环境使用构建产物）：
 
-更新：pip freeze > requirements.txt
+```powershell
+cd web
+npm install
+npm run dev              # 开发调试
+npm run build            # 构建到 web/dist
+```
 
+配置项见 `.env.example`（数据库驱动、AI Key、邮件 SMTP、昵称登录开关等）。
+首次启动自动建表、执行迁移、导入种子数据（单词 1968 个 / 词组 / 句子 / 古诗文 / 数学题型）。
 
-├── app/
-│   ├── main.py                 # FastAPI 入口
-│   ├── config.py               # 配置（DB路径、输出目录）
-│   ├── database.py             # SQLAlchemy + SQLite
-│   ├── models/                 # 数据模型
-│   │   ├── word.py             # WordBook + Word
-│   │   ├── problem_type.py     # ProblemCategory + ProblemType
-│   │   └── exam.py             # ExamRecord
-│   ├── schemas/                # Pydantic 请求/响应模型
-│   ├── routers/                # API 路由
-│   │   ├── words.py            # 单词CRUD + CSV/Excel导入
-│   │   ├── math.py             # 题型管理 + 题目生成
-│   │   └── exam.py             # 试卷生成 + 下载
-│   ├── services/               # 业务逻辑
-│   │   ├── math_generator.py   # 24个题型生成器（注册表模式）
-│   │   ├── english_generator.py # 听写/选择/翻译/词组句
-│   │   ├── docx_service.py     # Word文档输出
-│   │   └── init_data.py        # 种子数据（首次启动自动导入）
-│   └── data/
-│       └── words_primary_school.csv  # 1860个小学单词（PEP 3-6年级）
-├── requirements.txt
-├── run.py                      # 启动入口
-└── primary_school.db           # SQLite（自动生成）
-启动方式：
+### 生产部署
 
+见 [DEPLOY.md](DEPLOY.md)：Nginx + systemd（服务名 `exam-app`），
+MySQL 需 utf8mb4 字符集；前端有改动时部署必须重新 `npm run build`。
 
-cd PrimarySchoolExam
-pip install -r requirements.txt
-python run.py
+### 测试
 
-cd /home/PrimarySchoolExam
-source venv/bin/activate
-systemctl restart exam-app
+```powershell
+python -m pytest tests/ -q    # 48 用例，覆盖注册登录/任务/出卷判分/背诵/家长端/管理后台
+```
 
+---
+
+## 四、相关文档
+
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — 项目结构与模块清单
+- [DEPLOY.md](DEPLOY.md) — 服务器部署指南
+- [docs/ROADMAP.md](docs/ROADMAP.md) — 产品优化落地路线（年级成长 / 课堂同步 / 初中衔接）

@@ -1,6 +1,6 @@
 # 智学学堂 · 项目结构与工作量评估
 
-> 最后更新：2026-08-07
+> 最后更新：2026-08-11
 
 ---
 
@@ -8,11 +8,12 @@
 
 | 层 | 技术 | 说明 |
 |---|---|---|
-| 后端框架 | FastAPI + Uvicorn | Python 3.12，ASGI 异步服务 |
-| 数据库 | SQLite + SQLAlchemy 2.0 | ORM + 自建迁移系统（20 个版本脚本） |
-| 前端 | Vue 3 CDN 单文件 SPA | 无构建步骤，index.html + app.js + style.css |
+| 后端框架 | FastAPI + Uvicorn | Python 3.12，ASGI 异步服务，31 个路由模块 |
+| 数据库 | MySQL 8（生产 utf8mb4）/ SQLite（开发） | SQLAlchemy 2.0 ORM + 自建迁移系统（28 个版本脚本，MySQL 基线策略见下） |
+| 前端 | Vue 3 + Vite 工程化（web/） | SPA，构建产物 web/dist 由后端托管；frontend/ 旧版已废弃 |
 | AI 接入 | 智谱 GLM / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档生成 | python-docx + matplotlib + edge-tts | 试卷 Word、数学图形、TTS 音频 |
+| 测试 | pytest + FastAPI TestClient | tests/ 目录 48 个回归用例，临时 SQLite 隔离 |
 
 ---
 
@@ -134,7 +135,7 @@ app/services/math_generator.py  # 数学出题器（24+ 题型，注册表模式
 ```
 app/migrations/__init__.py
 app/migrations/runner.py        # 迁移执行器（启动时自动运行，幂等执行）
-app/migrations/versions/        # 20 个版本化迁移脚本
+app/migrations/versions/        # 28 个版本化迁移脚本
     001_exam_records_user_id.py    # 对齐 exam_records.user_id 列
     002_classical_seed.py          # 导入古诗文种子数据（1-6 年级）
     003_daily_tasks.py             # 创建 daily_tasks 表
@@ -155,7 +156,20 @@ app/migrations/versions/        # 20 个版本化迁移脚本
     018_focus_sessions.py          # 创建专注钟记录表
     019_unanswered.py              # 增加未答题标记 + 修正历史数据
     020_diamonds.py                # 创建钻石账户/明细表 + 全员发放 100 万
+    021_daily_task_overhaul.py     # 每日任务双轨改造（强制/可选）
+    022_fix_daily_task_unique.py   # daily_tasks 唯一索引修正
+    023_wish_optional_streak.py    # 心愿/可选任务/连续天数字段
+    024_custom_tasks.py            # 自定义任务表（孩子发起家长确认）
+    025_p0_hardening.py            # P0 防刷加固相关字段与索引
+    026_user_auth.py               # 用户认证（邮箱/密码/验证码，方言兼容）
+    027_admin.py                   # 管理员账号表 + 初始 admin
+    028_wish_deadline.py           # 心愿截止日期字段
 ```
+
+**MySQL 基线策略**（runner.py）：001-025 均为 SQLite 方言存量迁移，
+MySQL 侧由 `Base.metadata.create_all` 直接建表，启动时自动把这些版本预置为已执行；
+026 及之后的迁移必须用方言兼容写法（两种驱动都会真实执行）。
+数据迁移工具见 tools/sqlite_to_mysql.py（逐表迁移 + 行数对账 + --ensure-admin 补建管理员）。
 
 ### app/data/ — 种子数据
 
@@ -171,12 +185,52 @@ app/data/sentences_primary_school.csv  # 77 个英语句子
 app/tools/wulal.py              # PDF 转图片工具（PyMuPDF）
 ```
 
-### frontend/ — 前端（Vue 3 SPA，无构建步骤）
+### frontend/ — 旧版前端（已废弃，仅存档）
+
+> 生产前端已迁移到 web/（Vue 3 + Vite 工程化），以下文件不再维护。
 
 ```
-frontend/index.html             # 主页面模板（~1,900 行，含全部页面 HTML + Vue 指令）
-frontend/static/app.js          # Vue 应用逻辑（~2,500 行：数据/方法/生命周期）
-frontend/static/style.css       # 样式表（~900 行：设计 Token + 组件样式）
+frontend/index.html             # 旧版主页面模板
+frontend/static/app.js          # 旧版 Vue 应用逻辑
+frontend/static/style.css       # 旧版样式表
+```
+
+### web/ — 生产前端（Vue 3 + Vite）
+
+```
+web/index.html                  # Vite 入口
+web/src/main.js                 # 应用初始化
+web/src/App.vue                 # 主组件（全部页面模板，~2,200 行）
+web/src/nav.js                  # 导航结构
+web/src/logic/appOptions.js     # 组件方法集（数据加载/交互逻辑，~2,800 行）
+web/src/api/http.js             # API 封装
+web/src/router/index.js         # vue-router 配置
+web/src/stores/wallet.js        # pinia 钱包状态
+web/src/styles/style.css        # 样式表
+web/dist/                       # 构建产物（gitignore，部署时 npm run build 生成）
+```
+
+### tests/ — pytest 回归套件（48 用例）
+
+```
+tests/conftest.py               # 临时 SQLite + session 级 TestClient + AI/邮件打桩
+tests/test_system.py            # 健康检查与前端入口
+tests/test_auth_user.py         # 注册/登录/验证码/频控
+tests/test_exam.py              # 出卷/判分/错题本/自动难度定档（含去空题口径）/30%错题题型
+tests/test_tasks.py             # 每日任务/多强制任务 roundtrip/补签卡
+tests/test_recite.py            # 背诵多轮无上限 + session-quiz 理解型检测
+tests/test_parent.py            # 家长密码守卫/留言
+tests/test_rewards.py           # 奖励券/心愿/练习判分
+tests/test_admin.py             # 管理员登录与后台接口
+```
+
+### tools/ — 运维与迁移工具
+
+```
+tools/sqlite_to_mysql.py        # SQLite → MySQL 全量迁移（批量 500/外键拓扑序/行数对账，--dry-run/--ensure-admin）
+tools/chk_mysql_data.py         # MySQL 数据核对
+tools/mysql_preclean.py         # 迁移前清空目标表
+tools/mysql_fix_autoincr.py     # 自增主键修正
 ```
 
 ### output/ — 生成文件（gitignore）
@@ -195,12 +249,12 @@ output/*.docx                   # 生成的试卷文档
 |:---:|------|---------|------|
 | 1 | 用户系统 | /api/user | 登录、年级管理、称号、自动升级 |
 | 2 | 英语词库 | /api/words, /api/english | 单词/词组/句子 CRUD + 导入 |
-| 3 | 数学出题 | /api/math, /api/exam | 24+ 题型生成 + 试卷 Word 下载 |
-| 4 | 背单词 | /api/vocab | 艾宾浩斯曲线新学 + 复习 |
-| 5 | 古诗文 | /api/classical | 背诵 + 默写 + 艾宾浩斯复习 |
+| 3 | 数学出题 | /api/math, /api/exam | 24+ 题型生成（含初中 5 题型）+ 试卷 Word 下载；自动难度定档 + 70%随机/30%错题题型分布 |
+| 4 | 背单词 | /api/vocab | 艾宾浩斯曲线新学 + 复习；多轮无上限；session-quiz 理解型检测（每词 4 题） |
+| 5 | 古诗文 | /api/classical | 背诵 + 默写 + 艾宾浩斯复习；session-quiz 理解型检测（每篇 3 题） |
 | 6 | 英语语法 | /api/grammar | 知识点 + 专项练习 |
 | 7 | 错题本 | /api/exam/wrong, /api/study | 试卷错题 + 学习错题双轨 |
-| 8 | 每日任务 | /api/tasks | 三科任务池 + 昨日错题复习 |
+| 8 | 每日任务 | /api/tasks | 三科默认强制 + 家长每科追加多个强制 + 可选任务池 + 补签卡 |
 | 9 | AI 讲解 | /api/ai | 错题 AI 分析 + 周报 + 鼓励 |
 | 10 | 十万个为什么 | /api/qa | AI 问答 + 缓存 + 多轮对话 |
 | 11 | 心情打卡 | /api/mood | 每日心情 + 趋势预警 |
@@ -373,14 +427,14 @@ output/*.docx                   # 生成的试卷文档
 
 ### 工作量汇总
 
-| 改造项 | 预估工时 | 优先级建议 | 依赖关系 |
+| 改造项 | 预估工时 | 优先级建议 | 状态 |
 |--------|---------|-----------|---------|
-| 前端 Vue 组件化 | 5-7 天 | ★★★ 高 | 无依赖，可先行 |
-| SQLite → MySQL | 3-5 天 | ★★★ 高 | 无依赖，可并行 |
-| 完整代码注释 | 3-4 天 | ★★ 中 | 无依赖，可随时穿插 |
-| 注册登录充值 | 5-7 天 | ★★★ 高 | 依赖 MySQL（如需持久化） |
-| 天气与提醒 | 4-6 天 | ★★ 中 | 依赖公众号/短信服务申请 |
-| 系统管理后台 | 5-8 天 | ★★★ 高 | 依赖注册登录（管理员体系） |
-| **合计** | **25-37 天** | — | — |
+| 前端 Vue 组件化 | 5-7 天 | ★★★ 高 | 已完成（web/ + Vite） |
+| SQLite → MySQL | 3-5 天 | ★★★ 高 | 已完成（含数据迁移与方言修复） |
+| 完整代码注释 | 3-4 天 | ★★ 中 | 部分完成（核心模块已补） |
+| 注册登录充值 | 5-7 天 | ★★★ 高 | 注册登录已完成（026_user_auth），充值未启动 |
+| 天气与提醒 | 4-6 天 | ★★ 中 | 未启动 |
+| 系统管理后台 | 5-8 天 | ★★★ 高 | 后端已完成（027_admin + admin API），独立前端未启动 |
+| **合计** | **25-37 天** | — | 后续方向见 docs/ROADMAP.md |
 
 > 以上估算是基于 1 个熟悉项目的开发者全职投入。如果多人并行，前端 Vue 化 + MySQL 迁移 + 管理后台可以同时推进，总工期可压缩到 **15-20 天**。
