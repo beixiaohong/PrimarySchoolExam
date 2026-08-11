@@ -11,7 +11,10 @@ from ..models.word import Word, WordBook
 from ..models.phrase import Phrase, Sentence
 from ..models.problem_type import ProblemType, ProblemCategory
 from ..models.grammar import GrammarPoint, GrammarExercise
-from ..config import WORD_CSV_PATH, DATA_DIR
+from ..config import WORD_CSV_PATH, MIDDLE_WORD_CSV_PATH, DATA_DIR
+
+# 数字年级 → 中文（初中册名用）
+GRADE_CN = {7: "七", 8: "八", 9: "九"}
 
 
 def ensure_initial_data():
@@ -21,9 +24,11 @@ def ensure_initial_data():
         _seed_problem_types(db)
         _migrate_new_problem_types(db)
         _seed_word_bank(db)
+        _seed_middle_word_bank(db)
         _seed_phrases(db)
         _seed_sentences(db)
         _seed_grammar(db)
+        _migrate_middle_grammar(db)
     finally:
         db.close()
 
@@ -246,6 +251,65 @@ def _seed_word_bank(db):
             db.add(word)
 
     # 更新词库计数（直接用去重集合长度，避免flush时序问题）
+    for book_name, book in books_cache.items():
+        book.word_count = len(seen_words[book_name])
+
+    db.commit()
+
+
+def _seed_middle_word_bank(db):
+    """增量导入初中英语词库（grade>=7，册名：人教版七/八/九年级上/下）"""
+    if db.query(WordBook).filter(WordBook.grade >= 7).count() > 0:
+        return
+
+    csv_path = Path(MIDDLE_WORD_CSV_PATH)
+    if not csv_path.exists():
+        return
+
+    books_cache = {}
+    seen_words = {}
+
+    with open(csv_path, "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            grade = int(row.get("grade", 7))
+            if grade < 7:
+                continue
+            semester = row.get("semester", "上")
+            book_name = f"人教版{GRADE_CN[grade]}年级{semester}"
+
+            if book_name not in books_cache:
+                book = WordBook(
+                    name=book_name,
+                    grade=grade,
+                    semester=semester,
+                    publisher="人教版",
+                )
+                db.add(book)
+                db.flush()
+                books_cache[book_name] = book
+                seen_words[book_name] = set()
+
+            word_text = row.get("word", "").strip()
+            if not word_text:
+                continue
+            word_lower = word_text.lower()
+            if word_lower in seen_words[book_name]:
+                continue
+            seen_words[book_name].add(word_lower)
+
+            book = books_cache[book_name]
+            db.add(Word(
+                book_id=book.id,
+                word=word_text,
+                phonetic=row.get("phonetic", "").strip(),
+                pos=row.get("pos", "").strip(),
+                meaning=row.get("meaning", "").strip(),
+                unit=row.get("unit", "").strip(),
+                difficulty=int(row.get("difficulty", 2) or 2),
+                tags=row.get("tags", "").strip(),
+            ))
+
     for book_name, book in books_cache.items():
         book.word_count = len(seen_words[book_name])
 
@@ -535,3 +599,161 @@ def _seed_grammar(db):
             db.add(exercise)
 
     db.commit()
+
+
+# 初中语法知识点（种子版，需人工校对扩充）
+MIDDLE_GRAMMAR_DATA = [
+    {
+        "name": "现在完成时", "code": "present_perfect", "grade": 8, "category": "时态",
+        "description": "表示过去发生的动作对现在造成的影响，或从过去持续到现在的状态。构成：have/has + 过去分词。常与 already/yet/just/ever/never/for/since 连用。",
+        "examples": "I have finished my homework.\nShe has lived here since 2015.\nHave you ever been to Beijing?",
+        "exercises": [
+            ("choice", 8, 1, "I ______ my homework already.", '[ "finish", "finished", "have finished", "am finishing" ]', "C", "already提示现在完成时，用have + 过去分词。"),
+            ("choice", 8, 1, "She ______ in this city since 2018.", '[ "lives", "lived", "has lived", "is living" ]', "C", "since + 时间点用现在完成时，She用has lived。"),
+            ("fill", 8, 2, "He ______ just ______ (leave) the office.", "", "has; left", "just提示现在完成时，He用has + left。"),
+            ("choice", 8, 2, "______ you ever ______ sushi?", '[ "Do, eat", "Have, eaten", "Did, eat", "Are, eating" ]', "B", "ever用于现在完成时疑问句：Have + 主语 + 过去分词。"),
+            ("fill", 9, 3, "They ______ (not, see) the film yet.", "", "haven't seen", "yet用于否定句，现在完成时：haven't + 过去分词。"),
+            ("choice", 9, 3, "He has been a teacher ______ ten years.", '[ "since", "for", "in", "at" ]', "B", "for + 时间段，since + 时间点。"),
+        ],
+    },
+    {
+        "name": "过去进行时", "code": "past_continuous", "grade": 8, "category": "时态",
+        "description": "表示过去某一时刻正在进行的动作。构成：was/were + 动词ing。常与 at that time/when/while 连用。",
+        "examples": "I was reading at eight last night.\nWhile she was cooking, the phone rang.",
+        "exercises": [
+            ("choice", 8, 1, "I ______ TV at eight last night.", '[ "watch", "watched", "was watching", "am watching" ]', "C", "at eight last night指过去某一时刻，用过去进行时。"),
+            ("choice", 8, 1, "While my mother ______ dinner, I was doing homework.", '[ "cooks", "cooked", "was cooking", "is cooking" ]', "C", "while引导的从句用进行时，过去背景用was cooking。"),
+            ("fill", 8, 2, "They ______ (play) basketball when it began to rain.", "", "were playing", "雨开始下时他们正在打球，were + playing。"),
+            ("fill", 8, 2, "What ______ you ______ (do) at this time yesterday?", "", "were; doing", "过去进行时疑问句：were + 主语 + doing。"),
+            ("transform", 9, 3, "She was singing at that time. (改为一般疑问句)", "", "Was she singing at that time?", "把was提到主语前面。"),
+        ],
+    },
+    {
+        "name": "过去完成时", "code": "past_perfect", "grade": 9, "category": "时态",
+        "description": "表示在过去某一时间或动作之前已经完成的动作，即“过去的过去”。构成：had + 过去分词。",
+        "examples": "When I arrived, the train had left.\nShe had finished the book before dinner.",
+        "exercises": [
+            ("choice", 9, 2, "When I got to the station, the train ______.", '[ "left", "has left", "had left", "leaves" ]', "C", "火车离开在到达之前，用过去完成时had left。"),
+            ("choice", 9, 2, "She ______ the work before her boss came back.", '[ "finishes", "finished", "had finished", "has finished" ]', "C", "before came back之前的动作用had + 过去分词。"),
+            ("fill", 9, 3, "By the end of last term, we ______ (learn) 20 units.", "", "had learned", "by + 过去时间点用过去完成时。"),
+            ("fill", 9, 3, "He realized he ______ (lose) his key.", "", "had lost", "钥匙丢失发生在realize之前，用had lost。"),
+        ],
+    },
+    {
+        "name": "被动语态", "code": "passive_voice", "grade": 8, "category": "语态",
+        "description": "主语是动作的承受者时用被动语态。构成：be + 过去分词。不同时态中be动词变化：一般现在时am/is/are，一般过去时was/were，含情态动词can/must/should be。",
+        "examples": "The room is cleaned every day.\nThe bridge was built in 1990.\nHomework must be finished first.",
+        "exercises": [
+            ("choice", 8, 1, "English ______ in many countries.", '[ "speaks", "is spoken", "spoke", "is speaking" ]', "B", "English被说，一般现在时被动：is + spoken。"),
+            ("choice", 8, 2, "The bridge ______ in 1990.", '[ "builds", "built", "was built", "is built" ]', "C", "1990年是过去，用一般过去时被动was built。"),
+            ("fill", 8, 2, "The windows ______ (clean) by Tom yesterday.", "", "were cleaned", "windows是复数，过去时被动were cleaned。"),
+            ("choice", 9, 2, "The homework must ______ before Friday.", '[ "finish", "be finished", "finished", "finishing" ]', "B", "情态动词被动：must be + 过去分词。"),
+            ("transform", 9, 3, "People grow rice in the south. (改为被动语态)", "", "Rice is grown in the south.", "rice作主语，一般现在时被动is grown。"),
+            ("fill", 9, 3, "Many trees ______ (plant) every spring.", "", "are planted", "every spring用一般现在时，trees复数用are planted。"),
+        ],
+    },
+    {
+        "name": "宾语从句", "code": "object_clause", "grade": 9, "category": "从句",
+        "description": "在句中作宾语的从句。陈述句用that引导，一般疑问句用if/whether，特殊疑问句用疑问词。从句用陈述语序；主句过去时，从句时态相应后退。",
+        "examples": "I think (that) he is right.\nDo you know if it will rain?\nCan you tell me where the bank is?",
+        "exercises": [
+            ("choice", 9, 1, "I don't know ______ he will come tomorrow.", '[ "that", "if", "what", "which" ]', "B", "“是否”用if/whether引导宾语从句。"),
+            ("choice", 9, 2, "Can you tell me ______?", '[ "where is the bank", "where the bank is", "the bank is where", "is where the bank" ]', "B", "宾语从句用陈述语序：疑问词 + 主语 + 谓语。"),
+            ("choice", 9, 2, "He said that he ______ ill.", '[ "is", "was", "be", "being" ]', "B", "主句是过去时said，从句时态后退用was。"),
+            ("fill", 9, 3, "Do you know ______ (does, he, live)? (连词成句作宾语从句)", "", "where he lives", "特殊疑问词引导，从句用陈述语序：where he lives。"),
+            ("choice", 9, 3, "The teacher told us that the earth ______ around the sun.", '[ "moved", "moves", "move", "is moved" ]', "B", "客观真理在宾语从句中始终用一般现在时。"),
+        ],
+    },
+    {
+        "name": "定语从句", "code": "attributive_clause", "grade": 9, "category": "从句",
+        "description": "修饰名词的从句。指人用who/that，指物用which/that，所属关系用whose。关系代词在从句中作主语或宾语。",
+        "examples": "The man who is standing there is my uncle.\nThis is the book that I bought yesterday.",
+        "exercises": [
+            ("choice", 9, 1, "The girl ______ won the prize is my sister.", '[ "which", "who", "whose", "whom" ]', "B", "指人且作主语用who。"),
+            ("choice", 9, 1, "This is the movie ______ I like best.", '[ "who", "which", "whose", "whom" ]', "B", "指物用which/that。"),
+            ("choice", 9, 2, "I know the boy ______ father is a doctor.", '[ "who", "which", "whose", "that" ]', "C", "表示“他的父亲”用whose。"),
+            ("choice", 9, 3, "She is one of the students ______ good at math.", '[ "who is", "who are", "which is", "that is" ]', "B", "先行词是复数students，从句谓语用are。"),
+            ("fill", 9, 3, "The book ______ he bought yesterday is interesting. (用which或that)", "", "which/that", "指物作宾语，用which或that。"),
+        ],
+    },
+    {
+        "name": "状语从句", "code": "adverbial_clause", "grade": 8, "category": "从句",
+        "description": "表示时间(when/while/as soon as)、条件(if/unless)、原因(because)、让步(although)的从句。注意：主将从现——主句将来时，条件/时间从句用一般现在时。",
+        "examples": "I will call you when I arrive.\nIf it rains, we will stay at home.",
+        "exercises": [
+            ("choice", 8, 2, "I will tell him the news as soon as he ______ back.", '[ "will come", "comes", "came", "is coming" ]', "B", "主将从现：as soon as从句用一般现在时。"),
+            ("choice", 8, 2, "If it ______ tomorrow, we will go hiking.", "[ \"won't rain\", \"doesn't rain\", \"didn't rain\", \"isn't raining\" ]", "B", "if条件从句主将从现，否定用doesn't rain。"),
+            ("choice", 8, 1, "______ he was tired, he kept working.", '[ "Because", "Although", "If", "Unless" ]', "B", "“虽然累但继续工作”是让步关系，用Although。"),
+            ("choice", 9, 3, "You will fail the exam ______ you study hard.", '[ "if", "unless", "because", "when" ]', "B", "unless = if not，除非努力学习否则考砸。"),
+            ("fill", 9, 3, "He ______ (phone) me when he arrives.", "", "will phone", "主句用将来时，when从句用现在时。"),
+        ],
+    },
+    {
+        "name": "不定式与动名词", "code": "infinitive_gerund", "grade": 8, "category": "词法",
+        "description": "to + 动词原形为不定式，动词ing为动名词。有些动词后只能接不定式(want/decide/hope/plan)，有些只能接动名词(enjoy/finish/keep/mind)，有些两者均可但意义不同(remember/stop/forget)。",
+        "examples": "I want to be a doctor.\nShe enjoys reading.\nRemember to close the door. (记得去关)\nI remember closing the door. (记得关过)",
+        "exercises": [
+            ("choice", 8, 1, "He decided ______ a new bike.", '[ "buy", "buying", "to buy", "bought" ]', "C", "decide后接不定式to buy。"),
+            ("choice", 8, 1, "I enjoy ______ English songs.", '[ "listen to", "to listen to", "listening to", "listened to" ]', "C", "enjoy后接动名词listening to。"),
+            ("choice", 8, 2, "Don't forget ______ the lights when you leave.", '[ "turn off", "turning off", "to turn off", "turned off" ]', "C", "remember/forget to do表示记得/忘记要去做。"),
+            ("choice", 9, 3, "Stop ______! The teacher is coming. (别说话了)", '[ "talk", "to talk", "talking", "talked" ]', "C", "stop doing表示停止正在做的事。"),
+            ("fill", 9, 3, "She hopes ______ (become) a doctor.", "", "to become", "hope后接不定式to become。"),
+        ],
+    },
+    {
+        "name": "感叹句", "code": "exclamatory", "grade": 7, "category": "句型",
+        "description": "What引导的感叹句修饰名词：What (a/an) + 形容词 + 名词 + 主谓！How引导的感叹句修饰形容词/副词：How + 形容词/副词 + 主谓！",
+        "examples": "What a beautiful flower it is!\nHow fast he runs!",
+        "exercises": [
+            ("choice", 7, 1, "______ lovely weather it is!", '[ "What", "What a", "How", "How a" ]', "A", "weather不可数，用What + 形容词 + 不可数名词。"),
+            ("choice", 7, 1, "______ interesting the story is!", '[ "What", "What an", "How", "How an" ]', "C", "修饰形容词interesting用How。"),
+            ("choice", 8, 2, "______ great fun we had at the party!", '[ "What", "What a", "How", "How a" ]', "A", "fun不可数，用What。"),
+            ("transform", 8, 3, "The boy is very clever. (改为感叹句)", "", "How clever the boy is!", "How + 形容词 + 主语 + 谓语。"),
+            ("fill", 9, 3, "______ (What/How) a hard-working student she is!", "", "What", "修饰名词短语a hard-working student用What。"),
+        ],
+    },
+    {
+        "name": "情态动词表推测", "code": "modal_speculation", "grade": 9, "category": "词法",
+        "description": "must表示肯定推测（一定），can't/couldn't表示否定推测（不可能），may/might/could表示可能。对现在的推测后接动词原形，对正在进行的推测接be doing。",
+        "examples": "He must be at home. (他一定在家)\nIt can't be true. (这不可能是真的)\nShe may come tomorrow. (她可能来)",
+        "exercises": [
+            ("choice", 9, 2, "The lights are on. He ______ be at home.", "[ \"can't\", \"must\", \"may\", \"should\" ]", "B", "灯亮着是强证据，肯定推测用must。"),
+            ("choice", 9, 2, "It ______ be Tom. He is in Shanghai now.", "[ \"mustn't\", \"can't\", \"needn't\", \"may not\" ]", "B", "他在上海，不可能在这，否定推测用can't。"),
+            ("choice", 9, 3, "She ______ be reading in the library. I saw her there just now.", "[ \"must\", \"can't\", \"may\", \"should\" ]", "A", "刚看到她在图书馆，肯定推测正在进行用must be doing。"),
+            ("fill", 9, 3, "It ______ (may) rain tomorrow. Take an umbrella. (用may/might填空)", "", "may/might", "可能性较弱的推测用may/might。"),
+        ],
+    },
+]
+
+
+def _migrate_middle_grammar(db):
+    """为已有数据库增量补充初中语法知识点（按 code 去重）"""
+    added = 0
+    for gp_data in MIDDLE_GRAMMAR_DATA:
+        existing = db.query(GrammarPoint).filter(GrammarPoint.code == gp_data["code"]).first()
+        if existing:
+            continue
+        point = GrammarPoint(
+            name=gp_data["name"],
+            code=gp_data["code"],
+            grade=gp_data["grade"],
+            category=gp_data["category"],
+            description=gp_data["description"],
+            examples=gp_data["examples"],
+        )
+        db.add(point)
+        db.flush()
+        for ex_type, grade, diff, question, options, answer, explanation in gp_data["exercises"]:
+            db.add(GrammarExercise(
+                grammar_point_id=point.id,
+                grade=grade,
+                exercise_type=ex_type,
+                question=question,
+                options=options,
+                answer=answer,
+                explanation=explanation,
+                difficulty=diff,
+            ))
+        added += 1
+    if added:
+        db.commit()

@@ -40,6 +40,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 # 词库文件路径
 WORD_CSV_PATH = DATA_DIR / "words_primary_school.csv"
+MIDDLE_WORD_CSV_PATH = DATA_DIR / "words_middle_school.csv"
 
 # 分页默认值
 DEFAULT_PAGE_SIZE = 50
