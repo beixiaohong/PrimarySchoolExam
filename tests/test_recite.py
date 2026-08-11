@@ -91,6 +91,10 @@ def test_vocab_session_quiz_count(client):
         if it.get("options"):
             # 选择题：正确答案必须在选项内
             assert it["answer"] in it["options"]
+    # 同一词的 4 题题干不得完全相同（默写/理解混合）
+    for wid in word_ids:
+        qs = [it["question"] for it in items if it["word_id"] == wid]
+        assert len(set(qs)) > 1, "同词 4 题题干不应完全一样"
 
 
 def test_classical_session_quiz_count(client):

@@ -52,6 +52,35 @@ def test_wish_expire_after_deadline(client):
     assert r.json()["wish"] is None
 
 
+def test_coupon_child_overview_only_shows_granted(client):
+    """孩子侧 overview 只展示已获取的券：全勤门槛券创建时不出现，0 天券即时获得则出现"""
+    uid = USER + "券展示"
+    # 设家长密码（创建券接口需要）
+    client.post("/api/parent/setup", json={
+        "user_id": uid, "password": "8888",
+        "hint_question": "？", "hint_answer": "a",
+    })
+    hdr = {"X-Parent-Pwd": "8888"}
+    r = client.post("/api/rewards/coupon", json={
+        "user_id": uid, "title": "全勤才能拿的券", "kind": "cartoon", "required_days": 7,
+    }, headers=hdr)
+    assert r.status_code == 200, r.text
+    r = client.post("/api/rewards/coupon", json={
+        "user_id": uid, "title": "即时获得的券", "kind": "snack", "required_days": 0,
+    }, headers=hdr)
+    assert r.status_code == 200, r.text
+
+    r = client.get("/api/rewards/overview", params={"user_id": uid})
+    assert r.status_code == 200
+    titles = [c["title"] for c in r.json()["coupons"]]
+    assert "即时获得的券" in titles
+    assert "全勤才能拿的券" not in titles, "未获取的券不应在孩子侧展示"
+    # 家长侧仍可见全部
+    r = client.get("/api/rewards/parent-panel", params={"user_id": uid}, headers=hdr)
+    ptitles = [c["title"] for c in r.json()["coupons"]]
+    assert "全勤才能拿的券" in ptitles and "即时获得的券" in ptitles
+
+
 def test_coupon_progress_not_reset_for_new_user(client):
     """新上线用户：首条任务记录之前的日期不计中断，进度不被误清零"""
     from app.database import SessionLocal

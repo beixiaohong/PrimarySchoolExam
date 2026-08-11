@@ -335,13 +335,14 @@
               <span class="ci">{{couponIcon(c.kind)}}</span>
               <div class="c-body">
                 <b>{{c.title}}</b>
-                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得，当前 {{c.progress_days}}/{{c.required_days}} 天</template><span class="more" style="font-size:11px"> · 7天内最多缺1天，超出从头计算</span></span>
+                <span v-if="c.required_days>0">{{c.kind_label}} · ✅ 已获得 {{c.granted_count}} 张<template v-if="c.left>0">，剩余 {{c.left}} 张</template><template v-else>，再全勤 {{c.required_days}} 天可再获得（当前 {{c.progress_days}}/{{c.required_days}} 天）</template></span>
                 <span v-else>{{c.kind_label}} · 可直接使用，剩余 {{c.left}} 张</span>
                 <span v-if="c.reason" class="c-reason">🎯 {{c.reason}}</span>
               </div>
-              <span class="tag" :class="c.left>0 ? 'tag-green' : 'tag-blue'">{{c.left>0 ? '可用' : (c.required_days>0 ? '待达成' : '已用完')}}</span>
+              <span class="tag" :class="c.left>0 ? 'tag-green' : 'tag-blue'">{{c.left>0 ? '可用' : (c.required_days>0 ? '可再获得' : '已用完')}}</span>
             </div>
           </div>
+          <p v-else class="more" style="margin-top:12px">🎫 兑换券获取后才会在这里展示，坚持三科全勤任务就能获得</p>
           <div class="timeline-box" v-if="rewardTimeline.length">
             <div class="tl-title">🏆 成长奖励记录</div>
             <div class="tl-item" v-for="(it,i) in rewardTimeline" :key="i">
@@ -1608,7 +1609,7 @@
           </div>
 
           <div class="pc-sec">
-            <div class="pc-title">🎫 兑换券管理 <span class="more">可设全勤天数门槛，孩子达成即获得；家长核销兑现</span></div>
+            <div class="pc-title">🎫 兑换券管理 <span class="more">可设全勤天数门槛，孩子达成即获得；家长核销兑现 · 孩子端获取后才展示</span></div>
             <div class="pc-row" style="flex-wrap:wrap">
               <input v-model="newCoupon.title" class="fill-input" maxlength="30" placeholder="如：周末看动画半小时" style="min-width:150px">
               <select v-model="newCoupon.kind" class="fill-input" style="max-width:110px">

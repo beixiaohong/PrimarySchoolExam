@@ -394,27 +394,38 @@ def _spelling_variants(word: str, n: int = 3) -> list:
     return list(variants)[:n]
 
 
+def _dictate_item(w: Word, variant: int) -> dict:
+    """默写题：variant 变换题干措辞，避免同词多道默写题完全一样"""
+    if variant == 1 and w.phonetic:
+        q = f"根据音标与释义默写单词：{w.phonetic}（{w.meaning}）"
+    elif variant == 2:
+        q = f"把下面的释义翻译成英文单词：{w.meaning}"
+    elif variant == 3 and w.phonetic:
+        q = f"只听音标默写单词：{w.phonetic}"
+    else:
+        q = f"根据释义默写单词：{w.meaning}" \
+            + (f"（音标：{w.phonetic}）" if w.phonetic else "")
+    return {
+        "word_id": w.id, "word": w.word,
+        "kind": "fill", "q_type": "dictate",
+        "question": q, "answer": w.word, "options": None,
+        "context": "服务端判分，忽略大小写",
+    }
+
+
 def _vocab_session_items_for_word(db: Session, w: Word, stage: int,
                                  book_ids: list, sentence_cache: list) -> list:
-    """每词 4 题：stage0 全默写 → stage1 2+2 → stage2-3 1+3 → stage4+ 全理解"""
+    """每词 4 题：默写+理解混合，默写题干措辞按 variant 区分避免重复
+    stage0 2默写+2理解 → stage1-3 1+3 → stage4+ 全理解"""
     if stage <= 0:
-        n_dict = 4
-    elif stage == 1:
         n_dict = 2
     elif stage <= 3:
         n_dict = 1
     else:
         n_dict = 0
-    items = []
-    for _ in range(n_dict):
-        items.append({
-            "word_id": w.id, "word": w.word,
-            "kind": "fill", "q_type": "dictate",
-            "question": f"根据释义默写单词：{w.meaning}"
-                        + (f"（音标：{w.phonetic}）" if w.phonetic else ""),
-            "answer": w.word, "options": None,
-            "context": "服务端判分，忽略大小写",
-        })
+    variants = [0, 1, 2, 3]
+    random.shuffle(variants)
+    items = [_dictate_item(w, v) for v in variants[:n_dict]]
     under_pool = _VOCAB_UNDERSTAND_TYPES[:]
     random.shuffle(under_pool)
     meaning_pool = None
@@ -456,15 +467,13 @@ def _vocab_session_items_for_word(db: Session, w: Word, stage: int,
                 variants, "拼写辨析")
         if item:
             items.append(item)
-    # 理解题生成失败时用默写题补足 4 题
+    # 理解题生成失败时用剩余 variant 的默写题补足 4 题（题干仍尽量区分）
+    vi = n_dict
+    while len(items) < 4 and vi < len(variants):
+        items.append(_dictate_item(w, variants[vi]))
+        vi += 1
     while len(items) < 4:
-        items.append({
-            "word_id": w.id, "word": w.word,
-            "kind": "fill", "q_type": "dictate",
-            "question": f"根据释义默写单词：{w.meaning}",
-            "answer": w.word, "options": None,
-            "context": "服务端判分，忽略大小写",
-        })
+        items.append(_dictate_item(w, 0))
     return items[:4]
 
 
