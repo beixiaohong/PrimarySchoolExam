@@ -201,3 +201,33 @@
 3. **unit 排序**：词库 unit 字段为字符串（如 "Unit 10"），已用解析函数 `_unit_sort_key`
    （提取数字部分排序，非数字排最后）解决，见 app/routers/study.py
 4. **内容版权**：初中词汇与古诗文为课标公开内容，教材原文引用注意版权边界（古诗词无版权问题）
+
+---
+
+## 已完成里程碑：task-607 同步学·搜题·语英增强（2026-08-12）
+
+> 方案稿：`同步学与搜题及语英增强_task-607.md`（v1.0）。三大里程碑 M1/M2/M3 已按优先级全部实现并通过测试。
+
+### 交付内容
+
+| 里程碑 | 关键交付 | 迁移 |
+|---|---|---|
+| **M1（P0）** 文字搜题 + 同步学骨架 | 搜题链路（命中缓存/AI 降级/错题本联动）；同步学三科单元导航 + 要点/练习/小测（无状态签名 token 防作弊）；前端「搜题」「同步学」入口 | 034 数学章节映射种子 + sync_quiz_log 表 |
+| **M2（P1）** 作文/简答判分 + 数学同步 | 作文批改评分卡（分学段 30/50、15/20，落库可回看）；阅读简答 AI 要点判分（0/1/2 分档）；数学按章节出小测卷 | 035 essay_grades 表 |
+| **M3（P2）** 阅读专项 + 题库扩充 + 多 AI 校对 | 阅读理解专项（抽篇→客观即时判 + 主观 AI 判分）；初中语文题库 + 英语初中短语句子 + classical/middle unit 标注与六科扩充至 ≥30/科；多 AI 联合校对（zhipu+relay 双供应商，分歧进后台人工审核队列） | 036 reading_passages、037 lang_seed、038 content_review + review_status 列 |
+
+### 新增 API（共 15 个）
+
+- 搜题：`/api/search/ask`、`/api/search/to-wrong`、`/api/search/history`（image 仅定义契约，D2 延期）
+- 同步学：`/api/sync/overview`、`/unit-points`、`/unit-practice`、`/unit-quiz`(generate+submit)
+- AI 判分：`/api/ai/grade-essay`、`/api/ai/grade-short-answer`
+- 阅读：`/api/reading/passages`、`/api/reading/submit`
+- 管理后台校对：`/api/admin/reviews/run`、`/api/admin/reviews`、`/api/admin/reviews/resolve`
+
+### 数据模型与约束
+
+- 新 ORM 模型：`SyncQuizLog`、`EssayGrade`、`ReadingPassage`、`ContentReview`（create_all 在 SQLite 测试建表；MySQL 生产由 034-038 迁移建表/加列）
+- 新迁移均为 MySQL-only（runner 对 SQLite 跳过并标记已应用）；AI 种子标注「种子版，需人工校对」
+- AI 功能全部走钻石计费 + 限频（作文 3/min、简答 5/min、阅读 5/min），失败不阻断
+- 语文课内课文全文不收录（版权约束），同步素材以古诗文 + 字词为主
+- 拍照搜题依 D2 决议延期至下期，本期仅保留前端入口与流程预留

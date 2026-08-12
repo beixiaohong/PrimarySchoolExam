@@ -26,6 +26,8 @@ from .middle import MiddleQuestion, TeachingProgress
 from .paper import Paper, PaperQuestion
 from .sync import SyncQuizLog
 from .essay import EssayGrade
+from .reading import ReadingPassage
+from .content_review import ContentReview
 
 __all__ = [
     "Word", "WordBook",
@@ -57,4 +59,6 @@ __all__ = [
     "Paper", "PaperQuestion",
     "SyncQuizLog",
     "EssayGrade",
+    "ReadingPassage",
+    "ContentReview",
 ]

@@ -27,13 +27,16 @@ const app = createApp({
       showConfig: false, configForm: { key: '', value: '', masked: '' },
       // 操作日志
       logs: [], logTotal: 0, logPage: 1, logPageSize: 20, logsLoading: false,
+      // 内容校对（多 AI 审核队列）
+      reviews: [], reviewTotal: 0, reviewPage: 1, reviewPageSize: 20, reviewsLoading: false,
+      reviewStatus: 'conflict', reviewsRunning: false,
       // 改密
       showChangePwd: false, pwdForm: { old: '', new1: '', new2: '' },
     };
   },
   computed: {
     viewTitle() {
-      return { dashboard: '仪表盘', users: '用户管理', config: '三方 API 配置', logs: '操作日志' }[this.view] || '';
+      return { dashboard: '仪表盘', users: '用户管理', config: '三方 API 配置', reviews: '内容校对', logs: '操作日志' }[this.view] || '';
     },
   },
   methods: {
@@ -73,6 +76,7 @@ const app = createApp({
       if (v === 'dashboard') this.loadDashboard();
       if (v === 'users') this.loadUsers(1);
       if (v === 'config') this.loadConfig();
+      if (v === 'reviews') this.loadReviews(1);
       if (v === 'logs') this.loadLogs(1);
     },
 
@@ -190,6 +194,36 @@ const app = createApp({
         this.logs = d.items; this.logTotal = d.total;
       } catch (e) { this.msg(e.message, 'error'); }
       finally { this.logsLoading = false; }
+    },
+
+    // ── 内容校对（多 AI 审核队列）──
+    async loadReviews(page) {
+      this.reviewPage = page || 1;
+      this.reviewsLoading = true;
+      try {
+        const d = await this.api(`/reviews?status=${encodeURIComponent(this.reviewStatus)}&page=${this.reviewPage}&page_size=${this.reviewPageSize}`);
+        this.reviews = d.items; this.reviewTotal = d.total;
+      } catch (e) { this.msg(e.message, 'error'); }
+      finally { this.reviewsLoading = false; }
+    },
+    async runReviews() {
+      this.reviewsRunning = true;
+      try {
+        const d = await this.api('/reviews/run', { method: 'POST', body: JSON.stringify({ limit: 50 }) });
+        this.msg(`校对 ${d.reviewed} 条（通过 ${d.approved}，分歧 ${d.conflict}）`);
+        this.loadReviews(this.reviewPage);
+      } catch (e) { this.msg(e.message, 'error'); }
+      finally { this.reviewsRunning = false; }
+    },
+    async resolveReview(row, verdict) {
+      try {
+        await this.api('/reviews/resolve', {
+          method: 'POST',
+          body: JSON.stringify({ content_type: row.content_type, content_id: row.content_id, verdict }),
+        });
+        this.msg(verdict === 'approved' ? '已采纳（approved）' : '已驳回（rejected）');
+        this.loadReviews(this.reviewPage);
+      } catch (e) { this.msg(e.message, 'error'); }
     },
 
     // ── 改密 ──

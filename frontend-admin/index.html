@@ -30,6 +30,7 @@
         <el-menu-item index="dashboard"><el-icon><i class="mi">📊</i></el-icon>仪表盘</el-menu-item>
         <el-menu-item index="users"><el-icon><i class="mi">👥</i></el-icon>用户管理</el-menu-item>
         <el-menu-item index="config"><el-icon><i class="mi">🔑</i></el-icon>三方配置</el-menu-item>
+        <el-menu-item index="reviews"><el-icon><i class="mi">✅</i></el-icon>内容校对</el-menu-item>
         <el-menu-item index="logs"><el-icon><i class="mi">📋</i></el-icon>操作日志</el-menu-item>
       </el-menu>
     </el-aside>
@@ -137,6 +138,49 @@
           </el-table>
           <el-pagination class="pager" background layout="prev, pager, next, total" :total="logTotal"
                          :page-size="logPageSize" :current-page="logPage" @current-change="loadLogs"></el-pagination>
+        </div>
+
+        <!-- 内容校对（多 AI 联合审核队列） -->
+        <div v-if="view==='reviews'">
+          <el-alert type="info" :closable="false" style="margin-bottom:12px"
+            title="机器先行：双 AI 供应商独立审阅，全部通过→approved 可出题；出现反对/意见不一→conflict 进此队列，需人工裁决（采纳/驳回）。"></el-alert>
+          <div class="toolbar">
+            <el-button type="primary" :loading="reviewsRunning" @click="runReviews">🚀 批量触发多 AI 校对</el-button>
+            <el-select v-model="reviewStatus" style="width:160px" @change="loadReviews(1)">
+              <el-option label="待人工审核 (conflict)" value="conflict"></el-option>
+              <el-option label="已通过 (approved)" value="approved"></el-option>
+              <el-option label="已驳回 (rejected)" value="rejected"></el-option>
+              <el-option label="待校对 (pending)" value="pending"></el-option>
+            </el-select>
+            <span class="muted">共 {{reviewTotal}} 条</span>
+          </div>
+          <el-table :data="reviews" v-loading="reviewsLoading" border stripe>
+            <el-table-column label="内容" min-width="280">
+              <template #default="{row}">
+                <el-tag size="small" type="warning">{{row.content_type === 'middle_question' ? '题库' : '阅读'}}</el-tag>
+                <span class="muted" style="margin-left:6px">#{{row.content_id}}</span>
+                <div class="preview">{{row.preview}}</div>
+              </template>
+            </el-table-column>
+            <el-table-column label="各 AI 意见" min-width="260">
+              <template #default="{row}">
+                <div v-for="(rv, i) in row.reviews" :key="i" class="rv">
+                  <el-tag size="small" :type="rv.verdict==='pass' ? 'success' : 'danger'">{{rv.provider}}</el-tag>
+                  <span class="muted">{{rv.comment}}</span>
+                </div>
+                <span v-if="!row.reviews.length" class="muted">（暂无审阅记录）</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200" fixed="right">
+              <template #default="{row}">
+                <el-button v-if="row.review_status==='conflict'" size="small" type="success" @click="resolveReview(row, 'approved')">采纳</el-button>
+                <el-button v-if="row.review_status==='conflict'" size="small" type="danger" @click="resolveReview(row, 'rejected')">驳回</el-button>
+                <el-tag v-else size="small" type="info">{{row.review_status}}</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination class="pager" background layout="prev, pager, next, total" :total="reviewTotal"
+                         :page-size="reviewPageSize" :current-page="reviewPage" @current-change="loadReviews"></el-pagination>
         </div>
 
       </el-main>

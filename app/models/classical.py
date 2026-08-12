@@ -22,6 +22,7 @@ class ClassicalText(Base):
     text_type = Column(String(20), default="poem", comment="poem=古诗, prose=文言文/古文")
     grade = Column(Integer, default=3, comment="适用年级 1-9")
     semester = Column(String(10), default="全", server_default="全", comment="适用学期：上/下/全（迁移 029 新增）")
+    unit = Column(String(100), default="", comment="课内单元标识（037 标注，支撑语文同步学单元导航）")
     content = Column(Text, nullable=False, comment="全文，行用\\n分隔")
     lines_json = Column(Text, default="[]", comment="分行JSON数组，用于出题")
     tags = Column(String(200), default="", comment="标签，逗号分隔")

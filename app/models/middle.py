@@ -18,6 +18,8 @@ class MiddleQuestion(Base):
     subject = Column(String(20), nullable=False, index=True, comment="学科：物理/化学/生物/道德与法治/历史/地理")
     grade = Column(Integer, default=7, comment="适用年级 7-9")
     type = Column(String(50), default="choice", comment="题型编码，目前均为 choice 选择题")
+    unit = Column(String(100), default="", comment="教材章节单元标识（037 标注，支撑九科同步学单元导航）")
+    review_status = Column(String(20), default="pending", comment="校对状态 pending/approved/conflict/rejected（038 多AI校对）")
     question = Column(Text, nullable=False, comment="题干")
     options_json = Column(Text, default="[]", comment="选项 JSON 数组")
     answer = Column(String(200), nullable=False, comment="正确答案（选项文本）")

@@ -44,3 +44,9 @@ body { margin: 0; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; bac
   padding: 14px 16px; margin-bottom: 14px; }
 .cfg-group h3 { margin: 0 0 10px; font-size: 15px; }
 .cfg-group code { background: #F5F7FA; padding: 2px 8px; border-radius: 6px; font-size: 12.5px; }
+
+/* 内容校对队列 */
+.preview { white-space: pre-wrap; color: #555; font-size: 12px; margin-top: 4px;
+  max-height: 90px; overflow: auto; line-height: 1.6; }
+.rv { margin: 3px 0; }
+.rv .muted { margin-left: 6px; }

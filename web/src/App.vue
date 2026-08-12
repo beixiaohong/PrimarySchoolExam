@@ -2181,6 +2181,7 @@
 
 <SearchView v-if="tab==='search'"></SearchView>
 <SyncView v-if="tab==='sync'"></SyncView>
+<ReadingView v-if="tab==='reading'"></ReadingView>
 
 </div>
 </template>
