@@ -19,6 +19,7 @@ class ProblemCategory(Base):
     sort_order = Column(Integer, default=0, comment="排序权重")
     is_active = Column(Boolean, default=True, comment="是否启用")
 
+    # 双向一对多：删除大类时级联删除其下全部题型，避免产生孤儿题
     problem_types = relationship("ProblemType", back_populates="category", cascade="all, delete-orphan")
 
 
@@ -42,6 +43,7 @@ class ProblemType(Base):
     description = Column(String(200), default="", comment="题型说明")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
+    # 反向引用：经此访问所属题目大类（见上）
     category = relationship("ProblemCategory", back_populates="problem_types")
 
     def __repr__(self):

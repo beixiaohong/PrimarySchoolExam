@@ -14,6 +14,7 @@ class Admin(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     username = Column(String(50), nullable=False, unique=True, index=True, comment="管理员用户名")
     password_hash = Column(String(128), nullable=False, comment="密码 pbkdf2 哈希")
+    # role 枚举取值：admin=普通管理员，super=超级管理员（最高权限），ops=运维人员
     role = Column(String(20), nullable=False, default="admin",
                   comment="admin/super/ops")
     token = Column(String(64), nullable=True, index=True, comment="当前会话 token")

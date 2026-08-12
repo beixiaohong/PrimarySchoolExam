@@ -35,6 +35,7 @@ class GrammarExercise(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     grammar_point_id = Column(Integer, nullable=False, comment="所属语法点 ID（grammar_points.id）")
     grade = Column(Integer, nullable=False, comment="适用年级")
+    # exercise_type 取值：choice=选择题，fill=填空题，transform=句型转换，correct=改错题
     exercise_type = Column(String(30), nullable=False, comment="题型：choice/fill/transform/correct")
     question = Column(String(500), nullable=False, comment="题目内容")
     options = Column(Text, default="", comment="选项（选择题用），JSON数组")

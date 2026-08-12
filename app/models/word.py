@@ -20,6 +20,7 @@ class WordBook(Base):
     word_count = Column(Integer, default=0, comment="单词数量（自动维护）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
+    # 双向一对多：删除词库时级联删除其下全部单词
     words = relationship("Word", back_populates="book", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -45,6 +46,7 @@ class Word(Base):
     tags = Column(String(200), default="", comment="标签，逗号分隔，如'动物,常见'")
     created_at = Column(DateTime, default=datetime.now, comment="入库时间")
 
+    # 反向引用：经此访问所属词库（见上）
     book = relationship("WordBook", back_populates="words")
 
     def __repr__(self):

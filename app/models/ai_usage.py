@@ -36,6 +36,7 @@ class WeeklyReport(Base):
     user_id = Column(String(50), nullable=False, index=True, comment="用户名")
     week_start = Column(Date, nullable=False, comment="周报所在周的周一日期")
     content_json = Column(Text, nullable=True, comment="周报内容 JSON")
+    # status 取值：pending=待生成，done=已生成，failed=生成失败
     status = Column(String(20), default="pending", comment="生成状态：pending/done/failed")
     parent_note = Column(String(200), default="", comment="家长寄语（006 迁移）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")

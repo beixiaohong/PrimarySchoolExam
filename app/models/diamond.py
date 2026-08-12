@@ -33,6 +33,8 @@ class DiamondLedger(Base):
     user_id = Column(String(64), nullable=False, index=True, comment="用户标识")
     amount = Column(Float, nullable=False, comment="变动数量（正=收入，负=支出）")
     balance_after = Column(Float, nullable=False, comment="变动后余额")
+    # reason 取值：grant=系统赠送，ai_explain=AI 讲解扣费，ai_report=AI 周报扣费，
+    #             ai_encourage=AI 鼓励扣费，admin_adjust=管理员手动调整
     reason = Column(String(50), default="", comment="原因：grant/ai_explain/ai_report/ai_encourage/admin_adjust")
     ref_id = Column(Integer, default=0, comment="关联记录ID（如 ai_usage_log.id）")
     created_at = Column(DateTime, default=datetime.now, comment="发生时间")

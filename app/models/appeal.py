@@ -23,6 +23,7 @@ class AnswerAppeal(Base):
     subject = Column(String(20), nullable=False, default="", comment="学科")
     wrong_record_id = Column(Integer, nullable=True, comment="exam：本次提交新建的错题记录 id（确认后删除）")
     wrong_new = Column(Boolean, nullable=False, default=False, comment="是否新建了错题记录")
+    # status 取值：pending=待家长裁决，approved=改判（认定孩子答对），rejected=维持原判
     status = Column(String(20), nullable=False, default="pending", comment="pending / approved / rejected")
     created_at = Column(DateTime, default=datetime.now, comment="申诉发起时间")
     decided_at = Column(DateTime, nullable=True, comment="家长裁决时间")

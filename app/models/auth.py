@@ -16,6 +16,7 @@ class AuthCode(Base):
     __table_args__ = {"comment": "验证码：注册/绑定/重置密码的邮箱短信验证码，只存哈希"}
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
+    # purpose 取值：register=注册，bind=绑定账号，reset=重置密码
     purpose = Column(String(20), nullable=False, comment="用途：register/bind/reset")
     target = Column(String(120), nullable=False, index=True, comment="目标邮箱/手机号")
     code_hash = Column(String(128), nullable=False, comment="验证码 SHA256 哈希")

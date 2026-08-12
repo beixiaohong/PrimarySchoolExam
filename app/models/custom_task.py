@@ -15,6 +15,7 @@ class CustomTask(Base):
     user_id = Column(String(50), nullable=False, index=True, comment="用户名")
     title = Column(String(100), nullable=False, comment="任务标题")
     subject = Column(String(20), default="其他", comment="学科分类")
+    # status 取值：pending=待家长确认，confirmed=已确认生效，rejected=已拒绝
     status = Column(String(20), default="pending", comment="pending/confirmed/rejected")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
     confirmed_at = Column(DateTime, nullable=True, comment="家长确认时间")

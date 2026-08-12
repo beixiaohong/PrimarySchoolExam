@@ -23,9 +23,11 @@ class DailyTask(Base):
     title = Column(String(100), nullable=False, comment="任务标题")
     target = Column(Integer, default=1, comment="目标数量")
     progress = Column(Integer, default=0, comment="当前进度")
+    # status 取值：pending=未完成，done=已完成
     status = Column(String(20), default="pending", comment="pending/done")
     manual = Column("manual", Boolean, default=False, quote=True,
                     comment="True=需要手动确认完成（manual 为 MySQL 保留字，quote 强制加引号）")
+    # task_type 取值：mandatory=强制任务（每日必做），optional=可选任务
     task_type = Column(String(20), default="mandatory", comment="mandatory/optional")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
