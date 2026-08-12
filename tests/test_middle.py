@@ -151,6 +151,82 @@ def test_vocab_semester_filter_and_include_next(client, monkeypatch):
     assert r.json()["study_flags"]["include_next"] is True
 
 
+def test_vocab_career_stats_span_semester_and_grade(client, monkeypatch):
+    """vocab 累计统计应为整个学生生涯：
+    - 跨学期：上学期学过的词，在放学前的下学期仍计入 learned（修复 28→120 类丢失）
+    - 跨年级：本年级及以下词库都计入 total（与古诗文 grade<= 口径一致）
+    - 新学选材仍只取自当前阶段（当前年级+当前学期），不跨低年级、不重教已学
+    """
+    import app.services.semester as sem
+    from app.database import SessionLocal
+    from app.models.word import Word, WordBook
+    from app.models.vocab import VocabProgress
+    from app.routers.vocab import _career_book_ids
+
+    uid = "生涯累计生"
+    db = SessionLocal()
+    try:
+        b_up = WordBook(name="生涯上", grade=6, semester="上", publisher="测试")
+        b_dn = WordBook(name="生涯下", grade=6, semester="下", publisher="测试")
+        b_low = WordBook(name="生涯五", grade=5, semester="上", publisher="测试")
+        db.add_all([b_up, b_dn, b_low])
+        db.flush()
+        up_ids, dn_ids, low_ids = [], [], []
+        for i in range(3):
+            w = Word(book_id=b_up.id, word=f"careerup{i}", meaning=f"上{i}", unit="U1", difficulty=1)
+            db.add(w); db.flush(); up_ids.append(w.id)
+        for i in range(2):
+            w = Word(book_id=b_dn.id, word=f"careerdn{i}", meaning=f"下{i}", unit="U1", difficulty=1)
+            db.add(w); db.flush(); dn_ids.append(w.id)
+        for i in range(4):
+            w = Word(book_id=b_low.id, word=f"careerlow{i}", meaning=f"低{i}", unit="U1", difficulty=1)
+            db.add(w); db.flush(); low_ids.append(w.id)
+        db.commit()
+    finally:
+        db.close()
+
+    # 模拟「下学期」（8 月）：当前阶段只开下册
+    monkeypatch.setattr(sem, "current_semester", lambda today=None: "下")
+    monkeypatch.setattr(sem, "next_semester", lambda today=None: "上")
+
+    # 学会上学期的 3 个词（模拟上学期已学）
+    db = SessionLocal()
+    try:
+        for wid in up_ids:
+            db.add(VocabProgress(user_id=uid, word_id=wid, status="learning",
+                                 review_stage=0, first_learn_date=date.today(),
+                                 last_review_date=date.today(),
+                                 next_review_date=date.today()))
+        db.commit()
+    finally:
+        db.close()
+
+    # 统计：learned 必须含上学期 3 词（跨学期不丢失）；total 等于累计池词数（跨年级）
+    r = client.get("/api/vocab/stats", params={"user_id": uid, "grade": 6})
+    assert r.status_code == 200, r.text
+    s = r.json()
+    db = SessionLocal()
+    try:
+        career_ids = _career_book_ids(db, 6, uid)
+        expected_total = db.query(Word).filter(Word.book_id.in_(career_ids)).count()
+        expected_learned = db.query(VocabProgress).filter(
+            VocabProgress.user_id == uid,
+            VocabProgress.word_id.in_(db.query(Word.id).filter(Word.book_id.in_(career_ids)))
+        ).count()
+    finally:
+        db.close()
+    assert s["total_words"] == expected_total, "累计总量应等于整个学生生涯词库大小（含低年级）"
+    assert s["learned_count"] == expected_learned == 3, \
+        f"上学期学的词在放学前的下学期应仍计入，实际 learned={s['learned_count']}"
+
+    # 今日新学：只取自当前阶段下册，且不得包含已学的上学期词或低年级词
+    r = client.get("/api/vocab/today", params={"user_id": uid, "grade": 6})
+    assert r.status_code == 200, r.text
+    new_ids = [w["word_id"] for w in r.json()["new_words"]]
+    assert set(new_ids).isdisjoint(set(up_ids)), "不得把已学的上学期词当新词重教"
+    assert set(new_ids).isdisjoint(set(low_ids)), "新学不得取自低年级词库"
+
+
 def test_classical_semester_filter(client, monkeypatch):
     """classical /today：下学期篇目在上学期不出现；include_next 可预支"""
     import app.services.semester as sem
