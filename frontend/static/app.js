@@ -66,6 +66,7 @@ createApp({
       rewardTimeline: [],
       // 申诉（AI 判题复核 + 孩子「我做对了」家长二次确认）
       pendingAppeals: [],
+      pendingMakeups: [],
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务设置
       taskSettings: { items: [] },
@@ -1033,10 +1034,27 @@ createApp({
     },
     makeupCompleteTask(taskId) {
       if (this.makeupCards <= 0) return this.showToast('没有可用的补签卡');
-      if (!confirm('使用 1 张补签卡直接完成该任务？')) return;
+      if (!confirm('使用 1 张补签卡完成该任务？提交后需家长确认才生效')) return;
+      // 孩子发起：立即扣卡并进入「待家长确认」，任务暂不完成
       this.api('/api/tasks/daily/makeup_complete', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: taskId }) })
-        .then(d => { this._applyDailyTasks(d, true); this.showToast('补签卡已使用，任务完成 ✅'); })
+        .then(d => { this._applyDailyTasks(d, true); this.showToast('补签卡已使用，待家长确认后生效 ⏳'); })
         .catch(e => this.showToast(e.message));
+    },
+    /* ─────────── 补签卡待确认（孩子发起 → 家长确认/拒绝）─────────── */
+    loadPendingMakeup() {
+      this.api(`/api/tasks/makeup/pending?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.pendingMakeups = (d && d.items) || []; })
+        .catch(() => { this.pendingMakeups = []; });
+    },
+    confirmMakeup(logId, action) {
+      this.api('/api/tasks/makeup/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, log_id: logId, action }),
+      }).then(() => {
+        this.showToast(action === 'confirm' ? '补签已生效，任务完成 ✅' : '已拒绝，补签卡已退回 🔄');
+        this.loadPendingMakeup();
+        this.loadDailyTasks && this.loadDailyTasks();
+      }).catch(e => this.showToast(e.message));
     },
     parentConfirmTask(taskId) {
       this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: taskId }) })
@@ -1540,6 +1558,7 @@ createApp({
         }).catch(() => { this.allCoupons = []; this.pendingWishes = []; });
       this.loadTaskSettings();
       this.loadAppeals();
+      this.loadPendingMakeup();
     },
     /* ─────────── 孩子申诉（AI 判题复核 + 家长二次确认）─────────── */
     loadAppeals() {

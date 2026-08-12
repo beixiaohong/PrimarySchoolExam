@@ -219,7 +219,8 @@
               <button v-if="t.manual && t.status==='pending'" class="btn btn-primary btn-sm" @click="childSubmitTask(t.id)">我完成了 ✓</button>
               <span v-else-if="t.manual && t.status==='pending_confirm'" class="tag tag-orange">已提交，待家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">全勤 +1</span>
-              <button v-if="t.status!=='done' && makeupCards>0" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" @click="makeupCompleteTask(t.id)">🎫补签</button>
+              <button v-if="t.status!=='done' && !t.makeup_pending && makeupCards>0" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" @click="makeupCompleteTask(t.id)">🎫补签</button>
+              <span v-else-if="t.makeup_pending" class="tag tag-orange" style="margin-left:6px;font-size:11px">🎫 待家长确认</span>
             </div>
             <div class="dtask-bar"><div class="dtask-bar-in" :style="{width: (t.target ? Math.min(100, t.progress / t.target * 100) : 0) + '%'}"></div></div>
           </div>
@@ -243,7 +244,8 @@
               <button v-if="t.manual && t.status==='pending'" class="btn btn-primary btn-sm" @click="childSubmitTask(t.id)">我完成了 ✓</button>
               <span v-else-if="t.manual && t.status==='pending_confirm'" class="tag tag-orange">已提交，待家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">已完成</span>
-              <button v-if="t.status!=='done' && makeupCards>0" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" @click="makeupCompleteTask(t.id)">🎫补签</button>
+              <button v-if="t.status!=='done' && !t.makeup_pending && makeupCards>0" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" @click="makeupCompleteTask(t.id)">🎫补签</button>
+              <span v-else-if="t.makeup_pending" class="tag tag-orange" style="margin-left:6px;font-size:11px">🎫 待家长确认</span>
             </div>
             <div class="dtask-bar"><div class="dtask-bar-in" :style="{width: (t.target ? Math.min(100, t.progress / t.target * 100) : 0) + '%'}"></div></div>
           </div>
@@ -1484,6 +1486,21 @@
           </div>
 
           <div class="pc-sec">
+            <div class="pc-title">🎫 补签卡待确认 <span class="more">孩子用补签卡完成的任务，需家长确认生效，拒绝则退回</span><span v-if="pendingMakeups.length" class="tag tag-orange">{{pendingMakeups.length}} 条待处理</span></div>
+            <div class="pc-list" v-if="pendingMakeups.length">
+              <div class="pc-item" v-for="m in pendingMakeups" :key="m.log_id" style="flex-wrap:wrap">
+                <div class="c-body" style="flex:1;min-width:200px">
+                  <b>{{m.task_title || '任务'}}</b>
+                  <span class="more">提交于 {{m.used_at}}</span>
+                </div>
+                <button class="btn btn-success btn-sm" @click="confirmMakeup(m.log_id, 'confirm')">确认生效 ✓</button>
+                <button class="btn btn-ghost btn-sm" @click="confirmMakeup(m.log_id, 'reject')">拒绝退回</button>
+              </div>
+            </div>
+            <p v-else class="pc-empty">没有待确认的补签申请</p>
+          </div>
+
+          <div class="pc-sec">
             <div class="pc-title">✋ 孩子的申诉 <span class="more">孩子觉得题判错了，请家长二次确认</span><span v-if="pendingAppeals.length" class="tag tag-orange">{{pendingAppeals.length}} 条待处理</span></div>
             <div class="pc-list" v-if="pendingAppeals.length">
               <div class="pc-item" v-for="a in pendingAppeals" :key="a.id" style="flex-wrap:wrap">
@@ -1790,7 +1807,11 @@
       <div v-else>
         <div class="chal-result">
           <div class="em">{{chalOverlay.correct>=15?'🏆':(chalOverlay.correct>=8?'🎉':'💪')}}</div>
-          <h3>60 秒答对 {{chalOverlay.correct}} 题！</h3>
+          <h3>60 秒答对 {{chalOverlay.correct}} / {{chalOverlay.total}} 题！</h3>
+          <p>本场正确率 <b>{{ chalOverlay.total ? Math.round(chalOverlay.correct/chalOverlay.total*100) : 0 }}%</b>
+            <span v-if="chalOverlay.total && chalOverlay.correct*5 >= chalOverlay.total*4">✅ 已达 80%，计入每日挑战任务</span>
+            <span v-else>⚠️ 需 ≥80% 才算完成每日挑战任务</span>
+          </p>
           <p v-if="chalOverlay.newBest">🎊 刷新个人纪录，太厉害啦！</p>
           <p v-else>最佳纪录 {{chalBest[chalOverlay.kind].best}} 题，再练练超越它</p>
         </div>
