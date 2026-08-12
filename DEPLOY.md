@@ -1,9 +1,9 @@
-# 小学试卷系统 - 服务器部署指南
+# 智学学堂（PrimarySchoolExam）· 服务器部署指南
 
 ## 环境要求
 
 - CentOS 7+ / Ubuntu 20.04+
-- Python 3.8+
+- Python 3.12+
 - Nginx
 - 域名（HTTPS 需要）
 
@@ -20,7 +20,7 @@ cd /home/PrimarySchoolExam
 sudo bash deploy.sh
 ```
 
-脚本自动完成：创建虚拟环境 → 安装依赖 → 构建 P5 前端（web/dist，无 Node 时回退旧版前端不阻塞）→ 配置 systemd（自动注入 `.env` 环境变量）→ 配置 nginx → 启动服务 → `/health` 健康自检（失败即报错退出）。
+脚本自动完成：创建虚拟环境 → 安装依赖 → 构建工程化前端（web/dist，Vite + Vue 3；无 Node 时回退旧版前端不阻塞）→ 配置 systemd（自动注入 `.env` 环境变量）→ 配置 nginx → 启动服务 → `/health` 健康自检（失败即报错退出）。
 
 > 部署前请先创建 `.env`（参考 `.env.example`：`DB_DRIVER`/MySQL 连接、AI API key、邮件配置等），否则应用将使用默认 SQLite 与内置配置。
 
@@ -108,7 +108,7 @@ cd ..
 systemctl restart exam-app
 ```
 
-## 七、P5 工程化前端（web/）
+## 七、工程化前端（web/，Vite + Vue 3 + Pinia）
 
 孩子端新前端位于 `web/`（Vite + Vue 3 + Pinia），构建产物 `web/dist` 由后端直接托管：
 存在时访问 `/` 自动使用新前端，不存在时回退旧版 `frontend/`。
@@ -148,21 +148,28 @@ python -m pytest tests -q
 
 ```
 /home/PrimarySchoolExam/
-├── app/                  # FastAPI 后端
-│   ├── main.py           # 入口
-│   ├── models/           # 数据模型
-│   ├── routers/          # 路由
-│   ├── schemas/          # 请求/响应模型
-│   └── services/         # 业务逻辑（出题、生成docx）
-├── frontend/
-│   └── index.html        # 旧版单体前端（web/dist 缺失时回退）
-├── frontend-admin/       # 管理后台前端（/admin）
-├── web/                  # P5 工程化前端（Vite+Vue3，构建到 web/dist）
-├── data/                 # SQLite 数据库 + CSV 数据
-├── output/               # 生成的试卷文件
-├── venv/                 # Python 虚拟环境
-├── requirements.txt
-└── deploy.sh             # 一键部署脚本
+├── app/                      # FastAPI 后端（31 个路由模块）
+│   ├── main.py               # 应用工厂：注册 31 个路由、lifespan 启动
+│   ├── config.py             # 全局配置（DB_DRIVER、AI Key、输出目录等）
+│   ├── database.py           # SQLAlchemy 引擎 / 会话 / Base / init_db
+│   ├── models/               # 数据模型（User / Word / Exam / Classical …）
+│   ├── schemas/              # Pydantic 请求 / 响应模型
+│   ├── routers/              # API 路由（31 个文件）
+│   ├── services/             # 业务逻辑（出题 / 生成 docx / AI 路由 …）
+│   ├── migrations/           # 数据库迁移系统（33 个版本脚本）
+│   └── data/                 # 种子 CSV（小学/初中单词、词组、句子）
+├── web/                      # 生产前端（Vue 3 + Vite + Pinia），产物 web/dist 由后端托管
+├── frontend/                 # 旧版前端（已废弃，web/dist 缺失时自动回退）
+├── frontend-admin/           # 管理后台前端（/admin 访问，无需构建）
+├── tools/                    # 运维 / 迁移工具（sqlite_to_mysql 等）
+├── tests/                    # pytest 回归套件（58 用例 / 9 文件）
+├── output/                   # 生成文件（docx / figures / audio，gitignore）
+├── run.py                    # 启动入口
+├── deploy.sh                 # 一键部署脚本
+├── requirements.txt          # 生产依赖
+├── requirements-dev.txt      # 开发依赖（测试）
+├── .env.example              # 环境变量模板
+└── docs/ROADMAP.md           # 产品优化落地路线
 ```
 
 ## 十、访问地址

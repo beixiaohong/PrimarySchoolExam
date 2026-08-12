@@ -9,7 +9,18 @@ from datetime import date, datetime
 from sqlalchemy import Column, Integer, String, DateTime, Date, Text, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 
+try:
+    from sqlalchemy.dialects.mysql import MEDIUMTEXT
+except Exception:  # pragma: no cover
+    MEDIUMTEXT = None
+
+from ..config import DB_DRIVER
 from ..database import Base
+
+
+def _longtext():
+    """大文本：MySQL 用 MEDIUMTEXT 承载 base64 图片，SQLite 用 TEXT。"""
+    return MEDIUMTEXT() if (DB_DRIVER == "mysql" and MEDIUMTEXT) else Text()
 
 
 class ExamRecord(Base):
@@ -82,6 +93,8 @@ class Question(Base):
                           comment="选项JSON数组（选择题有值，非选择题为空串）")
     image_path = Column(String(500), default="",
                         comment="题目配图路径（几何图形、统计图等）")
+    image_base64 = Column(_longtext(), default="",
+                          comment="题目配图 base64（自包含，便于直接渲染；原 image_path 缺失时也可恢复展示）")
     audio_path = Column(String(500), default="",
                         comment="题目音频路径（听写、听力等）")
     difficulty = Column(Integer, default=1,

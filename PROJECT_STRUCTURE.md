@@ -9,11 +9,11 @@
 | 层 | 技术 | 说明 |
 |---|---|---|
 | 后端框架 | FastAPI + Uvicorn | Python 3.12，ASGI 异步服务，31 个路由模块 |
-| 数据库 | MySQL 8（生产 utf8mb4）/ SQLite（开发） | SQLAlchemy 2.0 ORM + 自建迁移系统（28 个版本脚本，MySQL 基线策略见下） |
+| 数据库 | MySQL 8（生产 utf8mb4）/ SQLite（开发） | SQLAlchemy 2.0 ORM + 自建迁移系统（33 个版本脚本，MySQL 基线策略见下） |
 | 前端 | Vue 3 + Vite 工程化（web/） | SPA，构建产物 web/dist 由后端托管；frontend/ 旧版已废弃 |
-| AI 接入 | 智谱 GLM / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
+| AI 接入 | 智谱 GLM / Relay 中转 / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档生成 | python-docx + matplotlib + edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | tests/ 目录 57 个回归用例，临时 SQLite 隔离 |
+| 测试 | pytest + FastAPI TestClient | tests/ 目录 58 个回归用例（9 个文件），临时 SQLite 隔离 |
 
 ---
 
@@ -37,7 +37,7 @@ PROJECT_STRUCTURE.md            # 本文件
 
 ```
 app/__init__.py                 # 包标识
-app/main.py                     # FastAPI 应用工厂：注册 28 个路由、lifespan 启动流程
+app/main.py                     # FastAPI 应用工厂：注册 31 个路由、lifespan 启动流程
 app/config.py                   # 全局配置：数据库路径、输出目录、默认参数
 app/database.py                 # SQLAlchemy 引擎、会话工厂、Base 声明、init_db()
 ```
@@ -80,7 +80,7 @@ app/schemas/vocab.py            # 单词学习/复习/统计 Schema
 app/schemas/word.py             # 单词/词书 CRUD + 导入 Schema
 ```
 
-### app/routers/ — API 路由（28 个文件）
+### app/routers/ — API 路由（31 个文件）
 
 ```
 app/routers/__init__.py
@@ -184,7 +184,7 @@ MySQL 侧由 `Base.metadata.create_all` 直接建表，启动时自动把这些�
 ### app/data/ — 种子数据
 
 ```
-app/data/words_primary_school.csv      # 1,968 个小学英语单词（人教版 3-6 年级）
+app/data/words_primary_school.csv      # 1,969 个小学英语单词（人教版 3-6 年级）
 app/data/words_middle_school.csv       # 434 个初中英语单词（人教版 7-9 年级，种子版需人工扩充）
 app/data/phrases_primary_school.csv    # 118 个英语词组
 app/data/sentences_primary_school.csv  # 77 个英语句子
@@ -221,7 +221,7 @@ web/src/styles/style.css        # 样式表
 web/dist/                       # 构建产物（gitignore，部署时 npm run build 生成）
 ```
 
-### tests/ — pytest 回归套件（48 用例）
+### tests/ — pytest 回归套件（58 用例 / 9 文件）
 
 ```
 tests/conftest.py               # 临时 SQLite + session 级 TestClient + AI/邮件打桩
@@ -313,7 +313,7 @@ App.vue ~2,200 行 + logic/appOptions.js ~2,800 行；旧版 frontend/ 已废弃
 ### 2. 数据库从 SQLite 迁移到 MySQL
 
 **当前状态**：已完成。生产环境运行 MySQL 8（utf8mb4），DB_DRIVER 切换驱动，
-迁移脚本已扩至 28 个（026+ 方言兼容），数据经 tools/sqlite_to_mysql.py 全量迁移并对账。
+迁移脚本已扩至 33 个（026+ 方言兼容），数据经 tools/sqlite_to_mysql.py 全量迁移并对账。
 
 **工作内容**：
 - 部署 MySQL 实例 + 创建数据库

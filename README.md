@@ -5,6 +5,8 @@
 7 年级起解锁），自动生成试卷、科学安排背诵复习、AI 讲解答疑，
 让每天的 30 分钟家庭学习有内容、有标准、有反馈。
 
+> 📚 配套文档：[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)（项目结构与模块清单）· [DEPLOY.md](DEPLOY.md)（服务器部署）· [docs/ROADMAP.md](docs/ROADMAP.md)（产品优化路线）
+
 ---
 
 ## 一、功能全景
@@ -71,7 +73,7 @@
 | 前端 | Vue 3 + Vite 工程化（`web/`） | SPA，构建产物 `web/dist` 由后端托管 |
 | AI | 智谱 / Relay / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档与媒体 | python-docx / matplotlib / edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | 57 个回归用例，临时 SQLite 隔离，AI/邮件全打桩 |
+| 测试 | pytest + FastAPI TestClient | 58 个回归用例（9 个文件），临时 SQLite 隔离，AI/邮件全打桩 |
 
 ---
 
@@ -108,7 +110,7 @@ MySQL 需 utf8mb4 字符集；前端有改动时部署必须重新 `npm run buil
 ### 测试
 
 ```powershell
-python -m pytest tests/ -q    # 57 用例，覆盖注册登录/任务/出卷判分/背诵/家长端/管理后台/初中九科
+python -m pytest tests/ -q    # 58 用例，覆盖注册登录/任务/出卷判分/背诵/家长端/管理后台/初中九科
 ```
 
 ---

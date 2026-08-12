@@ -35,9 +35,15 @@ def random_order():
 
 
 def _ensure_columns():
-    """轻量迁移：为已有表补充新增列（SQLite create_all 不会改已有表）"""
+    """轻量迁移：为已有表补充新增列（create_all 不会改已有表）"""
+    # image_base64 跨 dialect 补齐（MySQL 侧没有覆盖该列的迁移脚本）。
+    # 注意：MySQL 的 TEXT/MEDIUMTEXT 列不允许有 DEFAULT 值，故 MySQL 侧不带 DEFAULT。
+    _ensure_column(
+        "questions", "image_base64",
+        "MEDIUMTEXT" if DB_DRIVER == "mysql" else "TEXT DEFAULT ''",
+    )
     if DB_DRIVER != "sqlite":
-        return  # MySQL 侧由迁移脚本（inspector 幂等加列）接管
+        return  # 其余轻量迁移仅 SQLite 需要；MySQL 侧由迁移脚本接管
     # 定义需要检查并补齐的列变更列表
     migrations = [
         # (表名, 列名, 定义)
@@ -56,6 +62,20 @@ def _ensure_columns():
                     f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
                 ))
                 conn.commit()
+
+
+def _ensure_column(table, column, definition):
+    """幂等地为指定表补齐一列（跨 dialect 安全）：直接尝试 ALTER，忽略已存在错误。"""
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+            conn.commit()
+        except Exception:
+            # 列已存在或其它可忽略错误（如 dialect 差异）
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
 
 def init_db():
