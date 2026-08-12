@@ -1494,7 +1494,7 @@
                 <span v-if="t.status==='done'" class="tag tag-green">✅ 已完成</span>
                 <template v-else-if="t.manual">
                   <span class="more">待家长确认</span>
-                  <button class="btn btn-primary btn-sm" @click="parentConfirmTask(t.subject)">确认完成 ✓</button>
+                  <button class="btn btn-primary btn-sm" @click="parentConfirmTask(t)">确认完成 ✓</button>
                 </template>
                 <span v-else class="more">{{t.progress}} / {{t.target}}</span>
               </span>
@@ -1815,6 +1815,23 @@
         <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.splice(idx,1)" style="padding:2px 8px;font-size:12px">✕</button>
       </div>
       <button class="btn btn-ghost btn-sm" @click="taskDialog.optional.push({subject:'math',code:'',target:1})" style="margin-bottom:16px">+ 添加可选任务</button>
+      <div style="font-weight:bold;margin:16px 0 10px;color:#3a4a6b">👪 家长自定义任务 <span class="more" style="font-weight:400">可添加多个，放入强制/可选，由家长确认完成</span></div>
+      <div v-for="ct in parentCustomTasks" :key="'ct-'+ct.id" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <span class="tag" :class="ct.subject==='数学' ? 'tag-orange' : (ct.subject==='语文' ? 'tag-green' : 'tag-blue')">{{ct.subject}}</span>
+        <span class="fill-input" style="flex:1;min-width:120px;font-size:12px;display:flex;align-items:center;gap:6px">{{ct.title}}<i class="tag tag-gray" style="font-style:normal">{{ct.task_type==='mandatory'?'强制':'可选'}}</i></span>
+        <button class="btn btn-ghost btn-sm" @click="deleteParentCustomTask(ct.id)" style="padding:2px 8px;font-size:12px">✕</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <input v-model="customTaskForm.title" class="fill-input" style="flex:1;min-width:120px;font-size:12px" placeholder="自定义任务标题（如：练字一页）">
+        <select v-model="customTaskForm.subject" class="fill-input" style="width:68px;font-size:12px">
+          <option value="数学">数学</option><option value="语文">语文</option><option value="英语">英语</option><option value="其他">其他</option>
+        </select>
+        <select v-model="customTaskForm.task_type" class="fill-input" style="width:72px;font-size:12px">
+          <option value="mandatory">强制</option><option value="optional">可选</option>
+        </select>
+        <input v-model.number="customTaskForm.target" type="number" min="1" max="50" class="fill-input" style="width:52px;font-size:12px" title="每天完成数量">
+        <button class="btn btn-ghost btn-sm" @click="addParentCustomTask()" style="padding:2px 8px;font-size:12px">+ 添加</button>
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" @click="saveTaskDialog()">保存</button>
         <button class="btn btn-ghost" @click="taskDialog.show=false">取消</button>

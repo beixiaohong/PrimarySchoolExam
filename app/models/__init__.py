@@ -28,6 +28,7 @@ from .sync import SyncQuizLog
 from .essay import EssayGrade
 from .reading import ReadingPassage
 from .content_review import ContentReview
+from .parent_custom_task import ParentCustomTask
 
 __all__ = [
     "Word", "WordBook",
@@ -61,4 +62,5 @@ __all__ = [
     "EssayGrade",
     "ReadingPassage",
     "ContentReview",
+    "ParentCustomTask",
 ]

@@ -358,7 +358,81 @@ def test_exam_task_requires_new_paper(client):
         if ids:
             db.query(ExamAttempt).filter(
                 ExamAttempt.user_id == uid, ExamAttempt.exam_id.in_(ids)).delete()
-            db.query(ExamRecord).filter(
-                ExamRecord.title.in_(["新卷判定A", "新卷判定B"])).delete()
+        db.query(ExamRecord).filter(
+            ExamRecord.title.in_(["新卷判定A", "新卷判定B"])).delete()
         db.commit()
         db.close()
+
+
+def test_parent_custom_task_in_daily(client):
+    """家长自定义任务：添加后可出现在每日任务（强制/可选），家长按 id 确认完成，可删除"""
+    uid = "自定义任务生"
+    _ensure_parent_pwd(client, uid)
+
+    # 添加自定义「强制」任务
+    r = client.post("/api/tasks/custom-task", json={
+        "user_id": uid, "title": "练字一页", "subject": "语文",
+        "task_type": "mandatory", "target": 1,
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    cid_m = r.json()["id"]
+
+    # 添加自定义「可选」任务
+    r = client.post("/api/tasks/custom-task", json={
+        "user_id": uid, "title": "跳绳100下", "subject": "其他",
+        "task_type": "optional", "target": 1,
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    cid_o = r.json()["id"]
+
+    # 今日任务包含这两条自定义任务
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    assert r.status_code == 200, r.text
+    tasks = {t["task_code"]: t for t in r.json()["tasks"]}
+    assert f"custom:{cid_m}" in tasks
+    assert f"custom:{cid_o}" in tasks
+    mt = tasks[f"custom:{cid_m}"]
+    assert mt["mandatory"] is True and mt["manual"] is True and mt["title"] == "练字一页"
+    ot = tasks[f"custom:{cid_o}"]
+    assert ot["mandatory"] is False and ot["manual"] is True and ot["title"] == "跳绳100下"
+
+    # 家长按 id 确认强制自定义任务 → done
+    r = client.post("/api/tasks/daily/claim", json={"user_id": uid, "task_id": mt["id"]},
+                    headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    assert next(t for t in r.json()["tasks"] if t["task_code"] == f"custom:{cid_m}")["status"] == "done"
+
+    # 家长确认可选自定义任务 → done
+    r = client.post("/api/tasks/daily/claim", json={"user_id": uid, "task_id": ot["id"]},
+                    headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    assert next(t for t in r.json()["tasks"] if t["task_code"] == f"custom:{cid_o}")["status"] == "done"
+
+    # 删除自定义任务（软删除）→ 列表中 active=False
+    r = client.delete(f"/api/tasks/custom-task/{cid_m}?user_id={uid}",
+                      headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    r = client.get("/api/tasks/custom-task", params={"user_id": uid})
+    deleted = next(c for c in r.json() if c["id"] == cid_m)
+    assert deleted["active"] is False
+
+
+def test_manual_optional_claimable_by_task_id(client):
+    """回归：手动确认的可选任务（如 math_teach）此前因 claim 只匹配强制任务而无法确认；
+    现支持按 task_id 确认，同一学科多个手动任务均可各自完成。"""
+    uid = "手动可选确认生"
+    _ensure_parent_pwd(client, uid)
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid, "settings": {"optional": ["math_teach"]},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    teach = next(t for t in r.json()["tasks"] if t["task_code"] == "math_teach")
+    assert teach["manual"] is True and teach["status"] == "pending"
+
+    # 按 task_id 确认 → done（修复前：claim 按 subject 只找强制任务，确认不了）
+    r = client.post("/api/tasks/daily/claim", json={"user_id": uid, "task_id": teach["id"]},
+                    headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    assert next(t for t in r.json()["tasks"] if t["task_code"] == "math_teach")["status"] == "done"
+

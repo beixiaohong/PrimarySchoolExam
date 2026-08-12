@@ -72,6 +72,8 @@ const appOptions = {
       // 每日任务设置
       taskSettings: { items: [] },
       taskDialog: { show: false, defaults: [], extra: [], optional: [], disabled: [] },
+      parentCustomTasks: [],
+      customTaskForm: { title: '', subject: '数学', task_type: 'optional', target: 1 },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
@@ -1052,13 +1054,17 @@ const appOptions = {
         .then(d => this._applyDailyTasks(d, true))
         .catch(() => {});
     },
-    claimDailyTask(subject) {
-      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
+    claimDailyTask(subject, taskId) {
+      const body = { user_id: this.user };
+      if (taskId) body.task_id = taskId;
+      else body.subject = subject;
+      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify(body) })
         .then(d => this._applyDailyTasks(d, true))
         .catch(e => this.showToast(e.message));
     },
-    parentConfirmTask(subject) {
-      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
+    parentConfirmTask(task) {
+      // 手动确认（讲题/朗读/自定义任务等）：按任务 id 精确确认，支持同一学科多个手动任务
+      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: task.id }) })
         .then(() => { this.loadDailyTasks(); this.showToast('已确认完成 ✅'); })
         .catch(e => this.showToast(e.message));
     },
@@ -1862,6 +1868,36 @@ const appOptions = {
         eng: all.filter(t => t.subject === '英语' && !UNCONFIGURABLE.includes(t.code)),
       };
       this.taskDialog = { show: true, defaults, extra, optional, disabled, subOpts };
+      this.loadParentCustomTasks();
+    },
+    loadParentCustomTasks() {
+      this.api(`/api/tasks/custom-task?user_id=${encodeURIComponent(this.user)}`)
+        .then(d => { this.parentCustomTasks = d || []; })
+        .catch(() => { this.parentCustomTasks = []; });
+    },
+    addParentCustomTask() {
+      const f = this.customTaskForm;
+      if (!f.title || !f.title.trim()) return this.showToast('请输入自定义任务标题');
+      this.api('/api/tasks/custom-task', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: this.user, title: f.title.trim(),
+          subject: f.subject, task_type: f.task_type, target: Number(f.target) || 1,
+        }),
+      }).then(() => {
+        this.customTaskForm = { title: '', subject: '数学', task_type: 'optional', target: 1 };
+        this.loadParentCustomTasks();
+        this.loadDailyTasks();
+        this.showToast('自定义任务已添加 ✅');
+      }).catch(e => this.showToast(e.message));
+    },
+    deleteParentCustomTask(id) {
+      this.api(`/api/tasks/custom-task/${id}?user_id=${encodeURIComponent(this.user)}`, { method: 'DELETE' })
+        .then(() => {
+          this.loadParentCustomTasks();
+          this.loadDailyTasks();
+          this.showToast('已删除自定义任务');
+        }).catch(e => this.showToast(e.message));
     },
     _optForSubj(subj) {
       return this.allTaskOptions.filter(t => t.subject === subj);

@@ -30,6 +30,7 @@ from ..models.classical import ClassicalDailyLog
 from ..models.study_error import StudyError
 from ..models.makeup_card import MakeupCard, MakeupUsageLog
 from ..models.custom_task import CustomTask
+from ..models.parent_custom_task import ParentCustomTask
 
 logger = logging.getLogger(__name__)
 
@@ -706,6 +707,24 @@ def _ensure_today_rows(db: Session, user_id: str) -> dict:
         existing_codes.add(t["code"])
         changed = True
 
+    # 家长自定义任务（激活的，按 task_type 注入强制/可选区，手动确认）
+    for c in db.query(ParentCustomTask).filter(
+            ParentCustomTask.user_id == user_id,
+            ParentCustomTask.active == True).order_by(
+            ParentCustomTask.task_type, ParentCustomTask.sort_order, ParentCustomTask.id).all():
+        code = "custom:%d" % c.id
+        if code in existing_codes:
+            continue  # 今日已有该自定义任务行，不重复生成
+        row = DailyTask(
+            user_id=user_id, task_date=today, subject=c.subject or "其他",
+            task_code=code, title=(c.title or "自定义任务")[:100],
+            target=max(1, int(c.target or 1)), progress=0, status="pending",
+            manual=True, task_type=c.task_type,
+        )
+        db.add(row)
+        existing_codes.add(code)
+        changed = True
+
     if changed:
         db.commit()
 
@@ -876,9 +895,26 @@ def _build_payload(db: Session, user_id: str) -> dict:
     for r in sorted(all_rows, key=lambda x: (0 if getattr(x, 'task_type', 'mandatory') == 'mandatory' else 1, x.subject)):
         tt = getattr(r, 'task_type', 'mandatory') or 'mandatory'
         cur = next((t for t in all_tasks_list if t["code"] == r.task_code), None)
+        # 家长自定义任务：task_code 以 custom: 开头，标题/学科已存于 DailyTask 行
+        if r.task_code.startswith("custom:"):
+            tasks.append({
+                "id": r.id,
+                "subject": r.subject,
+                "task_code": r.task_code,
+                "title": r.title,
+                "target": r.target,
+                "progress": r.progress,
+                "status": r.status,
+                "manual": r.manual,
+                "mandatory": tt == "mandatory",
+                "ico": "📌",
+                "desc": "家长自定义任务，完成后由家长确认",
+            })
+            continue
         if not cur:
             continue
         tasks.append({
+            "id": r.id,
             "subject": r.subject,
             "task_code": r.task_code,
             "title": _display_title(cur["title"], r.target, cur["target"]),
@@ -914,7 +950,8 @@ def get_daily(user_id: str = Query(...), db: Session = Depends(get_db)):
 
 class ClaimRequest(BaseModel):
     user_id: str
-    subject: str
+    subject: str = None
+    task_id: int = None
 
 
 @router.post("/daily/claim", summary="手动确认完成任务（需家长密码）")
@@ -922,13 +959,23 @@ def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db
     # 防刷：手动确认属于家长权限，孩子不得自批
     ensure_parent_pwd(db, req.user_id, request)
     today = date.today()
-    rows = db.query(DailyTask).filter(
-        DailyTask.user_id == req.user_id, DailyTask.task_date == today,
-        DailyTask.subject == req.subject, DailyTask.task_type == "mandatory",
-    ).all()
-    row = rows[0] if rows else None
+    row = None
+    if req.task_id:
+        # 按任务 id 精确确认（支持手动可选任务、家长自定义任务——同一学科可有多个）
+        row = db.query(DailyTask).filter(
+            DailyTask.id == req.task_id, DailyTask.user_id == req.user_id,
+            DailyTask.task_date == today).first()
+    else:
+        if not req.subject:
+            raise HTTPException(400, "需要提供 subject 或 task_id")
+        # 兼容旧逻辑：按学科确认该科强制任务（每科默认唯一）
+        rows = db.query(DailyTask).filter(
+            DailyTask.user_id == req.user_id, DailyTask.task_date == today,
+            DailyTask.subject == req.subject, DailyTask.task_type == "mandatory",
+        ).all()
+        row = rows[0] if rows else None
     if not row:
-        raise HTTPException(404, "未找到任务")
+        raise HTTPException(404, "未找到该任务")
     if not row.manual:
         raise HTTPException(400, "该任务由学习数据自动判定，无需手动确认")
     if row.status == "done":
@@ -1024,3 +1071,105 @@ def reject_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
     task.status = "rejected"
     db.commit()
     return {"id": task.id, "status": "rejected", "message": "已驳回"}
+
+
+# ═══════════════ 家长自定义任务（集成进每日任务，家长确认） ═══════════════
+
+class ParentCustomTaskCreate(BaseModel):
+    user_id: str
+    title: str
+    subject: str = "其他"
+    task_type: str = "optional"   # mandatory / optional
+    target: int = 1
+
+
+class ParentCustomTaskUpdate(BaseModel):
+    user_id: str
+    title: str = None
+    subject: str = None
+    task_type: str = None
+    target: int = None
+    active: bool = None
+
+
+@router.post("/custom-task", summary="家长添加自定义任务（集成进每日任务，需家长密码）")
+def add_parent_custom_task(req: ParentCustomTaskCreate, request: Request, db: Session = Depends(get_db)):
+    ensure_parent_pwd(db, req.user_id, request)
+    if not req.title or not req.title.strip():
+        raise HTTPException(400, "任务标题不能为空")
+    if req.task_type not in ("mandatory", "optional"):
+        raise HTTPException(400, "task_type 必须为 mandatory 或 optional")
+    t = ParentCustomTask(
+        user_id=req.user_id,
+        title=req.title.strip()[:100],
+        subject=req.subject or "其他",
+        task_type=req.task_type,
+        target=max(1, min(MAX_TARGET, int(req.target or 1))),
+        active=True,
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return {"id": t.id, "title": t.title, "subject": t.subject,
+            "task_type": t.task_type, "target": t.target, "active": t.active}
+
+
+@router.get("/custom-task", summary="查看家长自定义任务列表")
+def list_parent_custom_tasks(user_id: str = Query(...), db: Session = Depends(get_db)):
+    rows = db.query(ParentCustomTask).filter(
+        ParentCustomTask.user_id == user_id).order_by(
+        ParentCustomTask.task_type, ParentCustomTask.sort_order, ParentCustomTask.id).all()
+    return [{
+        "id": t.id, "title": t.title, "subject": t.subject,
+        "task_type": t.task_type, "target": t.target, "active": t.active,
+        "created_at": str(t.created_at) if t.created_at else None,
+    } for t in rows]
+
+
+@router.put("/custom-task/{task_id}", summary="家长修改自定义任务（需家长密码）")
+def update_parent_custom_task(task_id: int, req: ParentCustomTaskUpdate,
+                              request: Request, db: Session = Depends(get_db)):
+    ensure_parent_pwd(db, req.user_id, request)
+    t = db.query(ParentCustomTask).filter(
+        ParentCustomTask.id == task_id, ParentCustomTask.user_id == req.user_id).first()
+    if not t:
+        raise HTTPException(404, "未找到该自定义任务")
+    if req.title is not None and req.title.strip():
+        t.title = req.title.strip()[:100]
+    if req.subject is not None:
+        t.subject = req.subject or t.subject
+    if req.task_type is not None:
+        if req.task_type not in ("mandatory", "optional"):
+            raise HTTPException(400, "task_type 必须为 mandatory 或 optional")
+        t.task_type = req.task_type
+    if req.target is not None:
+        t.target = max(1, min(MAX_TARGET, int(req.target)))
+    if req.active is not None:
+        t.active = bool(req.active)
+    t.updated_at = datetime.now()
+    # 若标题/学科/类型/数量变化，删除今日未完成的对应每日任务行，下次 /daily 按新定义重建
+    code = "custom:%d" % t.id
+    db.query(DailyTask).filter(
+        DailyTask.user_id == req.user_id, DailyTask.task_date == date.today(),
+        DailyTask.task_code == code, DailyTask.status != "done").delete()
+    db.commit()
+    return {"id": t.id, "title": t.title, "subject": t.subject,
+            "task_type": t.task_type, "target": t.target, "active": t.active}
+
+
+@router.delete("/custom-task/{task_id}", summary="家长删除自定义任务（软删除，需家长密码）")
+def delete_parent_custom_task(task_id: int, request: Request,
+                              user_id: str = Query(...), db: Session = Depends(get_db)):
+    ensure_parent_pwd(db, user_id, request)
+    t = db.query(ParentCustomTask).filter(
+        ParentCustomTask.id == task_id, ParentCustomTask.user_id == user_id).first()
+    if not t:
+        raise HTTPException(404, "未找到该自定义任务")
+    t.active = False
+    # 移除今日尚未完成的对应每日任务行（已完成的保留作历史）
+    code = "custom:%d" % t.id
+    db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == date.today(),
+        DailyTask.task_code == code, DailyTask.status != "done").delete()
+    db.commit()
+    return {"ok": True, "id": task_id}
