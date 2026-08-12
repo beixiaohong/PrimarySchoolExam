@@ -8,6 +8,7 @@
 """
 import json
 import logging
+import time
 
 from .ai import chat, ai_enabled
 
@@ -78,12 +79,22 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
         total_missing = len(rows)
         if limit:
             rows = rows[:limit]
+        consecutive_skip = 0
         for pq in rows:
             processed += 1
             ans = generate_answer_for(pq)
             if ans is None:
                 skipped += 1
+                consecutive_skip += 1
+                # 温和退避：限流/超时时放慢节奏，不猛撞 API（用户要求「慢慢补充」）
+                if consecutive_skip >= 5:
+                    logger.warning("连续 %d 题 AI 失败（多为限流/超时），冷却 60s 后继续", consecutive_skip)
+                    time.sleep(60)
+                    consecutive_skip = 0
+                else:
+                    time.sleep(2)
                 continue
+            consecutive_skip = 0
             if dry_run:
                 logger.info("[dry] %s/%s q%d: %s", pq.subject, pq.grade, pq.seq, ans[:50])
                 continue
