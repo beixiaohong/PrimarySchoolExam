@@ -436,3 +436,150 @@ def test_manual_optional_claimable_by_task_id(client):
     assert r.status_code == 200, r.text
     assert next(t for t in r.json()["tasks"] if t["task_code"] == "math_teach")["status"] == "done"
 
+
+def test_makeup_complete_requires_parent_confirm(client):
+    """需求2：补签卡完成任意任务 = 孩子发起(扣卡→待确认) → 家长确认生效 / 拒绝退回。
+
+    - 孩子发起：立即扣卡、任务暂不完成、payload 带 makeup_pending=True；
+    - 家长确认：任务完成、补签卡不退回；
+    - 家长拒绝：退回补签卡、任务保持原状。
+    """
+    from app.database import SessionLocal
+    from app.models.makeup_card import MakeupCard, MakeupUsageLog
+
+    uid = "补签待确认生"
+    _ensure_parent_pwd(client, uid)
+
+    # 预先发放 2 张补签卡（直接落库，省去「可选全完成」链路）
+    db = SessionLocal()
+    try:
+        card = db.query(MakeupCard).filter_by(user_id=uid).first()
+        if not card:
+            card = MakeupCard(user_id=uid, balance=0, total_earned=0, total_used=0)
+            db.add(card)
+            db.flush()
+        card.balance = 2
+        db.commit()
+    finally:
+        db.close()
+
+    # 取一条未完成的可选任务
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    assert r.status_code == 200, r.text
+    opt = next(t for t in r.json()["tasks"] if not t["mandatory"] and t["status"] != "done")
+    opt_id = opt["id"]
+    bal_before = r.json()["makeup_cards"]
+    assert bal_before == 2
+
+    # 孩子发起：扣卡 → pending（任务仍 pending，makeup_pending=True）
+    r = client.post("/api/tasks/daily/makeup_complete",
+                    json={"user_id": uid, "task_id": opt_id})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    tsk = next(t for t in body["tasks"] if t["id"] == opt_id)
+    assert tsk["status"] != "done", "孩子发起后任务不应立即完成"
+    assert tsk["makeup_pending"] is True
+    assert body["makeup_cards"] == bal_before - 1, "发起即扣卡"
+
+    # 家长面板：待确认列表包含该申请
+    r = client.get("/api/tasks/makeup/pending", params={"user_id": uid})
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert any(i["task_id"] == opt_id for i in items)
+    log_id = next(i["log_id"] for i in items if i["task_id"] == opt_id)
+
+    # 家长确认 → 任务完成、补签卡维持已扣（不退回）
+    r = client.post("/api/tasks/makeup/confirm",
+                    json={"user_id": uid, "log_id": log_id, "action": "confirm"},
+                    headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "confirmed"
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    assert next(t for t in r.json()["tasks"] if t["id"] == opt_id)["status"] == "done"
+    assert r.json()["makeup_cards"] == bal_before - 1
+
+    # 拒绝路径：再用 1 张补签卡完成另一条任务，随后家长拒绝 → 退回
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    opt2 = next(t for t in r.json()["tasks"] if not t["mandatory"] and t["status"] != "done")
+    opt2_id = opt2["id"]
+    r = client.post("/api/tasks/daily/makeup_complete",
+                    json={"user_id": uid, "task_id": opt2_id})
+    assert r.status_code == 200, r.text
+    r = client.get("/api/tasks/makeup/pending", params={"user_id": uid})
+    log2 = next(i["log_id"] for i in r.json()["items"] if i["task_id"] == opt2_id)
+    r = client.post("/api/tasks/makeup/confirm",
+                    json={"user_id": uid, "log_id": log2, "action": "reject"},
+                    headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "rejected"
+    # 退回：余额 = bal_before - 1（opt 已确认消耗 1 张，opt2 拒绝退回）
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    assert r.json()["makeup_cards"] == bal_before - 1
+    # 拒绝的任务保持未完成
+    assert next(t for t in r.json()["tasks"] if t["id"] == opt2_id)["status"] != "done"
+
+
+def test_makeup_confirm_requires_parent_pwd(client):
+    """家长确认接口必须有家长密码，否则 403"""
+    from app.database import SessionLocal
+    from app.models.makeup_card import MakeupUsageLog
+
+    uid = "补签密码生"
+    _ensure_parent_pwd(client, uid)
+    db = SessionLocal()
+    try:
+        log = MakeupUsageLog(user_id=uid, target_date=__import__("datetime").date.today(),
+                             task_id=999999, status="pending")
+        db.add(log)
+        db.commit()
+        log_id = log.id
+    finally:
+        db.close()
+
+    # 无密码 → 403
+    r = client.post("/api/tasks/makeup/confirm",
+                    json={"user_id": uid, "log_id": log_id, "action": "confirm"})
+    assert r.status_code == 403
+    # 带密码 → 200
+    r = client.post("/api/tasks/makeup/confirm",
+                    json={"user_id": uid, "log_id": log_id, "action": "confirm"},
+                    headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+
+
+def test_challenge_requires_80pct_pass_rate(client):
+    """需求3：60 秒挑战赛需通过率 ≥ 80% 才算完成（低分不计入每日任务进度）
+
+    直接验证底层计数函数 _today_challenge_count：70% 不计入，80% 计入。
+    """
+    from datetime import datetime
+    from app.database import SessionLocal
+    from app.models.sprint4 import ChallengeRecord
+    from app.routers.tasks import _today_challenge_count
+
+    uid = "挑战赛通过率生"
+    client.get("/api/tasks/daily", params={"user_id": uid})  # 触发建表/会话
+
+    db = SessionLocal()
+    try:
+        now = datetime.now()
+        # 数学：14/20 = 70% < 80% → 不应计入
+        db.add(ChallengeRecord(user_id=uid, kind="math", correct=14, total=20, created_at=now))
+        db.commit()
+        assert _today_challenge_count(db, uid, "math") == 0, "70% 挑战不应计入"
+
+        # 数学：16/20 = 80% → 计入
+        db.add(ChallengeRecord(user_id=uid, kind="math", correct=16, total=20, created_at=now))
+        db.commit()
+        assert _today_challenge_count(db, uid, "math") == 1, "80% 挑战应计入"
+
+        # 英语：total=0 的脏数据不计（避免除零/误判）
+        db.add(ChallengeRecord(user_id=uid, kind="word", correct=0, total=0, created_at=now))
+        db.commit()
+        # 英语此前无有效记录 → 仍为 0
+        assert _today_challenge_count(db, uid, "word") == 0, "total=0 不应计入"
+    finally:
+        db.query(ChallengeRecord).filter_by(user_id=uid).delete()
+        db.commit()
+        db.close()
+

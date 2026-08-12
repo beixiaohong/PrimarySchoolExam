@@ -70,6 +70,57 @@ def test_classical_multi_round_no_daily_cap(client):
     assert set(second).isdisjoint(set(first)), "第二轮应是未背过的下一批篇目"
 
 
+def test_review_carries_over_when_not_reviewed(client):
+    """需求1回归：背诵中心当日没复习的词，次日继续出现在复习队列（不会被丢弃/提前推出）。
+
+    机制：复习只在真正提交 /review 时才推进 next_review_date；
+    选取条件是 next_review_date <= today（含逾期），故未复习的词会一直滞留。
+    """
+    from datetime import date, timedelta
+    from app.database import SessionLocal
+    from app.models.word import Word, WordBook
+    from app.models.vocab import VocabProgress
+
+    uid = "复习跨天生"
+    _set_quota(client, uid, "daily_new_words", 2)
+
+    db = SessionLocal()
+    try:
+        # 造一本 6 年级词库与一个单词（落在 career 池内）
+        book = WordBook(grade=6, semester="上", name="跨天回归册", word_count=1)
+        db.add(book)
+        db.flush()
+        w = Word(book_id=book.id, word="carryover", phonetic="/k/",
+                 pos="v.", meaning="延续", unit="U1", difficulty=1)
+        db.add(w)
+        db.flush()
+        # 该词本应在昨天复习（已逾期），且今天一直没复习
+        prog = VocabProgress(
+            user_id=uid, word_id=w.id, status="learning", review_stage=1,
+            first_learn_date=date.today() - timedelta(days=5),
+            last_review_date=date.today() - timedelta(days=5),
+            next_review_date=date.today() - timedelta(days=1),  # 昨天到期未复习
+            correct_count=2, total_reviews=2,
+        )
+        db.add(prog)
+        db.commit()
+
+        # 今天拉取 → 逾期词必须出现在复习队列（证明从昨天延续到今天）
+        r = client.get("/api/vocab/today", params={"user_id": uid})
+        assert r.status_code == 200, r.text
+        review_ids = [x["word_id"] for x in r.json()["review_words"]]
+        assert w.id in review_ids, "逾期未复习的词应从到期日延续到今日复习队列"
+        # 再次拉取（不提交复习）→ 仍在队列，没有被消费掉
+        r2 = client.get("/api/vocab/today", params={"user_id": uid})
+        assert w.id in [x["word_id"] for x in r2.json()["review_words"]]
+    finally:
+        db.query(VocabProgress).filter_by(user_id=uid).delete()
+        db.query(Word).filter_by(word="carryover").delete()
+        db.query(WordBook).filter_by(name="跨天回归册").delete()
+        db.commit()
+        db.close()
+
+
 def test_vocab_session_quiz_count(client):
     """单词 session-quiz：新学模式每词 4 题，每题有答案，选择题带选项"""
     uid = "单词检测生"
