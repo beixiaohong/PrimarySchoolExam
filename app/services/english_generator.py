@@ -147,6 +147,11 @@ def generate_english_exercises(
 # ─── 数据获取 ─────────────────────────────────────────────────
 
 def _get_words(db, grade, book_ids, limit):
+    """从数据库按词书/年级拉取候选单词（上限 limit 条）。
+
+    不传 book_ids 时按 WordBook.grade<=grade 选取（覆盖该年级所有词书）；
+    取词失败（DB 异常/表不存在）返回空列表，由上层降级到 _fallback_words。
+    """
     if db is None:
         return []
     try:
@@ -165,6 +170,10 @@ def _get_words(db, grade, book_ids, limit):
 
 
 def _fallback_words():
+    """DB 无词或词量不足时的兜底词库（A-Z 常见词，覆盖各词性/年级）。
+
+    保证生成器在离线/空库时仍能产出题目，避免试卷为空。
+    """
     base = [
         ("apple", "/ˈæpl/", "n.", "苹果"), ("book", "/bʊk/", "n.", "书"),
         ("cat", "/kæt/", "n.", "猫"), ("dog", "/dɒɡ/", "n.", "狗"),

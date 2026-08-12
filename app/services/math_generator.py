@@ -17,6 +17,10 @@ GENERATORS: Dict[str, Callable] = {}
 
 
 def register(code: str):
+    """生成器注册装饰器：把被装饰函数挂到全局 GENERATORS[code] 注册表。
+
+    主入口 generate_math_problems 通过 code 查表调用，新增题型只需 @register("code") 即可接入。
+    """
     def decorator(func):
         GENERATORS[code] = func
         return func
@@ -191,6 +195,7 @@ def calc_decimal(difficulty: int, grade: int):
 
 
 def _dec_add_sub():
+    """小数加减：减法先取大减小避免负数，结果保留2位"""
     a = round(random.uniform(1, 30), random.choice([1, 2]))
     b = round(random.uniform(1, 30), random.choice([1, 2]))
     op = random.choice(["+", "-"])
@@ -200,34 +205,40 @@ def _dec_add_sub():
     return f"{a} {op} {b} = ", str(ans)
 
 def _dec_multiply_simple():
+    """小数×整数（保留1位）"""
     a = round(random.uniform(1, 10), 1)
     b = random.randint(2, 9)
     return f"{a} × {b} = ", str(round(a * b, 1))
 
 def _dec_compare():
+    """小数大小比较"""
     a = round(random.uniform(0.1, 9.9), 2)
     b = round(random.uniform(0.1, 9.9), 2)
     sym = ">" if a > b else "<"
     return f"比较大小：{a} ○ {b}", sym
 
 def _dec_missing():
+    """小数缺数逆填（已知积求因数）"""
     b = round(random.uniform(1.1, 9.9), 1)
     x = round(random.uniform(1.1, 9.9), 1)
     product = round(b * x, 2)
     return f"(  ) × {b} = {product}，括号里填几？", str(x)
 
 def _dec_multiply():
+    """小数乘小数（保留3位）"""
     a = round(random.uniform(1, 50), 2)
     b = round(random.uniform(0.1, 9.9), 1)
     return f"{a} × {b} = ", str(round(a * b, 3))
 
 def _dec_divide():
+    """小数除法（先定被除数再求商，保证整除）"""
     b = round(random.uniform(0.2, 9.9), 1)
     x = round(random.uniform(1, 20), 1)
     a = round(b * x, 2)
     return f"{a} ÷ {b} = ", str(x)
 
 def _dec_mixed():
+    """小数带括号混合运算"""
     a = round(random.uniform(1, 20), 1)
     b = round(random.uniform(1, 20), 1)
     c = random.randint(2, 9)
@@ -235,6 +246,7 @@ def _dec_mixed():
     return f"({a} + {b}) × {c} = ", str(ans)
 
 def _dec_context_money():
+    """购物找零情境题（付款向上取整到整十再加10，凑出整数找回）"""
     price = round(random.uniform(2.5, 15.9), 1)
     qty = random.randint(3, 8)
     paid = math.ceil(price * qty / 10) * 10 + 10
@@ -242,6 +254,7 @@ def _dec_context_money():
     return f"小明买了{qty}本笔记本，每本{price}元，付了{paid}元，应找回多少元？", f"{change} 元"
 
 def _dec_multi_step():
+    """小数多步混合"""
     a = round(random.uniform(10, 100), 2)
     b = round(random.uniform(0.1, 9.9), 2)
     c = round(random.uniform(0.1, 9.9), 1)
@@ -249,18 +262,21 @@ def _dec_multi_step():
     return f"{a} × {b} + {c} = ", str(ans)
 
 def _dec_approx():
+    """小数估算（保留2位+给出精确值）"""
     a = round(random.uniform(10, 99), 2)
     b = round(random.uniform(1.1, 9.9), 2)
     exact = round(a * b, 4)
     return f"{a} × {b} ≈ ?（保留两位小数）精确值是多少？", f"≈{round(exact,2)}，精确值{exact}"
 
 def _dec_reverse():
+    """小数缺数逆填：由积反推因数（保留2位）"""
     a = round(random.uniform(10, 99), 1)
     result = round(random.uniform(100, 999), 1)
     b = round(result / a, 2)
     return f"{a} × (  ) = {round(a * b, 2)}，括号里填几？", str(b)
 
 def _dec_context_measure():
+    """长方形面积情境题（长×宽，保留4位）"""
     length = round(random.uniform(1.5, 9.9), 2)
     width = round(random.uniform(1.5, 9.9), 2)
     area = round(length * width, 4)
@@ -280,6 +296,7 @@ def calc_fraction(difficulty: int, grade: int):
 
 
 def _frac_same_denom():
+    """同分母分数加减（用 Fraction 自动约分，整数结果省略分母）"""
     d = random.choice([3, 4, 5, 6, 7, 8])
     n1 = random.randint(1, d - 2)
     n2 = random.randint(1, d - n1)
@@ -288,6 +305,7 @@ def _frac_same_denom():
     return f"{n1}/{d} + {n2}/{d} = ", s
 
 def _frac_to_mixed():
+    """假分数化带分数"""
     d = random.choice([3, 4, 5, 6, 7])
     whole = random.randint(1, 4)
     n = random.randint(1, d - 1)
@@ -295,6 +313,7 @@ def _frac_to_mixed():
     return f"把 {improper}/{d} 化成带分数。", f"{whole}又{n}/{d}"
 
 def _frac_compare():
+    """分数大小比较（用易混淆的固定对，制造干扰）"""
     pairs = [(2, 3, 3, 4), (3, 5, 2, 3), (5, 8, 3, 5), (4, 7, 3, 5)]
     n1, d1, n2, d2 = random.choice(pairs)
     f1, f2 = Fraction(n1, d1), Fraction(n2, d2)
@@ -302,14 +321,16 @@ def _frac_compare():
     return f"比较大小：{n1}/{d1} ○ {n2}/{d2}", sym
 
 def _frac_of_number():
+    """求一个数的几分之几（总数凑到能被分母整除，保证结果为整数）"""
     total = random.choice([60, 80, 100, 120, 150, 200])
     n, d = random.choice([(1, 3), (2, 5), (3, 4), (1, 4), (3, 8)])
     while total % d != 0:
-        total += 10
+        total += 10  # 把总数凑到能被分母整除，保证「的几分之几」结果为整数
     ans = total * n // d
     return f"{total}的{n}/{d}是多少？", str(ans)
 
 def _frac_diff_denom():
+    """异分母分数加减（自动调序，保证大减小不出现负数）"""
     d1, d2 = random.choice([(2, 3), (3, 4), (2, 5), (3, 5), (4, 6), (5, 6)])
     n1 = random.randint(1, d1 - 1)
     n2 = random.randint(1, d2 - 1)
@@ -323,6 +344,7 @@ def _frac_diff_denom():
     return f"{n1}/{d1} {op} {n2}/{d2} = ", s
 
 def _frac_multiply():
+    """分数乘法（Fraction 自动约分）"""
     d1, d2 = random.choice([(3, 4), (5, 6), (2, 7), (3, 8)])
     n1 = random.randint(1, d1 - 1)
     n2 = random.randint(1, d2 - 1)
@@ -331,6 +353,7 @@ def _frac_multiply():
     return f"{n1}/{d1} × {n2}/{d2} = ", s
 
 def _frac_divide():
+    """分数除法（乘以倒数，Fraction 自动约分）"""
     d1, d2 = random.choice([(3, 4), (5, 6), (2, 5), (3, 7)])
     n1 = random.randint(1, d1 - 1)
     n2 = random.randint(1, d2 - 1)
@@ -339,6 +362,7 @@ def _frac_divide():
     return f"{n1}/{d1} ÷ {n2}/{d2} = ", s
 
 def _frac_mixed_op():
+    """带分数加法（先转假分数运算，结果再化回带分数）"""
     # 带分数运算
     w1 = random.randint(1, 3)
     d1 = random.choice([3, 4, 5])
@@ -354,6 +378,7 @@ def _frac_mixed_op():
     return f"{w1}又{n1}/{d1} + {w2}又{n2}/{d1} = ", s
 
 def _frac_complex():
+    """分数乘加混合（固定分母组合，便于口算）"""
     # 分数混合：a/b × c/d + e/f
     d1, d2, d3 = 3, 4, 6
     n1, n2, n3 = random.randint(1, 2), random.randint(1, 3), random.randint(1, 5)
@@ -362,6 +387,7 @@ def _frac_complex():
     return f"{n1}/{d1} × {n2}/{d2} + {n3}/{d3} = ", s
 
 def _frac_chain():
+    """连续求几分之几（分步写出两步结果）"""
     # 连续运算
     total = random.choice([120, 180, 240, 360])
     f1 = random.choice([(1, 3), (1, 4), (2, 5)])
@@ -374,6 +400,7 @@ def _frac_chain():
     )
 
 def _frac_reverse():
+    """已知一个数的几分之几是多少，反求原数（凑整除）"""
     # 已知一个数的几分之几，求这个数
     n, d = random.choice([(2, 3), (3, 5), (4, 7), (5, 8)])
     x = random.randint(30, 200)
@@ -383,6 +410,7 @@ def _frac_reverse():
     return f"一个数的{n}/{d}是{part}，这个数是多少？", str(x)
 
 def _frac_context():
+    """分数剩余情境题（两天分别吃总量/剩余的比例，求最后余量）"""
     # 情境：剩余问题
     total = random.choice([100, 120, 150, 200])
     f1 = random.choice([(1, 4), (1, 5), (2, 5)])
@@ -410,26 +438,31 @@ def calc_mixed(difficulty: int, grade: int):
 
 
 def _mix_order():
+    """混合运算顺序（无括号，先乘后加）"""
     a, b, c = random.randint(20, 100), random.randint(2, 9), random.randint(10, 50)
     return f"{a} + {b} × {c} = （注意运算顺序）", str(a + b * c)
 
 def _mix_bracket():
+    """带括号混合运算"""
     a, b, c = random.randint(20, 100), random.randint(20, 100), random.randint(2, 9)
     return f"({a} + {b}) × {c} = ", str((a + b) * c)
 
 def _mix_simple_distribute():
+    """凑整简便（25×4/125×8 等）"""
     a = random.choice([25, 50, 125])
     b = random.choice([4, 2, 8])
     c = random.randint(10, 99)
     return f"{a} × {b} + {c} = （先凑整再算）", str(a * b + c)
 
 def _mix_distribute():
+    """乘法分配律正向运用（a×c+b×c）"""
     a = random.randint(11, 99)
     b = random.randint(11, 99)
     c = random.choice([3, 7, 9, 11, 13])
     return f"{a} × {c} + {b} × {c} = （用简便方法）", f"{(a+b)*c}（= ({a}+{b})×{c}）"
 
 def _mix_combine():
+    """连乘凑整 + 加减（如 125×8）"""
     a = random.choice([125, 25, 50])
     b = random.choice([8, 4, 2])
     c = random.randint(10, 99)
@@ -437,18 +470,21 @@ def _mix_combine():
     return f"{a} × {b} + {c} - {d} = ", str(a * b + c - d)
 
 def _mix_subtract_prop():
+    """减法性质简算（a-b-c = a-(b+c)）"""
     a = random.randint(200, 999)
     b = random.randint(50, 200)
     c = random.randint(50, 200)
     return f"{a} - {b} - {c} = （用减法性质简算）", f"{a-b-c}（= {a}-({b}+{c})）"
 
 def _mix_context():
+    """购物简便情境（合并数量后用单价，隐含分配律）"""
     price = random.randint(15, 45)
     n1 = random.randint(3, 8)
     n2 = random.randint(3, 8)
     return f"买{n1}支钢笔和{n2}支钢笔，每支{price}元，一共多少元？（用简便方法）", f"{(n1+n2)*price} 元"
 
 def _mix_advanced_trick():
+    """接近整百的巧算（99/101 等，拆成 100±d 用分配律）"""
     a = random.choice([99, 101, 98, 102])
     b = random.randint(20, 99)
     base = 100
@@ -457,12 +493,14 @@ def _mix_advanced_trick():
     return f"{a} × {b} = （用简便方法）", f"{ans}（= {base}×{b}{'+'if diff>0 else '-'}{abs(diff)}×{b}）"
 
 def _mix_multi_law():
+    """乘法交换/结合律（25×4、125×8 凑整）"""
     a = random.choice([25, 125])
     b = random.choice([4, 8])
     c = random.randint(11, 99)
     return f"{a} × {c} × {b} = （用交换律和结合律）", f"{a*b*c}（= {a}×{b}×{c}）"
 
 def _mix_reverse_law():
+    """逆用乘法分配律（a×c-b×c = (a-b)×c）"""
     a = random.randint(11, 50)
     b = random.randint(11, 50)
     c = random.choice([5, 9, 11])
@@ -470,6 +508,7 @@ def _mix_reverse_law():
     return f"{a} × {c} - {b} × {c} = （逆用分配律）", f"{total}（= ({a}-{b})×{c}）"
 
 def _mix_fraction_dec():
+    """分数小数混合简算（把小数化成分数凑整）"""
     # 分数小数混合
     a = random.choice([0.25, 0.5, 0.75, 1.25])
     b = random.randint(20, 80)
@@ -491,23 +530,27 @@ def calc_equation(difficulty: int, grade: int):
 
 
 def _eq_simple():
+    """最简一元一次方程 ax = b（构造整数解）"""
     x = random.randint(2, 20)
     a = random.randint(2, 9)
     return f"解方程：{a}x = {a*x}", f"x = {x}"
 
 def _eq_add_form():
+    """ax + b = c 型（加法形式）"""
     x = random.randint(2, 15)
     a = random.randint(2, 9)
     b = random.randint(1, 20)
     return f"解方程：{a}x + {b} = {a*x+b}", f"x = {x}"
 
 def _eq_word_simple():
+    """和倍文字题（列方程解）"""
     x = random.randint(5, 30)
     a = random.randint(2, 5)
     total = a * x
     return f"一个数的{a}倍是{total}，这个数是多少？（列方程解）", f"设这个数为x，{a}x={total}，x={x}"
 
 def _eq_two_step():
+    """两步方程 ax + b = c"""
     x = random.randint(2, 15)
     a = random.randint(2, 9)
     b = random.randint(1, 30)
@@ -515,6 +558,7 @@ def _eq_two_step():
     return f"解方程：{a}x + {b} = {c}", f"x = {x}"
 
 def _eq_both_sides():
+    """等式两边均含 x（移项合并）"""
     x = random.randint(2, 12)
     a = random.randint(3, 8)
     b = random.randint(2, a - 1)
@@ -523,6 +567,7 @@ def _eq_both_sides():
     return f"解方程：{a}x + {c} = {b}x + {d}", f"x = {x}"
 
 def _eq_bracket():
+    """带括号方程 c(ax+b) = 结果（构造整数解）"""
     x = random.randint(2, 10)
     a = random.randint(2, 5)
     b = random.randint(1, 10)
@@ -531,12 +576,14 @@ def _eq_bracket():
     return f"解方程：{c}({a}x + {b}) = {result}", f"x = {x}"
 
 def _eq_word_mid():
+    """和差文字题（列方程，甲乙各多少）"""
     x = random.randint(10, 50)
     more = random.randint(5, 30)
     total = x + (x + more)
     return f"甲乙两数和是{total}，甲比乙多{more}，甲乙各是多少？（列方程）", f"乙x={x}，甲={x+more}"
 
 def _eq_fraction_coeff():
+    """分数系数方程（x/3+x/2，凑 x 被 6 整除便于去分母）"""
     x = random.randint(6, 30)
     while x % 3 != 0:
         x += 1
@@ -545,6 +592,7 @@ def _eq_fraction_coeff():
     return f"解方程：x/3 + x/2 = {result}", f"x = {x}"
 
 def _eq_proportion():
+    """解比例 a/b = c/x（调整 c 使 x 为整数）"""
     x = random.randint(4, 20)
     a, b = random.randint(2, 5), random.randint(2, 5)
     c = random.randint(2, 10)
@@ -557,6 +605,7 @@ def _eq_proportion():
     return f"解比例：{a}/{b} = {c}/x", f"x = {x_val}"
 
 def _eq_word_hard():
+    """行程文字题（列方程求返回时间，返回速度=去时+增量）"""
     speed = random.randint(40, 80)
     time = random.randint(2, 5)
     dist = speed * time
@@ -577,6 +626,7 @@ def _eq_word_hard():
     )
 
 def _eq_system_hint():
+    """和差方程组（已知两数和与差，求大数/小数）"""
     x = random.randint(5, 15)
     y = random.randint(5, 15)
     s = x + y
@@ -601,42 +651,49 @@ def unit_conversion(difficulty: int, grade: int):
 
 
 def _unit_length():
+    """长度单位换算（大→小，乘进率）"""
     cases = [("千米", "米", 1000), ("米", "厘米", 100), ("米", "分米", 10)]
     big, small, rate = random.choice(cases)
     v = random.randint(2, 9)
     return f"{v}{big} = ___{small}", f"{v*rate} {small}"
 
 def _unit_weight():
+    """质量单位换算（大→小）"""
     cases = [("吨", "千克", 1000), ("千克", "克", 1000)]
     big, small, rate = random.choice(cases)
     v = random.randint(2, 8)
     return f"{v}{big} = ___{small}", f"{v*rate} {small}"
 
 def _unit_time():
+    """时间单位换算（大→小）"""
     cases = [("时", "分", 60), ("分", "秒", 60), ("日", "时", 24)]
     big, small, rate = random.choice(cases)
     v = random.randint(2, 5)
     return f"{v}{big} = ___{small}", f"{v*rate} {small}"
 
 def _unit_reverse():
+    """单位换算（小→大，除以进率；取值为进率整数倍保证整除）"""
     cases = [("米", "千米", 1000), ("厘米", "米", 100), ("千克", "吨", 1000)]
     small, big, rate = random.choice(cases)
     v = random.randint(2, 9) * rate
     return f"{v}{small} = ___{big}", f"{v//rate} {big}"
 
 def _unit_area():
+    """面积单位换算（大→小，面积进率为长度平方）"""
     cases = [("平方米", "平方分米", 100), ("平方分米", "平方厘米", 100), ("公顷", "平方米", 10000)]
     big, small, rate = random.choice(cases)
     v = random.randint(2, 15)
     return f"{v}{big} = ___{small}", f"{v*rate} {small}"
 
 def _unit_volume():
+    """体积/容积单位换算（大→小）"""
     cases = [("立方米", "立方分米", 1000), ("立方分米", "立方厘米", 1000), ("升", "毫升", 1000)]
     big, small, rate = random.choice(cases)
     v = random.randint(2, 9)
     return f"{v}{big} = ___{small}", f"{v*rate} {small}"
 
 def _unit_compound():
+    """复合单位换算（如 3千米500米 → 米），用固定示例减少歧义"""
     cases = [
         (f"3千米500米 = ___米", "3500 米"),
         (f"2时45分 = ___分", "165 分"),
@@ -647,11 +704,13 @@ def _unit_compound():
     return random.choice(cases)
 
 def _unit_context():
+    """米→千米情境题（除以1000）"""
     m = random.randint(1500, 9500)
     km = m / 1000
     return f"小明家到学校{m}米，合多少千米？", f"{km} 千米"
 
 def _unit_mixed():
+    """小数表示复合单位（如 3.6立方米 → 3立方米600立方分米）"""
     cases = [
         (f"3.6立方米 = ___立方米___立方分米", "3立方米600立方分米"),
         (f"2.05千米 = ___千米___米", "2千米50米"),
@@ -660,12 +719,14 @@ def _unit_mixed():
     return random.choice(cases)
 
 def _unit_compare():
+    """不同单位比较大小（统一成米/千米再比）"""
     a_m = random.randint(1, 5) * 1000 + random.randint(1, 9) * 100
     b_m = random.randint(1, 5) * 1000 + random.randint(1, 9) * 100
     sym = ">" if a_m > b_m else "<"
     return f"比较：{a_m}米 ○ {b_m/1000:.1f}千米", f"{sym}"
 
 def _unit_multi_step():
+    """跨单位面积换算（cm² → m²，除以10000）"""
     l_cm = random.randint(100, 500)
     w_cm = random.randint(50, 200)
     area_cm2 = l_cm * w_cm
@@ -673,6 +734,7 @@ def _unit_multi_step():
     return f"一块地长{l_cm}厘米、宽{w_cm}厘米（图纸上），实际面积是多少平方厘米？合多少平方米？", f"{area_cm2}平方厘米 = {area_m2}平方米"
 
 def _unit_real():
+    """速度×时间情境题（分钟→小时，求路程）"""
     speed_kmh = random.randint(60, 120)
     time_min = random.randint(30, 90)
     time_h = time_min / 60
@@ -696,6 +758,7 @@ def geo_area_plane(difficulty: int, grade: int):
     return random.choice(variants)()
 
 def _area_triangle():
+    """三角形面积（底×高÷2），调用配图渲染并附 img 路径"""
     b, h = random.randint(4, 20), random.randint(3, 15)
     area = b * h / 2
     s = f"{area:.1f}" if area != int(area) else str(int(area))
@@ -707,6 +770,7 @@ def _area_triangle():
     return f"三角形底{b}cm、高{h}cm，面积是多少？", f"{s} cm\u00b2", img
 
 def _area_parallelogram():
+    """平行四边形面积（底×高），附配图"""
     b, h = random.randint(4, 20), random.randint(3, 15)
     try:
         from .figure_renderer import render_parallelogram
@@ -716,6 +780,7 @@ def _area_parallelogram():
     return f"平行四边形底{b}cm、高{h}cm，面积是多少？", f"{b*h} cm\u00b2", img
 
 def _area_rect_both():
+    """长方形面积与周长（同时考两个公式），附配图"""
     l, w = random.randint(5, 25), random.randint(3, 15)
     try:
         from .figure_renderer import render_rectangle
@@ -728,11 +793,12 @@ def _area_reverse_base():
     h = random.randint(3, 12)
     area = random.randint(20, 120)
     while (2 * area) % h != 0:
-        area += 1
+        area += 1  # 已知面积和高反求底：底=面积×2÷高，凑整除保证底为整数
     b = 2 * area // h
     return f"三角形面积{area}cm\u00b2，高{h}cm，底是多少？", f"{b} cm（底=面积\u00d72\u00f7高）"
 
 def _area_trapezoid():
+    """梯形面积（(上底+下底)×高÷2），附配图"""
     a, b, h = random.randint(4, 12), random.randint(6, 16), random.randint(3, 10)
     area = (a + b) * h / 2
     s = f"{area:.1f}" if area != int(area) else str(int(area))
@@ -744,6 +810,7 @@ def _area_trapezoid():
     return f"梯形上底{a}cm、下底{b}cm、高{h}cm，面积？", f"{s} cm\u00b2", img
 
 def _area_circle():
+    """圆面积（πr²，π取3.14），附配图"""
     r = random.randint(2, 10)
     area = round(3.14 * r * r, 2)
     try:
@@ -754,6 +821,7 @@ def _area_circle():
     return f"圆半径{r}cm，求面积。（\u03c0取3.14）", f"{area} cm\u00b2", img
 
 def _area_composite_sub():
+    """L形组合面积（大长方形 − 右上角小长方形），附配图"""
     L, W = random.randint(10, 20), random.randint(8, 15)
     l, w = random.randint(3, L-3), random.randint(3, W-3)
     try:
@@ -764,6 +832,7 @@ def _area_composite_sub():
     return f"L形：外框{L}\u00d7{W}cm，挖去右上角{l}\u00d7{w}cm小长方形，面积？", f"{L*W - l*w} cm\u00b2", img
 
 def _area_reverse_height():
+    """已知梯形面积与上下底，反求高（凑整除保整数）"""
     a, b = random.randint(5, 12), random.randint(8, 16)
     area = random.randint(30, 100)
     while (2 * area) % (a + b) != 0:
@@ -772,6 +841,7 @@ def _area_reverse_height():
     return f"梯形面积{area}cm\u00b2，上底{a}cm下底{b}cm，高是多少？", f"{h} cm"
 
 def _area_shaded():
+    """阴影面积（正方形 − 内切圆），π取3.14，附配图"""
     r = random.randint(3, 8)
     side = 2 * r
     shadow = round(side * side - 3.14 * r * r, 2)
@@ -783,6 +853,7 @@ def _area_shaded():
     return f"正方形边长{side}cm，内切圆半径{r}cm，阴影面积？（\u03c0取3.14）", f"{shadow} cm\u00b2", img
 
 def _area_equal_transform():
+    """等面积转换：已知平行四边形面积与三角形高，反求三角形底（凑整除）"""
     b, h = random.randint(6, 15), random.randint(4, 10)
     para_area = b * h
     tri_h = random.randint(4, 12)
@@ -792,10 +863,12 @@ def _area_equal_transform():
     return f"平行四边形底{b}cm高{h}cm，与它等面积的三角形高{tri_h}cm，底是多少？", f"{tri_b} cm"
 
 def _area_ratio_2d():
+    """圆面积比 = 半径平方比（r1²:r2²）"""
     r1, r2 = random.randint(2, 5), random.randint(4, 8)
     return f"两圆半径比{r1}:{r2}，面积比是多少？", f"{r1**2}:{r2**2}"
 
 def _area_inscribed():
+    """圆内接正方形面积（对角线=直径，面积=对角线²÷2）"""
     r = random.randint(3, 7)
     d = 2 * r
     sq_area = d * d / 2
@@ -845,6 +918,7 @@ def geo_volume(difficulty: int, grade: int):
     return random.choice(variants)()
 
 def _vol_cuboid():
+    """长方体体积（长×宽×高），附配图"""
     a, b, c = random.randint(3, 12), random.randint(3, 12), random.randint(3, 12)
     try:
         from .figure_renderer import render_cuboid
@@ -854,10 +928,12 @@ def _vol_cuboid():
     return f"长方体长{a}cm宽{b}cm高{c}cm，体积？", f"{a*b*c} cm\u00b3", img
 
 def _vol_cube():
+    """正方体体积与表面积（棱长³、6×棱长²）"""
     a = random.randint(3, 12)
     return f"正方体棱长{a}cm，体积和表面积？", f"体积{a**3}cm\u00b3，表面积{6*a*a}cm\u00b2"
 
 def _vol_reverse_h():
+    """已知体积与长宽反求高（凑整除保整数）"""
     v = random.randint(60, 500)
     a, b = random.randint(3, 10), random.randint(3, 10)
     while v % (a * b) != 0:
@@ -865,11 +941,13 @@ def _vol_reverse_h():
     return f"长方体体积{v}cm\u00b3，长{a}cm宽{b}cm，高是多少？", f"{v//(a*b)} cm"
 
 def _vol_capacity():
+    """容器容积（cm³ → 毫升，1:1）"""
     l, w, h = random.randint(10, 40), random.randint(8, 30), random.randint(5, 20)
     ml = l * w * h
     return f"容器长{l}cm宽{w}cm高{h}cm，最多装多少毫升水？", f"{ml}毫升（={ml/1000:.1f}升）"
 
 def _vol_cylinder():
+    """圆柱体积（πr²h，π取3.14），附配图"""
     r, h = random.randint(2, 8), random.randint(5, 20)
     v = round(3.14 * r * r * h, 2)
     try:
@@ -880,6 +958,7 @@ def _vol_cylinder():
     return f"圆柱底面半径{r}cm高{h}cm，体积？（\u03c0取3.14）", f"{v} cm\u00b3", img
 
 def _vol_cone():
+    """圆锥体积（πr²h÷3，π取3.14），附配图"""
     r, h = random.randint(3, 8), random.randint(6, 18)
     v = round(3.14 * r * r * h / 3, 2)
     try:
@@ -890,22 +969,26 @@ def _vol_cone():
     return f"圆锥底面半径{r}cm高{h}cm，体积？（\u03c0取3.14）", f"{v} cm\u00b3", img
 
 def _vol_equal_bh():
+    """等底等高圆柱与圆锥体积（圆锥是圆柱的1/3）"""
     r, h = random.randint(3, 7), random.randint(6, 15)
     v_cyl = round(3.14 * r * r * h, 2)
     v_cone = round(v_cyl / 3, 2)
     return f"圆柱圆锥等底等高，半径{r}cm高{h}cm，各体积多少？什么关系？", f"圆柱{v_cyl}cm\u00b3，圆锥{v_cone}cm\u00b3，3倍关系"
 
 def _vol_displacement():
+    """排水法求不规则物体体积（底面积×水面升高）"""
     l, w, rise = random.randint(10, 25), random.randint(8, 20), random.randint(2, 8)
     return f"容器长{l}cm宽{w}cm，放石头后水面升{rise}cm，石头体积？", f"{l*w*rise} cm\u00b3"
 
 def _vol_hollow():
+    """空心铁皮箱（无盖）铁皮体积（外体积 − 内腔体积）"""
     L, W, H, t = random.randint(10, 20), random.randint(8, 15), random.randint(5, 12), 1
     inner = (L-2*t) * (W-2*t) * (H-t)
     v = L*W*H - inner
     return f"无盖铁皮箱外尺寸{L}\u00d7{W}\u00d7{H}cm，壁厚{t}cm，铁皮体积？", f"{v} cm\u00b3"
 
 def _vol_melt():
+    """熔铸问题（正方体体积不变，求长方体底面积，凑整除）"""
     a = random.randint(4, 10)
     v = a ** 3
     h = random.randint(3, 8)
@@ -914,12 +997,14 @@ def _vol_melt():
     return f"棱长{a}cm正方体熔铸成高{h}cm长方体，底面积多少？", f"{v//h} cm\u00b2"
 
 def _vol_water_rise():
+    """放入物体水面升高（物体体积÷圆柱底面积）"""
     r = random.randint(5, 10)
     obj_v = random.randint(50, 200)
     rise = round(obj_v / (3.14 * r * r), 2)
     return f"圆柱容器底面半径{r}cm，放入{obj_v}cm\u00b3物体，水面升多少？", f"约{rise} cm"
 
 def _vol_ratio_3d():
+    """正方体体积比 = 棱长立方比（a1³:a2³）"""
     a1, a2 = random.randint(2, 4), random.randint(3, 6)
     return f"两正方体棱长比{a1}:{a2}，体积比是多少？", f"{a1**3}:{a2**3}"
 
@@ -1257,6 +1342,7 @@ def app_travel(difficulty: int, grade: int):
         return random.choice(variants)()
 
 def _travel_round_trip(v1, v2):
+    """往返平均速度：总路程÷总时间（提示学生不是速度算术平均）"""
     dist = random.randint(100, 300)
     t_go = dist / v1
     t_back = dist / v2
@@ -1264,6 +1350,7 @@ def _travel_round_trip(v1, v2):
     return f"去时时速{v1}千米，回时时速{v2}千米，往返平均速度是多少？", f"{avg:.1f} 千米/时（不是简单平均！）"
 
 def _travel_circular(v1, v2):
+    """环形跑道反向相遇：周长÷速度和（凑整除保整数分钟）"""
     circumference = random.randint(200, 600)
     while circumference % (v1 + v2) != 0:
         circumference += 10
@@ -1271,6 +1358,7 @@ def _travel_circular(v1, v2):
     return f"环形跑道周长{circumference}米，甲速{v1}米/分乙速{v2}米/分同时同地反向跑，几分钟首次相遇？", f"{t} 分钟"
 
 def _travel_bridge(v1):
+    """火车过桥：总路程=车长+桥长，再换算时速→秒"""
     train_len = random.randint(100, 300)
     bridge_len = random.randint(500, 1500)
     speed_ms = v1 * 1000 / 3600
@@ -1278,6 +1366,7 @@ def _travel_bridge(v1):
     return f"火车长{train_len}米，桥长{bridge_len}米，时速{v1}千米，完全过桥需几秒？", f"约{time:.1f} 秒"
 
 def _travel_avg_speed():
+    """分段平均速度：总路程÷总时间"""
     d1 = random.randint(60, 120)
     d2 = random.randint(60, 120)
     v1 = random.randint(30, 60)
@@ -2001,6 +2090,10 @@ def number_divisibility(difficulty: int, grade: int):
 
 
 def _prime_factorize(n: int) -> list:
+    """质因数分解（试除法，d 从 2 递增到 √n）。
+
+    供 number_gcd_lcm 等题型求最大公约数/最小公倍数用；返回质因子列表（含重复）。
+    """
     factors = []
     d = 2
     while d * d <= n:
@@ -2217,6 +2310,7 @@ def _read_number(n: int) -> str:
 
 
 def _place_name(digits: int) -> str:
+    """整数位数 → 数位中文名（1→个、5→万、9→亿…），用于「最高位是什么位」类题目。"""
     names = {1:"个",2:"十",3:"百",4:"千",5:"万",6:"十万",7:"百万",8:"千万",9:"亿",10:"十亿"}
     return names.get(digits, f"第{digits}位")
 
@@ -2369,6 +2463,7 @@ def logic_clock(difficulty: int, grade: int):
 def mid_quadratic_eq(difficulty: int, grade: int):
     """一元二次方程"""
     def variant_solve():
+        """由整数根反推 x²+bx+c=0，保证方程有整数根"""
         # x² + bx + c = 0 (有整数根)
         r1 = random.randint(-8, 8)
         r2 = random.randint(-8, 8)
@@ -2385,6 +2480,7 @@ def mid_quadratic_eq(difficulty: int, grade: int):
         return q, a
 
     def variant_discriminant():
+        """判断根的情况（Δ=b²-4ac 的正负零）"""
         a = random.choice([1, 2, 3])
         b = random.randint(-10, 10)
         c = random.randint(-10, 10)
@@ -2399,6 +2495,7 @@ def mid_quadratic_eq(difficulty: int, grade: int):
         return q, f"\u0394={delta}, {result}"
 
     def variant_vieta():
+        """韦达定理：根与系数关系（x₁+x₂、x₁·x₂）"""
         r1 = random.randint(1, 6)
         r2 = random.randint(1, 6)
         b = -(r1 + r2)
@@ -2414,6 +2511,7 @@ def mid_quadratic_eq(difficulty: int, grade: int):
 def mid_linear_func(difficulty: int, grade: int):
     """一次函数"""
     def variant_find_expr():
+        """由两点坐标求一次函数解析式"""
         k = random.randint(-5, 5)
         while k == 0:
             k = random.randint(-5, 5)
@@ -2428,6 +2526,7 @@ def mid_linear_func(difficulty: int, grade: int):
         return q, f"y={k}x{b_str}"
 
     def variant_quadrant():
+        """判断图象经过的象限（按 k、b 符号组合）"""
         k = random.choice([-3, -2, -1, 1, 2, 3])
         b = random.choice([-5, -3, -1, 1, 3, 5])
         if k > 0 and b > 0:
@@ -2443,6 +2542,7 @@ def mid_linear_func(difficulty: int, grade: int):
         return q, ans
 
     def variant_intersect():
+        """求两直线交点（k1≠k2，结果可能非整数则只求x）"""
         k1, b1 = random.randint(1, 4), random.randint(-5, 5)
         k2 = k1 + random.randint(1, 3)
         b2 = random.randint(-5, 5)
@@ -2468,16 +2568,19 @@ def mid_pythagorean(difficulty: int, grade: int):
     """勾股定理"""
     triples = [(3,4,5), (5,12,13), (6,8,10), (7,24,25), (8,15,17), (9,12,15), (9,40,41)]
     def variant_find_hyp():
+        """已知两直角边求斜边（用固定勾股数）"""
         a, b, c = random.choice(triples)
         q = f"直角三角形两直角边为{a}和{b}，求斜边长"
         return q, f"{c}"
 
     def variant_find_leg():
+        """已知斜边与一直角边求另一直角边"""
         a, b, c = random.choice(triples)
         q = f"直角三角形斜边为{c}，一直角边为{a}，求另一直角边"
         return q, f"{b}"
 
     def variant_real_life():
+        """勾股定理生活情境（梯子靠墙，按勾股数缩放）"""
         a, b, c = random.choice(triples)
         scale = random.choice([1, 2, 10])
         a, b, c = a*scale, b*scale, c*scale
@@ -2740,6 +2843,13 @@ def generate_math_problems(
     include_answer: bool = True,
     db: Optional[Session] = None,
 ) -> List[ProblemItem]:
+    """数学题生成主入口：按年级/难度/题型分类从注册表取生成器，按比例出题并打乱。
+
+    参数：grade 年级；difficulty 难度档（综合/简单/中等/较难，映射到 DIFFICULTY_MAP 的难度区间）；
+    categories/problem_types 可限定范围（None 表示不限）；count 总题数；include_answer 是否带答案；
+    db 用于读取题库中启用的题型与权重（None 时退化为全部注册生成器）。
+    返回：ProblemItem 列表（已随机打乱并重新编号）。每个生成器返回 (题干, 答案) 或 (题干, 答案, 配图路径)。
+    """
     diff_range = DIFFICULTY_MAP.get(difficulty, (1, 5))
     available_types = _get_available_types(db, grade, categories, problem_types)
     if not available_types:
@@ -2784,6 +2894,11 @@ def generate_math_problems(
 
 
 def _get_available_types(db, grade, categories, problem_types):
+    """从题库读取「当前年级可用且启用」的题型清单（code/name/分类/权重）。
+
+    按 grade_min<=grade<=grade_max 与 is_active 过滤；可再用 problem_types/categories 进一步收窄。
+    任意 DB 异常或无匹配都返回 None，让主入口回退到全部注册生成器，保证总能出题。
+    """
     if db is None:
         return None
     try:
@@ -2809,7 +2924,11 @@ def _get_available_types(db, grade, categories, problem_types):
 
 
 def _allocate_counts(types: List[dict], total: int) -> List[Tuple[dict, int]]:
-    """全覆盖优先分配"""
+    """题量分配：先保证每种题型至少 1 题（全覆盖），剩余量按题型权重分摊。
+
+    total >= 题型数：每种先分 1 题，余数按 weight 比例分配（末项吃凑整残差，避免超总额）。
+    total < 题型数：无法全覆盖，改为先按分类均分名额，每类内取权重最高的题型，尽量多覆盖不同类别。
+    """
     if not types:
         return []
     n_types = len(types)
