@@ -292,3 +292,73 @@ def test_makeup_card_granted_once(client):
         assert _get_makeup_balance(db, uid) == base + 1
     finally:
         db.close()
+
+
+def test_exam_task_requires_new_paper(client):
+    """做卷子类任务（math_exam）必须做新卷子才算：反复刷同一张卷子不计入进度
+
+    复现用户反馈：孩子每天重做同一张卷子就能完成每日强制任务。
+    修复后判定为「今日达标且历史上从未做过的卷子」，重复做同一张不再计数。
+    """
+    from app.database import SessionLocal
+    from app.models.exam import ExamRecord, ExamAttempt
+    from app.models.daily_task import DailyTask
+    from app.routers.tasks import _build_payload, _today_new_attempts
+    from datetime import date, datetime, timedelta
+
+    uid = "新卷子判定生"
+    client.get("/api/tasks/daily", params={"user_id": uid})  # 生成今日任务（含 math_exam 强制）
+    db = SessionLocal()
+
+    def prog():
+        _build_payload(db, uid)
+        return db.query(DailyTask).filter_by(
+            user_id=uid, task_date=date.today(), task_code="math_exam").first().progress
+
+    try:
+        now = datetime.now()
+        exA = ExamRecord(subject="数学", title="新卷判定A", grade=6)
+        db.add(exA)
+        db.flush()
+        db.add(ExamAttempt(user_id=uid, exam_id=exA.id, score=90, created_at=now))
+        db.commit()
+        assert prog() == 1  # 今天 1 套新卷 → 进度 1
+
+        # 同一份卷今天反复刷 3 次 → 当天去重，仍只算 1
+        for _ in range(3):
+            db.add(ExamAttempt(user_id=uid, exam_id=exA.id, score=90,
+                               created_at=datetime.now()))
+        db.commit()
+        assert prog() == 1
+
+        # 把卷A 的全部做题记录挪到昨天（模拟昨天已做过卷A）
+        for a in db.query(ExamAttempt).filter_by(user_id=uid, exam_id=exA.id).all():
+            a.created_at = now - timedelta(days=1)
+        db.commit()
+        # 今天又刷卷A → 不算新卷，进度归零
+        db.add(ExamAttempt(user_id=uid, exam_id=exA.id, score=90,
+                           created_at=datetime.now()))
+        db.commit()
+        assert prog() == 0
+
+        # 做一份真正的新卷B → 进度恢复为 1
+        exB = ExamRecord(subject="数学", title="新卷判定B", grade=6)
+        db.add(exB)
+        db.flush()
+        db.add(ExamAttempt(user_id=uid, exam_id=exB.id, score=90,
+                           created_at=datetime.now()))
+        db.commit()
+        assert prog() == 1
+
+        # 单元层直接确认新卷计数语义
+        assert _today_new_attempts(db, uid, "数学") == 1
+    finally:
+        ids = [r[0] for r in db.query(ExamRecord.id).filter(
+            ExamRecord.title.in_(["新卷判定A", "新卷判定B"])).all()]
+        if ids:
+            db.query(ExamAttempt).filter(
+                ExamAttempt.user_id == uid, ExamAttempt.exam_id.in_(ids)).delete()
+            db.query(ExamRecord).filter(
+                ExamRecord.title.in_(["新卷判定A", "新卷判定B"])).delete()
+        db.commit()
+        db.close()

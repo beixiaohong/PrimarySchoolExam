@@ -41,7 +41,7 @@ SUBJECTS = ["数学", "语文", "英语"]
 
 MANDATORY_TASKS = {
     "数学": {"code": "math_exam", "title": "完成数学练习", "target": 2, "manual": False,
-             "ico": "🧮", "desc": "刷题中心完成数学试卷（套数由家长配置，每套正确率需 ≥70%）"},
+             "ico": "🧮", "desc": "刷题中心完成数学试卷（套数由家长配置，每套正确率需 ≥70%；须做不同的新卷，重复刷同一张不计入）"},
     "语文": {"code": "chi_classical", "title": "背诵古诗文（新背+复习全部完成）", "target": 1, "manual": False,
              "ico": "📜", "desc": "背诵中心完成今日新背内容与全部到期复习"},
     "英语": {"code": "eng_vocab", "title": "学单词（新学+复习全部完成）", "target": 5, "manual": False,
@@ -62,7 +62,7 @@ OPTIONAL_POOL = [
      "ico": "📱", "desc": "在学习平板完成数学同步练习后，找家长确认", "subject": "数学"},
     # 语文
     {"code": "chi_exam", "title": "完成 1 套语文练习", "target": 1, "manual": False,
-     "ico": "🖋️", "desc": "刷题中心做一套语文试卷", "subject": "语文"},
+     "ico": "🖋️", "desc": "刷题中心做一套语文试卷（须做不同的新卷，重复刷同一张不计入）", "subject": "语文"},
     {"code": "chi_read", "title": "朗读课文 5 分钟", "target": 5, "manual": True,
      "ico": "🎙️", "desc": "大声朗读课文或古诗，完成后由家长确认", "subject": "语文"},
     {"code": "chi_dictation", "title": "默写 3 首古诗", "target": 3, "manual": False,
@@ -71,7 +71,7 @@ OPTIONAL_POOL = [
      "ico": "📱", "desc": "在学习平板完成语文同步练习后，找家长确认", "subject": "语文"},
     # 英语
     {"code": "eng_exam", "title": "完成 1 套英语练习", "target": 1, "manual": False,
-     "ico": "📝", "desc": "刷题中心做一套英语试卷", "subject": "英语"},
+     "ico": "📝", "desc": "刷题中心做一套英语试卷（须做不同的新卷，重复刷同一张不计入）", "subject": "英语"},
     {"code": "eng_dictation", "title": "听写 10 个单词", "target": 10, "manual": False,
      "ico": "👂", "desc": "在听写磨耳朵完成单词听写", "subject": "英语"},
     {"code": "eng_challenge", "title": "英语 60 秒挑战赛 1 次", "target": 1, "manual": False,
@@ -469,13 +469,31 @@ def _today_start() -> datetime:
     return datetime.combine(date.today(), dtime.min)
 
 
-def _today_attempts(db: Session, user_id: str, subject: str) -> int:
-    """今日达标的做卷次数（同卷重做只计 1 次，防刷）"""
-    return db.query(func.count(func.distinct(ExamAttempt.exam_id))).join(
+def _today_new_attempts(db: Session, user_id: str, subject: str) -> int:
+    """今日达标、且以往从未做过的卷子数（防反复刷同一张卷子凑每日任务）
+
+    判定标准：今日分数达标的卷子中，exam_id 在「今天之前」不存在该用户的任何做题记录。
+    即同一份卷子只有第一次做才算数，之后每天重做都不再计入进度——必须做新卷子才能完成。
+    """
+    today_start = _today_start()
+    # 今日达标 attempt 涉及的卷子（去重）
+    todays = db.query(func.distinct(ExamAttempt.exam_id)).join(
         ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
         ExamAttempt.user_id == user_id, ExamRecord.subject == subject,
-        ExamAttempt.score >= TASK_PASS_SCORE, ExamAttempt.created_at >= _today_start(),
-    ).scalar() or 0
+        ExamAttempt.score >= TASK_PASS_SCORE, ExamAttempt.created_at >= today_start,
+    ).all()
+    new_ids = {r[0] for r in todays}
+    if not new_ids:
+        return 0
+    # 这些卷子中，今天之前该用户是否已做过（任何 attempt，不限分数 → 接触过即不算新）
+    prev = db.query(func.distinct(ExamAttempt.exam_id)).join(
+        ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
+        ExamAttempt.user_id == user_id, ExamRecord.subject == subject,
+        ExamAttempt.created_at < today_start,
+        ExamAttempt.exam_id.in_(new_ids),
+    ).all()
+    prev_ids = {r[0] for r in prev}
+    return len(new_ids - prev_ids)
 
 
 def _today_mastered(db: Session, user_id: str, subject: str) -> int:
@@ -601,7 +619,7 @@ def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int)
     """根据真实学习数据计算任务进度（封顶为目标值）"""
     # 强制任务
     if code == "math_exam":
-        return min(target, _today_attempts(db, user_id, "数学"))
+        return min(target, _today_new_attempts(db, user_id, "数学"))
     if code == "chi_classical":
         done, _, _, learned, reviewed = _classical_all_done(db, user_id)
         if done:
@@ -617,9 +635,9 @@ def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int)
     if code == "math_fix":
         return min(target, _today_mastered(db, user_id, "数学"))
     if code == "chi_exam":
-        return min(target, _today_attempts(db, user_id, "语文"))
+        return min(target, _today_new_attempts(db, user_id, "语文"))
     if code == "eng_exam":
-        return min(target, _today_attempts(db, user_id, "英语"))
+        return min(target, _today_new_attempts(db, user_id, "英语"))
     if code == "math_challenge":
         return min(target, _today_challenge_count(db, user_id, "math"))
     if code == "eng_challenge":
