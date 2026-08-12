@@ -18,7 +18,7 @@ from ..database import get_db
 router = APIRouter()
 
 ACTIVE_STATUS = ("pending", "answered")
-ACTIVE_LIMIT = 3  # PRD 17：孩子一次选 1-3 道错题讲给家长
+ACTIVE_LIMIT = 3  # PRD 17：孩子一次最多同时教 3 道错题（pending/answered 视为在教中）
 
 
 class CreateReq(BaseModel):
@@ -80,6 +80,12 @@ def _source(db: Session, user_id: str, kind: str, record_id: int):
 
 @router.post("/create", summary="从错题出一道「讲给家长」的题（最多同时教 3 道）")
 def create_card(req: CreateReq, db: Session = Depends(get_db)):
+    """从一道错题出「讲给家长」的讲解卡（同一错题不可重复出，在教中上限 ACTIVE_LIMIT=3）。
+
+    参数（Body）：user_id、kind（exam/study）、record_id。
+    返回：讲解卡详情（_card_out）；超出数量/重复出/来源错误 返回 400/404。
+    副作用：写 TeachingRecord（status=pending）。无需家长密码。
+    """
     from ..models.sprint4 import TeachingRecord
     active_count = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == req.user_id,
@@ -106,6 +112,12 @@ def create_card(req: CreateReq, db: Session = Depends(get_db)):
 
 @router.get("/active", summary="当前在教的题列表（待作答/待批改，最多 3 道）")
 def get_active(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """返回当前在教的讲解卡列表（status ∈ pending/answered，最多 3 道）。
+
+    参数（Query）：user_id。
+    返回：{items[讲解卡详情]}。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.sprint4 import TeachingRecord
     rows = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == user_id,
@@ -116,6 +128,12 @@ def get_active(user_id: str = Query(...), db: Session = Depends(get_db)):
 
 @router.post("/answer", summary="「家长」作答")
 def submit_answer(req: AnswerReq, db: Session = Depends(get_db)):
+    """「家长」作答讲解卡（pending → answered）。
+
+    参数（Body）：user_id、card_id、answer_text。
+    返回：讲解卡详情；卡片不存在 404、非 pending 状态 400。
+    副作用：置 status=answered、记 answered_at。无需家长密码。
+    """
     from datetime import datetime
     from ..models.sprint4 import TeachingRecord
     c = db.query(TeachingRecord).filter(TeachingRecord.id == req.card_id,
@@ -133,6 +151,13 @@ def submit_answer(req: AnswerReq, db: Session = Depends(get_db)):
 
 @router.post("/grade", summary="孩子批改：答对 → 7 天后复习验证；答错 → 重新讲")
 def grade_answer(req: GradeReq, db: Session = Depends(get_db)):
+    """孩子批改：答对 → graded 并排 7 天后复习验证（due_date=批改日+7天，发金币+10）；
+    答错 → 重置回 pending 重新讲（清空作答内容）。
+
+    参数（Body）：user_id、card_id、is_correct。
+    返回：讲解卡详情；卡片不存在 404、非 answered 状态 400。
+    副作用：更新 TeachingRecord 状态机；答对发金币。无需家长密码。
+    """
     from datetime import datetime
     from ..models.sprint4 import TeachingRecord
     c = db.query(TeachingRecord).filter(TeachingRecord.id == req.card_id,
@@ -162,6 +187,12 @@ def grade_answer(req: GradeReq, db: Session = Depends(get_db)):
 
 @router.get("/due", summary="7 天到期待复习验证的题")
 def get_due(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """返回 7 天到期待复习验证的讲解卡（graded 且 due_date<=今天 且未 recheck）。
+
+    参数（Query）：user_id。
+    返回：{items[讲解卡详情]}。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.sprint4 import TeachingRecord
     rows = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == user_id,
@@ -174,6 +205,13 @@ def get_due(user_id: str = Query(...), db: Session = Depends(get_db)):
 
 @router.post("/recheck", summary="7 天复习验证：通过或重新讲")
 def recheck(req: RecheckReq, db: Session = Depends(get_db)):
+    """7 天复习验证：通过 → recheck_status=passed（闭环完成）；
+    失败 → 重置回 pending 重新讲（清空作答/批改/due_date）。
+
+    参数（Body）：user_id、card_id、is_correct。
+    返回：讲解卡详情；卡片不存在 404、未到验证时间 400。
+    副作用：更新 TeachingRecord 状态机。无需家长密码。
+    """
     from datetime import datetime
     from ..models.sprint4 import TeachingRecord
     c = db.query(TeachingRecord).filter(TeachingRecord.id == req.card_id,
@@ -199,6 +237,12 @@ def recheck(req: RecheckReq, db: Session = Depends(get_db)):
 
 @router.get("/stats", summary="小老师记录统计")
 def get_stats(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """小老师记录统计：总题数 / 复习通过数 / 在教中题数。
+
+    参数（Query）：user_id。
+    返回：{total, passed, teaching}。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.sprint4 import TeachingRecord
     rows = db.query(TeachingRecord).filter(TeachingRecord.user_id == user_id).all()
     return {

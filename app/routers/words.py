@@ -1,4 +1,8 @@
-"""英语单词 API 路由"""
+"""英语单词 API 路由（词库管理 + 单词 CRUD + CSV/Excel 批量导入）
+
+提供词库（WordBook）与单词（Word）的增删查，以及按词库/年级/关键词/难度分页检索，
+供背单词模块与词库维护使用。无需家长密码。
+"""
 import io
 import csv
 from typing import Optional, List
@@ -20,6 +24,12 @@ router = APIRouter()
 
 @router.get("/books", response_model=List[WordBookOut], summary="获取所有词库")
 def list_books(db: Session = Depends(get_db)):
+    """获取所有词库（按年级、学期排序）。
+
+    参数（Query）：无。
+    返回：WordBook 列表。
+    副作用：无（只读）。无需家长密码。
+    """
     return db.query(WordBook).order_by(WordBook.grade, WordBook.semester).all()
 
 
@@ -31,6 +41,12 @@ def create_book(
     publisher: str = Query("人教版PEP"),
     db: Session = Depends(get_db),
 ):
+    """创建词库。
+
+    参数（Query）：name、grade（1-6）、semester（默认"上"）、publisher（默认"人教版PEP"）。
+    返回：新建的 WordBook；同名已存在返回 409。
+    副作用：写 WordBook 表。无需家长密码。
+    """
     existing = db.query(WordBook).filter(WordBook.name == name).first()
     if existing:
         raise HTTPException(409, f"词库 '{name}' 已存在")
@@ -53,6 +69,13 @@ def list_words(
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
+    """分页查询单词，支持按词库/年级/关键词/难度过滤。
+
+    参数（Query）：book_id、grade（1-6）、keyword（单词或释义模糊）、difficulty（1-5）、
+                  page（>=1）、page_size（1-200）。
+    返回：WordOut 列表。
+    副作用：无（只读）。无需家长密码。
+    """
     q = db.query(Word)
     if book_id:
         q = q.filter(Word.book_id == book_id)
@@ -71,6 +94,12 @@ def word_count(
     grade: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
+    """统计单词总数（按词库/年级过滤）。
+
+    参数（Query）：book_id、grade。
+    返回：{count}。
+    副作用：无（只读）。无需家长密码。
+    """
     q = db.query(Word)
     if book_id:
         q = q.filter(Word.book_id == book_id)
@@ -85,6 +114,12 @@ def create_word(
     data: WordCreate = ...,
     db: Session = Depends(get_db),
 ):
+    """向指定词库添加单词。
+
+    参数（Query）：book_id。参数（Body）：单词字段。
+    返回：新建的 WordOut；词库不存在 404、单词已存在 409。
+    副作用：写 Word 表并更新该词库 word_count。无需家长密码。
+    """
     book = db.query(WordBook).get(book_id)
     if not book:
         raise HTTPException(404, "词库不存在")
@@ -101,6 +136,12 @@ def create_word(
 
 @router.put("/{word_id}", response_model=WordOut, summary="更新单词")
 def update_word(word_id: int, data: WordUpdate, db: Session = Depends(get_db)):
+    """更新单词（仅提交的非空字段，partial update）。
+
+    参数（Path）：word_id。参数（Body）：单词字段（可部分）。
+    返回：更新后的 WordOut；单词不存在 404。
+    副作用：更新 Word 表。无需家长密码。
+    """
     word = db.query(Word).get(word_id)
     if not word:
         raise HTTPException(404, "单词不存在")
@@ -113,6 +154,12 @@ def update_word(word_id: int, data: WordUpdate, db: Session = Depends(get_db)):
 
 @router.delete("/{word_id}", summary="删除单词")
 def delete_word(word_id: int, db: Session = Depends(get_db)):
+    """删除单词（并同步刷新所属词库的 word_count）。
+
+    参数（Path）：word_id。
+    返回：{"message": "已删除"}；单词不存在 404。
+    副作用：删除 Word 表记录 + 更新 WordBook.word_count。无需家长密码。
+    """
     word = db.query(Word).get(word_id)
     if not word:
         raise HTTPException(404, "单词不存在")

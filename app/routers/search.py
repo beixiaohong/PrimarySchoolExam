@@ -103,6 +103,14 @@ def _empty_payload(text: str, user_id: str, subject: str, db: Session) -> dict:
 
 @router.post("/ask", summary="文字搜题：题库命中 或 AI 讲解（缓存/计费/错题本联动）")
 def search_ask(req: SearchAskReq, db: Session = Depends(get_db)):
+    """文字搜题：优先命中本地题库，其次命中全局缓存，最后走 AI 实时讲解。
+
+    参数（Body）：user_id、question_text（<=500 字）、subject、grade、force_ai（跳过题库命中）。
+    返回：{hit, cached, question, question_id, source, subject, answer, analysis, options,
+          score, ai_text, diamond_cost, diamond_balance}。题库命中/缓存免费，仅 AI 实时解答扣钻石。
+    限频：SEARCH_RATE=5 次/分钟/用户。副作用：成功解答写 ai_qa(q_type=search) 并扣钻石。
+    无需家长密码。
+    """
     text = (req.question_text or "").strip()
     if not text:
         raise HTTPException(400, "题目不能为空")
@@ -171,6 +179,12 @@ def search_ask(req: SearchAskReq, db: Session = Depends(get_db)):
 
 @router.post("/to-wrong", summary="把搜到的题加入错题本（去重：同题干不重复入库）")
 def search_to_wrong(req: SearchToWrongReq, db: Session = Depends(get_db)):
+    """把搜到的题写入错题本（按 用户+来源+题干 去重，同题干不重复入库）。
+
+    参数（Body）：user_id、question、answer、explanation。
+    返回：{ok, added, id, message}；已存在则 added=False。
+    副作用：可能新建 study_errors 记录（source_type=search）。无需家长密码。
+    """
     text = (req.question or "").strip()
     if not text:
         raise HTTPException(400, "题目不能为空")
@@ -205,6 +219,12 @@ def search_to_wrong(req: SearchToWrongReq, db: Session = Depends(get_db)):
 @router.get("/history", summary="我的搜题历史（前 50 条）")
 def search_history(user_id: str = Query(..., min_length=1),
                    db: Session = Depends(get_db)):
+    """返回本人搜题历史（ai_qa q_type=search 倒序，前 50 条）。
+
+    参数（Query）：user_id。
+    返回：[{id, question, answer, provider, model, created_at}]。
+    副作用：无（只读）。无需家长密码。
+    """
     rows = db.query(AiQa).filter(
         AiQa.user_id == user_id, AiQa.q_type == "search",
     ).order_by(AiQa.id.desc()).limit(50).all()

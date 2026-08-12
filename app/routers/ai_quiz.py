@@ -61,6 +61,12 @@ class QuizRewardReq(BaseModel):
 
 @router.post("/generate", summary="AI 生成趣味题（主题包装）")
 def generate_quiz(req: QuizGenReq, db: Session = Depends(get_db)):
+    """AI 生成趣味题（主题包装）。
+
+    请求：{user_id, subject=数学/语文/英语, grade, theme, count}；无需家长密码。
+    返回：{theme, count, questions:[{question,options,answer,explanation,fun}]}（questions 为空时抛 502）。
+    副作用：最多重试 2 次解析 AI 输出；成功按 token 扣钻（reason=ai_quiz），扣费失败不阻断。
+    """
     from ..services.ai import chat_with
 
     if req.subject not in ("数学", "语文", "英语"):
@@ -126,6 +132,13 @@ def _parse_questions(text: str) -> list:
 
 @router.post("/wrong", summary="AI 趣味题答错 → 回写错题本")
 def submit_wrong(req: QuizWrongReq, db: Session = Depends(get_db)):
+    """AI 趣味题答错 → 回写错题本（错题闭环）。
+
+    请求：{user_id, question, user_answer, correct_answer, explanation}；无需家长密码。
+    返回：{ok}。
+    副作用：写 study_errors（source_type=ai_quiz）；同题（同用户+同内容）不重复入库，
+            已存在则重置掌握状态、error_count+1，便于后续重练。
+    """
     from ..models.study_error import StudyError
 
     if not req.question.strip() or not req.correct_answer.strip():
@@ -157,6 +170,12 @@ def submit_wrong(req: QuizWrongReq, db: Session = Depends(get_db)):
 
 @router.post("/reward", summary="AI 趣味题全对 +5 金币")
 def quiz_reward(req: QuizRewardReq, db: Session = Depends(get_db)):
+    """AI 趣味题全对奖励金币（+5，与金币宠物联动）。
+
+    请求：{user_id, correct, total}；无需家长密码。
+    返回：{ok, granted}（granted=0 表示未全对，不发放）。
+    副作用：仅当 correct==total 且 total>0 时调用 _grant_coins(+5, reason=趣味出题全对) 并落库。
+    """
     if req.total <= 0 or req.correct < req.total:
         return {"ok": True, "granted": 0}
     _grant_coins(db, req.user_id, QUIZ_PAID, "趣味出题全对")

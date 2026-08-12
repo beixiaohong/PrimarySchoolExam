@@ -71,6 +71,12 @@ def _cat_cards(db: Session, user_id: str) -> list:
 
 @router.get("", summary="知识卡图鉴：已收集的知识卡（掌握即点亮）")
 def get_cards(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """知识卡图鉴：返回已收集的知识卡（掌握即点亮）。
+
+    查询参数：user_id；无需家长密码。
+    返回：{total, collected, categories:[{key,name,emoji,total,collected,cards:[{id,title,sub,desc,emoji,collected}]}]}。
+    副作用：只读，无写库。每类最多展示 MAX_PER_CAT(40) 张。
+    """
     cats = _cat_cards(db, user_id)
     total = sum(c["total"] for c in cats)
     collected = sum(c["collected"] for c in cats)

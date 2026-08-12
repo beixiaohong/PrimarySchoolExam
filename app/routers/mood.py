@@ -31,6 +31,12 @@ class MoodCheckinReq(BaseModel):
 
 @router.post("/checkin", summary="心情打卡（当日可改，覆盖上次）")
 def mood_checkin(req: MoodCheckinReq, db: Session = Depends(get_db)):
+    """每日心情打卡（当日可重复修改，覆盖上次记录）。
+
+    参数（Body）：user_id、mood（great/happy/ok/blue/sad）、note（最长 50 字）。
+    返回：{date, mood, label, note}。mood 非法返回 400。
+    副作用：upsert mood_checkins（user_id+check_date 唯一）；无需家长密码。
+    """
     user_id = (req.user_id or "").strip()
     if not user_id:
         raise HTTPException(400, "缺少 user_id")
@@ -55,6 +61,12 @@ def mood_checkin(req: MoodCheckinReq, db: Session = Depends(get_db)):
 
 @router.get("/trend", summary="最近 7 天心情曲线 + 压力预警")
 def mood_trend(user_id: str = Query(..., description="用户名"), db: Session = Depends(get_db)):
+    """返回最近 7 天心情曲线，并在连续负面（blue/sad）≥3 天时给出压力预警。
+
+    参数（Query）：user_id。
+    返回：{days[7], alert|null, today_mood}。
+    副作用：无（只读）。无需家长密码。
+    """
     today = date.today()
     start = today - timedelta(days=6)
 

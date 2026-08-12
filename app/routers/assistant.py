@@ -141,6 +141,12 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
 
 @router.get("/profile", summary="孩子学习画像（AI 学习助手用）")
 def assistant_profile(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """孩子学习画像（供 AI 学习助手上下文，前端也可展示）。
+
+    查询参数：user_id；无需家长密码。
+    返回：{grade, subject, profile}（profile 为今日任务/错题/最近考试/徽章/树/金币/连续打卡的文本摘要）。
+    副作用：只读，无写库。
+    """
     from ..models.user import User
 
     u = db.query(User).filter(User.user_id == user_id).first()
@@ -155,6 +161,13 @@ def assistant_profile(user_id: str = Query(...), db: Session = Depends(get_db)):
 
 @router.post("/chat", summary="AI 学习助手多轮对话（结合学习画像）")
 def assistant_chat(req: ChatReq, db: Session = Depends(get_db)):
+    """AI 学习助手多轮对话（结合学习画像）。
+
+    请求：{user_id, message, history(最近几轮)}；无需家长密码。
+    返回：{text, model, provider}（无有效回复抛 502）。
+    副作用：限频 5 次/分钟，消息限 300 字；组装最近 6 轮历史 + 实时学习画像调用 AI，
+            成功按 token 扣钻（reason=ai_assistant）并写 ai_usage_log，扣费失败不阻断。
+    """
     from ..models.user import User
 
     message = (req.message or "").strip()

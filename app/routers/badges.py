@@ -128,6 +128,12 @@ def _check(code: str, m: dict) -> bool:
 
 @router.get("", summary="成就徽章墙：扫描并授予新徽章，返回全部徽章状态")
 def get_badges(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """成就徽章墙：扫描并授予新徽章，返回全部徽章状态。
+
+    查询参数：user_id；无需家长密码。
+    返回：{total, earned(已得数), newly(本次新解锁 code 列表), items:[{code,emoji,name,desc,earned,earned_at}]}。
+    副作用：一次性统计学习数据，对首次达成阈值的徽章新增 badge_earned 记录并落库（阈值见 _check）。
+    """
     from ..models.badge import BadgeEarned
 
     m = _metrics(db, user_id)

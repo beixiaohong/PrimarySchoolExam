@@ -186,6 +186,13 @@ def _mask_phone(phone: str) -> str:
 
 @router.post("/send-code", summary="发送验证码（注册/绑定/重置密码）")
 def send_code(req: SendCodeReq, db: Session = Depends(get_db)):
+    """发送验证码（注册/绑定/重置密码）。
+
+    请求：{target(邮箱或手机号), purpose=register/bind/reset}；无需家长密码。
+    返回：{ok, channel, expires_in(秒)}。
+    副作用：频控（同目标 60 秒 1 条、每日 5 条）；落库 auth_codes（6 位、5 分钟有效）；
+            调用邮件/短信通道发送（未配置则 503/502）。register 时账号已存在、bind/reset 时账号状态不符则拒绝。
+    """
     target = (req.target or "").strip().lower() if "@" in (req.target or "") else (req.target or "").strip()
     if req.purpose not in PURPOSES:
         raise HTTPException(400, "验证码用途无效")
@@ -204,6 +211,13 @@ def send_code(req: SendCodeReq, db: Session = Depends(get_db)):
 
 @router.post("/register", summary="邮箱/手机号注册（验证码 + 密码）")
 def register(req: RegisterReq, db: Session = Depends(get_db)):
+    """邮箱/手机号注册（验证码 + 密码）。
+
+    请求：{target, code, password, nickname?}；无需家长密码。
+    返回：统一登录态 {user_id, grade, subject, is_new, streak_days, created_at}。
+    副作用：校验验证码（消费）、校验密码强度；user_id 取昵称或账号、冲突追加数字后缀；
+            新建用户（默认 6 年级/英语）并落库、邮件/手机标记为已验证。
+    """
     target = req.target.strip()
     channel = _classify(target)
     if _user_by_target(db, target, channel):
@@ -235,6 +249,12 @@ def register(req: RegisterReq, db: Session = Depends(get_db)):
 
 @router.post("/login", summary="账号密码登录（邮箱/手机号/昵称）")
 def auth_login(req: LoginReq, db: Session = Depends(get_db)):
+    """账号密码登录（邮箱/手机号/昵称）。
+
+    请求：{account, password}；无需家长密码。
+    返回：统一登录态（见 _login_payload）。
+    副作用：按账号类型定位用户；无密码的账号要求先重置；校验通过后更新 last_login 并自动升级年级，无写库新建。
+    """
     account = req.account.strip()
     if not account:
         raise HTTPException(400, "账号不能为空")
@@ -258,6 +278,12 @@ def auth_login(req: LoginReq, db: Session = Depends(get_db)):
 
 @router.post("/bind", summary="登录后绑定另一通道（邮箱/手机号）")
 def bind(req: BindReq, db: Session = Depends(get_db)):
+    """登录后绑定另一通道（邮箱/手机号）。
+
+    请求：{user_id, target, code}；无需家长密码（自身账号操作）。
+    返回：{ok, channel}。
+    副作用：校验验证码（消费）、绑定通道不可被其他账号占用；更新 user.email/phone 并标记已验证。
+    """
     user = db.query(User).filter(User.user_id == req.user_id.strip()).first()
     if not user:
         raise HTTPException(404, "用户不存在")
@@ -276,6 +302,12 @@ def bind(req: BindReq, db: Session = Depends(get_db)):
 
 @router.post("/reset-password", summary="验证码重置密码")
 def reset_password(req: ResetPwdReq, db: Session = Depends(get_db)):
+    """验证码重置密码。
+
+    请求：{target, code, new_password}；无需家长密码。
+    返回：{ok}。
+    副作用：校验验证码（消费）、校验密码强度；重设 password_hash 并落库。
+    """
     target = req.target.strip()
     channel = _classify(target)
     user = _user_by_target(db, target, channel)
@@ -290,6 +322,12 @@ def reset_password(req: ResetPwdReq, db: Session = Depends(get_db)):
 
 @router.get("/me", summary="当前账号认证信息（脱敏）")
 def auth_me(user_id: str, db: Session = Depends(get_db)):
+    """当前账号认证信息（脱敏）。
+
+    查询参数：user_id；无需家长密码。
+    返回：{user_id, nickname, auth_type, email(脱敏), phone(脱敏), has_password, allow_nickname_login}。
+    副作用：只读，无写库。
+    """
     user = db.query(User).filter(User.user_id == user_id.strip()).first()
     if not user:
         raise HTTPException(404, "用户不存在")

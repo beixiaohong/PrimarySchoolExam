@@ -49,6 +49,13 @@ class AppealDecideReq(BaseModel):
 
 @router.post("/create", summary="孩子发起申诉（判错的题标记「我做对了」）")
 def create_appeal(req: AppealCreateReq, db: Session = Depends(get_db)):
+    """孩子发起申诉（判错的题标记「我做对了」）。
+
+    请求：{user_id, source=exam/retry, question, user_answer, correct_answer, 可选 question_id/record_id 等}；无需家长密码。
+    返回：{id, status, dup}（dup=true 表示同题同作答已存在 pending 申诉，直接复用）。
+    副作用：限频 20 次/小时 + 5 次/日（防刷屏/防反复抬分）；写 answer_appeals（status=pending）。
+            同用户+同作答+未处理的同 source 申诉去重，避免孩子刷屏。
+    """
     q_text = (req.question or "").strip()
     ua = (req.user_answer or "").strip()
     if not q_text or not ua:
@@ -104,6 +111,12 @@ def create_appeal(req: AppealCreateReq, db: Session = Depends(get_db)):
 @router.get("/list", summary="申诉列表（家长面板待处理 / 历史）")
 def list_appeals(user_id: str, status: str = "pending",
                  limit: int = 50, db: Session = Depends(get_db)):
+    """申诉列表（家长面板待处理 / 历史）。
+
+    查询参数：user_id, status（默认 pending；可查 approved/rejected/history）；无需家长密码。
+    返回：{appeals:[{id, source, question_id/record_id, question, user_answer, correct_answer, status, created_at}]}。
+    副作用：只读，无写库。
+    """
     q = db.query(AnswerAppeal).filter(AnswerAppeal.user_id == user_id)
     if status:
         q = q.filter(AnswerAppeal.status == status)
@@ -125,6 +138,14 @@ def list_appeals(user_id: str, status: str = "pending",
 
 @router.post("/decide", summary="家长二次确认：确认做对了（改判）/ 维持判错")
 def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
+    """家长二次确认：确认做对了（改判）/ 维持判错。
+
+    请求：{user_id, appeal_id, action=approve/reject}；无需家长密码（家长面板直接操作）。
+    返回：{id, status}（approved/rejected）。
+    副作用（仅 approve）：exam 源定位最新判错记录改判正确并重算本卷得分、删除本次新建错题痕迹；
+            retry 源错题记录 correct_streak+1，累计达 3 次（MASTER_STREAK）自动标记掌握。
+            已处理的申诉不可重复处理。
+    """
     if req.action not in ("approve", "reject"):
         raise HTTPException(400, "action 仅支持 approve / reject")
     a = db.query(AnswerAppeal).filter(

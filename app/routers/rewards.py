@@ -103,6 +103,12 @@ def _expire_wishes(db: Session, user_id: str):
 
 @router.get("/overview", summary="孩子侧奖励总览：可用券 + 进行中心愿 + 本周兑现数")
 def rewards_overview(user_id: str, db: Session = Depends(get_db)):
+    """孩子侧奖励总览：可用兑换券 + 当前进行中心愿 + 近 7 天兑现数。
+
+    参数（Query）：user_id。
+    返回：{coupons[可用券], wish(进行中或 null), redeemed_7d}。
+    副作用：只读（会顺带将过期心愿标为 expired，幂等）。无需家长密码。
+    """
     from ..models.reward import RewardCoupon, WishItem
     _expire_wishes(db, user_id)
     coupons = db.query(RewardCoupon).filter(
@@ -129,6 +135,12 @@ def rewards_overview(user_id: str, db: Session = Depends(get_db)):
 
 @router.get("/parent-panel", summary="家长侧管理面板：全部兑换券 + 全部待处理心愿")
 def parent_panel(user_id: str, db: Session = Depends(get_db)):
+    """家长侧管理面板：全部兑换券 + 全部未完结心愿（待确认/进行中/待兑现）。
+
+    参数（Query）：user_id。
+    返回：{coupons[全部券], wishes[未完结心愿]}。
+    副作用：只读（顺带过期检查，幂等）。无需家长密码。
+    """
     from ..models.reward import RewardCoupon, WishItem
     _expire_wishes(db, user_id)
     coupons = db.query(RewardCoupon).filter(
@@ -146,6 +158,15 @@ def parent_panel(user_id: str, db: Session = Depends(get_db)):
 
 @router.post("/coupon", summary="家长创建兑换券（需家长密码）")
 def create_coupon(req: CouponReq, request: Request, db: Session = Depends(get_db)):
+    """家长创建兑换券。
+
+    参数（Body）：user_id、title、kind（cartoon/snack/sticker/toy/outing/custom）、
+                  max_per_month（默认 2）、reason、required_days（0=即时券，>0=需全勤天数）。
+    请求头：需 X-Parent-Pwd（ensure_parent_pwd 校验，否则 403）。
+    返回：券详情；title 空/类型非法返回 400。
+    副作用：写 reward_coupons；max_per_month 夹到 1-12，required_days 夹到 0-30。
+    需要家长密码。
+    """
     from ..models.reward import RewardCoupon
     ensure_parent_pwd(db, req.user_id, request)
     title = (req.title or "").strip()
@@ -153,8 +174,8 @@ def create_coupon(req: CouponReq, request: Request, db: Session = Depends(get_db
         raise HTTPException(400, "券名不能为空")
     if req.kind not in COUPON_KINDS:
         raise HTTPException(400, f"券类型只能是 {list(COUPON_KINDS)}")
-    max_n = max(1, min(12, req.max_per_month or 2))
-    rd = max(0, min(30, req.required_days or 0))
+    max_n = max(1, min(12, req.max_per_month or 2))  # 每月上限夹到 1-12
+    rd = max(0, min(30, req.required_days or 0))  # 所需全勤天数夹到 0-30（0=即时券）
     c = RewardCoupon(user_id=req.user_id, title=title[:100], kind=req.kind,
                      max_per_month=max_n, status="active",
                      reason=(req.reason or "").strip()[:200] or None,
@@ -167,6 +188,12 @@ def create_coupon(req: CouponReq, request: Request, db: Session = Depends(get_db
 
 @router.post("/coupon/{cid}/redeem", summary="家长核销一张兑换券（需家长密码）")
 def redeem_coupon(cid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
+    """家长核销一张兑换券（granted-redeemed 剩余>0 才能核销）。
+
+    参数（Path）：cid 券主键。参数（Body）：user_id。
+    请求头：需 X-Parent-Pwd。返回：券详情；不存在 404、已停用 400、无剩余 400。
+    副作用：redeemed_count+1。需要家长密码。
+    """
     from ..models.reward import RewardCoupon
     ensure_parent_pwd(db, req.user_id, request)
     c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
@@ -185,6 +212,12 @@ def redeem_coupon(cid: int, req: ToggleReq, request: Request, db: Session = Depe
 
 @router.post("/coupon/{cid}/toggle", summary="家长启用/停用兑换券（需家长密码）")
 def toggle_coupon(cid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
+    """家长启用/停用兑换券（active ↔ archived 切换）。
+
+    参数（Path）：cid。参数（Body）：user_id。请求头：需 X-Parent-Pwd。
+    返回：券详情；不存在 404。
+    副作用：切换 status。需要家长密码。
+    """
     from ..models.reward import RewardCoupon
     ensure_parent_pwd(db, req.user_id, request)
     c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
@@ -198,6 +231,12 @@ def toggle_coupon(cid: int, req: ToggleReq, request: Request, db: Session = Depe
 
 @router.delete("/coupon/{cid}", summary="家长删除兑换券（需家长密码）")
 def delete_coupon(cid: int, request: Request, user_id: str = Query(...), db: Session = Depends(get_db)):
+    """家长删除兑换券（须先停用且无未核销券）。
+
+    参数（Path）：cid。参数（Query）：user_id。请求头：需 X-Parent-Pwd。
+    返回：{ok: True}；未停用 400、仍有剩余 400、不存在 404。
+    副作用：删除券记录。需要家长密码。
+    """
     from ..models.reward import RewardCoupon
     ensure_parent_pwd(db, user_id, request)
     c = db.query(RewardCoupon).filter(RewardCoupon.id == cid,
@@ -219,6 +258,13 @@ def delete_coupon(cid: int, request: Request, user_id: str = Query(...), db: Ses
 
 @router.post("/wish", summary="孩子创建心愿（待家长确认；同时仅 1 个进行中）")
 def create_wish(req: WishReq, db: Session = Depends(get_db)):
+    """孩子创建心愿（进入 pending，待家长确认；同时仅允许 1 个进行中）。
+
+    参数（Body）：user_id、title、target（默认 10）、wish_type（task_count/optional_streak）、
+                  daily_target（仅 optional_streak）、deadline（YYYY-MM-DD，可空）。
+    返回：心愿详情；title 空 400、已有进行中 400、deadline 非法/过早/超 1 年 400。
+    副作用：写 wish_items（status=pending）。无需家长密码。
+    """
     from ..models.reward import WishItem
     title = (req.title or "").strip()
     if not title:
@@ -229,7 +275,7 @@ def create_wish(req: WishReq, db: Session = Depends(get_db)):
     ).first()
     if active:
         raise HTTPException(400, "已有进行中的心愿，完成或移除后才能换新的")
-    target = max(WISH_MIN_TARGET, min(100, req.target or 10))
+    target = max(WISH_MIN_TARGET, min(100, req.target or 10))  # 目标值夹到 1-100
     wish_type = req.wish_type if req.wish_type in ("task_count", "optional_streak") else "task_count"
     daily_target = max(1, min(10, req.daily_target or 3))
     # 截止日期：须晚于今天，最长 365 天
@@ -255,6 +301,12 @@ def create_wish(req: WishReq, db: Session = Depends(get_db)):
 
 @router.post("/wish/{wid}/confirm", summary="家长确认心愿开始进行（需家长密码）")
 def confirm_wish(wid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
+    """家长确认心愿开始进行（pending → active）。
+
+    参数（Path）：wid。参数（Body）：user_id。请求头：需 X-Parent-Pwd。
+    返回：心愿详情；不存在 404、非 pending 状态 400。
+    副作用：status=pending→active。需要家长密码。
+    """
     from ..models.reward import WishItem
     ensure_parent_pwd(db, req.user_id, request)
     w = db.query(WishItem).filter(WishItem.id == wid,
@@ -270,6 +322,12 @@ def confirm_wish(wid: int, req: ToggleReq, request: Request, db: Session = Depen
 
 @router.post("/wish/{wid}/redeem", summary="家长确认兑现心愿（需家长密码）")
 def redeem_wish(wid: int, req: RedeemReq, request: Request, db: Session = Depends(get_db)):
+    """家长确认兑现心愿（pending_redeem → redeemed，进入成长记录/周报）。
+
+    参数（Path）：wid。参数（Body）：user_id、reason。请求头：需 X-Parent-Pwd。
+    返回：心愿详情；不存在 404、未完成(非 pending_redeem) 400。
+    副作用：status=pending_redeem→redeemed，写 redeem_reason。需要家长密码。
+    """
     from ..models.reward import WishItem
     ensure_parent_pwd(db, req.user_id, request)
     w = db.query(WishItem).filter(WishItem.id == wid,
@@ -287,6 +345,12 @@ def redeem_wish(wid: int, req: RedeemReq, request: Request, db: Session = Depend
 
 @router.post("/wish/{wid}/archive", summary="移除心愿（需家长密码；已兑现的记录保留）")
 def archive_wish(wid: int, req: ToggleReq, request: Request, db: Session = Depends(get_db)):
+    """家长移除心愿（非 redeemed 状态 → archived；已兑现荣誉记录保留）。
+
+    参数（Path）：wid。参数（Body）：user_id。请求头：需 X-Parent-Pwd。
+    返回：心愿详情；不存在 404、已兑现 400。
+    副作用：status→archived。需要家长密码。
+    """
     from ..models.reward import WishItem
     ensure_parent_pwd(db, req.user_id, request)
     w = db.query(WishItem).filter(WishItem.id == wid,
@@ -466,6 +530,12 @@ def sync_coupon_progress(db: Session, user_id: str):
 
 @router.get("/timeline", summary="成长奖励记录：已兑现心愿 + 已发兑换券（带理由）")
 def reward_timeline(user_id: str, db: Session = Depends(get_db)):
+    """成长奖励记录：已兑现心愿 + 已发放兑换券（带理由），按时间倒序最多 20 条。
+
+    参数（Query）：user_id。
+    返回：{items[{kind, title, reason, at}]}。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.reward import RewardCoupon, WishItem
     items = []
     wishes = db.query(WishItem).filter(
@@ -495,6 +565,12 @@ def reward_timeline(user_id: str, db: Session = Depends(get_db)):
 
 @router.get("/parent-note", summary="获取最近一周周报的家长寄语")
 def get_parent_note(user_id: str, db: Session = Depends(get_db)):
+    """获取最近一周周报的家长寄语。
+
+    参数（Query）：user_id。
+    返回：{note}（无周报则为空串）。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.ai_usage import WeeklyReport
     r = db.query(WeeklyReport).filter(
         WeeklyReport.user_id == user_id,
@@ -504,6 +580,12 @@ def get_parent_note(user_id: str, db: Session = Depends(get_db)):
 
 @router.post("/parent-note", summary="家长写入寄语（保存到最近周报）")
 def save_parent_note(req: ParentNoteReq, db: Session = Depends(get_db)):
+    """家长写入寄语，保存到最近一周周报（无周报则建一条本周占位）。
+
+    参数（Body）：user_id、note（<=200 字）。
+    返回：{note}。无需家长密码（仅写寄语，非敏感操作）。
+    副作用：upsert WeeklyReport.parent_note。
+    """
     from ..models.ai_usage import WeeklyReport
     note = (req.note or "").strip()[:200]
     r = db.query(WeeklyReport).filter(

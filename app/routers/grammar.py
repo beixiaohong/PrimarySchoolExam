@@ -1,4 +1,11 @@
-"""英语语法练习 API 路由"""
+"""英语语法练习 API 路由
+
+提供语法点（GrammarPoint）与练习题（GrammarExercise）的管理、出题与判分：
+- 管理端：语法点/练习题的增删查（code 唯一，题型 choice/fill/transform/correct）
+- 练习端：按年级/语法点随机出题、提交判分（choice 比字母，其余走 fill_answer_correct 容错）
+- 统计：各语法点/题型的题目数量
+本模块接口无需家长密码，均为学习/管理数据操作，无金币/钻石发放。
+"""
 import json
 import random
 from typing import List, Optional
@@ -85,6 +92,8 @@ class GrammarSubmitRequest(BaseModel):
 
 @router.post("/points", summary="添加语法点")
 def add_grammar_point(req: GrammarPointCreate, db: Session = Depends(get_db)):
+    """新增语法点（code 唯一）。请求：{name, code, grade, category, description, examples}；返回 GrammarPointOut。
+    副作用：校验 code/name 不重复，写 grammar_points 并落库。"""
     existing = db.query(GrammarPoint).filter(GrammarPoint.code == req.code).first()
     if existing:
         raise HTTPException(400, f"语法点编码 '{req.code}' 已存在")
@@ -112,6 +121,7 @@ def list_grammar_points(
     category: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
+    """语法点列表（可按年级≤/分类筛选）。查询参数：grade, category；返回 GrammarPointOut[]（含 exercise_count）。只读。"""
     q = db.query(GrammarPoint)
     if grade:
         q = q.filter(GrammarPoint.grade <= grade)
@@ -131,6 +141,7 @@ def list_grammar_points(
 
 @router.get("/points/{point_id}", summary="获取语法点详情")
 def get_grammar_point(point_id: int, db: Session = Depends(get_db)):
+    """语法点详情（含练习题数）。路径参数：point_id；不存在抛 404。只读。"""
     point = db.query(GrammarPoint).filter(GrammarPoint.id == point_id).first()
     if not point:
         raise HTTPException(404, "语法点不存在")
@@ -148,6 +159,8 @@ def get_grammar_point(point_id: int, db: Session = Depends(get_db)):
 
 @router.post("/exercises", summary="添加语法练习题")
 def add_exercise(req: GrammarExerciseCreate, db: Session = Depends(get_db)):
+    """新增语法练习题。请求：{grammar_point_id, grade, exercise_type, question, options?, answer, explanation?, difficulty}；返回 {id, message}。
+    副作用：校验所属语法点存在、题型合法，写 grammar_exercises 并落库。"""
     point = db.query(GrammarPoint).filter(GrammarPoint.id == req.grammar_point_id).first()
     if not point:
         raise HTTPException(404, "语法点不存在")
@@ -180,6 +193,7 @@ def list_exercises(
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
+    """练习题列表（多条件筛选 + 分页）。查询参数：grammar_point_id/grade/exercise_type/difficulty/page/page_size；返回 GrammarExerciseOut[]。只读。"""
     q = db.query(GrammarExercise)
     if grammar_point_id:
         q = q.filter(GrammarExercise.grammar_point_id == grammar_point_id)

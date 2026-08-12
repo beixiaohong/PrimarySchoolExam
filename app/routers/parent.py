@@ -108,6 +108,12 @@ def _validate_pwd(pwd: str):
 
 @router.get("/status", summary="家长密码是否已设置（含密保问题，忘记密码页展示用）")
 def parent_status(user_id: str, db: Session = Depends(get_db)):
+    """查询家长密码是否已设置，并返回密保问题（忘记密码页展示用）。
+
+    参数（Query）：user_id。
+    返回：{has_password, hint_question}。
+    副作用：无（只读）。无需家长密码。
+    """
     p = _get_password(db, user_id)
     return {"has_password": p is not None,
             "hint_question": p.hint_question if p else ""}
@@ -115,6 +121,12 @@ def parent_status(user_id: str, db: Session = Depends(get_db)):
 
 @router.post("/setup", summary="首次设置家长密码（含密保，忘记密码时重置用）")
 def setup_password(req: SetupReq, db: Session = Depends(get_db)):
+    """首次设置家长密码（含密保问题与答案，用于忘记密码时重置）。
+
+    参数（Body）：user_id、password（4-32 位）、hint_question、hint_answer。
+    返回：{ok: True}；已设置过返回 400，密保未填返回 400。
+    副作用：写入 parent_passwords（密码与密保均 pbkdf2 哈希）。无需家长密码。
+    """
     _validate_pwd(req.password)
     if _get_password(db, req.user_id):
         raise HTTPException(400, "已设置过家长密码，可在家长管理里修改或重置")
@@ -136,6 +148,13 @@ def setup_password(req: SetupReq, db: Session = Depends(get_db)):
 
 @router.post("/unlock", summary="家长密码解锁家长管理")
 def unlock(req: UnlockReq, db: Session = Depends(get_db)):
+    """家长密码解锁家长管理。
+
+    参数（Body）：user_id、password。
+    返回：{ok: True}；未设置密码返回 400，密码错返回 403。
+    副作用：无写库；受限频保护（UNLOCK_LIMIT=10 次/10 分钟/用户，防暴力试密码）。
+    无需家长密码（本接口即解锁动作）。
+    """
     if not rate_limit(f"pwd:{req.user_id}", UNLOCK_LIMIT, 600):
         raise HTTPException(429, "尝试太多次啦，休息 10 分钟再试")
     p = _get_password(db, req.user_id)
@@ -148,6 +167,12 @@ def unlock(req: UnlockReq, db: Session = Depends(get_db)):
 
 @router.post("/change-password", summary="验证旧密码后修改家长密码（密保可一并修改）")
 def change_password(req: ChangePwdReq, db: Session = Depends(get_db)):
+    """验证旧密码后修改家长密码；密保问题/答案可一并修改。
+
+    参数（Body）：user_id、old_password、new_password（4-32 位）、可选 hint_question/hint_answer。
+    返回：{ok: True}；未设置密码返回 400，旧密码错返回 403。
+    副作用：更新 parent_passwords。无需家长密码（用旧密码自验）。
+    """
     p = _get_password(db, req.user_id)
     if not p:
         raise HTTPException(400, "还没设置家长密码")
@@ -164,6 +189,12 @@ def change_password(req: ChangePwdReq, db: Session = Depends(get_db)):
 
 @router.post("/reset-password", summary="忘记密码：答对密保问题后重置（可同时换密保）")
 def reset_password(req: ResetPwdReq, db: Session = Depends(get_db)):
+    """忘记密码：答对密保问题后重置密码（可同时换密保问题/答案）。
+
+    参数（Body）：user_id、hint_answer（密保答案）、new_password、可选 hint_question/hint_answer_new。
+    返回：{ok: True}；未设置密码返回 400，密保答案错返回 403。
+    副作用：更新 parent_passwords。无需家长密码（凭密保重置）。
+    """
     p = _get_password(db, req.user_id)
     if not p:
         raise HTTPException(400, "还没设置家长密码")
@@ -182,6 +213,12 @@ def reset_password(req: ResetPwdReq, db: Session = Depends(get_db)):
 
 @router.post("/message", summary="家长给孩子发留言")
 def send_message(req: MessageReq, db: Session = Depends(get_db)):
+    """家长给孩子发留言。
+
+    参数（Body）：user_id、content（1-300 字）。
+    返回：{id, created_at}；空内容/超长返回 400；限频 10 条/分钟/用户。
+    副作用：写入 parent_messages。无需家长密码。
+    """
     content = (req.content or "").strip()
     if not content:
         raise HTTPException(400, "留言内容不能为空")
@@ -198,6 +235,12 @@ def send_message(req: MessageReq, db: Session = Depends(get_db)):
 
 @router.get("/messages", summary="孩子查看家长留言（含未读数）")
 def list_messages(user_id: str, db: Session = Depends(get_db)):
+    """孩子查看家长留言列表（含未读数）。
+
+    参数（Query）：user_id。
+    返回：{unread, messages[{id, content, created_at, read}]}（最多 100 条，倒序）。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.parent import ParentMessage
     rows = db.query(ParentMessage).filter_by(user_id=user_id).order_by(
         ParentMessage.id.desc()).limit(100).all()
@@ -215,6 +258,12 @@ def list_messages(user_id: str, db: Session = Depends(get_db)):
 
 @router.post("/messages/read", summary="孩子标记全部留言已读")
 def mark_read(req: UserReq, db: Session = Depends(get_db)):
+    """孩子标记该用户全部未读留言为已读。
+
+    参数（Body）：user_id。
+    返回：{ok: True}。
+    副作用：将 read_at=None 的留言置为当前时间。无需家长密码。
+    """
     from ..models.parent import ParentMessage
     db.query(ParentMessage).filter_by(user_id=req.user_id, read_at=None).update(
         {"read_at": datetime.now()})
@@ -226,6 +275,13 @@ def mark_read(req: UserReq, db: Session = Depends(get_db)):
 
 @router.get("/child-stats", summary="家长查看孩子学习数据（本周做题/错题/连续天数/任务）")
 def child_stats(user_id: str, db: Session = Depends(get_db)):
+    """家长查看孩子本周学习数据看板。
+
+    参数（Query）：user_id。
+    返回：{week_attempts（本周做题份数）, week_avg_score（平均分）, unmastered_wrong（未掌握错题数）,
+           streak_days（连续学习天数）, week_tasks_done（本周完成任务数）}。
+    统计窗口：本周一至今天。副作用：无（只读）。无需家长密码。
+    """
     from ..models.exam import ExamAttempt, WrongRecord
     from ..models.daily_task import DailyTask
     from .user import _streak
@@ -262,6 +318,12 @@ def child_stats(user_id: str, db: Session = Depends(get_db)):
 
 @router.get("/exam-settings", summary="获取每科试卷最少题数与难度下限")
 def get_exam_settings(user_id: str, db: Session = Depends(get_db)):
+    """获取每科试卷最少题数与难度下限（缺省返回默认值）。
+
+    参数（Query）：user_id。
+    返回：{math_min, chi_min, eng_min, difficulty_min, difficulty_levels}。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.parent import ExamMinCount
     row = db.query(ExamMinCount).filter_by(user_id=user_id).first()
     if not row:
@@ -274,6 +336,13 @@ def get_exam_settings(user_id: str, db: Session = Depends(get_db)):
 
 @router.post("/exam-settings", summary="保存试卷最少题数与难度下限（需家长密码）")
 def save_exam_settings(req: ExamSettingsReq, request: Request, db: Session = Depends(get_db)):
+    """保存每科试卷最少题数与难度下限。
+
+    参数（Body）：user_id、math_min/chi_min/eng_min（默认 5）、difficulty_min（基础/提高/拔高）。
+    请求头：必须携带 X-Parent-Pwd（家长密码），由 ensure_parent_pwd 校验，否则 403。
+    返回：{math_min, chi_min, eng_min, difficulty_min}（题数被夹到 1-50）。
+    副作用：upsert exam_min_counts；题数越界时按 _bounded 收敛。需要家长密码。
+    """
     from ..models.parent import ExamMinCount
     ensure_parent_pwd(db, req.user_id, request)
 
@@ -302,6 +371,12 @@ def save_exam_settings(req: ExamSettingsReq, request: Request, db: Session = Dep
 
 @router.get("/notices", summary="提醒汇总：未读留言 + 待确认/待兑现心愿 + 家长密码状态")
 def notices(user_id: str, db: Session = Depends(get_db)):
+    """提醒汇总：未读留言数 + 待确认/待兑现心愿数 + 是否已设家长密码。
+
+    参数（Query）：user_id。
+    返回：{unread_messages, pending_wishes（待确认）, pending_redeem（待兑现）, has_password}。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.parent import ParentMessage, ParentPassword
     from ..models.reward import WishItem
     unread = db.query(ParentMessage).filter_by(user_id=user_id, read_at=None).count()

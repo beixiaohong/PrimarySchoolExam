@@ -21,6 +21,12 @@ DICTATION_PAID = 3  # 全对奖励金币
 @router.get("/words", summary="听写单词列表（当日优先，最多 count 个）")
 def dictation_words(user_id: str = Query(...), count: int = Query(10, ge=3, le=20),
                     db: Session = Depends(get_db)):
+    """听写单词列表（当日优先，最多 count 个）。
+
+    查询参数：user_id, count(3~20)；无需家长密码。
+    返回：{items:[{id, word, meaning, pos, book}]}。
+    副作用：只读，无写库。取词优先级：当日到期复习词(learning 且 next_review<=今天) → 未学过新词 → 全库随机，最后打乱。
+    """
     from datetime import date
 
     from ..models.vocab import VocabProgress
@@ -61,6 +67,12 @@ def dictation_words(user_id: str = Query(...), count: int = Query(10, ge=3, le=2
 @router.get("/texts", summary="古诗文听写句子（随机篇目名句）")
 def dictation_texts(user_id: str = Query(...), count: int = Query(5, ge=1, le=10),
                     grade: int = Query(6), db: Session = Depends(get_db)):
+    """古诗文听写句子（随机篇目名句）。
+
+    查询参数：user_id, count(1~10), grade；无需家长密码。
+    返回：{items:[{id, title, author, sentence, full}]}（每篇取首句，最多 count*2 篇里筛出 count 条）。
+    副作用：只读，无写库。优先从已学篇目取，无则全库。
+    """
     from ..models.classical import ClassicalProgress, ClassicalText
 
     learned_ids = {r[0] for r in db.query(ClassicalProgress.text_id).filter(

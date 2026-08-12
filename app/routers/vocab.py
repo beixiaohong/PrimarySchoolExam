@@ -514,6 +514,14 @@ def vocab_session_quiz(
     grade: int = Query(6),
     db: Session = Depends(get_db),
 ):
+    """背诵会话检测：为新学/复习的每个单词生成 4 道混合题（默写+理解型）。
+
+    理解题占比随复习阶段递增（stage0: 2默写2理解 → stage1-3: 1默写3理解 → stage4+: 全理解）；
+    选择题干扰项从同年级词库取，拼写题用邻近变体。答案由前端判分。
+    参数（Query）：user_id、word_ids（逗号分隔）、mode、grade。
+    返回：{items[每词4题]};word_ids 空 400、单词不存在 404。
+    副作用：无（只读，仅生成题目）。无需家长密码。
+    """
     from ..models.phrase import Sentence
     ids = []
     for s in (word_ids or "").split(","):

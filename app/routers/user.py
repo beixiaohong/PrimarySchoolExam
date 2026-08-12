@@ -118,6 +118,12 @@ def user_info(
     user_id: str,
     db: Session = Depends(get_db),
 ):
+    """获取用户基础信息（年级/学科/连续天数/创建与最近登录时间）。
+
+    参数（Query）：user_id。
+    返回：用户档案对象；用户不存在返回 null。
+    副作用：无（只读）。无需家长密码。
+    """
     user = db.query(User).filter(User.user_id == user_id.strip()).first()
     if not user:
         return None
@@ -168,6 +174,15 @@ TITLE_LADDER = [
 
 @router.get("/titles", summary="称号与徽章（按累计学习数据派生）")
 def get_titles(user_id: str, db: Session = Depends(get_db)):
+    """称号与徽章（纯派生计算，按累计学习数据）。
+
+    称号按累计作答量（total_answered）对照 TITLE_LADDER 阈值取当前/下一档；
+    徽章含 5 项达成条件：错题克星(掌握≥20)/单词小达人(单词≥100)/诗词小状元(古诗文≥10)/
+    全勤达人(连续完成天≥7)/挑战高手(单场最高答对≥10)。
+    参数（Query）：user_id。
+    返回：{main, next, total_answered, badges[], stats{...}}。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.exam import ExamAttempt, WrongRecord
     from ..models.study_error import StudyError
     from ..models.daily_task import DailyTask

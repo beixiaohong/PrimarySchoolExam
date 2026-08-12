@@ -79,6 +79,14 @@ def compute_tree_score(db: Session, user_id: str) -> int:
 
 @router.get("", summary="成长树：成长值与阶段（从学习数据派生）")
 def get_tree(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """返回成长树：累计成长值 + 当前阶段（含阶段阈值/进度百分比）+ 各学习行为分项。
+
+    成长值 = 各学习行为加权聚合（见 parts 权重：刷题×2、错题掌握×3、古诗文×2、挑战×2、小老师×3 等）；
+    阶段按 STAGES 阈值的累计值划分（0→种子 … 800→森林之王）。
+    参数（Query）：user_id。
+    返回：{user_id, score, stage{stage,name,emoji,next,pct,maxed}, parts[按得分倒序]}。
+    副作用：无（只读，零新表，由学习数据派生）。无需家长密码。
+    """
     from ..models.exam import AttemptAnswer, ExamAttempt, WrongRecord
     from ..models.study_error import StudyError
     from ..models.vocab import VocabProgress

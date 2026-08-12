@@ -84,12 +84,25 @@ class FeedReq(BaseModel):
 
 @router.get("", summary="宠物档案 + 金币余额")
 def get_pet(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """获取宠物档案与金币余额（不存在则自动创建 1 级空档案）。
+
+    参数（Query）：user_id。
+    返回：宠物档案（pet_key/level/exp/exp_next/max_level）+ 今日喂/摸次数 + coins（金币余额）。
+    副作用：无（只读，若不存在仅创建档案不提交额外数据）。无需家长密码。
+    """
     p = _get_or_create(db, user_id)
     return _profile_out(p, _balance(db, user_id))
 
 
 @router.post("/feed", summary="喂食：-10 金币 +5 经验")
 def feed_pet(req: FeedReq, db: Session = Depends(get_db)):
+    """喂食宠物：消耗 10 金币换 5 经验（每日喂食次数累加）。
+
+    参数（Body）：user_id。
+    返回：宠物档案 + leveled（是否升级）；金币不足或已满级返回 400。
+    副作用：写入 CoinLedger（amount=-10）、加经验（可能升级）、累加 feeds_today/fed_count。
+    无需家长密码。阈值：FEED_COST=10、FEED_EXP=5、MAX_LEVEL=10。
+    """
     p = _get_or_create(db, req.user_id)
     balance = _balance(db, req.user_id)
     if balance < FEED_COST:
@@ -111,6 +124,13 @@ def feed_pet(req: FeedReq, db: Session = Depends(get_db)):
 
 @router.post("/pat", summary="抚摸：每天 3 次 +1 经验")
 def pat_pet(req: FeedReq, db: Session = Depends(get_db)):
+    """抚摸宠物：每日限 3 次，每次 +1 经验（不消耗金币）。
+
+    参数（Body）：user_id。
+    返回：宠物档案 + leveled；今日已摸满 3 次或已满级返回 400。
+    副作用：累加 pats_today（跨天自动归零）、加经验（可能升级）。
+    无需家长密码。阈值：PAT_LIMIT=3、PAT_EXP=1。
+    """
     p = _get_or_create(db, req.user_id)
     today = str(date.today())
     if p.pat_date != today:
@@ -130,6 +150,12 @@ def pat_pet(req: FeedReq, db: Session = Depends(get_db)):
 
 @router.get("/ledger", summary="金币流水（最近 30 条）")
 def ledger(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """查询金币流水（最近 30 条，倒序）。
+
+    参数（Query）：user_id。
+    返回：[{amount, reason, created_at(%m-%d %H:%M)}]。
+    副作用：无（只读）。无需家长密码。
+    """
     rows = db.query(CoinLedger).filter(CoinLedger.user_id == user_id).order_by(
         CoinLedger.id.desc()).limit(30).all()
     return [{
@@ -141,6 +167,10 @@ def ledger(user_id: str = Query(...), db: Session = Depends(get_db)):
 
 @router.get("/rules", summary="金币获取规则说明")
 def rules():
+    """返回金币获取/消耗规则说明（前端展示用，无副作用）。
+
+    返回：{items[{action, coins, desc}]}。
+    """
     return {
         "items": [
             {"action": "完成任务", "coins": 5, "desc": "每天各科任务完成，每完成一科 +5"},

@@ -269,6 +269,13 @@ class SettingsRequest(BaseModel):
 
 @router.get("/settings", summary="获取每日任务配置（目标+启用+强制/可选）")
 def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """获取每日任务配置（目标数/启用状态/追加强制任务/背诵额度/可选任务/学习开关）。
+
+    参数（Query）：user_id。
+    返回：{items[{code,subject,title,default,target,enabled,manual}], mandatory{学科:[追加codes]},
+          quotas{每日新学单词/古诗文数}, optional[家长添加的可选code], study_flags{include_next/sync_mode/xsc_bridge}}。
+    副作用：无（只读）。无需家长密码。
+    """
     user = _load_settings(db, user_id)
     targets = user.get("targets", {})
     enabled_map = user.get("enabled", {})
@@ -336,6 +343,15 @@ STUDY_FLAG_KEYS = ("include_next", "sync_mode", "xsc_bridge")
 
 @router.post("/settings", summary="保存每日任务配置（家长设置，需家长密码）")
 def save_task_settings(req: SettingsRequest, request: Request, db: Session = Depends(get_db)):
+    """保存每日任务配置（家长权限，需家长密码 X-Parent-Pwd）。
+
+    参数（Body）：user_id、settings{targets/enabled/mandatory/quotas/optional/学习开关}。
+    请求头：必须携带 X-Parent-Pwd（ensure_parent_pwd，否则 403）——防止孩子自行调低目标/禁用任务。
+    返回：重新返回 get_task_settings 结构。
+    副作用：upsert parent_task_settings；同步刷新今日未完成任务的目标/启用/追加项；
+            目标数夹到 MIN_TARGET(1)-MAX_TARGET(50)，背诵类不可禁用。
+    需要家长密码。
+    """
     if not isinstance(req.settings, dict):
         raise HTTPException(400, "settings 必须为对象")
     # 防刷：任务配置是家长权限，孩子不得自行调低目标/禁用任务
@@ -520,6 +536,7 @@ def _today_challenge_count(db: Session, user_id: str, kind: str) -> int:
     ).all()
     return sum(
         1 for r in rows
+        # 通过判定：正确率 ≥ 80%（correct/total >= 0.8 等价于 correct*5 >= total*4）
         if r.total and r.total > 0 and r.correct * 5 >= r.total * 4
     )
 
@@ -810,6 +827,13 @@ def use_makeup_card(
     req: dict = Body(...),
     db: Session = Depends(get_db),
 ):
+    """孩子直接补签过去某天为全勤（立即生效，扣 1 张补签卡）。
+
+    参数（Body）：user_id、target_date（YYYY-MM-DD，必须早于今天）。
+    返回：{balance, target_date, message}；余额不足/已补签过/日期非法或未来 返回 400。
+    副作用：写 MakeupUsageLog（默认confirmed，计入连续天数/全勤）、扣 card.balance。
+    无需家长密码（补签仅作用于过去日期）。
+    """
     user_id = req.get("user_id", "").strip()
     target = req.get("target_date", "")
     if not user_id or not target:
@@ -836,6 +860,12 @@ def use_makeup_card(
 
 @router.get("/makeup/balance", summary="查询补签卡余额")
 def get_makeup_balance(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """查询补签卡余额。
+
+    参数（Query）：user_id。
+    返回：{user_id, balance}（无记录则 0）。
+    副作用：无（只读）。无需家长密码。
+    """
     return {"user_id": user_id, "balance": _get_makeup_balance(db, user_id)}
 
 
@@ -966,6 +996,14 @@ def _build_payload(db: Session, user_id: str) -> dict:
 
 @router.get("/daily", summary="今日任务（3强制+3可选）")
 def get_daily(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """返回今日任务面板（3 强制 + N 可选）。
+
+    内部：确保今日任务行存在 → 按真实学习数据计算进度并自动完成非手动任务 →
+         可选任务全完成发补签卡 → 强制全勤累计卡券 → 组装返回（含连续天数/补签卡余额）。
+    参数（Query）：user_id。
+    返回：{date, tasks[], mandatory_done/total, optional_done/total, streak_days, makeup_cards, ...}。
+    副作用：可能更新 DailyTask 状态、发放补签卡、累计卡券进度。无需家长密码。
+    """
     return _build_payload(db, user_id)
 
 
@@ -1117,6 +1155,14 @@ def list_pending_makeup(user_id: str = Query(...), db: Session = Depends(get_db)
 
 @router.post("/daily/claim", summary="手动确认完成任务（需家长密码）")
 def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db)):
+    """家长手动确认完成一个手动任务（可选任务/家长自定义任务）。
+
+    参数（Body）：user_id、task_id（优先）或 subject（兼容旧逻辑按学科确认强制任务）。
+    请求头：必须携带 X-Parent-Pwd（ensure_parent_pwd，否则 403）——孩子不得自批。
+    返回：刷新后的今日任务面板（_build_payload）。
+    副作用：将对应 DailyTask 置 done 并发放金币 +5（仅手动类任务）；自动判定类任务拒绝手动确认。
+    需要家长密码。
+    """
     # 防刷：手动确认属于家长权限，孩子不得自批
     ensure_parent_pwd(db, req.user_id, request)
     today = date.today()
@@ -1167,6 +1213,12 @@ class CustomTaskAction(BaseModel):
 
 @router.post("/custom", summary="孩子创建自定义任务")
 def create_custom_task(req: CustomTaskCreate, db: Session = Depends(get_db)):
+    """孩子创建自定义任务（待家长确认）。
+
+    参数（Body）：user_id、title、subject（默认其他）。
+    返回：{id, title, status: "pending"}；title 为空返回 400。
+    副作用：写 CustomTask（status=pending）。无需家长密码。
+    """
     if not req.title.strip():
         raise HTTPException(400, "任务标题不能为空")
     task = CustomTask(
@@ -1186,6 +1238,12 @@ def list_custom_tasks(
     status: str = Query(None, description="pending/confirmed/rejected，不传返回全部"),
     db: Session = Depends(get_db),
 ):
+    """查看孩子的自定义任务列表（按状态过滤，最多 50 条倒序）。
+
+    参数（Query）：user_id、status（可选）。
+    返回：自定义任务数组（含 id/title/subject/status/created_at/confirmed_at）。
+    副作用：无（只读）。无需家长密码。
+    """
     q = db.query(CustomTask).filter(CustomTask.user_id == user_id)
     if status:
         q = q.filter(CustomTask.status == status)
@@ -1205,6 +1263,12 @@ def list_custom_tasks(
 
 @router.post("/custom/confirm", summary="家长确认自定义任务完成")
 def confirm_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
+    """家长确认孩子创建的自定义任务完成（发放金币 +5）。
+
+    参数（Body）：task_id。
+    返回：{id, status: "confirmed", message}；任务不存在 404、非 pending 状态 400。
+    副作用：置 status=confirmed、记 confirmed_at、发金币。无需家长密码（本接口不设密码校验）。
+    """
     task = db.query(CustomTask).filter(CustomTask.id == req.task_id).first()
     if not task:
         raise HTTPException(404, "未找到该任务")
@@ -1224,6 +1288,12 @@ def confirm_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
 
 @router.post("/custom/reject", summary="家长驳回自定义任务")
 def reject_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
+    """家长驳回孩子创建的自定义任务。
+
+    参数（Body）：task_id。
+    返回：{id, status: "rejected", message}；任务不存在 404、非 pending 状态 400。
+    副作用：置 status=rejected。无需家长密码（本接口不设密码校验）。
+    """
     task = db.query(CustomTask).filter(CustomTask.id == req.task_id).first()
     if not task:
         raise HTTPException(404, "未找到该任务")
@@ -1255,6 +1325,13 @@ class ParentCustomTaskUpdate(BaseModel):
 
 @router.post("/custom-task", summary="家长添加自定义任务（集成进每日任务，需家长密码）")
 def add_parent_custom_task(req: ParentCustomTaskCreate, request: Request, db: Session = Depends(get_db)):
+    """家长添加自定义任务（次日注入每日任务，按 task_type 进强制/可选区，手动确认）。
+
+    参数（Body）：user_id、title、subject、task_type（mandatory/optional）、target（默认 1）。
+    请求头：必须携带 X-Parent-Pwd（ensure_parent_pwd，否则 403）。
+    返回：{id, title, subject, task_type, target, active}；title 空/类型非法 返回 400。
+    副作用：写 ParentCustomTask（active=True），target 夹到 1-MAX_TARGET(50)。需要家长密码。
+    """
     ensure_parent_pwd(db, req.user_id, request)
     if not req.title or not req.title.strip():
         raise HTTPException(400, "任务标题不能为空")
@@ -1277,6 +1354,12 @@ def add_parent_custom_task(req: ParentCustomTaskCreate, request: Request, db: Se
 
 @router.get("/custom-task", summary="查看家长自定义任务列表")
 def list_parent_custom_tasks(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """查看家长自定义任务列表（按类型/排序）。
+
+    参数（Query）：user_id。
+    返回：家长自定义任务数组（含 id/title/subject/task_type/target/active/created_at）。
+    副作用：无（只读）。无需家长密码。
+    """
     rows = db.query(ParentCustomTask).filter(
         ParentCustomTask.user_id == user_id).order_by(
         ParentCustomTask.task_type, ParentCustomTask.sort_order, ParentCustomTask.id).all()
@@ -1290,6 +1373,13 @@ def list_parent_custom_tasks(user_id: str = Query(...), db: Session = Depends(ge
 @router.put("/custom-task/{task_id}", summary="家长修改自定义任务（需家长密码）")
 def update_parent_custom_task(task_id: int, req: ParentCustomTaskUpdate,
                               request: Request, db: Session = Depends(get_db)):
+    """家长修改自定义任务（标题/学科/类型/数量/启用）。
+
+    参数（Path）：task_id。参数（Body）：user_id + 可选字段。
+    请求头：必须携带 X-Parent-Pwd（ensure_parent_pwd，否则 403）。
+    返回：更新后的任务对象；不存在 404、类型非法 400。
+    副作用：更新 ParentCustomTask；并删除今日未完成对应每日任务行（下次 /daily 按新定义重建）。需要家长密码。
+    """
     ensure_parent_pwd(db, req.user_id, request)
     t = db.query(ParentCustomTask).filter(
         ParentCustomTask.id == task_id, ParentCustomTask.user_id == req.user_id).first()
@@ -1321,6 +1411,12 @@ def update_parent_custom_task(task_id: int, req: ParentCustomTaskUpdate,
 @router.delete("/custom-task/{task_id}", summary="家长删除自定义任务（软删除，需家长密码）")
 def delete_parent_custom_task(task_id: int, request: Request,
                               user_id: str = Query(...), db: Session = Depends(get_db)):
+    """家长软删除自定义任务（active=False），并移除今日未完成的对应每日任务行。
+
+    参数（Path）：task_id。参数（Query）：user_id。请求头：必须携带 X-Parent-Pwd。
+    返回：{ok, id}；不存在 404。
+    副作用：置 active=False、删除未完成每日任务行（已完成保留作历史）。需要家长密码。
+    """
     ensure_parent_pwd(db, user_id, request)
     t = db.query(ParentCustomTask).filter(
         ParentCustomTask.id == task_id, ParentCustomTask.user_id == user_id).first()

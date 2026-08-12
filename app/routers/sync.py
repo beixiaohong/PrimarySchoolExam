@@ -41,6 +41,12 @@ def sync_overview(
     include_next: bool = Query(False, description="是否包含下学期预习单元"),
     db: Session = Depends(get_db),
 ):
+    """同步学单元总览：学科+年级下的单元卡片列表（含完成状态/小测最佳分/练习数）。
+
+    参数（Query）：user_id、subject（语文/数学/英语）、grade、include_next（含下学期预习单元）。
+    返回：{subject, grade, units[]}；subject 非法返回 400。
+    副作用：无（只读）。无需家长密码。
+    """
     if subject not in ("语文", "数学", "英语"):
         raise HTTPException(400, "subject 仅支持 语文/数学/英语")
     units = build_overview(db, user_id, subject, grade, include_next)
@@ -54,6 +60,12 @@ def unit_points(
     unit: str = Query(..., description="单元标识"),
     db: Session = Depends(get_db),
 ):
+    """单元要点：返回该单元的词表/篇目/题型清单。
+
+    参数（Query）：subject、grade、unit。
+    返回：单元要点结构（由 build_unit_points 决定）。
+    副作用：无（只读）。无需家长密码。
+    """
     if subject not in ("语文", "数学", "英语"):
         raise HTTPException(400, "subject 仅支持 语文/数学/英语")
     return build_unit_points(db, subject, grade, unit)
@@ -67,6 +79,12 @@ def unit_practice(
     count: int = Query(10, ge=1, le=30, description="题数"),
     db: Session = Depends(get_db),
 ):
+    """单元同步练习：随做随判，直接返回题目与答案。
+
+    参数（Query）：subject、grade、unit、count（1-30）。
+    返回：练习题目结构（含答案，由 build_unit_practice 决定）。
+    副作用：无（只读）。无需家长密码。
+    """
     if subject not in ("语文", "数学", "英语"):
         raise HTTPException(400, "subject 仅支持 语文/数学/英语")
     return build_unit_practice(db, subject, grade, unit, count)
@@ -80,6 +98,12 @@ def unit_quiz_generate(
     count: int = Query(10, ge=1, le=30, description="题数"),
     db: Session = Depends(get_db),
 ):
+    """生成单元小测题目（不含答案，下发签名 token 用于交卷校验防篡改）。
+
+    参数（Query）：subject、grade、unit、count（1-30）。
+    返回：{questions(无答案), token}；subject 非法返回 400。
+    副作用：无（只读）。无需家长密码。
+    """
     if subject not in ("语文", "数学", "英语"):
         raise HTTPException(400, "subject 仅支持 语文/数学/英语")
     return generate_unit_quiz(db, subject, grade, unit, count)
@@ -87,6 +111,13 @@ def unit_quiz_generate(
 
 @router.post("/unit-quiz", summary="单元小测（整卷判分，成绩落库，错题入错题本，联动 *_sync 任务）")
 def unit_quiz(req: UnitQuizRequest, db: Session = Depends(get_db)):
+    """单元小测交卷：整卷判分，成绩落库 sync_quiz_log，错题入错题本，联动 *_sync 每日任务。
+
+    参数（Body）：user_id、subject、grade、unit、token（生成时返回的签名）、answers[{qid, user_answer}]。
+    返回：判分结果（由 judge_unit_quiz 决定，含得分/明细/错题）。
+    副作用：写 sync_quiz_log、可能写错题本、联动每日 sync 任务；subject 非法/校验失败返回 400。
+    无需家长密码。
+    """
     if req.subject not in ("语文", "数学", "英语"):
         raise HTTPException(400, "subject 仅支持 语文/数学/英语")
     try:

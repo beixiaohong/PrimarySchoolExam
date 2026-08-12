@@ -123,6 +123,14 @@ def _fetch_weather(city_query: str) -> dict:
 @router.get("/current", summary="当前天气（城市参数 > 用户配置城市 > IP 定位 > 默认城市）")
 def get_current_weather(request: Request, city: str = None, user_id: str = None,
                         db: Session = Depends(get_db)):
+    """获取当前天气（实时 + 三日预报）。
+
+    城市解析顺序：URL 参数 city → 用户配置城市（传 user_id 时）→ IP 定位 → 默认城市(北京)。
+    进程内缓存 4 小时（TTL=_CACHE_TTL），命中返回 cached=True。
+    参数（Query）：city、user_id。
+    返回：{city, now, forecast[], update_time, cached}；未配置 API Key 返回 503。
+    副作用：无（只读，可能写 IP/天气缓存）。无需家长密码。
+    """
     if not weather_configured():
         raise HTTPException(503, "天气服务未配置（QWEATHER_API_KEY）")
 
@@ -146,6 +154,12 @@ def get_current_weather(request: Request, city: str = None, user_id: str = None,
 
 @router.post("/city", summary="保存用户常用城市")
 def save_city(req: CitySaveReq, db: Session = Depends(get_db)):
+    """保存用户常用城市（供天气接口默认定位与首页展示）。
+
+    参数（Body）：user_id、city（≤50 字）。
+    返回：{ok, city}；city 空 400、用户不存在 404。
+    副作用：更新 User.city。无需家长密码。
+    """
     city = (req.city or "").strip()
     if not city:
         raise HTTPException(400, "城市不能为空")

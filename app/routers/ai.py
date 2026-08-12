@@ -188,6 +188,13 @@ def _explain_core(db: Session, user_id: str, q: Question, wrong: WrongRecord) ->
 
 @router.post("/explain", summary="错题 AI 讲解（三段式 + 变式题）")
 def ai_explain(req: ExplainReq, db: Session = Depends(get_db)):
+    """错题 AI 讲解（三段式 + 变式题）。
+
+    请求：{user_id, question_id}；无需家长密码。
+    返回：{degraded, cached, text, question, answer}，AI 成功讲解时附带 diamond_cost/diamond_balance。
+    副作用：限频 5 次/分钟；优先复用 24h 内存缓存 + 全局 DB 缓存（同题任意用户复用，不重复请求 AI，不扣费）；
+            命中缓存则不扣费，否则调用 AI 按 token 扣钻、写 ai_qa（「十万个为什么」历史可回看）与 ai_usage_log。
+    """
     # 限频：5 次/分钟/用户
     if not ai_svc.rate_limit(f"explain:{req.user_id}", 5, 60):
         raise HTTPException(400, "讲解太快啦，休息一下再来吧")
@@ -312,6 +319,13 @@ def _aggregate_week(db: Session, user_id: str) -> dict:
 
 @router.post("/report", summary="生成/获取上周成长周报（幂等）")
 def ai_report(req: ReportReq, db: Session = Depends(get_db)):
+    """生成/获取上周成长周报（幂等，每天限 1 次）。
+
+    请求：{user_id}；无需家长密码。
+    返回：{week_start, week_end, highlights, advice, degraded, parent_note, stats}。
+    副作用：限频 2 次/天；已存在周报直接返回缓存（builtin already_exists=True）不再生成；
+            否则聚合上周数据、AI 润色一句建议（失败降级模板）并按 token 扣钻、写 weekly_report。
+    """
     if not ai_svc.rate_limit(f"report:{req.user_id}", 2, 86400):
         raise HTTPException(400, "今天周报已生成过啦")
 
@@ -390,6 +404,12 @@ def ai_report(req: ReportReq, db: Session = Depends(get_db)):
 
 @router.post("/encourage", summary="一句 AI 鼓励语（≤20 字）")
 def ai_encourage(req: EncourageReq, db: Session = Depends(get_db)):
+    """AI 即时鼓励语（≤20 字，按 context 区分场景）。
+
+    请求：{user_id, context=combo_broken/wrong_answer/perfect/default}；无需家长密码。
+    返回：{text, degraded}（degraded=true 表示回退本地模板，不扣费）。
+    副作用：限频 3 次/分钟；AI 成功时按 token 扣钻并写 ai_usage_log，无有效回复则降级模板。
+    """
     if not ai_svc.rate_limit(f"encourage:{req.user_id}", 3, 60):
         return {"text": random.choice(ENCOURAGE_TEMPLATES["default"]), "degraded": True}
     ctx_map = {"combo_broken": "孩子连续答对后中断了连击", "wrong_answer": "孩子刚答错一题",

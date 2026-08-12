@@ -1,4 +1,8 @@
-"""数学题目 API 路由"""
+"""数学题目 API 路由
+
+提供题型（大类/题型）的增删改查，以及按年级、难度、题型配置生成数学题（含导出 Word 并入库）。
+所有接口只读或写本地题库，无需家长密码。
+"""
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -20,6 +24,12 @@ router = APIRouter()
 
 @router.get("/categories", response_model=List[CategoryOut], summary="获取所有题目大类及题型")
 def list_categories(db: Session = Depends(get_db)):
+    """获取所有题目大类及下属题型列表。
+
+    参数（Query）：无。
+    返回：处于启用状态（is_active=True）的 ProblemCategory 列表。
+    副作用：无（只读）。无需家长密码。
+    """
     return db.query(ProblemCategory).filter(ProblemCategory.is_active == True).all()
 
 
@@ -30,6 +40,15 @@ def list_types(
     active_only: bool = Query(True),
     db: Session = Depends(get_db),
 ):
+    """查询题型列表，支持按大类、年级、是否启用过滤。
+
+    参数（Query）：
+      - category_id：按大类过滤（可选）。
+      - grade：1-6 年级，命中 grade_min<=grade<=grade_max 的题型（可选）。
+      - active_only：是否只返回启用题型（默认 True）。
+    返回：ProblemTypeOut 列表。
+    副作用：无（只读）。无需家长密码。
+    """
     q = db.query(ProblemType)
     if category_id:
         q = q.filter(ProblemType.category_id == category_id)
@@ -42,6 +61,13 @@ def list_types(
 
 @router.post("/types", response_model=ProblemTypeOut, summary="新增题型")
 def create_type(data: ProblemTypeCreate, db: Session = Depends(get_db)):
+    """新增题型。
+
+    参数（Body）：题型字段（code 为唯一业务编码）。
+    返回：新建的 ProblemTypeOut。
+    副作用：写入 ProblemType 表；若 code 已存在返回 409。
+    无需家长密码。
+    """
     existing = db.query(ProblemType).filter(ProblemType.code == data.code).first()
     if existing:
         raise HTTPException(409, f"题型编码 '{data.code}' 已存在")
@@ -54,6 +80,13 @@ def create_type(data: ProblemTypeCreate, db: Session = Depends(get_db)):
 
 @router.put("/types/{type_id}", response_model=ProblemTypeOut, summary="更新题型")
 def update_type(type_id: int, data: ProblemTypeCreate, db: Session = Depends(get_db)):
+    """更新题型（全量覆盖可写字段）。
+
+    参数（Path）：type_id 题型主键。
+    参数（Body）：题型字段。
+    返回：更新后的 ProblemTypeOut；type_id 不存在返回 404。
+    副作用：更新 ProblemType 表。无需家长密码。
+    """
     pt = db.query(ProblemType).get(type_id)
     if not pt:
         raise HTTPException(404, "题型不存在")
@@ -66,6 +99,12 @@ def update_type(type_id: int, data: ProblemTypeCreate, db: Session = Depends(get
 
 @router.delete("/types/{type_id}", summary="删除题型")
 def delete_type(type_id: int, db: Session = Depends(get_db)):
+    """删除题型。
+
+    参数（Path）：type_id 题型主键。
+    返回：{"message": "已删除"}；type_id 不存在返回 404。
+    副作用：删除 ProblemType 表记录。无需家长密码。
+    """
     pt = db.query(ProblemType).get(type_id)
     if not pt:
         raise HTTPException(404, "题型不存在")

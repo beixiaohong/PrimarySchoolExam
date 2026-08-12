@@ -125,6 +125,12 @@ def list_study_errors(
     only_pending: bool = Query(False, description="只看未掌握"),
     db: Session = Depends(get_db),
 ):
+    """查询学习错题列表，支持按学科(英语/语文/其他)与来源(grammar/classical)过滤、只看未掌握。
+
+    参数（Query）：user_id、subject、source_type、only_pending。
+    返回：错题数组（含 id/来源/题目/正误答案/错因/error_count/is_mastered/wrong_at）。
+    副作用：无（只读）。无需家长密码。
+    """
     q = db.query(StudyError).filter(StudyError.user_id == user_id)
     if subject:
         if subject == "英语":
@@ -159,6 +165,12 @@ def list_study_errors(
 
 @router.post("/errors/master", summary="标记学习错题已掌握")
 def mark_study_error_mastered(req: StudyErrorMasterRequest, db: Session = Depends(get_db)):
+    """标记一条学习错题已掌握（mastered_at 置今天）。
+
+    参数（Body）：user_id、error_id。
+    返回：{ok: True}；记录不存在返回 404。
+    副作用：置 is_mastered=True、并发放金币 +3（错题掌握）。无需家长密码。
+    """
     error = db.query(StudyError).filter(
         StudyError.id == req.error_id,
         StudyError.user_id == req.user_id,
@@ -366,7 +378,7 @@ def _classical_streak(db: Session, user_id: str) -> int:
 # 错题练习提交（连续3次答对自动掌握）
 # ═══════════════════════════════════════════════════════════
 
-MASTER_STREAK = 3
+MASTER_STREAK = 3  # 单题累计答对 3 次（或修正模式整组全对）即判定为已掌握
 
 
 class PracticeSubmitItem(BaseModel):
@@ -626,6 +638,12 @@ def self_compare(
     subject: Optional[str] = Query(None, description="学科筛选（缺省全部）"),
     db: Session = Depends(get_db),
 ):
+    """自我超越：与孩子自己比——最近两次做题得分差、今昨背诵量、本周新消灭错题数。
+
+    参数（Query）：user_id、subject（可选）。
+    返回：{attempts(对比), vocab(今/昨/差), classical, mastered_7d}。
+    副作用：无（只读）。无需家长密码。
+    """
     today = date.today()
     yesterday = today - timedelta(days=1)
 
@@ -1129,6 +1147,12 @@ def _unit_sort_key(u: str):
 
 @router.get("/progress", summary="查询教学进度（每科当前书/单元）")
 def get_teaching_progress(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """查询教学进度：每科当前词书/单元（课堂同步用）。
+
+    参数（Query）：user_id。
+    返回：{items[{subject, book_id, book_name, chapter, updated_at}]}（无则空）。
+    副作用：无（只读）。无需家长密码。
+    """
     from ..models.middle import TeachingProgress
     rows = db.query(TeachingProgress).filter(TeachingProgress.user_id == user_id).all()
     book_names = {}
@@ -1154,6 +1178,12 @@ def teaching_progress_options(
     subject: str = Query("英语", description="学科（当前仅英语有词册单元数据）"),
     db: Session = Depends(get_db),
 ):
+    """教学进度可选册与单元（词书 → 单元，供家长端下拉选择）。
+
+    参数（Query）：user_id、grade、subject（默认英语）。
+    返回：{subject, grade, books[{book_id, book_name, semester, units}]}。
+    副作用：无（只读）。无需家长密码。
+    """
     books = db.query(WordBook).filter(WordBook.grade == grade) \
         .order_by(WordBook.semester.desc(), WordBook.id).all()
     result = []

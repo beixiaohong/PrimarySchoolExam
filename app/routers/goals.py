@@ -77,6 +77,12 @@ def _goal_out(db: Session, g) -> dict:
 
 @router.get("", summary="进行中目标列表（含自动计算进度与倒计时）")
 def list_goals(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """进行中目标列表（含自动计算的进度与倒计时）。
+
+    查询参数：user_id；无需家长密码。
+    返回：{goals:[{id, kind, kind_label, title, subject, target, current, pct, deadline, days_left, status, daily_step, achieved}]}。
+    副作用：只读，无写库。current 按 kind 实时聚合（score 取最近 10 次均分 / wrong 累计掌握错题 / recite 累计新背篇数）。
+    """
     from ..models.reward import GoalItem
     rows = db.query(GoalItem).filter(
         GoalItem.user_id == user_id, GoalItem.status.in_(("active", "done")),
@@ -86,6 +92,13 @@ def list_goals(user_id: str = Query(...), db: Session = Depends(get_db)):
 
 @router.post("", summary="新建目标（同时最多 2 个进行中）")
 def create_goal(req: GoalReq, db: Session = Depends(get_db)):
+    """新建目标（同时最多 2 个进行中）。
+
+    请求：{user_id, kind=score/wrong/recite, target(夹取1~1000), deadline?, subject?}；无需家长密码。
+    返回：目标对象（见 _goal_out）。
+    副作用：校验 kind 合法、进行中目标数 < 2（超限拒绝）；解析截止日（须晚于今天）；
+            自动生成标题，写 goal_items(status=active) 并落库。
+    """
     from ..models.reward import GoalItem
     if req.kind not in KINDS:
         raise HTTPException(400, f"kind 只能是 {list(KINDS)}")
@@ -121,6 +134,8 @@ class GoalActionReq(BaseModel):
 
 @router.post("/{gid}/done", summary="标记目标达成")
 def done_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
+    """标记目标达成（status=done）。路径参数 gid；请求：{user_id}。仅本人目标可操作，否则 404。
+    副作用：更新 goal_items.status=done 并落库。"""
     from ..models.reward import GoalItem
     g = db.query(GoalItem).filter(GoalItem.id == gid).first()
     if not g or g.user_id != req.user_id:
@@ -132,6 +147,8 @@ def done_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
 
 @router.post("/{gid}/archive", summary="移除目标")
 def archive_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
+    """移除目标（status=archived）。路径参数 gid；请求：{user_id}。仅本人目标可操作，否则 404。
+    副作用：更新 goal_items.status=archived 并落库（保留记录，不删除）。"""
     from ..models.reward import GoalItem
     g = db.query(GoalItem).filter(GoalItem.id == gid).first()
     if not g or g.user_id != req.user_id:

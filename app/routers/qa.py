@@ -76,6 +76,13 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
 
 @router.get("/models", summary="可选 AI 模型列表（含 VIP 状态与可用性）")
 def qa_models(user_id: str = Query(..., min_length=1)):
+    """返回可选 AI 模型列表（含 VIP 状态与可用性）。
+
+    参数（Query）：user_id（用于判定 VIP）。
+    返回：{vip, models[{key, label, model, vip_only, available}]}。
+    说明：deepseek 仅 VIP 可用；某模型无 api_key 时 available=False。
+    副作用：无（只读）。无需家长密码。
+    """
     is_vip = ai_svc._is_vip(user_id)
     models = []
     for key in ("zhipu", "relay", "deepseek"):
@@ -95,6 +102,17 @@ def qa_models(user_id: str = Query(..., min_length=1)):
 
 @router.post("/ask", summary="十万个为什么提问（单轮命中全局缓存；带 session_id 走多轮对话）")
 def qa_ask(req: AskReq, db: Session = Depends(get_db)):
+    """十万个为什么提问。
+
+    参数（Body）：user_id、question（<=300 字）、provider（zhipu/relay/deepseek，默认 zhipu）、
+                  session_id（非空=多轮对话，空=单轮）。
+    行为：单轮按规范化文本命中全局缓存则秒回（cached=true，不请求 AI）；多轮带最近
+          SESSION_ROUNDS=6 轮上下文、不命中全局缓存；调用成功写 ai_qa 并按 token 扣钻石；
+          AI 不可用则降级（degraded=true，不写库）。
+    DeepSeek 仅 VIP（否则 403）；限频 QA_RATE=5 次/分钟/用户。
+    返回：{cached, answer, provider, model, question, session_id, degraded?}。
+    副作用：可能写 ai_qa、扣钻石、写用量日志。无需家长密码。
+    """
     question = (req.question or "").strip()
     if not question:
         raise HTTPException(400, "问题不能为空")
@@ -213,6 +231,12 @@ def qa_ask(req: AskReq, db: Session = Depends(get_db)):
 @router.get("/sessions", summary="我的多轮对话会话列表（按最后提问时间倒序）")
 def qa_sessions(user_id: str = Query(..., min_length=1),
                 db: Session = Depends(get_db)):
+    """返回我的多轮对话会话列表（按最后提问时间倒序）。
+
+    参数（Query）：user_id。
+    返回：{items[{session_id, first_question, rounds, updated_at}]}。
+    副作用：无（只读）。无需家长密码。
+    """
     rows = db.query(AiQa).filter(
         AiQa.user_id == user_id,
         AiQa.q_type == "qa",
@@ -237,6 +261,12 @@ def qa_sessions(user_id: str = Query(..., min_length=1),
 def qa_session(user_id: str = Query(..., min_length=1),
                session_id: str = Query(..., min_length=1),
                db: Session = Depends(get_db)):
+    """返回单个多轮会话的完整对话记录（最多 100 条，正序）。
+
+    参数（Query）：user_id、session_id。
+    返回：{items[{id, question, answer, provider, model, degraded, created_at}]}。
+    副作用：无（只读）。无需家长密码。
+    """
     rows = db.query(AiQa).filter(
         AiQa.user_id == user_id,
         AiQa.session_id == session_id,
@@ -253,6 +283,12 @@ def qa_session(user_id: str = Query(..., min_length=1),
 def qa_history(user_id: str = Query(..., min_length=1),
                q_type: str = Query("all", pattern="^(all|qa|explain)$"),
                db: Session = Depends(get_db)):
+    """返回我的问答历史（十万个为什么 + 题目讲解）。
+
+    参数（Query）：user_id、q_type（all/qa/explain，默认 all）。
+    返回：[{id, question, answer, provider, model, q_type, ref_id, created_at}]（最多 100 条）。
+    副作用：无（只读）。无需家长密码。
+    """
     q = db.query(AiQa).filter(AiQa.user_id == user_id)
     if q_type != "all":
         q = q.filter(AiQa.q_type == q_type)

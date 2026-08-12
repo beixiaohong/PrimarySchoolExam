@@ -75,6 +75,12 @@ def _word_quick(db: Session, grade: int, n: int) -> list:
 @router.get("/questions", summary="取一批挑战题（口算/单词）")
 def get_questions(user_id: str = Query(...), kind: str = "math",
                   grade: int = 6, count: int = 20, db: Session = Depends(get_db)):
+    """取一批挑战题（口算/单词）。
+
+    查询参数：user_id, kind=math/word, grade, count(夹取到 5~50)；无需家长密码。
+    返回：{kind, questions:[{q, answer, options}]}（math 题 options=None）。
+    副作用：只读，无写库。口算按年级调难度（4 年级起加除法/多位数），单词从对应年级词书取词 + 3 个干扰项。
+    """
     if kind not in ("math", "word"):
         raise HTTPException(400, "kind 只能是 math/word")
     count = max(5, min(50, count))
@@ -85,6 +91,12 @@ def get_questions(user_id: str = Query(...), kind: str = "math",
 
 @router.post("/record", summary="保存挑战成绩，返回最佳纪录")
 def save_record(req: RecordReq, db: Session = Depends(get_db)):
+    """保存挑战成绩，返回最佳纪录。
+
+    请求：{user_id, kind=math/word, correct, total}；无需家长密码。
+    返回：{best, today_best, times}（个人最佳/今日最佳/参与次数）。
+    副作用：写 challenge_records；correct/total 各夹取到 0~200 防异常值；无金币发放（成绩仅记录）。
+    """
     from ..models.sprint4 import ChallengeRecord
     if req.kind not in ("math", "word"):
         raise HTTPException(400, "kind 只能是 math/word")
@@ -92,6 +104,7 @@ def save_record(req: RecordReq, db: Session = Depends(get_db)):
         raise HTTPException(400, "成绩不能为负数")
     if req.correct > req.total:
         raise HTTPException(400, "答对数不能超过总题数")
+    # 成绩夹取 0~200，防止异常/超大数值污染最佳纪录
     correct = max(0, min(200, req.correct))
     total = max(0, min(200, req.total))
     rec = ChallengeRecord(user_id=req.user_id, kind=req.kind,
@@ -116,4 +129,5 @@ def _records(db: Session, user_id: str, kind: str) -> dict:
 
 @router.get("/records", summary="挑战纪录汇总")
 def get_records(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """挑战纪录汇总（口算 + 单词分别统计最佳）。无需家长密码，只读。"""
     return {"math": _records(db, user_id, "math"), "word": _records(db, user_id, "word")}
