@@ -954,6 +954,67 @@ class ClaimRequest(BaseModel):
     task_id: int = None
 
 
+class ChildSubmitRequest(BaseModel):
+    user_id: str
+    task_id: int
+
+
+@router.post("/daily/child_submit", summary="孩子提交完成申请（待家长确认）")
+def child_submit_task(req: ChildSubmitRequest, db: Session = Depends(get_db)):
+    """孩子点击完成按钮，状态变为 pending_confirm，等家长确认"""
+    today = date.today()
+    row = db.query(DailyTask).filter(
+        DailyTask.id == req.task_id, DailyTask.user_id == req.user_id,
+        DailyTask.task_date == today).first()
+    if not row:
+        raise HTTPException(404, "未找到该任务")
+    if row.status == "done":
+        return _build_payload(db, req.user_id)
+    if row.status == "pending_confirm":
+        return _build_payload(db, req.user_id)
+    row.status = "pending_confirm"
+    row.progress = row.target
+    db.commit()
+    return _build_payload(db, req.user_id)
+
+
+class MakeupCompleteRequest(BaseModel):
+    user_id: str
+    task_id: int
+
+
+@router.post("/daily/makeup_complete", summary="使用补签卡完成任意任务（需家长确认）")
+def makeup_complete_task(req: MakeupCompleteRequest, request: Request, db: Session = Depends(get_db)):
+    """使用补签卡直接完成任意任务（含强制），需家长密码确认"""
+    ensure_parent_pwd(db, req.user_id, request)
+    today = date.today()
+    row = db.query(DailyTask).filter(
+        DailyTask.id == req.task_id, DailyTask.user_id == req.user_id,
+        DailyTask.task_date == today).first()
+    if not row:
+        raise HTTPException(404, "未找到该任务")
+    if row.status == "done":
+        return _build_payload(db, req.user_id)
+    # 检查补签卡余额
+    balance = _get_makeup_balance(db, req.user_id)
+    if balance <= 0:
+        raise HTTPException(400, "没有可用的补签卡")
+    # 扣减补签卡
+    card = db.query(MakeupCard).filter(MakeupCard.user_id == req.user_id).first()
+    card.balance -= 1
+    card.total_used += 1
+    # 完成任务
+    row.progress = row.target
+    row.status = "done"
+    try:
+        from .pet import _grant_coins
+        _grant_coins(db, req.user_id, 5, "使用补签卡完成任务")
+    except Exception:
+        pass
+    db.commit()
+    return _build_payload(db, req.user_id)
+
+
 @router.post("/daily/claim", summary="手动确认完成任务（需家长密码）")
 def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db)):
     # 防刷：手动确认属于家长权限，孩子不得自批

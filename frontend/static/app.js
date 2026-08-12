@@ -1026,8 +1026,20 @@ createApp({
         .then(d => this._applyDailyTasks(d, true))
         .catch(e => this.showToast(e.message));
     },
-    parentConfirmTask(subject) {
-      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
+    childSubmitTask(taskId) {
+      this.api('/api/tasks/daily/child_submit', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: taskId }) })
+        .then(d => { this._applyDailyTasks(d, false); this.showToast('已提交，等家长确认 ✋'); })
+        .catch(e => this.showToast(e.message));
+    },
+    makeupCompleteTask(taskId) {
+      if (this.makeupCards <= 0) return this.showToast('没有可用的补签卡');
+      if (!confirm('使用 1 张补签卡直接完成该任务？')) return;
+      this.api('/api/tasks/daily/makeup_complete', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: taskId }) })
+        .then(d => { this._applyDailyTasks(d, true); this.showToast('补签卡已使用，任务完成 ✅'); })
+        .catch(e => this.showToast(e.message));
+    },
+    parentConfirmTask(taskId) {
+      this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: taskId }) })
         .then(() => { this.loadDailyTasks(); this.showToast('已确认完成 ✅'); })
         .catch(e => this.showToast(e.message));
     },

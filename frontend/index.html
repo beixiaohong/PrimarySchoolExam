@@ -216,8 +216,10 @@
             <b class="dtask-title">{{t.title}}</b>
             <div class="dtask-desc">{{t.desc}}</div>
             <div class="dtask-actions">
-              <span v-if="t.manual && t.status!=='done'" class="tag tag-orange">完成找家长确认</span>
+              <button v-if="t.manual && t.status==='pending'" class="btn btn-primary btn-sm" @click="childSubmitTask(t.id)">我完成了 ✓</button>
+              <span v-else-if="t.manual && t.status==='pending_confirm'" class="tag tag-orange">已提交，待家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">全勤 +1</span>
+              <button v-if="t.status!=='done' && makeupCards>0" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" @click="makeupCompleteTask(t.id)">🎫补签</button>
             </div>
             <div class="dtask-bar"><div class="dtask-bar-in" :style="{width: (t.target ? Math.min(100, t.progress / t.target * 100) : 0) + '%'}"></div></div>
           </div>
@@ -238,8 +240,10 @@
             <b class="dtask-title">{{t.title}}</b>
             <div class="dtask-desc">{{t.desc}}</div>
             <div class="dtask-actions">
-              <span v-if="t.manual && t.status!=='done'" class="tag tag-orange">完成找家长确认</span>
+              <button v-if="t.manual && t.status==='pending'" class="btn btn-primary btn-sm" @click="childSubmitTask(t.id)">我完成了 ✓</button>
+              <span v-else-if="t.manual && t.status==='pending_confirm'" class="tag tag-orange">已提交，待家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">已完成</span>
+              <button v-if="t.status!=='done' && makeupCards>0" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:11px" @click="makeupCompleteTask(t.id)">🎫补签</button>
             </div>
             <div class="dtask-bar"><div class="dtask-bar-in" :style="{width: (t.target ? Math.min(100, t.progress / t.target * 100) : 0) + '%'}"></div></div>
           </div>
@@ -1463,13 +1467,16 @@
           </div>
           <div class="pc-sec">
             <div class="pc-title">🎯 今日任务确认 <span class="more">讲题/朗读/听写由家长确认完成，数量可在下方设置</span></div>
-            <div class="pc-row" v-for="t in dailyTasks" :key="t.subject" style="justify-content:space-between;flex-wrap:wrap">
+            <div class="pc-row" v-for="t in dailyTasks" :key="t.id" style="justify-content:space-between;flex-wrap:wrap">
               <span style="font-size:13px;color:#3a4a6b">{{t.subject}} · {{t.title}}</span>
               <span style="display:inline-flex;align-items:center;gap:8px">
                 <span v-if="t.status==='done'" class="tag tag-green">✅ 已完成</span>
+                <template v-else-if="t.manual && t.status==='pending_confirm'">
+                  <span class="tag tag-orange">孩子已提交</span>
+                  <button class="btn btn-primary btn-sm" @click="parentConfirmTask(t.id)">确认完成 ✓</button>
+                </template>
                 <template v-else-if="t.manual">
-                  <span class="more">待家长确认</span>
-                  <button class="btn btn-primary btn-sm" @click="parentConfirmTask(t.subject)">确认完成 ✓</button>
+                  <span class="more">待孩子提交</span>
                 </template>
                 <span v-else class="more">{{t.progress}} / {{t.target}}</span>
               </span>
