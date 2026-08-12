@@ -42,6 +42,12 @@ def _ensure_columns():
         "questions", "image_base64",
         "MEDIUMTEXT" if DB_DRIVER == "mysql" else "TEXT DEFAULT ''",
     )
+    # paper_questions 冗余年级/学科列（便于按年级+学科抽题，不依赖 JOIN）。
+    # VARCHAR(20) 双方言均允许 DEFAULT ''，故统一带 DEFAULT。
+    _ensure_column("paper_questions", "grade", "VARCHAR(20) DEFAULT ''")
+    _ensure_column("paper_questions", "subject", "VARCHAR(20) DEFAULT ''")
+    # 回填已有 paper_questions 的 grade/subject（来自所属试卷）
+    _backfill_pq_grade_subject()
     if DB_DRIVER != "sqlite":
         return  # 其余轻量迁移仅 SQLite 需要；MySQL 侧由迁移脚本接管
     # 定义需要检查并补齐的列变更列表
@@ -62,6 +68,31 @@ def _ensure_columns():
                     f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
                 ))
                 conn.commit()
+
+
+def _backfill_pq_grade_subject():
+    """将 paper_questions 的 grade/subject 从未填行回填为所属试卷的年级/学科。"""
+    with engine.connect() as conn:
+        try:
+            if DB_DRIVER == "mysql":
+                conn.execute(text(
+                    "UPDATE paper_questions pq JOIN papers p ON pq.paper_id = p.id "
+                    "SET pq.grade = p.grade, pq.subject = p.subject "
+                    "WHERE pq.grade = '' OR pq.grade IS NULL"
+                ))
+            else:
+                conn.execute(text(
+                    "UPDATE paper_questions "
+                    "SET grade = (SELECT p.grade FROM papers p WHERE p.id = paper_questions.paper_id), "
+                    "subject = (SELECT p.subject FROM papers p WHERE p.id = paper_questions.paper_id) "
+                    "WHERE grade = '' OR grade IS NULL"
+                ))
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
 
 def _ensure_column(table, column, definition):

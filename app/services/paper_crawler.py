@@ -421,7 +421,14 @@ def _upsert_paper(session, subject, grade, title, source_url, download_url, html
 
 
 def _store_questions(session, paper_id, html_content):
-    """解析题目并写入 paper_questions（幂等：先删后插），更新题数。"""
+    """解析题目并写入 paper_questions（幂等：先删后插），更新题数。
+
+    每题冗余写入所属试卷的 grade/subject，便于「按年级+学科+题型」独立抽题，
+    无需在查询时 JOIN papers。
+    """
+    paper = session.get(Paper, paper_id)
+    grade = paper.grade if paper else ""
+    subject = paper.subject if paper else ""
     questions, answers_text = parse_paper(html_content)
     session.execute(
         PaperQuestion.__table__.delete().where(PaperQuestion.paper_id == paper_id)
@@ -438,8 +445,8 @@ def _store_questions(session, paper_id, html_content):
             question_text=q['text'], question_html=q['html'],
             options=options, correct_answer=q['answer'] or "",
             image_base64=image_b64,
+            grade=grade or "", subject=subject or "",
         ))
-    paper = session.get(Paper, paper_id)
     if paper:
         paper.total_questions = len(questions)
         paper.answers = answers_text or paper.answers

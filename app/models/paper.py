@@ -8,7 +8,7 @@
 """
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
 
 try:
     from sqlalchemy.dialects.mysql import MEDIUMTEXT
@@ -67,6 +67,15 @@ class PaperQuestion(Base):
     section_idx = Column(Integer, default=0, comment="大题序号")
     qnum = Column(Integer, default=0, comment="小题号（无编号为0）")
     qtype = Column(String(20), default="qa", comment="题型：choice / fill_blank / qa")
+
+    # ── 年级 / 学科（冗余自所属试卷，便于「按年级+学科+题型」独立抽题，不依赖 JOIN）──
+    grade = Column(String(20), default="", index=True, comment="年级，如 一年级")
+    subject = Column(String(20), default="", index=True, comment="学科，如 数学")
+
+    __table_args__ = (
+        Index("ix_pq_grade_subject_type", "grade", "subject", "qtype"),
+        {"comment": "采集试卷单题：HTML 富文本 + base64 图片，构成题库"},
+    )
 
     # ── 内容 ──
     question_text = Column(_longtext(), default="", comment="题目纯文本（可检索）")
