@@ -1467,6 +1467,7 @@
             <span class="more" style="font-size:13px">🔓 家长模式已解锁</span>
             <button class="btn btn-ghost btn-sm" @click="exitParentMode()">退出家长模式 →</button>
           </div>
+          <!-- 家长面板 · 今日任务确认：手动任务（讲题/朗读/听写）由家长点「确认完成」才生效 -->
           <div class="pc-sec">
             <div class="pc-title">🎯 今日任务确认 <span class="more">讲题/朗读/听写由家长确认完成，数量可在下方设置</span></div>
             <div class="pc-row" v-for="t in dailyTasks" :key="t.id" style="justify-content:space-between;flex-wrap:wrap">
@@ -1485,6 +1486,7 @@
             </div>
           </div>
 
+          <!-- 家长面板 · 补签卡待确认区块：孩子用补签卡发起的补签，家长在此确认生效或拒绝退回 -->
           <div class="pc-sec">
             <div class="pc-title">🎫 补签卡待确认 <span class="more">孩子用补签卡完成的任务，需家长确认生效，拒绝则退回</span><span v-if="pendingMakeups.length" class="tag tag-orange">{{pendingMakeups.length}} 条待处理</span></div>
             <div class="pc-list" v-if="pendingMakeups.length">

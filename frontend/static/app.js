@@ -306,16 +306,19 @@ createApp({
           return d;
         });
     },
+    // 顶部 Toast 轻提示（2.4s 自动消失）
     showToast(msg) {
       this.toast.msg = msg; this.toast.show = true;
       clearTimeout(this._tt);
       this._tt = setTimeout(() => { this.toast.show = false; }, 2400);
     },
+    // 将登录态（用户/年级/学科）持久化到 localStorage
     saveUser() {
       if (this.user) localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject }));
     },
 
     /* ─────────── 登录 / 注册 / 退出 ─────────── */
+    // 登录入口：邮箱/手机走密码校验，昵称走快捷登录
     login() {
       const account = this.username.trim();
       if (!account) return;
@@ -326,6 +329,7 @@ createApp({
         body: JSON.stringify({ account, password: this.loginPwd }),
       }).then(r => this.onLoginOk(r)).catch(e => this.showToast(e.message));
     },
+    // 存量昵称账号快捷登录（受后端 ALLOW_NICKNAME_LOGIN 开关控制）
     nicknameLogin() {
       // 存量昵称账号快捷入口（受 ALLOW_NICKNAME_LOGIN 开关控制）
       const name = this.username.trim();
@@ -335,6 +339,7 @@ createApp({
       }).then(r => this.onLoginOk(Object.assign({ user_id: name }, r)))
         .catch(e => this.showToast(e.message));
     },
+    // 登录成功回调：写入用户信息，新用户弹年级选择，老用户刷新首页
     onLoginOk(r) {
       this.user = r.user_id;
       this.streakDays = r.streak_days || 0;
@@ -350,6 +355,7 @@ createApp({
         this.refreshAll();
       }
     },
+    // 验证码注册并自动登录
     register() {
       const target = this.regTarget.trim();
       if (!target || this.regCode.trim().length < 6 || !this.regPwd) return;
@@ -362,6 +368,7 @@ createApp({
       }).then(r => { this.regCode = ''; this.regPwd = ''; this.onLoginOk(r); })
         .catch(e => this.showToast(e.message));
     },
+    // 发送注册/重置验证码（purpose 区分用途，带 60s 冷却）
     sendAuthCode(purpose, target) {
       const t = (target || '').trim();
       if (!t || this.authCooldown > 0) return;
@@ -373,6 +380,7 @@ createApp({
         this.startAuthCooldown();
       }).catch(e => this.showToast(e.message));
     },
+    // 验证码按钮 60s 倒计时，到点自动恢复可点
     startAuthCooldown() {
       this.authCooldown = 60;
       clearInterval(this._authTimer);
@@ -380,6 +388,7 @@ createApp({
         if (--this.authCooldown <= 0) clearInterval(this._authTimer);
       }, 1000);
     },
+    // 验证码校验后重置登录密码
     resetPassword() {
       const target = this.rstTarget.trim();
       if (!target || this.rstCode.trim().length < 6 || !this.rstPwd) return;
@@ -392,6 +401,7 @@ createApp({
         this.authMode = 'login';
       }).catch(e => this.showToast(e.message));
     },
+    // 绑定邮箱/手机号到当前昵称账号（需验证码）
     bindAccount() {
       const target = this.bindTarget.trim();
       if (!this.user || !target || this.bindCode.trim().length < 6) return;
@@ -404,18 +414,21 @@ createApp({
         this.loadAuthInfo();
       }).catch(e => this.showToast(e.message));
     },
+    // 拉取账号资料（是否已绑定、可用登录方式等）
     loadAuthInfo() {
       if (!this.user) return;
       this.api(`/api/auth/me?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.authInfo = d || {}; })
         .catch(() => { this.authInfo = {}; });
     },
+    // 首页天气卡：优先用户配置城市，后端回退 IP 定位
     loadWeather() {
       // 首页天气卡：优先用户配置城市，后端回退 IP 定位/默认城市
       this.api(`/api/weather/current?user_id=${encodeURIComponent(this.user || '')}`)
         .then(d => { this.weather = d; if (d && d.city) this.cityInput = d.city; })
         .catch(() => { this.weather = null; });
     },
+    // 保存用户城市偏好（写入后重载天气）
     saveCity() {
       const city = (this.cityInput || '').trim();
       if (!city) { this.showToast('请输入城市'); return; }
@@ -428,6 +441,7 @@ createApp({
         this.loadWeather();
       }).catch(e => this.showToast(e.message));
     },
+    // 把预报日期转成「今天/明天/周几」
     wxDayLabel(fxDate) {
       // 预报日期转「今天/明天/周几」
       if (!fxDate) return '';
@@ -437,6 +451,7 @@ createApp({
       if (diff === 1) return '明天';
       return '周' + '日一二三四五六'[d.getDay()];
     },
+    // 退出登录：清除 localStorage 登录态与 session 家长解锁态
     logout() {
       localStorage.removeItem('zx_user');
       sessionStorage.removeItem('zx_parent_open');
@@ -446,6 +461,7 @@ createApp({
     },
 
     /* ─────────── 导航 ─────────── */
+    // 切换主 tab 并惰性加载对应模块数据
     goTab(t) {
       this.tab = t;
       if (t === 'home') { this.loadRewards(); this.loadRewardTimeline(); this.loadParentMsgs(); this.loadNotices(); }
@@ -466,6 +482,7 @@ createApp({
       if (t === 'stats') this.loadStats();
       if (t === 'settings') this.initParentPanel();
     },
+    // 切换学科，联动刷新刷题/错题数据并持久化
     switchSubject(s) {
       this.subject = s;
       if (this.tab === 'practice') {
@@ -476,6 +493,7 @@ createApp({
       if (this.tab === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); }
       this.saveUser();
     },
+    // 年级变更上报后端并全量刷新
     onGradeChange() {
       this.saveUser();
       this.api('/api/user/grade', {
@@ -483,6 +501,7 @@ createApp({
         body: JSON.stringify({ user_id: this.user, grade: this.grade }),
       }).then(() => this.refreshAll()).catch(() => {});
     },
+    // 首次进入选年级：落库后刷新首页
     selectInitialGrade() {
       this.showGradeModal = false;
       this.api('/api/user/grade', {
@@ -490,11 +509,13 @@ createApp({
         body: JSON.stringify({ user_id: this.user, grade: this.grade }),
       }).then(() => { this.saveUser(); this.refreshAll(); }).catch(() => { this.refreshAll(); });
     },
+    // 学科切换时重置题型选项（语文/英语分流）
     onSubjectChange() {
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;
       this.selectedTypes = [];
       this.saveUser();
     },
+    // 背诵中心子 tab 切换（单词/古诗文）
     switchRecite(s) {
       this.reciteSub = s;
       if (s === 'words') this.loadVocabToday(); else this.loadClassicalToday();
@@ -502,6 +523,7 @@ createApp({
     },
 
     /* ─────────── 十万个为什么（Sprint 5） ─────────── */
+    // 加载「十万个为什么」可用模型列表
     loadQaModels() {
       this.api(`/api/qa/models?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
@@ -514,24 +536,29 @@ createApp({
           }
         }).catch(() => { this.qaModels = []; });
     },
+    // 模型 key 转中文展示名
     qaModelLabel(key) {
       const m = (this.qaModels || []).find(x => x.key === key);
       return m ? m.label : key;
     },
+    // 生成问答会话 id（时间戳+随机）
     genSessionId() {
       return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     },
+    // 新建一次问答会话并清屏
     newQaSession() {
       this.qaSessionId = '';
       this.qaMessages = [];
       this.qaAsk = '';
     },
+    // 加载历史问答会话列表
     loadQaSessions() {
       if (!this.user) return;
       this.api(`/api/qa/sessions?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.qaSessions = (d && d.items) || []; })
         .catch(() => { this.qaSessions = []; });
     },
+    // 打开某条历史问答会话并回填消息
     openQaSession(sid) {
       if (this.qaLoading) return;
       this.api(`/api/qa/session?user_id=${encodeURIComponent(this.user)}&session_id=${encodeURIComponent(sid)}`)
@@ -546,10 +573,12 @@ createApp({
         })
         .catch(() => {});
     },
+    // 问答聊天区滚动到底部
     scrollQaChat() {
       const el = document.querySelector('.qa-chat');
       if (el) el.scrollTop = el.scrollHeight;
     },
+    // 提交一次问答请求（流式拼接到消息流）
     askQa() {
       const q = this.qaAsk.trim();
       if (!q || this.qaLoading) return;
@@ -574,6 +603,7 @@ createApp({
         this.qaMessages.push({ role: 'ai', text: '（发送失败）' + e.message, degraded: true });
       }).finally(() => { this.qaLoading = false; });
     },
+    // 加载问答历史记录（按类型过滤）
     loadQaHistory() {
       if (!this.user) return;
       this.api(`/api/qa/history?user_id=${encodeURIComponent(this.user)}&q_type=${this.qaHistType}`)
@@ -582,30 +612,35 @@ createApp({
     },
 
     /* ─────────── 宠物家园（P2-1 金币宠物） ─────────── */
+    // 加载宠物档案（经验/等级/进化阶段）
     loadPet() {
       if (!this.user) return;
       this.api(`/api/pet?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.petProfile = d; })
         .catch(() => { this.petProfile = null; });
     },
+    // 加载钻石余额
     loadDiamonds() {
       if (!this.user) return;
       this.api(`/api/diamond/balance?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.diamonds = d.balance || 0; })
         .catch(() => { this.diamonds = 0; });
     },
+    // 加载宠物流水记录
     loadPetLedger() {
       if (!this.user) return;
       this.api(`/api/pet/ledger?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.petLedger = d || []; })
         .catch(() => { this.petLedger = []; });
     },
+    // 加载宠物养成规则（投喂/抚摸收益）
     loadPetRules() {
       if (this.petRules.length) return;
       this.api('/api/pet/rules')
         .then(d => { this.petRules = (d && d.items) || []; })
         .catch(() => {});
     },
+    // 投喂宠物：消耗钻石换取经验
     petFeed() {
       if (this.petBusy) return;
       this.petBusy = true;
@@ -626,6 +661,7 @@ createApp({
         .catch(e => { this.petMsg = e.message; })
         .finally(() => { this.petBusy = false; });
     },
+    // 抚摸宠物：免费加成，带冷却
     petPat() {
       if (this.petBusy) return;
       this.petBusy = true;
@@ -639,6 +675,7 @@ createApp({
         .catch(e => { this.petMsg = e.message; })
         .finally(() => { this.petBusy = false; });
     },
+    // 等级 → 宠物表情
     petEmoji(level) {
       if (level >= 9) return '🦚';
       if (level >= 7) return '🦜';
@@ -646,6 +683,7 @@ createApp({
       if (level >= 3) return '🐤';
       return '🥚';
     },
+    // 等级 → 宠物名
     petName(level) {
       if (level >= 9) return '🦚 凤凰奇奇';
       if (level >= 7) return '🦜 鹦鹉小七';
@@ -653,6 +691,7 @@ createApp({
       if (level >= 3) return '🐤 小黄鸡';
       return '🥚 宠物蛋';
     },
+    // 等级 → 宠物描述
     petDesc(level) {
       if (level >= 9) return '传说中的凤凰，闪闪发光，同学都会羡慕你！';
       if (level >= 7) return '学会说人话了，会跟着你朗读课文！';
@@ -660,24 +699,28 @@ createApp({
       if (level >= 3) return '破壳啦！一只毛茸茸的小家伙';
       return '还是一颗蛋，努力赚金币喂它，很快就会孵出来！';
     },
+    // 宠物当前经验进度百分比
     petExpPct(p) {
       if (!p || !p.exp_next) return 100;
       return Math.min(100, Math.round(p.exp / p.exp_next * 100));
     },
 
     /* ─────────── 成长树（P2-2 创意 7） ─────────── */
+    // 加载成长树进度（按累计学习量映射阶段）
     loadTree() {
       if (!this.user) return;
       this.api(`/api/tree?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.treeData = d; })
         .catch(() => { this.treeData = null; });
     },
+    // 成长树阶段索引 → 阶段名
     treeStageName(idx) {
       const s = this.treeStages[idx];
       return s ? s.name : '';
     },
 
     /* ─────────── 成就徽章（P2-3 创意 8） ─────────── */
+    // 加载成就徽章；announce=true 时触发新徽章提示
     loadBadges(announce) {
       if (!this.user) return;
       this.api(`/api/badges?user_id=${encodeURIComponent(this.user)}`)
@@ -697,12 +740,14 @@ createApp({
     },
 
     /* ─────────── 知识卡图鉴（P2-4 创意 13） ─────────── */
+    // 加载知识卡图鉴（已收集/总数）
     loadCards() {
       if (!this.user) return;
       this.api(`/api/cards?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.cardData = d; })
         .catch(() => { this.cardData = null; });
     },
+    // 抽一张知识卡（消耗抽取机会）
     cardDraw() {
       if (this.cardDrawing || !this.user) return;
       this.cardDrawing = true;
@@ -718,10 +763,12 @@ createApp({
     },
 
     /* ─────────── 听写磨耳朵（P2-5 创意 25） ─────────── */
+    // 听写磨耳朵模式切换（单词/古诗文）
     dictSwitchMode(m) {
       if (this.dictSession.active) return;
       this.dictMode = m;
     },
+    // 开始一轮听写磨耳朵
     dictStart() {
       const isWord = this.dictMode === 'word';
       const url = isWord
@@ -736,6 +783,7 @@ createApp({
         this.$nextTick(() => setTimeout(() => this.dictSpeak(items[0]), 350));
       }).catch(e => this.showToast(e.message));
     },
+    // 语音播报封装（Web Speech API，失败静默）
     speakText(text, lang, rate) {
       if (!text) return;
       try {
@@ -748,18 +796,21 @@ createApp({
         window.speechSynthesis.speak(u);
       } catch (e) { /* 静默失败，不阻断操作 */ }
     },
+    // 播放当前单词发音
     wordSpeak() {
       const ws = this.wordSession;
       if (!ws.words || !ws.words.length) return;
       const w = ws.words[ws.i];
       if (w) this.speakText(w.word, 'en-US', 0.8);
     },
+    // 播放当前古诗文朗读
     textSpeak() {
       const ts = this.textSession;
       if (!ts.texts || !ts.texts.length) return;
       const t = ts.texts[ts.i];
       if (t) this.speakText(t.title + '，' + (t.author || '') + '，' + t.content, 'zh-CN', 0.85);
     },
+    // 听写：播报单条内容给孩子默写
     dictSpeak(item) {
       if (!item) return;
       try {
@@ -772,6 +823,7 @@ createApp({
         window.speechSynthesis.speak(u);
       } catch (e) { this.showToast('语音播放失败，请检查浏览器设置'); }
     },
+    // 校验听写答案并计分
     dictCheck() {
       const s = this.dictSession;
       if (!s.current) return;
@@ -781,7 +833,9 @@ createApp({
       if (s.lastOk) s.correct += 1;
       s.revealed = true;
     },
+    // 重听当前条听写内容
     dictReplay() { this.dictSpeak(this.dictSession.current); },
+    // 听写下一条（结算或推进）
     dictNext() {
       const s = this.dictSession;
       if (s.i >= s.items.length - 1) {
@@ -803,7 +857,9 @@ createApp({
     },
 
     /* ─────────── 番茄专注钟（P2-6 创意 22） ─────────── */
+    // 设定番茄专注时长（分钟→秒）
     focusSet(m) { this.focusTimer.total = m; this.focusTimer.left = m * 60; },
+    // 开始番茄专注计时
     focusStart() {
       this.focusDone = false;
       this.focusMsg = '';
@@ -812,6 +868,7 @@ createApp({
       this._startFocusTicker();
       this.showToast(`⏰ 开始专注 ${this.focusTimer.total} 分钟，加油！`);
     },
+    // 启动专注计时器（每秒递减，归零自动结束）
     _startFocusTicker() {
       if (this._focusTicker) clearInterval(this._focusTicker);
       this._focusTicker = setInterval(() => {
@@ -823,8 +880,11 @@ createApp({
         }
       }, 1000);
     },
+    // 暂停专注
     focusPause() { this.focusTimer.running = false; this.focusTimer.paused = true; this.focusMsg = '⏸ 已暂停，休息一下眼睛吧'; },
+    // 恢复专注
     focusResume() { this.focusTimer.running = true; this.focusTimer.paused = false; this.focusMsg = ''; },
+    // 重置专注计时到初始时长
     focusReset() {
       if (this._focusTicker) clearInterval(this._focusTicker);
       this.focusTimer.running = false;
@@ -833,6 +893,7 @@ createApp({
       this.focusMsg = '';
       this.focusTimer.left = this.focusTimer.total * 60;
     },
+    // 专注结束：上报时长并结算
     focusFinish() {
       if (this._focusTicker) clearInterval(this._focusTicker);
       this.focusTimer.running = false;
@@ -850,6 +911,7 @@ createApp({
         })
         .catch(e => this.showToast(e.message));
     },
+    // 加载专注今日记录与统计
     loadFocus() {
       if (!this.user) return;
       this.api(`/api/focus/today?user_id=${encodeURIComponent(this.user)}`)
@@ -861,6 +923,7 @@ createApp({
     },
 
     /* ─────────── AI 趣味出题（AI-2） ─────────── */
+    // AI 趣味出题：按主题/学科/年级生成试卷
     aiQuizGenerate() {
       if (!this.user) return this.showToast('请先登录');
       const q = this.aiQuiz;
@@ -876,11 +939,14 @@ createApp({
         q.answers = {}; q.inputs = {};
       }).catch(e => { q.loading = false; this.showToast(e.message); });
     },
+    // 记录 AI 出题选择题作答
     aiQuizPick(i, letter) { this.aiQuiz.answers[i] = letter; },
+    // 读取 AI 出题填空题用户输入
     aiQuizUserAnswer(i) {
       const q = this.aiQuiz.quiz[i];
       return (q.options && q.options.length) ? (this.aiQuiz.answers[i] || '未作答') : (this.aiQuiz.inputs[i] || '未作答');
     },
+    // AI 趣味出题批改并结算得分/奖励
     aiQuizGrade() {
       const q = this.aiQuiz;
       if (!q.quiz) return;
@@ -915,6 +981,7 @@ createApp({
         this.loadWrongItems();
       }
     },
+    // 重置 AI 趣味出题状态
     aiQuizReset() {
       const q = this.aiQuiz;
       q.quiz = null; q.graded = null; q.score = null; q.answers = {}; q.inputs = {};
@@ -922,16 +989,19 @@ createApp({
     },
 
     /* ─────────── AI 学习助手（AI-5） ─────────── */
+    // 加载 AI 学习助手画像（用于快捷提问/进度）
     loadAssistantProfile() {
       if (!this.user) return;
       this.api(`/api/assistant/profile?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.assistantProfile = d; })
         .catch(() => {});
     },
+    // 助手快捷提问：填充输入框并发送
     assistantAsk(q) {
       this.assistantDraft = q;
       this.assistantSend();
     },
+    // 发送助手对话消息
     assistantSend() {
       const text = (this.assistantDraft || '').trim();
       if (!text || this.assistantLoading || !this.user) return;
@@ -953,12 +1023,14 @@ createApp({
         this.$nextTick(() => this._scrollChat());
       });
     },
+    // 助手对话滚动到底部
     _scrollChat() {
       const box = this.$refs.chatBox;
       if (box) box.scrollTop = box.scrollHeight;
     },
 
     /* ─────────── 全局刷新 ─────────── */
+    // 登录后一次性拉取首页所有数据
     refreshAll() {
       if (!this.user) return;
       this.loadDailyTasks();
@@ -992,6 +1064,7 @@ createApp({
     },
 
     /* ─────────── 首页 ─────────── */
+    // 加载今日任务包（按遗忘曲线编排）
     loadDashboard() {
       this.api(`/api/study/dashboard/today?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(d => {
@@ -1017,21 +1090,25 @@ createApp({
         }).catch(e => this.showToast(e.message));
     },
     /* ─────────── 每科必做：每日任务 ─────────── */
+    // 加载三科每日任务（强制+可选）与补签卡数
     loadDailyTasks() {
       this.api(`/api/tasks/daily?user_id=${encodeURIComponent(this.user)}`)
         .then(d => this._applyDailyTasks(d, true))
         .catch(() => {});
     },
+    // 家长确认式任务：家长点击即标记该科完成
     claimDailyTask(subject) {
       this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, subject }) })
         .then(d => this._applyDailyTasks(d, true))
         .catch(e => this.showToast(e.message));
     },
+    // 孩子提交手动任务，进入「待家长确认」状态
     childSubmitTask(taskId) {
       this.api('/api/tasks/daily/child_submit', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: taskId }) })
         .then(d => { this._applyDailyTasks(d, false); this.showToast('已提交，等家长确认 ✋'); })
         .catch(e => this.showToast(e.message));
     },
+    // 【孩子发起补签】扣 1 张补签卡，任务进入「待家长确认」暂不完成；接口 /api/tasks/daily/makeup_complete
     makeupCompleteTask(taskId) {
       if (this.makeupCards <= 0) return this.showToast('没有可用的补签卡');
       if (!confirm('使用 1 张补签卡完成该任务？提交后需家长确认才生效')) return;
@@ -1041,11 +1118,13 @@ createApp({
         .catch(e => this.showToast(e.message));
     },
     /* ─────────── 补签卡待确认（孩子发起 → 家长确认/拒绝）─────────── */
+    // 加载补签卡待确认列表（家长端轮询/进面板时调用）；接口 /api/tasks/makeup/pending
     loadPendingMakeup() {
       this.api(`/api/tasks/makeup/pending?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.pendingMakeups = (d && d.items) || []; })
         .catch(() => { this.pendingMakeups = []; });
     },
+    // 【家长确认/拒绝补签】action='confirm' 任务生效，'reject' 退回补签卡；接口 /api/tasks/makeup/confirm
     confirmMakeup(logId, action) {
       this.api('/api/tasks/makeup/confirm', {
         method: 'POST',
@@ -1056,11 +1135,13 @@ createApp({
         this.loadDailyTasks && this.loadDailyTasks();
       }).catch(e => this.showToast(e.message));
     },
+    // 家长直接确认手动任务完成（讲题/朗读/听写类）
     parentConfirmTask(taskId) {
       this.api('/api/tasks/daily/claim', { method: 'POST', body: JSON.stringify({ user_id: this.user, task_id: taskId }) })
         .then(() => { this.loadDailyTasks(); this.showToast('已确认完成 ✅'); })
         .catch(e => this.showToast(e.message));
     },
+    // 把任务接口返回统一写入 dailyTasks/统计/补签卡，并在升级时庆祝
     _applyDailyTasks(d, celebrate) {
       const prev = this.dailyTaskStats ? this.dailyTaskStats.done_count : 0;
       this.dailyTasks = (d && d.tasks) || [];
@@ -1076,11 +1157,13 @@ createApp({
       }
       if (celebrate && this.dailyTaskStats.done_count > prev) this.loadPet();
     },
+    // 统计各科「待订正」错题数量（考试+练习来源）
     _pendingWrong(d) {
       const w = o => o ? (o.exam_pending || 0) + (o.study_pending || 0) : 0;
       const eng = d.subjects['英语'] || {}, chi = d.subjects['语文'] || {}, mth = d.subjects['数学'] || {};
       return w(eng.wrong) + w(chi.wrong) + w(mth.wrong);
     },
+    // 加载艾宾浩斯复习队列：今日到期项 + 后续(t1/t2/t3)到期数；接口 /api/study/review-queue
     loadReviewQueue() {
       this.api(`/api/study/review-queue?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(r => {
@@ -1092,11 +1175,13 @@ createApp({
           this.queueTomorrow = up.t1 || 0; this.queueDayAfter = up.t2 || 0; this.queueLater = up.t3 || 0;
         }).catch(() => {});
     },
+    // 加载「明天再来」队列（重做仍错项次日重练）
     loadTomorrowQueue() {
       this.api(`/api/study/tomorrow-queue?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.tomorrowQueue = d || { count: 0, items: [] }; })
         .catch(() => { this.tomorrowQueue = { count: 0, items: [] }; });
     },
+    // 首页任务卡入口：按 key 路由到对应学习模块
     startTask(t) {
       if (t.done) { this.showToast('该任务今天已完成，明天再来吧'); return; }
       if (t.key === 'word_new') this.startWordSession('new');
@@ -1109,11 +1194,13 @@ createApp({
     },
 
     /* ─────────── 刷题中心 ─────────── */
+    // 加载数学题型大类（用于生成试卷筛选）
     loadMathCategories() {
       this.api('/api/math/categories').then(cats => {
         this.mathCategories = (cats || []).map(c => c.name).filter(Boolean);
       }).catch(() => { this.mathCategories = []; });
     },
+    // 加载英语/语文题型定义（随学科分流）
     loadEngTypes() {
       this._engTypes = [
         { code: 'word_translation', name: '单词翻译' }, { code: 'phrase_translation', name: '词组翻译' },
@@ -1129,14 +1216,17 @@ createApp({
       ];
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;
     },
+    // 数学题型大类筛选切换
     toggleCategory(c) {
       const i = this.selectedCategories.indexOf(c);
       i >= 0 ? this.selectedCategories.splice(i, 1) : this.selectedCategories.push(c);
     },
+    // 英语/语文题型筛选切换
     toggleType(t) {
       const i = this.selectedTypes.indexOf(t);
       i >= 0 ? this.selectedTypes.splice(i, 1) : this.selectedTypes.push(t);
     },
+    // 按学科/难度/题数/题型生成试卷
     generateExam() {
       const body = { subject: this.subject, grade: this.grade, difficulty: this.genDifficulty, user_id: this.user };
       if (this.subject === '数学') {
@@ -1172,6 +1262,7 @@ createApp({
         })
         .catch(e => { this.generating = false; this.showToast(e.message); });
     },
+    // 加载做题记录列表
     loadAttempts() {
       this.api(`/api/exam/attempts/list?user_id=${encodeURIComponent(this.user)}&page_size=50&subject=${encodeURIComponent(this.subject)}`)
         .then(list => {
@@ -1183,6 +1274,7 @@ createApp({
           this.avgScore = scored.length ? Math.round(scored.reduce((s, a) => s + a.score, 0) / scored.length) : 0;
         }).catch(() => { this.attempts = []; });
     },
+    // 查看某次做题详情（题目+对错）
     viewAttempt(a) {
       this.attemptDetail = { show: true, id: a.id, title: a.exam_title || '做题记录', score: a.score, correct: a.correct, total: a.total, items: [] };
       this.api(`/api/exam/attempts/${a.id}`)
@@ -1196,12 +1288,14 @@ createApp({
     },
 
     /* ─────────── 语法练习 ─────────── */
+    // 加载语法知识点列表（英语）
     loadGrammarPoints() {
       const cat = this.grammarCategory ? '&category=' + encodeURIComponent(this.grammarCategory) : '';
       this.api(`/api/grammar/points?grade=${this.grade}${cat}`)
         .then(ps => { this.grammarPoints = ps || []; })
         .catch(e => this.showToast(e.message));
     },
+    // 选语法点生成针对性练习
     selectGrammarPoint(p) {
       this.api('/api/grammar/quiz', {
         method: 'POST',
@@ -1211,6 +1305,7 @@ createApp({
         this.grammarQuizIndex = 0; this.grammarSubmitted = false; this.grammarResult = null; this.grammarInput = '';
       }).catch(e => this.showToast(e.message));
     },
+    // 题型代码 → 中文名
     typeLabel(t) {
       return ({
         choice: '选择题', fill: '填空题', transform: '句型转换', correct: '改错题',
@@ -1221,6 +1316,7 @@ createApp({
         typo_correct: '改错字', sentence_rewrite: '句式变换', word_classify: '词语归类',
       })[t] || t || '';
     },
+    // 选项样式：对/错/未选 配色
     optClass(opt, item) {
       if (!item.answered) return '';
       const idx = (item.options || []).indexOf(opt);
@@ -1229,6 +1325,7 @@ createApp({
       if (item.selected === idx) return 'wrong';
       return '';
     },
+    // 记录语法题所选选项
     grammarAnswer(opt) {
       const it = this.grammarQuiz[this.grammarQuizIndex];
       if (it.answered) return;
@@ -1241,6 +1338,7 @@ createApp({
       this.grammarCurrentAnswer = this._readableAnswer(it);
       this.grammarCurrentExplanation = it.explanation || '';
     },
+    // 提交语法练习并判定对错
     grammarSubmit() {
       const it = this.grammarQuiz[this.grammarQuizIndex];
       if (it.answered) return;
@@ -1252,6 +1350,7 @@ createApp({
       this.grammarCurrentAnswer = this._readableAnswer(it);
       this.grammarCurrentExplanation = it.explanation || '';
     },
+    // 把选项值转成可读答案文本
     _readableAnswer(it) {
       const a = String(it.answer || '').trim().toUpperCase();
       if (it.options && it.options.length && a.length === 1) {
@@ -1260,6 +1359,7 @@ createApp({
       }
       return it.answer || '';
     },
+    // 语法练习下一题/结算
     grammarNext() {
       if (this.grammarQuizIndex < this.grammarQuiz.length - 1) {
         this.grammarQuizIndex++; this.grammarSubmitted = false; this.grammarInput = '';
@@ -1279,11 +1379,13 @@ createApp({
         }
       }
     },
+    // 退出语法练习
     grammarExit() {
       this.grammarQuiz = []; this.grammarResult = null; this.grammarSubmitted = false; this.grammarInput = '';
     },
 
     /* ─────────── 背诵中心 ─────────── */
+    // 加载今日单词（新学+复习）与统计
     loadVocabToday() {
       this.api(`/api/vocab/today?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(r => {
@@ -1291,6 +1393,7 @@ createApp({
           this.vocabToday = { new_words: r.new_words || [], review_words: r.review_words || [], stats };
         }).catch(() => {});
     },
+    // 加载单词累计统计
     loadVocabStats() {
       this.api(`/api/vocab/stats?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(r => {
@@ -1301,6 +1404,7 @@ createApp({
           if (r.streak_days) this.streakDays = Math.max(this.streakDays, r.streak_days);
         }).catch(() => {});
     },
+    // 加载今日古诗文（新学+复习）与统计
     loadClassicalToday() {
       this.api(`/api/classical/today?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(r => {
@@ -1311,20 +1415,24 @@ createApp({
           if ((r.stats || {}).streak_days) this.streakDays = Math.max(this.streakDays, r.stats.streak_days);
         }).catch(() => {});
     },
+    // 加载古诗文累计统计
     loadClassicalStats() {
       this.api(`/api/classical/stats?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(r => { this.classicalStats = r || {}; }).catch(() => {});
     },
+    // 加载古诗文素材库
     loadClassicalTexts() {
       this.api(`/api/classical/texts?grade=${this.grade}`)
         .then(ts => { this.classicalTexts = ts || []; }).catch(() => { this.classicalTexts = []; });
     },
+    // 开始单词背诵 session（new=新学 / review=复习）
     startWordSession(mode) {
       const words = mode === 'new' ? (this.vocabToday.new_words || []) : (this.vocabToday.review_words || []);
       if (!words.length) { this.showToast(mode === 'new' ? '今日新词已学完，明天再来吧' : '今日没有到期复习的单词'); return; }
       this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [] };
       this.$nextTick(() => setTimeout(() => this.wordSpeak(), 350));
     },
+    // 单词背诵判定是否记住并推进
     wordNext(ok) {
       const ws = this.wordSession;
       const w = ws.words[ws.i];
@@ -1334,6 +1442,7 @@ createApp({
       else { ws.phase = 'dictate'; this.startWordDictate(); }
     },
     /* 默写环节：翻完卡片后听写一遍，全对才算完成（错词重默直到全对） */
+    // 单词听写（拼写默写）
     startWordDictate() {
       const ws = this.wordSession;
       this.dtOk = {};
@@ -1348,6 +1457,7 @@ createApp({
         items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode },
       });
     },
+    // 开始古诗文背诵 session（new/review）
     startTextSession(mode) {
       const raw = mode === 'new' ? (this.classicalToday.new_texts || []) : (this.classicalToday.review_texts || []);
       if (!raw.length) { this.showToast(mode === 'new' ? '今日新篇已背完，明天再来吧' : '今日没有到期复习的篇目'); return; }
@@ -1358,6 +1468,7 @@ createApp({
       };
       this.$nextTick(() => setTimeout(() => this.textSpeak(), 350));
     },
+    // 古诗文背诵判定并推进
     textNext(ok) {
       const ts = this.textSession;
       const t = ts.texts[ts.i];
@@ -1367,6 +1478,7 @@ createApp({
       else { ts.phase = 'dictate'; this.startTextDictate(); }
     },
     /* 默写环节：翻完卡片后填空默写，全对才算完成（错句重默直到全对） */
+    // 古诗文听写（默写）
     startTextDictate() {
       const ts = this.textSession;
       this.dtOk = {};
@@ -1388,9 +1500,11 @@ createApp({
         });
       });
     },
+    // 查看古诗文原文详情
     openTextDetail(t) {
       this.textDetail = { show: true, id: t.id, title: t.title, author: t.author || '', dynasty: t.dynasty || '', grade: t.grade, text_type: t.text_type || 'poem', content: t.content };
     },
+    // 古诗文背诵小测（按文本出题）
     startTextQuiz(t) {
       this.textDetail.show = false;
       this.api(`/api/classical/quiz?grade=${this.grade}&text_id=${t.id}&count=4`)
@@ -1404,6 +1518,7 @@ createApp({
     },
 
     /* ─────────── 错题本 ─────────── */
+    // 加载错题本列表（按学科/状态过滤）
     loadWrongItems() {
       const base = `user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`;
       const examQ = `${base}&include_mastered=${this.wrongStatus === 'pending' ? 0 : 1}`;
@@ -1434,9 +1549,11 @@ createApp({
           this.wrongItems = items;
         }).catch(e => this.showToast(e.message));
     },
+    // 打开错题详情并切到 detail 视图
     openWrongDetail(w) { this.curWrong = w; this.wrongScreen = 'detail'; },
     /* ─────────── AI 错题讲解（Sprint 2，内联展示） ─────────── */
     // 讲解文本三段式：按【错在哪】【怎么做】【再来一道】切分
+    // 把 AI 讲解文本拆成结构化分段
     explainSectionsOf(t) {
       const segs = [];
       const rex = /【(错在哪|怎么做|再来一道)】([\s\S]*?)(?=【|$)/g;
@@ -1445,6 +1562,7 @@ createApp({
       return segs.length ? segs : [{ title: '', body: t || '' }];
     },
     // 统一带超时的讲解请求：25s 未返回自动解除锁定并提示，避免"点了没反应"
+    // 调用 AI 讲解接口的通用封装（带 toast 兜底）
     explainFetch(path, payload) {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('讲解生成超时，请稍后重试')), 25000);
@@ -1453,6 +1571,7 @@ createApp({
           .catch(e => { clearTimeout(timer); reject(e); });
       });
     },
+    // 打开 AI 错题讲解（按题型路由到对应接口）
     openExplain(w) {
       if (w.kind !== 'exam' || !w.question_id) { this.showToast('这道题暂不支持 AI 讲解'); return; }
       if (!w.cause) { this.showToast('请先选择错因，才能使用讲解功能'); return; }
@@ -1471,6 +1590,7 @@ createApp({
         });
     },
     /* 作答页「AI 讲解」：一键标记错题（错因=ai）并在题目下方内联展示讲解 */
+    // 题目级 AI 讲解（单题为什么对/错）
     askQuizExplain() {
       const it = this.quiz.items[this.quiz.i];
       if (!it || !it.qid) { this.showToast('这道题暂不支持 AI 讲解'); return; }
@@ -1497,13 +1617,17 @@ createApp({
         });
     },
     /* ─────────── 心情打卡（Sprint 2） ─────────── */
+    // 心情 code → 表情
     moodFace(c) { const m = this.moodOptions.find(x => x.code === c); return m ? m.face : ''; },
+    // 心情 code → 文案
     moodLabel(c) { const m = this.moodOptions.find(x => x.code === c); return m ? m.label : ''; },
+    // 加载心情趋势（近 7 天）
     loadMood() {
       this.api(`/api/mood/trend?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.moodTrend = d || null; })
         .catch(() => { this.moodTrend = null; });
     },
+    // 提交今日心情打卡（可选附一句感受）
     doMoodCheckin(mood) {
       this.api('/api/mood/checkin', {
         method: 'POST',
@@ -1514,7 +1638,9 @@ createApp({
         this.showToast('心情已记录，谢谢你告诉我 🧡');
       }).catch(e => this.showToast(e.message));
     },
+    // 重置心情选择（重新打卡）
     resetMoodPick() { this.moodPicking = true; },
+    // 全勤后引导做心情打卡
     remindMoodCheckin() {
       // 全勤后轻提醒打卡：30% 概率不打扰，每个会话最多一次
       try {
@@ -1526,12 +1652,15 @@ createApp({
       } catch (e) { /* 隐私模式等异常忽略 */ }
     },
     /* ─────────── 奖励闭环 + 成长周报（Sprint 3） ─────────── */
+    // 心愿状态 code → 中文（待确认/达标/已兑现）
     wishStatusLabel(s) {
       return { pending: '待家长确认', active: '进行中', pending_redeem: '达标待兑现', redeemed: '已兑现', archived: '已移除' }[s] || s;
     },
+    // 优惠券类型 → 图标
     couponIcon(k) {
       return { cartoon: '📺', snack: '🍪', sticker: '🌟', toy: '🧸', outing: '🎡', custom: '🎫' }[k] || '🎫';
     },
+    // 任务设置项标题展示（带进度文案）
     _displayTaskTitle(ts) {
       if (!ts) return '';
       // 替换标题中最后一个数字为 N（避免误改"60秒"等固定值）
@@ -1543,11 +1672,13 @@ createApp({
       }
       return parts.join('');
     },
+    // 加载奖励小屋概览（心愿/优惠券/进度）
     loadRewards() {
       this.api(`/api/rewards/overview?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.rewards = d || { coupons: [], wish: null }; })
         .catch(() => { this.rewards = { coupons: [], wish: null }; });
     },
+    // 加载家长面板：补签待确认 + 申诉 + 学习数据
     loadParentPanel() {
       this.api(`/api/rewards/parent-note?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.parentNote = (d && d.note) || ''; }).catch(() => { this.parentNote = ''; });
@@ -1561,11 +1692,13 @@ createApp({
       this.loadPendingMakeup();
     },
     /* ─────────── 孩子申诉（AI 判题复核 + 家长二次确认）─────────── */
+    // 加载待处理申诉列表（孩子「我做对了」）
     loadAppeals() {
       this.api(`/api/appeal/list?user_id=${encodeURIComponent(this.user)}&status=pending`)
         .then(d => { this.pendingAppeals = (d && d.appeals) || []; })
         .catch(() => { this.pendingAppeals = []; });
     },
+    // 家长裁定申诉：ok=true 判孩子对，否则维持错
     decideAppeal(a, ok) {
       this.api('/api/appeal/decide', {
         method: 'POST',
@@ -1576,6 +1709,7 @@ createApp({
         this.loadChildStats();
       }).catch(e => this.showToast(e.message));
     },
+    // 孩子发起「我做对了」申诉（家长二次确认）
     appealThis() {
       const it = this.quiz.items[this.quiz.i];
       if (!it || !it.answered || it.correct || it.appealed) return;
@@ -1606,6 +1740,7 @@ createApp({
       }).catch(e => this.showToast(e.message));
     },
     /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
+    // 退出家长模式：清除解锁标识与密码头
     exitParentMode() {
       sessionStorage.removeItem('zx_parent_open');
       sessionStorage.removeItem('zx_parent_pwd');
@@ -1614,6 +1749,7 @@ createApp({
       this.loadRewards(); // 刷新孩子端数据（券状态等）
       this.showToast('已退出家长模式 🔒');
     },
+    // 进入设置页初始化家长面板（状态/密码/留言）
     initParentPanel() {
       // 会话内已解锁过（sessionStorage），直接打开
       if (sessionStorage.getItem('zx_parent_open') === '1') { this.parentPhase = 'open'; this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); return; }
@@ -1624,9 +1760,11 @@ createApp({
         })
         .catch(() => { this.parentPhase = 'unset'; });
     },
+    // 重置家长密码表单字段
     _resetPwdForm() {
       this.pwdForm = { pwd: '', pwd2: '', hintQ: '', hintA: '', unlock: '', resetA: '', resetPwd: '', old: '', new1: '', new2: '' };
     },
+    // 首次设置家长密码（含密保问题）
     setupParentPwd() {
       const { pwd, pwd2, hintQ, hintA } = this.pwdForm;
       if (!pwd || pwd.length < 4 || pwd.length > 32) return this.showToast('密码需 4-32 位');
@@ -1644,6 +1782,7 @@ createApp({
         this.showToast('家长密码已设置，家长管理已解锁 🔓');
       }).catch(e => this.showToast(e.message));
     },
+    // 家长密码解锁：校验通过后写入 X-Parent-Pwd 头与解锁态
     unlockParent() {
       const pwd = this.pwdForm.unlock;
       if (!pwd) return this.showToast('请输入家长密码');
@@ -1658,6 +1797,7 @@ createApp({
         this.showToast('欢迎回来，家长 👋');
       }).catch(e => this.showToast(e.message));
     },
+    // 通过密保问题重置家长密码
     resetParentPwd() {
       const { resetA, resetPwd } = this.pwdForm;
       if (!resetA.trim() || !resetPwd) return this.showToast('请填写密保答案和新密码');
@@ -1671,6 +1811,7 @@ createApp({
         this.showToast('密码已重置，请用新密码解锁 🔓');
       }).catch(e => this.showToast(e.message));
     },
+    // 修改家长密码（需旧密码）
     changeParentPwd() {
       const { old, new1, new2 } = this.pwdForm;
       if (!old || !new1) return this.showToast('请填写当前密码和新密码');
@@ -1685,16 +1826,19 @@ createApp({
         this.showToast('家长密码已修改 ✅');
       }).catch(e => this.showToast(e.message));
     },
+    // 家长端：加载孩子学习数据概览
     loadChildStats() {
       this.api(`/api/parent/child-stats?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.childStats = d || this.childStats; })
         .catch(() => {});
     },
+    // 加载每日题数设置（各科的强制任务量）
     loadExamSettings() {
       this.api(`/api/parent/exam-settings?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.examMin = d || this.examMin; })
         .catch(() => {});
     },
+    // 保存每日题数设置
     saveExamSettings() {
       const m = { math_min: Number(this.examMin.math_min), chi_min: Number(this.examMin.chi_min), eng_min: Number(this.examMin.eng_min) };
       for (const k in m) {
@@ -1706,6 +1850,7 @@ createApp({
       }).then(d => { this.examMin = d || this.examMin; this.showToast('试卷最少题数已保存 ✅'); })
         .catch(e => this.showToast(e.message));
     },
+    // 家长发送留言给孩子（接口 /api/parent/message）
     sendParentMsg() {
       const content = (this.parentMsg || '').trim();
       if (!content) return this.showToast('写点什么再发送吧');
@@ -1717,37 +1862,44 @@ createApp({
         this.showToast('留言已发送，孩子登录就能看到 💌');
       }).catch(e => this.showToast(e.message));
     },
+    // 家长端：加载已发送留言
     loadSentMsgs() {
       this.api(`/api/parent/messages?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.sentMsgs = (d && d.messages) || []; })
         .catch(() => { this.sentMsgs = []; });
     },
+    // 加载家长写给孩子的留言（含未读数）
     loadParentMsgs() {
       this.api(`/api/parent/messages?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.parentMsgs = d || { unread: 0, messages: [] }; })
         .catch(() => { this.parentMsgs = { unread: 0, messages: [] }; });
     },
+    // 标记家长留言为已读
     markMsgsRead() {
       this.api('/api/parent/messages/read', {
         method: 'POST', body: JSON.stringify({ user_id: this.user }),
       }).then(() => { this.loadParentMsgs(); this.loadNotices(); })
         .catch(() => {});
     },
+    // 打开家长留言面板
     openMessages() {
       this.goTab('home');
       this.markMsgsRead();
       this.showToast('家长留言已打开 💌');
     },
+    // 加载首页提醒（未读留言/心愿待确认/可兑现）
     loadNotices() {
       this.api(`/api/parent/notices?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.notices = d || null; })
         .catch(() => { this.notices = null; });
     },
+    // 加载成长奖励记录时间线
     loadRewardTimeline() {
       this.api(`/api/rewards/timeline?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.rewardTimeline = (d && d.items) || []; })
         .catch(() => { this.rewardTimeline = []; });
     },
+    // 加载每日任务设置项（强制/可选/禁用）
     loadTaskSettings() {
       this.api(`/api/tasks/settings?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
@@ -1755,6 +1907,7 @@ createApp({
         })
         .catch(() => { this.taskSettings = { items: [] }; });
     },
+    // 打开任务设置弹窗并预填当前配置
     showTaskSettingsDialog() {
       // 初始化弹窗数据
       const items = this.taskSettings.items || [];
@@ -1790,9 +1943,11 @@ createApp({
       const subOpts = { math: mathOpts, chi: chiOpts, eng: engOpts };
       this.taskDialog = { show: true, mandatory, optional, disabled, mathOpts, chiOpts, engOpts, subOpts };
     },
+    // 取某学科的可选任务选项（用于设置弹窗）
     _optForSubj(subj) {
       return this.allTaskOptions.filter(t => t.subject === subj);
     },
+    // 保存任务设置（强制任务分配/可选任务/禁用项）
     saveTaskDialog() {
       const targets = {};
       const enabled = {};
@@ -1831,6 +1986,7 @@ createApp({
         this.showToast('任务设置已保存 ✅');
       }).catch(e => this.showToast(e.message));
     },
+    // 家长新建优惠券（自定义奖励）
     createCoupon() {
       const title = (this.newCoupon.title || '').trim();
       if (!title) return this.showToast('先写下兑换券内容');
@@ -1844,6 +2000,7 @@ createApp({
         this.showToast(requiredDays > 0 ? `已添加：三科全勤 ${requiredDays} 天可得 🎫` : '兑换券已添加 🎫');
       }).catch(e => this.showToast(e.message));
     },
+    // 孩子兑换优惠券（扣减剩余次数）
     redeemCoupon(c) {
       this.api(`/api/rewards/coupon/${c.id}/redeem`, {
         method: 'POST', body: JSON.stringify({ user_id: this.user }),
@@ -1852,6 +2009,7 @@ createApp({
         this.showToast(`已核销 1 张「${c.title}」✅`);
       }).catch(e => this.showToast(e.message));
     },
+    // 启用/停用优惠券
     toggleCoupon(c) {
       this.api(`/api/rewards/coupon/${c.id}/toggle`, {
         method: 'POST', body: JSON.stringify({ user_id: this.user }),
@@ -1859,7 +2017,9 @@ createApp({
         this.loadParentPanel(); this.loadRewards();
       }).catch(e => this.showToast(e.message));
     },
+    // 打开许心愿弹窗并重置表单
     startWish() { this.wishOverlay.title = ''; this.wishOverlay.target = 5; this.wishOverlay.wish_type = 'task_count'; this.wishOverlay.daily_target = 3; this.wishOverlay.show = true; },
+    // 提交心愿（待家长确认后才开始累计）
     submitWish() {
       const title = (this.wishOverlay.title || '').trim();
       if (!title) return this.showToast('写下你的心愿吧');
@@ -1873,6 +2033,7 @@ createApp({
         this.showToast('心愿已许下，等家长确认 ✨');
       }).catch(e => this.showToast(e.message));
     },
+    // 家长确认心愿开始（激活进度累计）
     confirmWish(w) {
       const url = w.status === 'pending' ? `/api/rewards/wish/${w.id}/confirm` : `/api/rewards/wish/${w.id}/redeem`;
       const body = { user_id: this.user };
@@ -1883,6 +2044,7 @@ createApp({
           this.showToast(w.status === 'pending' ? '心愿已确认开始，孩子加油 🌟' : '已兑现，太棒了 🎉');
         }).catch(e => this.showToast(e.message));
     },
+    // 归档已完成/失效的心愿
     archiveWish(w) {
       this.api(`/api/rewards/wish/${w.id}/archive`, {
         method: 'POST', body: JSON.stringify({ user_id: this.user }),
@@ -1891,6 +2053,7 @@ createApp({
         this.showToast('心愿已移除');
       }).catch(e => this.showToast(e.message));
     },
+    // 打开上周成长周报（AI 总结 + 家长悄悄话）
     openWeekly() {
       this.weeklyOverlay.show = true;
       this.weeklyLoading = true;
@@ -1909,6 +2072,7 @@ createApp({
         this.showToast(e.message || '周报生成失败，稍后再试');
       }).finally(() => { this.weeklyLoading = false; });
     },
+    // 生成周报分享图
     shareWeekly() {
       if (!window.html2canvas) return this.showToast('分享组件未加载，请刷新后重试');
       const el = document.querySelector('.share-target');
@@ -1917,6 +2081,7 @@ createApp({
         .then(canvas => { this.shareImg = canvas.toDataURL('image/png'); })
         .catch(() => this.showToast('生成图片失败，可直接截图分享'));
     },
+    // 保存家长写给孩子的悄悄话
     saveParentNote() {
       this.api('/api/rewards/parent-note', {
         method: 'POST',
@@ -1926,6 +2091,7 @@ createApp({
       }).catch(e => this.showToast(e.message));
     },
     /* ─────────── 称号系统（Sprint 4） ─────────── */
+    // 加载称号体系与当前进度（含下一级所需）
     loadTitles() {
       this.api(`/api/user/titles?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
@@ -1939,20 +2105,24 @@ createApp({
         }).catch(() => {});
     },
     /* ─────────── 60 秒挑战赛（Sprint 4） ─────────── */
+    // 加载挑战赛历史最佳（数学/单词）
     loadChalBest() {
       this.api(`/api/challenge/records?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.chalBest = d || { math: { best: 0 }, word: { best: 0 } }; })
         .catch(() => {});
     },
+    // 打开 60 秒挑战赛浮层并拉历史最佳
     openChal() {
       this.chalOverlay.show = true;
       this.chalOverlay.stage = 'pick';
       this.loadChalBest();
     },
+    // 关闭挑战赛浮层（清理 60s 计时器）
     closeChal() {
       if (this._chalTimer) { clearInterval(this._chalTimer); this._chalTimer = null; }
       this.chalOverlay.show = false;
     },
+    // 拉取 25 题并启动 60 秒倒计时答题（kind=math/word）
     startChallenge(kind) {
       this.api(`/api/challenge/questions?user_id=${encodeURIComponent(this.user)}&kind=${kind}&grade=${this.grade}&count=25`)
         .then(d => {
@@ -1972,6 +2142,7 @@ createApp({
           }, 1000);
         }).catch(e => this.showToast(e.message));
     },
+    // 提交一题答案：对则累计并触发连击，错则断连击
     chalAnswer(val) {
       if (this.chalOverlay.stage !== 'run') return;
       const q = this.curChalQ;
@@ -1991,6 +2162,7 @@ createApp({
       this.chalOverlay.input = '';
       if (this.chalOverlay.i >= this.chalOverlay.questions.length) this.endChallenge();
     },
+    // 结束挑战：清计时器、判是否破纪录并上报成绩
     endChallenge() {
       if (this._chalTimer) { clearInterval(this._chalTimer); this._chalTimer = null; }
       const kind = this.chalOverlay.kind;
@@ -2006,11 +2178,13 @@ createApp({
       }).catch(() => { this.chalOverlay.stage = 'done'; });
     },
     /* ─────────── 学期目标（Sprint 4） ─────────── */
+    // 加载学期目标列表
     loadGoals() {
       this.api(`/api/goals?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.goals = (d && d.goals) || []; })
         .catch(() => { this.goals = []; });
     },
+    // 提交新目标（分数/消灭错题/背诵）
     submitGoal() {
       const target = Number(this.goalOverlay.target) || 0;
       if (target <= 0) return this.showToast('写下目标值（正整数）');
@@ -2026,17 +2200,20 @@ createApp({
         this.showToast('目标已立下，冲鸭 🎯');
       }).catch(e => this.showToast(e.message));
     },
+    // 标记目标已达成
     doneGoal(g) {
       this.api(`/api/goals/${g.id}/done`, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
         .then(() => { this.loadGoals(); this.showToast('目标达成，太棒了 🏆'); })
         .catch(e => this.showToast(e.message));
     },
+    // 归档目标
     archiveGoal(g) {
       this.api(`/api/goals/${g.id}/archive`, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
         .then(() => { this.loadGoals(); })
         .catch(e => this.showToast(e.message));
     },
     /* ─────────── 小老师模式（Sprint 4 + PRD 17：1-3 道错题） ─────────── */
+    // 加载小老师待讲题卡（孩子讲、家长评）
     loadTeachCards() {
       return this.api(`/api/teach/active?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
@@ -2046,6 +2223,7 @@ createApp({
           return this.teachOverlay;
         });
     },
+    // 打开讲题卡（孩子输入讲解内容）
     openTeach(w) {
       if (!w.cause) { this.showToast('请先选择错因，才能出题给家长'); return; }
       this.api('/api/teach/create', {
@@ -2054,6 +2232,7 @@ createApp({
       }).then(() => this.loadTeachCards())
         .catch(e => this.showToast(e.message));
     },
+    // 讲题卡进入下一步（提示/提交）
     nextTeach() {
       const idx = this.teachOverlay.idx + 1;
       if (idx >= this.teachOverlay.cards.length) return this.closeTeach();
@@ -2063,11 +2242,13 @@ createApp({
       this.teachOverlay.answerText = '';
       this.teachOverlay.result = '';
     },
+    // 关闭讲题卡
     closeTeach() {
       this.teachOverlay.show = false;
       this.loadTeachDue();
       this.loadTitles();
     },
+    // 提交讲题内容（进入家长评分）
     submitTeachAnswer() {
       const text = (this.teachOverlay.answerText || '').trim();
       if (!text) return this.showToast('家长先写下答案吧');
@@ -2080,6 +2261,7 @@ createApp({
         this.teachOverlay.step = 3;
       }).catch(e => this.showToast(e.message));
     },
+    // 家长给讲题打分（ok=true 通过）
     gradeTeach(ok) {
       this.api('/api/teach/grade', {
         method: 'POST',
@@ -2098,15 +2280,18 @@ createApp({
         }
       }).catch(e => this.showToast(e.message));
     },
+    // 加载到期讲题卡（待孩子讲）
     loadTeachDue() {
       this.api(`/api/teach/due?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.teachDue = (d && d.items) || []; })
         .catch(() => { this.teachDue = []; });
     },
+    // 打开讲题复核（确认是否真听懂）
     openRecheck() {
       if (!this.teachDue.length) return;
       this.recheckOverlay = { show: true, card: this.teachDue[0], answerText: '' };
     },
+    // 提交复核答案（复查掌握度）
     submitRecheck() {
       const text = (this.recheckOverlay.answerText || '').trim();
       if (!text) return this.showToast('写出你的答案');
@@ -2123,6 +2308,7 @@ createApp({
       }).catch(e => this.showToast(e.message));
     },
     /* ─────────── AI 即时鼓励语（Sprint 4） ─────────── */
+    // 拉取 AI 鼓励语（按上下文）
     askEncourage(ctx) {
       if (!this.user) return;
       this.api('/api/ai/encourage', {
@@ -2132,9 +2318,11 @@ createApp({
         if (d && d.text) this.showFloat('💬 ' + d.text, false, 3000);
       }).catch(() => {});
     },
+    // 错因 code → 中文
     causeLabel(c) {
       return { careless: '粗心大意', concept: '概念不清', method: '方法不会', reading: '审题失误', ai: 'AI 讲解' }[c] || '';
     },
+    // 提交错题归因（结算页选错因）
     submitCause(c) {
       if (!this.curWrong) return;
       this.api('/api/study/cause', {
@@ -2147,6 +2335,7 @@ createApp({
       }).catch(e => this.showToast(e.message));
     },
     /* 未答题作答：先做再判断对错 */
+    // 补答此前未作答的错题
     answerUnanswered() {
       if (!this.curWrong || !this.curWrong.is_unanswered) return;
       const ans = (this.curWrong._answerInput || '').trim();
@@ -2169,11 +2358,13 @@ createApp({
     },
     /* 「标记已掌握」= 掌握检测：先做 3 道同类型题，全部答对才真正标记已掌握，
        防止"假掌握"。答对结果由 /api/study/practice-submit 按 record 分组整组判定 */
+    // 标记错题已掌握（移出错题本）
     markWrongMastered(w) {
       if (!w.cause) { this.showToast('请先选择错因，才能检测掌握'); return; }
       this.showToast('先做 3 道同类型题，全部答对才算掌握');
       this.startWrongRetry(w, { mastery: true });
     },
+    // 加载错题分析（按错因/学科分布）
     loadAnalysis() {
       this.api(`/api/study/errors/analysis?user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`)
         .then(r => {
@@ -2182,22 +2373,27 @@ createApp({
           this.wrongBadge = r.pending || 0;
         }).catch(() => {});
     },
+    // 错因 → 配色（饼图/标签）
     causeColor(c) {
       return { careless: '#F5A623', concept: '#4E7CF6', method: '#8B7CF6', reading: '#F2604C', ai: '#34C77B' }[c] || '#93A1BD';
     },
+    // 学科 → 配色
     subjColor(s) {
       return { '数学': '#F5A623', '英语': '#4E7CF6', '语文': '#34C77B' }[s] || '#93A1BD';
     },
+    // 某学科正确率百分比
     subjPct(s) {
       const arr = this.wrongAnalysis.by_subject || [];
       const max = Math.max(1, ...arr.map(x => x.count || 0));
       return Math.round((s.count || 0) / max * 100);
     },
+    // 某错因占比百分比
     causePct(c) {
       const arr = this.wrongAnalysis.by_cause || [];
       const max = Math.max(1, ...arr.map(x => x.pending || 0));
       return Math.round((c.pending || 0) / max * 100);
     },
+    // 错题重做入口（单题或整组），启动答题状态机
     startWrongRetry(w, opts = {}) {
       if (!w.cause) { this.showToast('请先选择错因，才能进行重练'); return; }
       this.api('/api/study/retry', {
@@ -2218,6 +2414,7 @@ createApp({
     },
     /* 错题攻坚页「练习错题」：从错题本（当前学科，未掌握）抽 5 道错题，
        每道错题配 3 道同类型新题，整组全对才算修正 */
+    // 错题综合练习（组卷后进入答题）
     startWrongPractice() {
       this.api('/api/exam/wrong/practice-quiz', {
         method: 'POST',
@@ -2258,29 +2455,36 @@ createApp({
     },
 
     /* ─────────── 试卷中心 ─────────── */
+    // 加载试卷中心列表
     loadPapers() {
       this.api(`/api/exam/records?subject=${encodeURIComponent(this.subject)}`)
         .then(ps => {
           this.papers = ps || [];
         }).catch(() => { this.papers = []; });
     },
+    // 预览试卷 → 转答题
     previewPaper(p) { this.startExamQuiz(p.id, p.title); },
+    // 下载试卷 PDF（新标签打开）
     downloadPaper(p) { window.open(`/api/exam/download/${p.id}`, '_blank'); },
 
     /* ─────────── 统计 ─────────── */
+    // 加载学习统计页数据
     loadStats() {
       this.loadVocabStats(); this.loadClassicalStats(); this.loadGrammarStats(); this.loadAttempts();
       this.loadMood();
       this.api(`/api/study/self-compare?user_id=${encodeURIComponent(this.user)}&subject=${encodeURIComponent(this.subject)}`)
         .then(d => { this.selfCompare = d || null; }).catch(() => { this.selfCompare = null; });
     },
+    // 加载语法统计
     loadGrammarStats() {
       this.api(`/api/grammar/stats?grade=${this.grade}`)
         .then(r => { this.grammarStats = r || {}; }).catch(() => {});
     },
+    // 通用百分比：b 为 0 时返回 0
     statPct(a, b) { return b ? Math.round((a || 0) / b * 100) : 0; },
 
     /* ─────────── 通用答题状态机 ─────────── */
+    // 启动通用答题状态机（title/题目/来源）
     startQuiz({ title, items, source }) {
       this.quiz = {
         active: true, done: false, title,
@@ -2289,6 +2493,7 @@ createApp({
       };
       this.combo = 0; this.maxCombo = 0; this.chestReward = '';
     },
+    // 答题选项样式：对/错/未选
     qOptClass(item, oi) {
       if (!item.answered) return '';
       const letter = 'ABCDEFGH'[oi];
@@ -2296,6 +2501,7 @@ createApp({
       if (item.selected === oi) return 'wrong';
       return '';
     },
+    // 选择题作答（记录选项索引）
     pickOption(oi) {
       const it = this.quiz.items[this.quiz.i];
       if (it.answered) return;
@@ -2305,6 +2511,7 @@ createApp({
       it.userAnswer = letter;
       this._afterAnswer(it);
     },
+    // 填空题提交（记录填空文本）
     submitFill() {
       const it = this.quiz.items[this.quiz.i];
       if (it.answered) return;
@@ -2314,6 +2521,7 @@ createApp({
       it.correct = this._matchAnswer(ua, it.answer);
       this._afterAnswer(it);
     },
+    // 答题后处理：判定对错、连击、飘字反馈
     _afterAnswer(it) {
       it.answered = true;
       if (it.correct) {
@@ -2341,22 +2549,26 @@ createApp({
         }).catch(() => {});
       }
     },
+    // 浮动反馈飘字（连击/全对/奖励等）
     showFloat(text, ok, ms = 700) {
       this.floatFx = { show: true, text, ok };
       clearTimeout(this._ft);
       this._ft = setTimeout(() => { this.floatFx.show = false; }, ms);
     },
+    // 结算页选择错因标签
     pickCause(c) {
       const it = this.quiz.items[this.quiz.i];
       if (!it || !it.answered || it.correct || it.cause) return;
       it.cause = c;
       this.showToast('错因已记录，将针对性推送变式练习 ✨');
     },
+    // 极速模式开关（减少动效/连点）
     toggleTurbo() {
       this.turbo = !this.turbo;
       localStorage.setItem('zx_turbo', this.turbo ? '1' : '0');
       this.showToast(this.turbo ? '极速模式已开启（动画加速）' : '极速模式已关闭');
     },
+    // 答题下一题或进入结算
     quizNext() {
       // AI 讲解生成中禁止进入下一题（防止讲解被跳过/重复点击）
       const it = this.quiz.items[this.quiz.i];
@@ -2364,6 +2576,7 @@ createApp({
       if (this.quiz.i < this.quiz.items.length - 1) { this.quiz.i++; this.quiz.fillText = ''; }
       else this.finishQuiz();
     },
+    // 答题结算：上报成绩并展示星评
     finishQuiz() {
       // 防重复提交：done 已为 true 说明本次已提交过（双击"查看结果"/重复点击），直接忽略
       if (this.quiz.done) return;
@@ -2562,6 +2775,7 @@ createApp({
       }
       this.refreshAll();
     },
+    // 关闭答题浮层
     closeQuiz() {
       const src = this.quiz.source;
       if (src && src.mode === 'dictate' && !this.quiz.done) {
@@ -2600,6 +2814,7 @@ createApp({
       this.quiz.active = false;
       this.refreshAll();
     },
+    // 再来一局（同套题重做）
     quizAgain() {
       const src = this.quiz.source;
       if (!src) return;
@@ -2610,11 +2825,13 @@ createApp({
       }
       else if (src.mode === 'classical') this.startTextQuiz({ id: src.text_id, title: src.textTitle });
     },
+    // 关闭答题并跳转到指定 tab
     closeQuizGo(tab) {
       this.quiz.active = false;
       this.refreshAll();
       this.goTab(tab);
     },
+    // 试卷 → 答题状态机（拉取题目后开答）
     startExamQuiz(examId, title) {
       this.api(`/api/exam/${examId}/questions`)
         .then(qs => {
@@ -2625,12 +2842,14 @@ createApp({
           this.startQuiz({ title: title || '在线做题', items, source: { mode: 'exam', exam_id: examId, startedAt: Date.now() } });
         }).catch(e => this.showToast(e.message));
     },
+    // 解析题干中的选项字符串（A. ... B. ...）
     _parseOpts(s) {
       if (!s) return [];
       try { const d = JSON.parse(s); return Array.isArray(d) ? d : []; } catch (e) { return []; }
     },
     /* 容错判题（与后端 app/services/answer_check.py 完全一致）：
        孩子写简便方法过程（如 2*(999+1)=2*1000=2000）也算对 */
+    // 清洗题干分段（去空白/标记）
     _cleanSeg(seg) {
       let x = String(seg).replace(/[^0-9+\-*/().%]+$/g, '');   // 剥单位："2000元"→"2000"
       if (!x) return null;
@@ -2642,6 +2861,7 @@ createApp({
       return x;
     },
     /* 安全求值简单算术表达式（+ - * / 括号、小数）；非法/除零 → null */
+    // 安全计算数学表达式（仅允许数字与四则运算）
     _mathEval(expr) {
       const s = this._cleanSeg(expr);
       if (!s || /[^0-9+\-*/().]/.test(s) || s.includes('%')) return null;
@@ -2686,6 +2906,7 @@ createApp({
       return v !== null && i === n ? v : null;
     },
     /* 答案的最终结果值：'=' 分段取最后一段求值（用户陈述的结果），不可求值时取第一个可求值段 */
+    // 结果字符串 → 数值（用于答案比较）
     _resultValue(s) {
       const segs = s.split('=');
       const last = this._mathEval(segs[segs.length - 1]);
@@ -2693,6 +2914,7 @@ createApp({
       for (const seg of segs) { const v = this._mathEval(seg); if (v !== null) return v; }
       return null;
     },
+    // 答案归一化比较（忽略大小写/空白/等价数值）
     _matchAnswer(ua, ans) {
       const stripAnnot = s => {   // 仅剥含非数学字符的末尾括号注释（共N个/原式=…），算式括号保留
         for (;;) {
