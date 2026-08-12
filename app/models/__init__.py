@@ -25,6 +25,7 @@ from .sprint4 import ChallengeRecord, TeachingRecord
 from .middle import MiddleQuestion, TeachingProgress
 from .paper import Paper, PaperQuestion
 from .sync import SyncQuizLog
+from .essay import EssayGrade
 
 __all__ = [
     "Word", "WordBook",
@@ -55,4 +56,5 @@ __all__ = [
     "MiddleQuestion", "TeachingProgress",
     "Paper", "PaperQuestion",
     "SyncQuizLog",
+    "EssayGrade",
 ]
