@@ -1,5 +1,6 @@
 // 侧边栏导航分组（P5：16 项平铺 → 4 分组，新增「钱包」）
 // 每项：name=路由名/组件名，tab=旧版 tab 标识，label/ico 展示用
+// NAV_GROUPS 为桌面端侧边栏的四组分导航数据，驱动 App.vue 的侧边栏渲染
 export const NAV_GROUPS = [
   {
     title: '学习',
@@ -51,4 +52,5 @@ export const TABBAR = [
   { tab: 'settings', label: '我的', ico: '⚙️' },
 ]
 
+// 汇总所有 tab 标识，用于校验 URL/路由合法性、切换白名单等
 export const ALL_TABS = NAV_GROUPS.flatMap(g => g.items.map(i => i.tab))

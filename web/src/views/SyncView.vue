@@ -81,22 +81,28 @@
 import { api } from '../api/http.js'
 export default {
   name: 'SyncView',
+  // 同步学组件：按学科/年级浏览课本单元，含单元要点、同步练习、单元小测（10 题过关制）
   data() {
     let user = '', grade = 6
     try { const z = JSON.parse(localStorage.getItem('zx_user') || '{}'); user = z.user || ''; grade = z.grade || 6 } catch (e) {}
     return {
-      user, grade, subjects: ['语文', '数学', '英语'], subject: '英语', includeNext: false,
-      units: [], loading: false, active: null, points: [],
-      practice: [], picked: {}, fillAns: {}, fillBack: {},
-      quiz: { questions: [], token: '' }, quizPicked: {}, quizFill: {}, quizResult: null,
+      user, grade,
+      subjects: ['语文', '数学', '英语'], subject: '英语', // 默认英语
+      includeNext: false, // 是否纳入下学期预习单元
+      units: [], loading: false, active: null, points: [], // units=单元总览；active=当前展开单元；points=要点
+      practice: [], picked: {}, fillAns: {}, fillBack: {}, // 同步练习：选项选中态/填空答案/判分结果
+      quiz: { questions: [], token: '' }, quizPicked: {}, quizFill: {}, quizResult: null, // 单元小测：token 防重复提交
     }
   },
   mounted() { this.loadOverview() },
   methods: {
+    // 切换学科：收起当前单元并重新拉取总览
     switchSubject(s) { this.subject = s; this.active = null; this.loadOverview() },
+    // 单元状态 → 标签配色（已过关/进行中/其它）
     statusClass(s) {
       return s === '已过关' ? 'tag-green' : s === '进行中' ? 'tag-orange' : 'tag-gray'
     },
+    // 拉取单元总览列表
     async loadOverview() {
       this.loading = true
       try {
@@ -104,34 +110,40 @@ export default {
         this.units = r.units || []
       } finally { this.loading = false }
     },
+    // 展开单元：清空练习/小测态，并加载该单元要点
     async selectUnit(u) {
       this.active = u; this.practice = []; this.quiz = { questions: [], token: '' }; this.quizResult = null
       this.picked = {}; this.fillAns = {}; this.fillBack = {}
       const r = await api(`/api/sync/unit-points?subject=${encodeURIComponent(this.subject)}&grade=${this.grade}&unit=${encodeURIComponent(u.unit)}`)
       this.points = r.points || []
     },
+    // 生成同步练习（选择题+填空题）
     async startPractice() {
       if (!this.active) return
       const r = await api(`/api/sync/unit-practice?subject=${encodeURIComponent(this.subject)}&grade=${this.grade}&unit=${encodeURIComponent(this.active.unit)}`)
       this.practice = r.items || []
       this.picked = {}; this.fillAns = {}; this.fillBack = {}
     },
+    // 选择题作答（仅首次点击有效，答后锁定）
     pick(i, j, it) {
       if (this.picked[i] !== undefined) return
       this.picked[i] = j
     },
+    // 填空题判分（仅首次有效），小写归一化比较
     judgeFill(i, it) {
       if (this.fillBack[i] !== undefined) return
       const ua = (this.fillAns[i] || '').trim().toLowerCase()
       const ca = (it.answer || '').trim().toLowerCase()
       this.fillBack = Object.assign({}, this.fillBack, { [i]: ua === ca })
     },
+    // 生成单元小测（返回题目与本次 token，token 随交卷回传用于校验）
     async startQuiz() {
       if (!this.active) return
       const r = await api(`/api/sync/unit-quiz/generate?subject=${encodeURIComponent(this.subject)}&grade=${this.grade}&unit=${encodeURIComponent(this.active.unit)}`)
       this.quiz = { questions: r.questions || [], token: r.token || '' }
       this.quizPicked = {}; this.quizFill = {}; this.quizResult = null
     },
+    // 交卷：汇总各题用户作答（选择/填空），带 token 提交；回填结果并刷新总览（更新过关状态/小测次数）
     async submitQuiz() {
       const answers = this.quiz.questions.map((q, i) => {
         let ua = ''

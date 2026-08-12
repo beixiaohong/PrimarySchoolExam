@@ -3,13 +3,16 @@
 export function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' }
   try {
+    // 家长解锁后台期间，sessionStorage 存有家长密码；此处自动附加到请求头，
+    // 服务端据此授权访问/操作敏感数据（如补签、转账），避免每次手动传参
     const pp = sessionStorage.getItem('zx_parent_pwd')
     if (pp) headers['X-Parent-Pwd'] = pp
   } catch (e) { /* 隐私模式等异常忽略 */ }
   return fetch(path, Object.assign({ headers }, opts)).then(async r => {
     const t = await r.text()
     let d = t
-    try { d = JSON.parse(t) } catch (e) { /* 非 JSON */ }
+    try { d = JSON.parse(t) } catch (e) { /* 非 JSON（如纯文本响应）原样返回 */ }
+    // 统一错误封装：优先取后端 detail 字段作为错误信息
     if (!r.ok) throw new Error(typeof d === 'object' && d ? (d.detail || '请求失败') : String(d))
     return d
   })

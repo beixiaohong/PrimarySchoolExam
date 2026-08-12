@@ -1510,6 +1510,7 @@
             </div>
           </div>
 
+          <!-- 家长面板补签待确认区块：孩子用补签卡完成任务的申请在此由家长确认生效/拒绝退回 -->
           <div class="pc-sec">
             <div class="pc-title">🎫 补签卡待确认 <span class="more">孩子用补签卡完成的任务，需家长确认生效，拒绝则退回</span><span v-if="pendingMakeups.length" class="tag tag-orange">{{pendingMakeups.length}} 条待处理</span></div>
             <div class="pc-list" v-if="pendingMakeups.length">
@@ -2236,17 +2237,27 @@ import appOptions from './logic/appOptions.js'
 import { NAV_GROUPS, TABBAR, ALL_TABS } from './nav.js'
 import { useWalletStore } from './stores/wallet.js'
 
+// 根组件：承载登录、App Shell（侧边栏/顶栏）、各业务页面切换与全部业务逻辑的「壳」。
+// 绝大多数数据/方法来自 logic/appOptions.js 这个 mixin（通过展开合并），本文件只做三件事：
+//   1) 合并 appOptions 的 data/methods/mounted；2) 用 vue-router 做 URL ↔ tab 同步；
+//   3) 进入「钱包」tab 时拉取钱包数据。模板已用 ══ 注释分区，关键区块：登录屏、
+//      首次年级弹窗、强制/可选任务（含补签 makeup_pending）、复习队列（艾宾浩斯）、
+//      挑战赛浮层（答对≥80% 计入每日挑战，见模板 chalOverlay.correct*5>=total*4）。
 export default {
   ...appOptions,
   data() {
+    // 合并 mixin 的 data，并注入侧边栏/底部导航配置供模板渲染
     return { ...appOptions.data.call(this), NAV_GROUPS, TABBAR }
   },
   setup() {
+    // 钱包 store 仅在 App 级创建一次，供钱包页与各任务卡共用
     const wallet = useWalletStore()
     return { wallet }
   },
   methods: {
     ...appOptions.methods,
+    // 切换 tab：先复用 mixin 的逻辑（更新 this.tab、记录、刷新数据），
+    // 进入钱包则拉取钱包；最后把当前 tab 同步进 URL，支持深链/刷新保持页面
     goTab(t) {
       appOptions.methods.goTab.call(this, t)
       if (t === 'wallet') this.wallet.load(this.user, this.makeupCards)
@@ -2267,6 +2278,7 @@ export default {
     },
   },
   watch: {
+    // 浏览器前进/后退或深链进入时，URL 中的 tab 变化要同步到界面（含钱包拉取）
     '$route.params.tab'(t) {
       if (t && ALL_TABS.includes(t) && t !== this.tab && this.user) {
         appOptions.methods.goTab.call(this, t)
@@ -2276,6 +2288,7 @@ export default {
   },
   mounted() {
     appOptions.mounted.call(this)
+    // 首屏若 URL 已带合法 tab（如刷新后），直接定位到该 tab
     const t = this.$route && this.$route.params.tab
     if (t && ALL_TABS.includes(t) && t !== this.tab) {
       appOptions.methods.goTab.call(this, t)

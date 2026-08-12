@@ -1,3 +1,7 @@
+// appOptions：App.vue 的业务逻辑 mixin（选项对象，被 App.vue 展开合并）。
+// 集中承载登录/认证、首页任务（强制+可选+补签 makeup_pending）、复习队列（艾宾浩斯）、
+// 刷题/背诵/错题、家长面板（X-Parent-Pwd 密码头、补签确认、申诉）、挑战赛、宠物/成长树等全部 data 与 methods。
+// 注意：仅补充注释，未改动任何逻辑/字段；Vue 模板在 App.vue 内。
 const appOptions = {
   data() {
     return {
@@ -1076,7 +1080,12 @@ const appOptions = {
         .then(d => { this._applyDailyTasks(d, true); this.showToast('补签卡已使用，待家长确认后生效 ⏳'); })
         .catch(e => this.showToast(e.message));
     },
-    /* ─────────── 补签卡待确认（孩子发起 → 家长确认/拒绝）─────────── */
+    /* ─────────── 补签卡待确认（孩子发起 → 家长确认/拒绝）───────────
+       调用关系：
+         makeupCompleteTask 孩子用补签卡发起 → 服务端扣卡并把任务置为 makeup_pending（待家长确认）
+         loadPendingMakeup  家长面板拉取这些待确认申请（pendingMakeups，供「补签卡待确认」区块渲染）
+         confirmMakeup      家长确认生效/拒绝退回 → 回刷待确认列表与每日任务
+       三者串成「孩子补签 → 家长审核」闭环。 */
     loadPendingMakeup() {
       this.api(`/api/tasks/makeup/pending?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.pendingMakeups = (d && d.items) || []; })
@@ -1118,6 +1127,8 @@ const appOptions = {
       const eng = d.subjects['英语'] || {}, chi = d.subjects['语文'] || {}, mth = d.subjects['数学'] || {};
       return w(eng.wrong) + w(chi.wrong) + w(mth.wrong);
     },
+    // 复习队列：按艾宾浩斯遗忘曲线自动排程到期复习（单词/古诗文），
+    // 拉取后拆分「今天到期 / 明天 / 后天 / 3 天后」四个时间节点供首页时间轴展示
     loadReviewQueue() {
       this.api(`/api/study/review-queue?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(r => {

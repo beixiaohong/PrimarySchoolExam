@@ -22,6 +22,7 @@
       <div v-if="askError" class="err">{{ askError }}</div>
     </div>
 
+    <!-- 求解结果展示区 -->
     <div v-if="result" class="card answer-card">
       <div class="tag" :class="result.hit ? 'tag-green' : 'tag-blue'">
         {{ result.hit ? '题库命中' : 'AI 解答' }}<span v-if="result.cached"> · 缓存秒回</span>
@@ -40,6 +41,7 @@
       </div>
     </div>
 
+    <!-- 搜题历史区 -->
     <div class="card">
       <div class="sub-title">📚 我的搜题历史</div>
       <div v-if="!history.length" class="empty">暂无搜题记录</div>
@@ -57,14 +59,23 @@
 import { api } from '../api/http.js'
 export default {
   name: 'SearchView',
+  // 搜题组件：粘贴题干 → 调接口求解（题库命中或 AI 生成），可加入错题本并查看历史
   data() {
     let user = ''
     try { const z = JSON.parse(localStorage.getItem('zx_user') || '{}'); user = z.user || '' } catch (e) {}
-    return { user, subject: '', question: '', result: null, loading: false, askError: '',
-             history: [] }
+    return {
+      user,            // 当前登录用户（来自 localStorage 的 zx_user）
+      subject: '',     // 选填学科，不指定则留空
+      question: '',    // 题干输入
+      result: null,    // 求解结果（含命中标记 / AI 文本 / 费用）
+      loading: false,  // 求解中
+      askError: '',    // 求解失败提示
+      history: [],     // 历史搜题列表
+    }
   },
   mounted() { this.loadHistory() },
   methods: {
+    // 提交求解：组装请求体（可选学科），命中/未命中均回填 result 并刷新历史
     async ask() {
       this.loading = true; this.askError = ''
       try {
@@ -76,6 +87,7 @@ export default {
       } catch (e) { this.askError = e.message || '求解失败' }
       finally { this.loading = false }
     },
+    // 把当前结果加入错题本：命中题取答案，AI 题取 ai_text
     async addWrong() {
       if (!this.result) return
       const answer = this.result.hit ? (this.result.answer || '') : (this.result.ai_text || '')
@@ -86,12 +98,14 @@ export default {
         alert('已加入错题本')
       } catch (e) { alert(e.message || '加入失败') }
     },
+    // 拉取最近 50 条搜题历史（容错为空）
     async loadHistory() {
       try {
         const r = await api(`/api/search/history?user_id=${encodeURIComponent(this.user)}`)
         this.history = (r.history || []).slice(0, 50)
       } catch (e) { this.history = [] }
     },
+    // 点击历史项回填题干/学科并回到顶部，方便重问
     reuse(h) { this.question = h.question; if (h.subject) this.subject = h.subject; window.scrollTo(0, 0) }
   }
 }

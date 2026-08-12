@@ -67,20 +67,22 @@
 import { api } from '../api/http.js'
 export default {
   name: 'ReadingView',
+  // 阅读专项组件：按学科/年级随机抽一篇阅读理解，含客观选择 + 主观简答，交卷后逐题解析
   data() {
     let user = '', grade = 7
     try {
       const z = JSON.parse(localStorage.getItem('zx_user') || '{}')
       user = z.user || ''
-      grade = z.grade && z.grade >= 7 ? z.grade : 7
+      grade = z.grade && z.grade >= 7 ? z.grade : 7 // 英语阅读从 7 年级起，其余学科降级兜底为 7
     } catch (e) {}
     return {
       user, subjects: ['语文', '英语'], subject: '英语', grade,
       passage: null, loading: false,
-      picked: {}, shortAns: {}, result: null,
+      picked: {}, shortAns: {}, result: null, // picked=选择作答；shortAns=简答文本；result=判分结果
     }
   },
   computed: {
+    // 不同学科支持的年级选项（英语仅 7-9 年级）
     gradeOptions() {
       return this.subject === '英语' ? [7, 8, 9] : [5, 6, 7, 8, 9]
     },
@@ -103,10 +105,12 @@ export default {
         alert(e.message || '抽题失败')
       } finally { this.loading = false }
     },
+    // 选择题作答（交卷后锁定不可改）
     choose(i, j) {
       if (this.result) return
       this.picked = Object.assign({}, this.picked, { [i]: j })
     },
+    // 选项样式：作答前高亮选中；交卷后标正确项(opt-ok)，用户误选标红(opt-bad)
     optClass(i, j, q) {
       if (!this.result) return this.picked[i] === j ? 'opt-sel' : ''
       const d = this.detailOf(i)
@@ -115,6 +119,7 @@ export default {
       if (this.picked[i] === j) return 'opt-bad'
       return ''
     },
+    // 取第 i 题的判分明细（交卷后 result.detail 才有数据）
     detailOf(i) {
       if (!this.result) return {}
       return this.result.detail[i] || {}
