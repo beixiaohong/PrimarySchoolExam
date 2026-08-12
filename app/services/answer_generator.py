@@ -89,6 +89,9 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
                 continue
             pq.correct_answer = "[AI生成] " + ans
             ok += 1
+            # 分批提交，避免长任务中断时全部进度丢失
+            if ok % 50 == 0:
+                s.commit()
         if not dry_run:
             s.commit()
     logger.info("答案补全：本次处理 %d（待补共 %d），成功 %d，跳过 %d",

@@ -21,9 +21,13 @@ sys.path.insert(0, str(ROOT))
 
 from app.services.paper_crawler import run_collection, migrate_demo_papers, print_stats  # noqa: E402
 from app.services.answer_generator import fill_missing_answers, count_missing_answers  # noqa: E402
+from app.database import init_db  # noqa: E402
 
 
 def main():
+    # 任何子命令前先确保表结构/冗余列（grade/subject）到位，避免 MySQL 旧表缺列入库失败
+    init_db()
+
     parser = argparse.ArgumentParser(description="试卷采集与入库（第一试卷网）")
     parser.add_argument("--once", action="store_true", help="只跑一轮采集即退出")
     parser.add_argument("--migrate-demo", action="store_true",

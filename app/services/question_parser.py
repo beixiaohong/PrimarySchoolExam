@@ -44,7 +44,28 @@ OPTION_RE = re.compile(r'^[A-Da-d][\.．、]')
 # 纯拼音行（仅拉丁字母/声调符/空格，无汉字）——用于净化题干
 PINYIN_RE = re.compile(r'^[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü\s]+$')
 HAS_CJK = re.compile(r'[一-鿿]')
-ANSWER_HEAD_RE = re.compile(r'参考答案|答\s*案')
+# 答案小节标题：必须是真正的「参考答案」区，避免命中题干里的
+# "请将答案填在答题纸上" 等（那种会把试卷从中间错误切分、整段丢题）。
+# 规则：
+#   1) 含"参考答案"（题干从不会写"参考答案"）；
+#   2) 整行就是"答案/答案：/【答案】"；
+#   3) 整行以"答案"结尾（如"高二化学12月考试答案"），但前面不能是
+#      『的/请/写/填/…』等动词介词——以此排除"请将答案填在…""本题的答案是"。
+ANSWER_HEAD_RE = re.compile(
+    r'参考\s*答案'
+    r'|^\s*【?答\s*案】?\s*[:：]?\s*$'
+    r'|^\s*.*?(?<![的请写出填写找选下上中见是于对为与和及])答\s*案\s*[】)）]?\s*$'
+)
+# 答案区自己的大题标题（与正文一样支持全角句号 一．）
+ANSWER_SECTION_RE = re.compile(r'^([一二三四五六七八九十]+)[、．.]')
+# 紧凑选择答案：1A2B3C / 1.A 2.B / （1）A —— 提取 (题号, 字母)
+# 注意：不限制前导字符，以兼容『10D11D12B』这类数字紧跟字母的连写；
+# 误匹配风险极低（答案区罕见『数字+ABCD』的无关文本）。
+COMPACT_CHOICE_RE = re.compile(r'([0-9]{1,3})(?:\s*[\.\．、])?\s*([A-Da-d])')
+BRACKET_CHOICE_RE = re.compile(r'（\s*([0-9]{1,3})\s*）\s*([A-Da-d])')
+# 文本答案：17答：… / （1）要点… —— 提取 (题号, 答案文本)
+TEXTANS_RE = re.compile(r'(?:^|[^0-9])([0-9]{1,3})\s*答\s*[:：]\s*(.*?)$')
+TEXTANS2_RE = re.compile(r'（\s*([0-9]{1,3})\s*）\s*(.+?)$')
 BASE64_IMG_RE = re.compile(r'data:image/[^"\']+?;base64,[^"\']+?', re.I)
 BLOCK_TAGS = ['p', 'table', 'h1', 'h2', 'h3', 'h4', 'li', 'img', 'div']
 # 用于「块级叶子」切行的标签集合
@@ -253,6 +274,43 @@ def _attach_rich_html(html_content, questions):
             q['images'] = []
 
 
+def _extract_compact_answers(answer_block):
+    """从答案区行列表提取 (大题序号, 小题号) -> 字母/文本 的映射（兜底增强）。
+
+    兼容：
+      - 紧凑选择答案 '选择题：1A2B3C4D…24B'、'1.A 2.B'、'（1）A'
+      - 文本答案 '17答：…'、'（1）要点…'
+    大题序号随答案区的『一．/一、』递增；无标题内容归入第 1 大题。
+    仅在结构化 ans_exact 缺失时作为兜底，绝不覆盖已正确匹配的答案。
+    """
+    ans_choice = {}
+    ans_text = {}
+    cur_sec = 0
+    if not answer_block:
+        return ans_choice, ans_text
+    for raw in answer_block:
+        line = raw.strip()
+        if not line:
+            continue
+        msec = ANSWER_SECTION_RE.match(line)
+        if msec:
+            cur_sec += 1
+            rest = line[msec.end():]
+            for num, letter in COMPACT_CHOICE_RE.findall(rest):
+                ans_choice[(cur_sec, int(num))] = letter.upper()
+            continue
+        sec = cur_sec if cur_sec >= 1 else 1
+        for num, letter in COMPACT_CHOICE_RE.findall(line):
+            ans_choice[(sec, int(num))] = letter.upper()
+        for num, letter in BRACKET_CHOICE_RE.findall(line):
+            ans_choice[(sec, int(num))] = letter.upper()
+        for num, txt in TEXTANS_RE.findall(line):
+            ans_text[(sec, int(num))] = txt.strip()
+        for num, txt in TEXTANS2_RE.findall(line):
+            ans_text.setdefault((sec, int(num)), txt.strip())
+    return ans_choice, ans_text
+
+
 def parse_paper(html_content):
     """解析一份试卷 HTML。
 
@@ -277,6 +335,12 @@ def parse_paper(html_content):
         if sec['loose']:
             ans_loose[sec['idx']] = "\n".join(sec['loose']).strip()
 
+    # 紧凑答案扫描：从答案区直接按 (大题, 小题) 提取选择字母与文本答案，
+    # 兼容『选择题：1A2B3C…』『（1）A』『17答：…』等连写/错位格式。
+    ans_choice, ans_text = _extract_compact_answers(answer_block)
+    # 扁平答案区（无大题标题）按全局题号兜底，兼容正文大题序号与答案区不对齐的情况
+    ans_choice_global = {num: letter for (_s, num), letter in ans_choice.items()}
+
     questions = []
     for sec in body_secs:
         qs = sec['questions']
@@ -289,7 +353,13 @@ def parse_paper(html_content):
             if not stem:
                 continue
             qtype, options = _classify(stem)
-            ans = ans_exact.get((sec['idx'], q['qnum']))
+            # 选择题优先用紧凑扫描（避免『1A2B3C』被整串挂到第1题）
+            if qtype == 'choice':
+                ans = (ans_choice.get((sec['idx'], q['qnum']))
+                       or ans_choice_global.get(q['qnum'])
+                       or ans_exact.get((sec['idx'], q['qnum'])))
+            else:
+                ans = ans_exact.get((sec['idx'], q['qnum'])) or ans_text.get((sec['idx'], q['qnum']))
             if ans is None and qcount == 1:
                 ans = ans_loose.get(sec['idx'])
             questions.append({

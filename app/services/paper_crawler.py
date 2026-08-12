@@ -124,6 +124,11 @@ MAX_PAGES_PER_SUBJECT = 20
 DOWNLOAD_DELAY = 1         # 每份试卷下载后休眠（秒）
 KEEP_EXTENSIONS = {'.doc', '.docx', '.pdf'}
 
+# 单卷 HTML 上限 12MB：超出会突破 MySQL max_allowed_packet 导致连接中断
+# （实测一张 55MB 数学卷写入即触发 Lost connection）。超大部分仅记录元信息、
+# 题目置 0，并仍按 source_url 去重，避免续跑时反复崩溃。
+MAX_HTML_CHARS = 12 * 1024 * 1024
+
 # 工作目录（处理完即清理，不长期保存 doc 原件）。加入 .gitignore。
 CACHE_DIR = BASE_DIR / ".paper_cache"
 DOWNLOAD_DIR = CACHE_DIR / "downloads"
@@ -157,9 +162,10 @@ def convert_with_libreoffice(input_file, output_dir):
     ensure_dir(output_dir)
     cmd = [_soffice_bin(), "--headless", "--convert-to", "html", "--outdir", str(output_dir), str(input_file)]
     try:
-        # 用 errors='ignore' 容忍 soffice 输出中的非 UTF-8 字节，避免 UnicodeDecodeError
-        subprocess.run(cmd, check=True, capture_output=True, text=True,
-                       encoding="utf-8", errors="ignore")
+        # 不捕获 soffice 的 stdout/stderr：Windows 下其 stderr 含非 UTF-8 字节，
+        # 用 text 模式捕获会让读取线程抛 UnicodeDecodeError（虽不致命但刷屏且可能拖慢）。
+        # 我们本不消费其输出，只检查产物 HTML 是否存在即可。
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         base_name = os.path.splitext(os.path.basename(input_file))[0]
         html_file = Path(output_dir) / (base_name + ".html")
         if html_file.exists():
@@ -455,7 +461,16 @@ def _store_questions(session, paper_id, html_content):
 
 
 def store_paper_full(subject, grade, title, source_url, download_url, html_content):
-    """对外封装：去重入库 + 解析题目。返回 (paper_id, is_new, q_count)。"""
+    """对外封装：去重入库 + 解析题目。返回 (paper_id, is_new, q_count)。
+
+    超大 HTML（> MAX_HTML_CHARS）会超出 MySQL max_allowed_packet 导致连接中断，
+    此类试卷仅记录元信息（html_content 置空、题目 0），并仍按 source_url 去重，
+    避免重复采集时再次触发崩溃。
+    """
+    if html_content and len(html_content) > MAX_HTML_CHARS:
+        print(f"    ⚠️ HTML 过大（约 {len(html_content)//1024//1024}MB），超出上限 "
+              f"{MAX_HTML_CHARS//1024//1024}MB，仅记录元信息以规避 MySQL 包大小限制")
+        html_content = ""
     with SessionLocal() as session:
         paper_id, is_new = _upsert_paper(
             session, subject, grade, title, source_url, download_url, html_content, None)
@@ -465,10 +480,24 @@ def store_paper_full(subject, grade, title, source_url, download_url, html_conte
 
 # ========== 主采集循环 ==========
 def run_collection(once=False):
+    # 确保表结构/冗余列（grade/subject 等）到位，否则 MySQL 旧表会缺列导致入库失败。
+    # init_db 幂等：create_all + _ensure_columns 均忽略已存在项。
+    from app.database import init_db
+    init_db()
+
     ensure_dir(DOWNLOAD_DIR)
     ensure_dir(EXTRACT_DIR)
     ensure_dir(CLEAN_DIR)
     ensure_dir(TEMP_HTML_DIR)
+
+    # 配额按「本会话已爬取卷数」（demo 迁移占 1~49，爬取卷 id>=50）动态计算，
+    # 保证多次续跑不会重复累加突破 GLOBAL_MAX_PAPERS 上限。
+    with SessionLocal() as s:
+        crawl_count = s.execute(
+            select(func.count(Paper.id)).where(Paper.id > 49)
+        ).scalar() or 0
+    remaining_quota = max(0, GLOBAL_MAX_PAPERS - crawl_count)
+    print(f"📌 已爬取 {crawl_count} 份，本次续跑上限 {remaining_quota} 份（全局上限 {GLOBAL_MAX_PAPERS}）")
 
     # 确定性打散分类顺序，使采样在「各学科 / 各年级」间均衡覆盖
     categories = list(SUBJECT_GRADE_MAP)
@@ -478,8 +507,16 @@ def run_collection(once=False):
     while True:
         try:
             for subject_name, grade_name, url_suffix in categories:
-                if collected_total >= GLOBAL_MAX_PAPERS:
+                if collected_total >= remaining_quota:
                     break
+                # 续跑优化：该 (学科,年级) 已采满，跳过整类列表抓取，直接下一个分类
+                with SessionLocal() as s:
+                    have = s.execute(
+                        select(func.count(Paper.id)).where(
+                            Paper.subject == subject_name, Paper.grade == grade_name)
+                    ).scalar() or 0
+                if have >= PER_CATEGORY_MAX:
+                    continue
                 print(f"\n📚 [{datetime.now():%Y-%m-%d %H:%M:%S}] 处理: {subject_name} - {grade_name}")
                 papers = get_paper_list(url_suffix)
                 if not papers:
@@ -489,7 +526,7 @@ def run_collection(once=False):
 
                 new_count = 0
                 for paper in papers:
-                    if collected_total >= GLOBAL_MAX_PAPERS:
+                    if collected_total >= remaining_quota:
                         break
                     if new_count >= PER_CATEGORY_MAX:
                         break
@@ -514,7 +551,7 @@ def run_collection(once=False):
                         continue
 
                     for doc_path in kept_files:
-                        if collected_total >= GLOBAL_MAX_PAPERS:
+                        if collected_total >= remaining_quota:
                             break
                         print(f"  📄 {paper['title']}")
                         html_content = convert_document_to_html(doc_path)
@@ -543,9 +580,9 @@ def run_collection(once=False):
                     collected_total += 1
                     time.sleep(DOWNLOAD_DELAY)
 
-                print(f"  ✅ {subject_name}-{grade_name} 完成，新增 {new_count} 份（累计 {collected_total}/{GLOBAL_MAX_PAPERS}）")
+                print(f"  ✅ {subject_name}-{grade_name} 完成，新增 {new_count} 份（本次累计 {collected_total}/{remaining_quota}）")
 
-            if once or collected_total >= GLOBAL_MAX_PAPERS:
+            if once or collected_total >= remaining_quota:
                 print("\n✅ 单次采集完成（--once 或已达总量上限）")
                 break
             print(f"\n💤 本轮完成，等待 {REQUEST_INTERVAL} 秒...")
