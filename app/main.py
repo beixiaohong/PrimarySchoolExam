@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from .database import init_db
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin
 from .services.init_data import ensure_initial_data
 
 # 定义前端静态资源目录路径（旧版单体前端，web/dist 不存在时回退使用）
@@ -48,6 +48,7 @@ app.include_router(vocab.router, prefix="/api/vocab", tags=["背单词"])
 app.include_router(classical.router, prefix="/api/classical", tags=["古诗文背诵"])
 app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"])
 app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"])
+app.include_router(search.router, prefix="/api/search", tags=["搜题智能解答"])
 app.include_router(weather.router, prefix="/api/weather", tags=["天气"])
 app.include_router(admin.router, prefix="/api/admin", tags=["管理后台"])
 app.include_router(user.router, prefix="/api/user", tags=["用户系统"])

@@ -11,3 +11,8 @@ tools/mysql_backup_*.json
 app/models/__init__.py
 demo/
 .paper_cache/
+
+# 临时文件目录（采集/调试脚本与日志归入 temp/，不入库）
+temp/
+# WorkBuddy 本地数据（不入库）
+.workbuddy/
