@@ -1,4 +1,9 @@
-"""数据库连接与会话管理（SQLite / MySQL 双驱动，由 .env 的 DB_DRIVER 控制）"""
+"""数据库连接与会话管理（SQLite / MySQL 双驱动，由 .env 的 DB_DRIVER 控制）
+
+双驱动切换：DB_DRIVER=sqlite 走本地文件零配置开发库（关闭跨线程校验）；mysql 走生产库（pool_pre_ping 探活 + pool_recycle 防连接超时）。
+会话生命周期：每次 HTTP 请求经 get_db 依赖新建一个 SessionLocal 会话，请求结束 finally 关闭，避免连接泄漏。
+建表兜底：init_db 先 Base.metadata.create_all 保证表存在，再跑 _ensure_columns 轻量列迁移补齐新增字段（create_all 不会改已有表）。
+"""
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 

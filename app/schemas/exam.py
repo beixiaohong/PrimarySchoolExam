@@ -27,14 +27,14 @@ class ExamCreateRequest(BaseModel):
 
 class ExamOut(BaseModel):
     """试卷记录输出"""
-    id: int
-    subject: str
-    title: str
-    grade: int
-    difficulty: str
-    question_count: int
-    file_path: str
-    created_at: str
+    id: int  # 主键
+    subject: str  # 学科
+    title: str  # 试卷标题
+    grade: int  # 年级
+    difficulty: str  # 难度档
+    question_count: int  # 题目总数
+    file_path: str  # 生成的试卷文件（docx）路径
+    created_at: str  # 创建时间
 
     class Config:
         from_attributes = True
@@ -42,19 +42,19 @@ class ExamOut(BaseModel):
 
 class QuestionOut(BaseModel):
     """单道题目输出"""
-    id: int
-    exam_id: int
-    seq: int
-    subject: str
-    category: str
-    type_code: str
-    type_name: str
-    question: str
-    answer: str
-    options_json: str
-    image_path: str = ""
-    audio_path: str = ""
-    difficulty: int
+    id: int  # 题目主键
+    exam_id: int  # 所属试卷 ID
+    seq: int  # 卷内序号
+    subject: str  # 学科
+    category: str  # 题型大类
+    type_code: str  # 题型代码
+    type_name: str  # 题型名称
+    question: str  # 题干
+    answer: str  # 答案
+    options_json: str  # 选择题选项（JSON 字符串）
+    image_path: str = ""  # 配图路径
+    audio_path: str = ""  # 音频路径（如听写）
+    difficulty: int  # 难度档
 
     class Config:
         from_attributes = True
@@ -62,12 +62,12 @@ class QuestionOut(BaseModel):
 
 class WrongRecordOut(BaseModel):
     """错题记录输出（含题目详情）"""
-    id: int
-    user_id: str
-    question_id: int
-    is_mastered: bool
-    is_unanswered: bool = False
-    practice_count: int
+    id: int  # 错题记录主键
+    user_id: str  # 所属用户
+    question_id: int  # 关联题目 ID
+    is_mastered: bool  # 是否已掌握
+    is_unanswered: bool = False  # 是否从未作答
+    practice_count: int  # 练习次数
     cause: str = ""  # 错因自评：careless/concept/method/reading
     wrong_at: Optional[str] = None
     mastered_at: Optional[str] = None

@@ -6,26 +6,26 @@ from pydantic import BaseModel
 
 class VocabWordOut(BaseModel):
     """今日单词输出"""
-    word_id: int
-    word: str
-    phonetic: str
-    pos: str
-    meaning: str
-    unit: str
-    difficulty: int
+    word_id: int  # 单词 ID
+    word: str  # 单词拼写
+    phonetic: str  # 音标
+    pos: str  # 词性
+    meaning: str  # 中文释义
+    unit: str  # 所属单元
+    difficulty: int  # 难度档
     is_new: bool  # True=新词, False=复习词
     review_stage: int = 0  # 当前复习阶段
 
 
 class LearnRequest(BaseModel):
     """学习新词请求"""
-    user_id: str
+    user_id: str  # 用户标识
     word_ids: List[int]  # 标记为"已学会"的单词ID列表
 
 
 class ReviewRequest(BaseModel):
     """复习请求"""
-    user_id: str
+    user_id: str  # 用户标识
     results: List[dict]  # [{word_id: int, correct: bool}, ...]
 
 
@@ -51,12 +51,12 @@ class TodayTaskOut(BaseModel):
 
 class VocabProgressOut(BaseModel):
     """单词进度详情"""
-    word_id: int
-    word: str
-    meaning: str
-    status: str
-    review_stage: int
-    next_review_date: Optional[date]
-    correct_count: int
-    wrong_count: int
-    total_reviews: int
+    word_id: int  # 单词 ID
+    word: str  # 单词拼写
+    meaning: str  # 中文释义
+    status: str  # 学习状态（学习中/已掌握等）
+    review_stage: int  # 当前复习阶段
+    next_review_date: Optional[date]  # 下次复习日期（None=未排期）
+    correct_count: int  # 累计答对次数
+    wrong_count: int  # 累计答错次数
+    total_reviews: int  # 总复习次数

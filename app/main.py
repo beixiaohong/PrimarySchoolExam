@@ -1,4 +1,10 @@
-"""FastAPI 应用入口"""
+"""FastAPI 应用入口（应用核心与配置）
+
+职责：构建 FastAPI 实例、注册全部业务路由（/api/*）、同源托管前端静态资源、提供健康检查。
+启动流程由 lifespan 控制：建表 → 执行迁移脚本 → 导入种子数据（见 init_db/run_migrations/ensure_initial_data）。
+前端挂载优先级：优先 web/dist（Vite 构建产物），缺失时回退旧版 frontend/；管理后台走独立 /admin。
+前端由本应用同源托管，故未启用 CORSMiddleware；若前后端分离部署需跨域，请在此自行添加。
+"""
 from contextlib import asynccontextmanager
 from pathlib import Path
 

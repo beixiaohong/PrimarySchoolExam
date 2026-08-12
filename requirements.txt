@@ -1,3 +1,6 @@
+# 生产环境依赖清单（固定版本锁定，保证可复现部署）。
+# 主要类别：Web 框架(FastAPI/Uvicorn/Starlette)、ORM(SQLAlchemy/PyMySQL)、
+# 文档与媒体(PyMuPDF/python-docx/matplotlib/edge-tts/Pillow)、校验(pydantic)。
 PyYAML==6.0.3
 SQLAlchemy==2.0.51
 aiohappyeyeballs==2.7.1

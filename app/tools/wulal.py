@@ -22,6 +22,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 
+# 用途：试卷经 python-docx 导出为 PDF 后，用本模块把每页渲染成 PNG，便于前端预览与嵌入网页。
 def pdf_to_images(pdf_path, output_dir=None, dpi=300, prefix="page"):
     """将单个 PDF 的每一页渲染为 PNG 图片。
 
