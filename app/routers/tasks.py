@@ -58,7 +58,7 @@ OPTIONAL_POOL = [
     {"code": "math_teach", "title": "给家长讲 1 道题", "target": 1, "manual": True,
      "ico": "🎓", "desc": "挑一道今天的题讲给家长听", "subject": "数学"},
     {"code": "math_challenge", "title": "数学 60 秒挑战赛 1 次", "target": 1, "manual": False,
-     "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对", "subject": "数学"},
+     "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对；本场正确率需 ≥ 80% 才算完成", "subject": "数学"},
     {"code": "math_sync", "title": "学习平板完成同步练习", "target": 1, "manual": True,
      "ico": "📱", "desc": "在学习平板完成数学同步练习后，找家长确认", "subject": "数学"},
     # 语文
@@ -76,7 +76,7 @@ OPTIONAL_POOL = [
     {"code": "eng_dictation", "title": "听写 10 个单词", "target": 10, "manual": False,
      "ico": "👂", "desc": "在听写磨耳朵完成单词听写", "subject": "英语"},
     {"code": "eng_challenge", "title": "英语 60 秒挑战赛 1 次", "target": 1, "manual": False,
-     "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对", "subject": "英语"},
+     "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对；本场正确率需 ≥ 80% 才算完成", "subject": "英语"},
     {"code": "eng_sync", "title": "学习平板完成同步练习", "target": 1, "manual": True,
      "ico": "📱", "desc": "在学习平板完成英语同步练习后，找家长确认", "subject": "英语"},
 ]
@@ -507,13 +507,21 @@ def _today_mastered(db: Session, user_id: str, subject: str) -> int:
 
 
 def _today_challenge_count(db: Session, user_id: str, kind: str) -> int:
-    """今天某类挑战赛的完成次数"""
+    """今天某类挑战赛中「通过（正确率 ≥ 80%）」的次数。
+
+    需求：60 秒挑战赛需通过率 80% 以上才算完成。故只统计
+    total>0 且 correct/total ≥ 0.8 的记录，低分挑战不计入每日任务进度。
+    """
     from ..models.sprint4 import ChallengeRecord
-    return db.query(ChallengeRecord).filter(
+    rows = db.query(ChallengeRecord).filter(
         ChallengeRecord.user_id == user_id,
         ChallengeRecord.kind == kind,
         ChallengeRecord.created_at >= _today_start(),
-    ).count()
+    ).all()
+    return sum(
+        1 for r in rows
+        if r.total and r.total > 0 and r.correct * 5 >= r.total * 4
+    )
 
 
 def _today_dictation_words(db: Session, user_id: str) -> int:
@@ -746,9 +754,11 @@ def _is_full_day(db: Session, user_id: str, d: date) -> bool:
 
 
 def _has_makeup_card(db: Session, user_id: str, d: date) -> bool:
-    """判断某天是否已使用补签卡"""
+    """判断某天是否已使用补签卡且已生效（仅 confirmed 计入全勤/连续天数）"""
     return db.query(MakeupUsageLog).filter(
-        MakeupUsageLog.user_id == user_id, MakeupUsageLog.target_date == d
+        MakeupUsageLog.user_id == user_id,
+        MakeupUsageLog.target_date == d,
+        MakeupUsageLog.status == "confirmed",
     ).count() > 0
 
 
@@ -836,6 +846,15 @@ def _build_payload(db: Session, user_id: str) -> dict:
     all_rows = _ensure_today_rows(db, user_id)
     settings = _load_settings(db, user_id)
 
+    # 待确认补签（孩子发起的补签卡完成任务）的任务 id 集合，用于前端展示「待家长确认」
+    pending_task_ids = {
+        lid for (lid,) in db.query(MakeupUsageLog.task_id).filter(
+            MakeupUsageLog.user_id == user_id,
+            MakeupUsageLog.status == "pending",
+            MakeupUsageLog.task_id.isnot(None),
+        ).all()
+    }
+
     mandatory_rows = []
     optional_rows = []
     for r in all_rows:
@@ -909,6 +928,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
                 "mandatory": tt == "mandatory",
                 "ico": "📌",
                 "desc": "家长自定义任务，完成后由家长确认",
+                "makeup_pending": (r.id in pending_task_ids),
             })
             continue
         if not cur:
@@ -925,6 +945,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
             "mandatory": tt == "mandatory",
             "ico": cur["ico"],
             "desc": cur["desc"],
+            "makeup_pending": (r.id in pending_task_ids),
         })
 
     mandatory_done = sum(1 for r in mandatory_rows if r.status == "done")
@@ -983,10 +1004,12 @@ class MakeupCompleteRequest(BaseModel):
     task_id: int
 
 
-@router.post("/daily/makeup_complete", summary="使用补签卡完成任意任务（需家长确认）")
-def makeup_complete_task(req: MakeupCompleteRequest, request: Request, db: Session = Depends(get_db)):
-    """使用补签卡直接完成任意任务（含强制），需家长密码确认"""
-    ensure_parent_pwd(db, req.user_id, request)
+@router.post("/daily/makeup_complete", summary="孩子发起：用补签卡完成任意任务（待家长确认）")
+def makeup_complete_task(req: MakeupCompleteRequest, db: Session = Depends(get_db)):
+    """孩子发起用补签卡完成某任务：立即扣卡并生成 pending 记录，任务暂不完成。
+
+    需家长在「家长面板」确认后生效；家长拒绝则退回补签卡、任务保持不变。
+    """
     today = date.today()
     row = db.query(DailyTask).filter(
         DailyTask.id == req.task_id, DailyTask.user_id == req.user_id,
@@ -995,24 +1018,101 @@ def makeup_complete_task(req: MakeupCompleteRequest, request: Request, db: Sessi
         raise HTTPException(404, "未找到该任务")
     if row.status == "done":
         return _build_payload(db, req.user_id)
+    # 同一任务已有待确认补签 → 不允许重复发起
+    exist = db.query(MakeupUsageLog).filter(
+        MakeupUsageLog.user_id == req.user_id,
+        MakeupUsageLog.task_id == req.task_id,
+        MakeupUsageLog.status == "pending",
+    ).first()
+    if exist:
+        raise HTTPException(400, "该任务已有待确认的补签申请")
     # 检查补签卡余额
     balance = _get_makeup_balance(db, req.user_id)
     if balance <= 0:
         raise HTTPException(400, "没有可用的补签卡")
-    # 扣减补签卡
+    # 立即扣卡
     card = db.query(MakeupCard).filter(MakeupCard.user_id == req.user_id).first()
     card.balance -= 1
     card.total_used += 1
-    # 完成任务
-    row.progress = row.target
-    row.status = "done"
-    try:
-        from .pet import _grant_coins
-        _grant_coins(db, req.user_id, 5, "使用补签卡完成任务")
-    except Exception:
-        pass
+    # 生成待确认记录（任务暂不完成）
+    log = MakeupUsageLog(
+        user_id=req.user_id, target_date=today,
+        task_id=req.task_id, status="pending",
+    )
+    db.add(log)
     db.commit()
     return _build_payload(db, req.user_id)
+
+
+class MakeupConfirmRequest(BaseModel):
+    user_id: str
+    log_id: int
+    action: str  # confirm / reject
+
+
+@router.post("/makeup/confirm", summary="家长确认/拒绝补签卡使用")
+def confirm_makeup(req: MakeupConfirmRequest, request: Request, db: Session = Depends(get_db)):
+    """家长对「孩子发起的补签卡完成任务」进行最终确认或拒绝。
+
+    - confirm：补签生效，关联任务标记为完成并发放金币；
+    - reject ：补签卡退回（余额 +1、已用 -1），关联任务保持原状。
+    需家长密码（由 http.js 自动附加 X-Parent-Pwd）。
+    """
+    ensure_parent_pwd(db, req.user_id, request)
+    log = db.query(MakeupUsageLog).filter(
+        MakeupUsageLog.id == req.log_id, MakeupUsageLog.user_id == req.user_id).first()
+    if not log:
+        raise HTTPException(404, "未找到补签记录")
+    if log.status != "pending":
+        raise HTTPException(400, "该补签记录已处理")
+    card = db.query(MakeupCard).filter(MakeupCard.user_id == req.user_id).first()
+
+    if req.action == "confirm":
+        log.status = "confirmed"
+        if log.task_id:
+            row = db.query(DailyTask).filter(DailyTask.id == log.task_id).first()
+            if row and row.status != "done":
+                row.progress = row.target
+                row.status = "done"
+                try:
+                    from .pet import _grant_coins
+                    _grant_coins(db, req.user_id, 5, "使用补签卡完成任务")
+                except Exception:
+                    pass
+        db.commit()
+        return {"status": "confirmed", "message": "补签已生效，任务完成 ✅"}
+    elif req.action == "reject":
+        log.status = "rejected"
+        if card:
+            card.balance += 1
+            card.total_used = max(0, card.total_used - 1)
+        db.commit()
+        return {"status": "rejected", "message": "已拒绝，补签卡已退回 🔄"}
+    else:
+        raise HTTPException(400, "action 只能是 confirm 或 reject")
+
+
+@router.get("/makeup/pending", summary="查询待家长确认的补签申请")
+def list_pending_makeup(user_id: str = Query(...), db: Session = Depends(get_db)):
+    """家长面板拉取孩子发起的、待确认的补签申请列表"""
+    logs = db.query(MakeupUsageLog).filter(
+        MakeupUsageLog.user_id == user_id,
+        MakeupUsageLog.status == "pending",
+    ).order_by(MakeupUsageLog.used_at.desc()).all()
+    items = []
+    for l in logs:
+        title = ""
+        if l.task_id:
+            row = db.query(DailyTask).filter(DailyTask.id == l.task_id).first()
+            title = row.title if row else ""
+        items.append({
+            "log_id": l.id,
+            "task_id": l.task_id,
+            "task_title": title,
+            "target_date": str(l.target_date),
+            "used_at": str(l.used_at),
+        })
+    return {"items": items}
 
 
 @router.post("/daily/claim", summary="手动确认完成任务（需家长密码）")

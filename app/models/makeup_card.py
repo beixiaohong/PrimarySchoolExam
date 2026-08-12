@@ -21,11 +21,21 @@ class MakeupCard(Base):
 
 
 class MakeupUsageLog(Base):
-    """补签卡使用记录"""
+    """补签卡使用记录
+
+    status 状态机：
+    - pending   ：已扣卡、待家长确认（孩子发起的补签卡完成任意任务走此态）
+    - confirmed ：家长已确认，效果生效（补签某天默认即生效，故为 confirmed）
+    - rejected  ：家长拒绝，补签卡已退回
+    task_id 仅当孩子用补签卡完成某条每日任务时关联，补签某天时为 NULL。
+    """
     __tablename__ = "makeup_usage_log"
-    __table_args__ = {"comment": "补签卡使用记录：每次补签的目标日期与时间"}
+    __table_args__ = {"comment": "补签卡使用记录：每次扣卡/确认的状态流转"}
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
     user_id = Column(String(50), nullable=False, index=True, comment="用户名")
-    target_date = Column(Date, nullable=False, comment="补签的目标日期")
+    target_date = Column(Date, nullable=False, comment="补签的目标日期（补签某天用）")
     used_at = Column(DateTime, default=datetime.now, comment="使用时间")
+    status = Column(String(20), nullable=False, default="confirmed",
+                    comment="pending 待确认 / confirmed 已生效 / rejected 已退回")
+    task_id = Column(Integer, nullable=True, index=True, comment="关联的每日任务 id（补签卡完成任意任务时填写）")
