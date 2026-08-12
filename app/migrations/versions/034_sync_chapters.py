@@ -2,6 +2,9 @@
 
 MySQL-only（SQLite 测试环境靠 ORM create_all 建表，不执行本迁移）。
 幂等：sync_quiz_log 已存在则跳过；章节映射按年级回填到已有 problem_types 行。
+
+为何 MySQL-only：sync_quiz_log 用 INT AUTO_INCREMENT / ENGINE=InnoDB 等 MySQL 专属 DDL，
+SQLite 不支持，故测试环境跳过。
 """
 from sqlalchemy import inspect, text
 
@@ -81,7 +84,7 @@ def upgrade(db):
     insp = inspect(db.bind)
     tables = set(insp.get_table_names())
 
-    # ── 1. 建 sync_quiz_log 表 ──
+    # ── 1. 建 sync_quiz_log 表（AUTO_INCREMENT/InnoDB 为 MySQL 专属）──
     if "sync_quiz_log" not in tables:
         db.execute(text(
             """

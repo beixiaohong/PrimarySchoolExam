@@ -35,8 +35,10 @@ TABLES = {
 
 
 def upgrade(db):
+    # 按 TABLES 字典建挑战赛纪录表与挑战讲解记录表（SQLite DDL，幂等）
     for name, ddl in TABLES.items():
         db.execute(text(ddl))
+    # 为两张表分别建 user_id 索引，加速按用户的查询
     db.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_challenge_records_user ON challenge_records(user_id)"))
     db.execute(text(

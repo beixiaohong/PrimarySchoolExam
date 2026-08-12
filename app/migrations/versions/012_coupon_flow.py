@@ -32,6 +32,7 @@ def upgrade(db):
             ("granted_count", "INTEGER DEFAULT 0"),
             ("redeemed_count", "INTEGER DEFAULT 0"),
         ]
+        # 批量给 reward_coupons 加券任务化字段（全勤门槛/进度累计/核销计数）
         for col, ddl in add:
             if col not in cols:
                 db.execute(text(f"ALTER TABLE reward_coupons ADD COLUMN {col} {ddl}"))

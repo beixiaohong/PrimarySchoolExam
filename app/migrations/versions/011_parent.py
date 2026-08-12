@@ -22,6 +22,7 @@ logger = logging.getLogger("migrations")
 def upgrade(db):
     bind = db.get_bind()
     meta = MetaData()
+    # 新建家长密码表（按孩子 user_id 存一份，含密保问题/答案）
     Table(
         "parent_passwords",
         meta,
@@ -33,6 +34,7 @@ def upgrade(db):
         Column("updated_at", DateTime, default=datetime.now, onupdate=datetime.now),
     ).create(bind=bind, checkfirst=True)
 
+    # 新建每科试卷最少题数表（生成试卷强制下限，防刷分）
     Table(
         "exam_min_counts",
         meta,
@@ -43,6 +45,7 @@ def upgrade(db):
         Column("updated_at", DateTime, default=datetime.now, onupdate=datetime.now),
     ).create(bind=bind, checkfirst=True)
 
+    # 新建家长留言表（read_at 标记已读）
     Table(
         "parent_messages",
         meta,
@@ -58,11 +61,13 @@ def upgrade(db):
     if "reward_coupons" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("reward_coupons")}
         if "reason" not in cols:
+            # reward_coupons 新增 reason 列：发券理由（形成成长奖励记录）
             db.execute(text("ALTER TABLE reward_coupons ADD COLUMN reason VARCHAR(200)"))
             logger.info("reward_coupons.reason 已添加")
     if "wish_items" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("wish_items")}
         if "redeem_reason" not in cols:
+            # wish_items 新增 redeem_reason 列：兑现理由
             db.execute(text("ALTER TABLE wish_items ADD COLUMN redeem_reason VARCHAR(200)"))
             logger.info("wish_items.redeem_reason 已添加")
 

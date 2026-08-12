@@ -25,6 +25,7 @@ logger = logging.getLogger("migrations")
 def upgrade(db):
     bind = db.get_bind()
     meta = MetaData()
+    # 新建孩子申诉表（批改判错 → 家长二次确认）
     Table(
         "answer_appeals",
         meta,

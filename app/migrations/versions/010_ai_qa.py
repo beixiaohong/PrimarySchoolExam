@@ -20,6 +20,7 @@ logger = logging.getLogger("migrations")
 
 
 def upgrade(db):
+    # 新建 AI 问答缓存表（十万个为什么 + 错题讲解，全局答案复用）
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS ai_qa (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,10 +35,13 @@ def upgrade(db):
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    # 按 q_type 查询索引
     db.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_ai_qa_type ON ai_qa (q_type)"))
+    # 同题复用索引（q_type + ref_id）
     db.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_ai_qa_type_ref ON ai_qa (q_type, ref_id)"))
+    # 按用户+类型查历史索引
     db.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_ai_qa_user ON ai_qa (user_id, q_type)"))
     db.commit()

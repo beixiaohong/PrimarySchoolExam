@@ -16,6 +16,7 @@ logger = logging.getLogger("migrations")
 
 def upgrade(db):
     meta = MetaData()
+    # 新建家长任务设置表（每用户一行 JSON，覆盖默认每日任务量）
     Table(
         "parent_task_settings",
         meta,

@@ -14,6 +14,7 @@ def upgrade(db):
     except Exception:
         pass  # 列已存在
 
+    # 新建补签卡余额表（makeup_cards）
     db.execute(text("""CREATE TABLE IF NOT EXISTS makeup_cards (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id VARCHAR(50) NOT NULL UNIQUE,
@@ -23,10 +24,12 @@ def upgrade(db):
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""))
 
+    # 新建补签卡使用记录表（makeup_usage_log）
     db.execute(text("""CREATE TABLE IF NOT EXISTS makeup_usage_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id VARCHAR(50) NOT NULL,
         target_date DATE NOT NULL,
         used_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )"""))
+    # 为补签卡使用记录建 user_id 索引
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_makeup_usage_log_user_id ON makeup_usage_log(user_id)"))

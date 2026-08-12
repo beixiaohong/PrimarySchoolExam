@@ -16,6 +16,7 @@ def upgrade(db):
     inspector = inspect(bind)
     cols = {c["name"] for c in inspector.get_columns("ai_qa")}
     if "session_id" not in cols:
+        # ai_qa 新增 session_id 列：多轮对话会话标识（空=单轮，仍参与缓存命中）
         with bind.begin() as conn:
             conn.execute(text("ALTER TABLE ai_qa ADD COLUMN session_id VARCHAR(40)"))
         logger.info("015: ai_qa.session_id 列已添加")

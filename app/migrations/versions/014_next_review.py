@@ -22,6 +22,7 @@ logger = logging.getLogger("migrations")
 def upgrade(db):
     bind = db.get_bind()
     insp = sa_inspect(bind)
+    # 为错题表补明日复习日期列（重做仍错 → 第二天再来一次）
     for table, col, ddl in [
         ("wrong_records", "next_review_date", "VARCHAR(10)"),
         ("study_errors", "next_review_date", "VARCHAR(10)"),

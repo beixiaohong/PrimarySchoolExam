@@ -2,6 +2,9 @@
 
 - parent_custom_tasks：家长定义的自定义每日任务（集成进每日任务强制/可选区，由家长确认完成）
 - 旧版「孩子创建、家长确认」的 custom_tasks 表已存在，本迁移新建独立的家长定义表，二者互不干扰
+
+为何 MySQL-only：建表用 INT AUTO_INCREMENT / ENGINE=InnoDB / ON UPDATE
+CURRENT_TIMESTAMP / 内联 COMMENT 等 MySQL 专属 DDL，SQLite 不支持。
 """
 from sqlalchemy import inspect, text
 
@@ -11,6 +14,7 @@ def upgrade(db):
     tables = set(insp.get_table_names())
 
     if "parent_custom_tasks" not in tables:
+        # 新建家长自定义每日任务表 parent_custom_tasks（AUTO_INCREMENT/InnoDB 为 MySQL 专属）
         db.execute(text(
             """
             CREATE TABLE parent_custom_tasks (

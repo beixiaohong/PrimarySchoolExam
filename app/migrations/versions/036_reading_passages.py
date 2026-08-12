@@ -6,6 +6,9 @@
 
 questions_json 每题结构：
 {type:choice|short, question, options:[...], answer, points:[...], score}
+
+为何 MySQL-only：reading_passages 建表用 INT AUTO_INCREMENT / ENGINE=InnoDB /
+内联 COMMENT 等 MySQL 专属 DDL，SQLite 不支持。
 """
 import json
 
@@ -260,6 +263,7 @@ def upgrade(db):
     insp = inspect(db.bind)
     tables = set(insp.get_table_names())
     if "reading_passages" not in tables:
+        # 新建阅读理解专项表 reading_passages（AUTO_INCREMENT/InnoDB/内联 COMMENT 为 MySQL 专属）
         db.execute(text(
             """
             CREATE TABLE reading_passages (

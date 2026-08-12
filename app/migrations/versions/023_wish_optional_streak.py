@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 
 def upgrade(db):
+    # 为心愿单加连续打卡字段（类型/每日目标/上次进度日期）
     for col, col_type, default in [
         ("wish_type", "VARCHAR(20) DEFAULT 'task_count'", "'task_count'"),
         ("daily_target", "INTEGER DEFAULT 0", "0"),

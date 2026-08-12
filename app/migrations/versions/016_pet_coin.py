@@ -14,6 +14,7 @@ logger = logging.getLogger("migrations")
 def upgrade(db):
     bind = db.get_bind()
     with bind.begin() as conn:
+        # 新建金币流水表（行为挂钩，余额=amount 之和）
         conn.execute(text(
             """CREATE TABLE IF NOT EXISTS coin_ledger (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,6 +24,7 @@ def upgrade(db):
                 created_at DATETIME
             )"""
         ))
+        # 新建宠物档案表（喂养/抚摸升级进化）
         conn.execute(text(
             """CREATE TABLE IF NOT EXISTS pet_profiles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

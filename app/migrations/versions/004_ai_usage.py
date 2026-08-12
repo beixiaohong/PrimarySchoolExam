@@ -18,6 +18,7 @@ logger = logging.getLogger("migrations")
 
 def upgrade(db):
     meta = MetaData()
+    # 新建 AI 用量/失败日志表（成本与异常监控）
     Table(
         "ai_usage_log",
         meta,
@@ -33,6 +34,7 @@ def upgrade(db):
         Column("created_at", DateTime, default=datetime.now),
     ).create(bind=db.get_bind(), checkfirst=True)
 
+    # 新建家长成长周报表（每用户每周一条）
     Table(
         "weekly_reports",
         meta,
@@ -45,6 +47,7 @@ def upgrade(db):
         UniqueConstraint("user_id", "week_start", name="uq_user_week"),
     ).create(bind=db.get_bind(), checkfirst=True)
 
+    # 新建心情打卡表（user+date 唯一，每天一次）
     Table(
         "mood_checkins",
         meta,

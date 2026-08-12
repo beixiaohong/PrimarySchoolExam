@@ -13,6 +13,7 @@ logger = logging.getLogger("migrations")
 def upgrade(db):
     bind = db.get_bind()
     with bind.begin() as conn:
+        # 新建成就徽章获得记录表（记录首次达成时间）
         conn.execute(text(
             """CREATE TABLE IF NOT EXISTS badge_earned (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

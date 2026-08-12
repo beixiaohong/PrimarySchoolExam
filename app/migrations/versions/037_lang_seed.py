@@ -7,6 +7,9 @@
 5. 英语初中 phrases/sentences 扩充（短语 ≥80、句子 ≥60，grade 7-9）
 
 幂等：列已存在则跳过 ALTER；种子按唯一键去重。
+
+为何 MySQL-only：属于 MYSQL_ONLY_BASELINE(029) 基线，SQLite 下被标记已执行而跳过；
+ALTER/种子依赖 MySQL 路径已建好的表结构。
 """
 import json
 
@@ -363,6 +366,7 @@ def upgrade(db):
 
 def _add_column(db, table, column, definition):
     try:
+        # 为指定表新增一列（列已存在则靠异常兜底跳过，幂等）
         db.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
         db.commit()
     except Exception:

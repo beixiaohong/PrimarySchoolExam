@@ -20,6 +20,7 @@ SEED_VIP = ["诗文", "橙子"]
 
 def upgrade(db):
     meta = MetaData()
+    # 新建 VIP 名单表（按 user_id 精确匹配，替代硬编码名单）
     Table(
         "vip_users",
         meta,

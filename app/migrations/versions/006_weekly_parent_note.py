@@ -13,6 +13,7 @@ logger = logging.getLogger("migrations")
 def upgrade(db):
     cols = [row[1] for row in db.execute(text("PRAGMA table_info(weekly_reports)")).fetchall()]
     if "parent_note" not in cols:
+        # 为周报表新增家长寄语列 parent_note（默认空串，孩子端展示）
         db.execute(text("ALTER TABLE weekly_reports ADD COLUMN parent_note VARCHAR(200) DEFAULT ''"))
         logger.info("weekly_reports.parent_note 列已添加")
     else:

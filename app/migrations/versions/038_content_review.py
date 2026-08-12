@@ -2,6 +2,9 @@
 
 - content_reviews 表（多 AI 联合校对记录）
 - middle_questions 加 review_status 列（reading_passages 的 review_status 已在 036 建表时包含，幂等跳过）
+
+为何 MySQL-only：建表用 AUTO_INCREMENT/ENGINE=InnoDB/内联 COMMENT，ALTER 用内联
+COMMENT，均为 MySQL 专属语法，SQLite 不支持。
 """
 from sqlalchemy import inspect, text
 
@@ -10,7 +13,7 @@ def upgrade(db):
     insp = inspect(db.bind)
     tables = set(insp.get_table_names())
 
-    # ── 1. content_reviews 表 ──
+    # ── 1. content_reviews 表（AUTO_INCREMENT/InnoDB 为 MySQL 专属）──
     if "content_reviews" not in tables:
         db.execute(text(
             """
@@ -38,6 +41,7 @@ def upgrade(db):
 
 def _add_column(db, table, column, definition):
     try:
+        # 为指定表新增一列（列已存在则靠异常兜底跳过，幂等）
         db.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
         db.commit()
     except Exception:

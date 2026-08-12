@@ -3,6 +3,9 @@
 物理/化学/生物/道德与法治/历史/地理各 20 道选择题起步（AI 生成种子版）。
 注意：种子数据需家长/老师人工校对扩充后再用于正式考试。
 幂等：按 (subject, question) 去重。
+
+为何 MySQL-only：属于 MYSQL_ONLY_BASELINE(029) 基线，SQLite 下被标记已执行而跳过；
+插入用 MySQL 的 NOW() 函数，且假定 middle_questions 表已由 MySQL 路径建好。
 """
 import json
 

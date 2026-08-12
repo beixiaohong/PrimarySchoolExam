@@ -18,6 +18,7 @@ logger = logging.getLogger("migrations")
 
 def upgrade(db):
     meta = MetaData()
+    # 新建奖励兑换券表（6 类模板 + 自定义）
     Table(
         "reward_coupons",
         meta,
@@ -31,6 +32,7 @@ def upgrade(db):
         Column("created_at", DateTime, default=datetime.now),
     ).create(bind=db.get_bind(), checkfirst=True)
 
+    # 新建孩子心愿单表（同时仅 1 个进行中）
     Table(
         "wish_items",
         meta,
@@ -44,6 +46,7 @@ def upgrade(db):
         Column("updated_at", DateTime, default=datetime.now, onupdate=datetime.now),
     ).create(bind=db.get_bind(), checkfirst=True)
 
+    # 新建学期目标表（分数/灭错/背诵三类，倒计时）
     Table(
         "goal_items",
         meta,

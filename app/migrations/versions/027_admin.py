@@ -54,6 +54,7 @@ def upgrade(db):
         Column("updated_by", String(50), nullable=False),
         Column("updated_at", DateTime, nullable=False),
     )
+    # 建 admins / admin_operation_logs / system_config 三张表（幂等）
     meta.create_all(bind=conn, checkfirst=True)
 
     # 初始管理员（幂等：仅表为空时插入，兼容 create_all 先建表的基线策略）

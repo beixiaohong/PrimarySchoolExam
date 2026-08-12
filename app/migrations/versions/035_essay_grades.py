@@ -1,6 +1,8 @@
 """035 作文批改评分卡表（MySQL-only，SQLite 测试环境靠 create_all 建表）
 
 幂等：表已存在则跳过。
+
+为何 MySQL-only：用 INT AUTO_INCREMENT / ENGINE=InnoDB 等 MySQL 专属 DDL，SQLite 不支持。
 """
 from sqlalchemy import inspect, text
 
@@ -9,6 +11,7 @@ def upgrade(db):
     insp = inspect(db.bind)
     tables = set(insp.get_table_names())
     if "essay_grades" not in tables:
+        # 新建作文批改评分卡表 essay_grades（AUTO_INCREMENT/InnoDB 为 MySQL 专属）
         db.execute(text(
             """
             CREATE TABLE essay_grades (

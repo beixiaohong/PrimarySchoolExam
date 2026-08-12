@@ -18,5 +18,6 @@ def upgrade(db):
     if "user_id" in cols:
         logger.info("exam_records.user_id 已存在，跳过")
         return
+    # 为 exam_records 补充 user_id 列（将历史孤儿列正式纳入 model 管理）
     db.execute(text("ALTER TABLE exam_records ADD COLUMN user_id VARCHAR(64)"))
     logger.info("exam_records 已补充 user_id 列")

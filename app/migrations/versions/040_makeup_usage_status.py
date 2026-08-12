@@ -4,6 +4,9 @@
 - makeup_usage_log.task_id：孩子用补签卡完成某条每日任务时的关联任务 id（补签某天时为 NULL）
 
 MySQL-only 迁移：SQLite（测试环境）由 Base.metadata.create_all 兜底，本脚本跳过。
+
+为何 MySQL-only：本脚本在 MySQL 生产库为 makeup_usage_log 加 NOT NULL DEFAULT 列并建
+索引；SQLite 测试环境表结构由 create_all 兜底，runner 跳过本脚本。
 """
 import logging
 

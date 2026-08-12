@@ -2,6 +2,9 @@
 
 依据义务教育语文课程标准推荐篇目，grade=7-9，semester='全'。
 幂等：按 title 唯一约束去重。长文（出师表/岳阳楼记等）收录全文。
+
+为何 MySQL-only：属于 runner 的 MYSQL_ONLY_BASELINE(029) 基线，SQLite 下被标记
+为已执行而跳过；且依赖 029 加入的 semester 列、插入用 MySQL 的 NOW() 函数。
 """
 import json
 

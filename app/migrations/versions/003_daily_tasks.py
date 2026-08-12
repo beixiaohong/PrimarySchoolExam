@@ -11,5 +11,6 @@ logger = logging.getLogger("migrations")
 
 def upgrade(db):
     from ...models.daily_task import DailyTask
+    # 通过 ORM 模型建 daily_tasks 表（幂等：表已存在则跳过）
     DailyTask.__table__.create(bind=db.get_bind(), checkfirst=True)
     logger.info("daily_tasks 表已创建")
