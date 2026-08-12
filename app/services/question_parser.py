@@ -5,8 +5,8 @@
 
 解析层级：
     大题（一、二、三、...)
-      └─ 小题（1. 2. 3. ...)
-            └─ 子项（（1）（2）...，并入所属小题文本）
+      └─ 小题（1. 2. 3. ... 或 （1）（2）...）
+            └─ 子项（并入所属小题文本）
 题型判定：
     - 含 >=2 个 A./B./C./D. 选项  -> choice（选择题）
     - 含 ____ / （ ）/ 填空 / 连线 -> fill_blank（填空/连线）
@@ -38,14 +38,19 @@ def _bs4():
 
 # ---------- 正则 ----------
 SECTION_RE = re.compile(r'^([一二三四五六七八九十]+)、')
-QNUM_RE = re.compile(r'^([0-9]{1,3})[\.\．、]')
+# 小题号：1. / 1． / 1、 以及 （1） / (1) 全角半角括号，统一提取数字
+QNUM_RE = re.compile(r'^[（(]?([0-9]{1,3})[）)\.\．、]')
 OPTION_RE = re.compile(r'^[A-Da-d][\.．、]')
 # 纯拼音行（仅拉丁字母/声调符/空格，无汉字）——用于净化题干
 PINYIN_RE = re.compile(r'^[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü\s]+$')
 HAS_CJK = re.compile(r'[一-鿿]')
 ANSWER_HEAD_RE = re.compile(r'参考答案|答\s*案')
 BASE64_IMG_RE = re.compile(r'data:image/[^"\']+?;base64,[^"\']+?', re.I)
-BLOCK_TAGS = ['p', 'table', 'h1', 'h2', 'h3', 'h4', 'li', 'img']
+BLOCK_TAGS = ['p', 'table', 'h1', 'h2', 'h3', 'h4', 'li', 'img', 'div']
+# 用于「块级叶子」切行的标签集合
+_BLOCK_SPLIT = {'p', 'div', 'li', 'h1', 'h2', 'h3', 'h4', 'td', 'th',
+                'tr', 'table', 'article', 'section', 'br'}
+_IMG_MARK = '\u0001'  # 图片块在全文归一串中的占位符，使其可被定位
 
 
 def _norm(s):
@@ -53,13 +58,34 @@ def _norm(s):
 
 
 def _html_to_lines(html_content):
-    """HTML -> 去空白后的非空行列表。"""
+    """HTML -> 去空白后的非空逻辑行列表。
+
+    关键修复：LibreOffice 把每个文本片段包进独立 <font>/<span>，若用
+    soup.get_text('\\n') 会在『每个文本节点间』插入换行，导致题号（如 '1'）
+    与 '、' 被拆成两行、整张卷只认到 1 题。
+
+    改为：按『块级叶子元素』切行——同一块内的行内片段拼接成一行，仅在
+    真正的块级边界（p/div/td/li/...）处换行，从而重建出
+    '1、在（ ）里填上相同的数。53–（ ）=33...' 这样的完整逻辑行。
+    """
     bs4 = _bs4()
     if not bs4:
         return [l.strip() for l in html_content.split("\n") if l.strip()]
     soup = bs4(html_content, 'lxml')
-    text = soup.get_text("\n")
-    return [l.strip() for l in text.split("\n") if l.strip()]
+    body = soup.body or soup
+    # <br> 视为块内换行
+    for br in body.find_all('br'):
+        br.replace_with('\n')
+    out = []
+    for el in body.find_all(['p', 'div', 'li', 'h1', 'h2', 'h3', 'h4',
+                             'td', 'th', 'tr', 'table', 'article', 'section']):
+        # 仅取叶子块：自身不含块级后代，避免嵌套重复计数
+        if any(d.name in _BLOCK_SPLIT for d in el.descendants):
+            continue
+        txt = el.get_text('', strip=True)
+        if txt:
+            out.append(txt)
+    return [l for l in out if l]
 
 
 def _split_answer(lines):
@@ -94,7 +120,7 @@ def _presplit_sections(lines):
 
 
 def _tokenize(lines):
-    """行 -> 层级结构 sections。大题(一、)开新 section；小题号(1.)开新 question。"""
+    """行 -> 层级结构 sections。大题(一、)开新 section；小题号(1. /（1）)开新 question。"""
     lines = _presplit_sections(lines)
     sections = []
     cur_sec = None
@@ -145,7 +171,7 @@ def _classify(stem):
     opts = _extract_options(stem)
     if len(opts) >= 2:
         return 'choice', opts
-    if re.search(r'_{2,}|（\s*）|填空|连线|选词', stem):
+    if re.search(r'_{2,}|（\s*）|填空|连线|选词|（\s*）\s*里|（\s*）\s*中', stem):
         return 'fill_blank', None
     return 'qa', None
 
@@ -159,7 +185,12 @@ def _join_answer(lines):
 
 
 def _attach_rich_html(html_content, questions):
-    """为每道题附加 html 片段与 base64 图片列表（通过块级对齐实现）。"""
+    """为每道题附加 html 片段与 base64 图片列表。
+
+    采用『文档顺序区间』：定位题干文本在全文归一串中的起始位置，取从本题
+    起始块到下一题起始块之间的所有块（含图片块），从而把题干与相邻的配图
+    一起归入该题；图片块用占位符参与定位，避免漏图。
+    """
     if not _bs4() or not html_content:
         for q in questions:
             q['html'] = "<p>%s</p>" % _html.escape(q['text'])
@@ -170,44 +201,52 @@ def _attach_rich_html(html_content, questions):
         soup = _bs4()(html_content, 'lxml')
         body = soup.body or soup
         blocks = []
+        spans = []
+        cursor = 0
         for el in body.find_all(BLOCK_TAGS):
             bhtml = str(el)
-            blocks.append({
-                'html': bhtml,
-                'text': el.get_text(' ', strip=True),
-                'imgs': BASE64_IMG_RE.findall(bhtml),
-            })
-        full_norm = _norm("\n".join(b['text'] for b in blocks))
-        for q in questions:
+            btext = el.get_text(' ', strip=True)
+            imgs = BASE64_IMG_RE.findall(bhtml)
+            if btext:
+                norm = _norm(btext)
+            elif imgs:
+                norm = _IMG_MARK
+            else:
+                continue
+            blocks.append({'html': bhtml, 'text': norm, 'imgs': imgs})
+            spans.append((cursor, cursor + len(norm)))
+            cursor += len(norm) + 1
+        full_norm = ' '.join(b['text'] for b in blocks)
+
+        for qi, q in enumerate(questions):
             qtext = _norm(q['text'])
             start = full_norm.find(qtext)
             if start < 0:
                 q['html'] = "<p>%s</p>" % _html.escape(q['text'])
                 q['images'] = []
                 continue
-            end = start + len(qtext)
-            pos = 0
-            sel = []
-            for b in blocks:
-                seg = _norm(b['text'])
-                seg_start = pos
-                seg_end = pos + len(seg)
-                if seg_end > start and seg_start < end:
-                    sel.append(b)
-                pos = seg_end + 1
-                if seg_start > end:
+            # 本题起始块索引
+            si = 0
+            for i, (s, e) in enumerate(spans):
+                if s <= start < e or (s == e and s <= start):
+                    si = i
                     break
-            if not sel:
-                sel = [b for b in blocks if qtext in _norm(b['text'])]
-            if sel:
-                q['html'] = "".join(b['html'] for b in sel)
-                imgs = []
-                for b in sel:
-                    imgs.extend(b['imgs'])
-                q['images'] = imgs
-            else:
-                q['html'] = "<p>%s</p>" % _html.escape(q['text'])
-                q['images'] = []
+            # 下一题起始块索引（作为本题终点）
+            ei = len(blocks)
+            if qi + 1 < len(questions):
+                nq = _norm(questions[qi + 1]['text'])
+                ns = full_norm.find(nq)
+                if ns > start:
+                    for i, (s, e) in enumerate(spans):
+                        if s <= ns < e or (s == e and s <= ns):
+                            ei = i
+                            break
+            sel = blocks[si:ei] if ei > si else blocks[si:si + 1]
+            q['html'] = "".join(b['html'] for b in sel)
+            imgs = []
+            for b in sel:
+                imgs.extend(b['imgs'])
+            q['images'] = imgs
     except Exception:
         for q in questions:
             q['html'] = "<p>%s</p>" % _html.escape(q['text'])

@@ -207,7 +207,11 @@ def convert_pdf_text(input_file):
 
 
 def embed_images_as_base64(html_file):
-    """读取 HTML 文件，将外部图片转为 base64 内联（LibreOffice 通常已内联，此为兜底）。"""
+    """读取 HTML 文件，将外部图片转为 base64 内联（LibreOffice 通常已内联，此为兜底）。
+
+    注意：LibreOffice 导出的 <img src> 多为 URL 编码文件名（如 %E4%BA%BA..._html_xxx.png），
+    而磁盘上是解码后的中文名，故解析前需 urllib.parse.unquote，否则找不到文件导致 0 内联。
+    """
     if not os.path.exists(html_file):
         return None
     with open(html_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -219,11 +223,16 @@ def embed_images_as_base64(html_file):
     base_dir = os.path.dirname(html_file)
     mime_map = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
                 '.gif': 'image/gif', '.bmp': 'image/bmp', '.svg': 'image/svg+xml'}
+    from urllib.parse import unquote
     for img in soup.find_all('img'):
         src = img.get('src')
         if not src or src.startswith('data:'):
             continue
-        img_path = src if os.path.isabs(src) else os.path.join(base_dir, src)
+        rel = unquote(src)                      # URL 编码 -> 磁盘实际文件名
+        img_path = src if os.path.isabs(src) else os.path.join(base_dir, rel)
+        if not os.path.exists(img_path):
+            # 兜底：直接以原始 src 拼接再试一次
+            img_path = src if os.path.isabs(src) else os.path.join(base_dir, src)
         if os.path.exists(img_path):
             try:
                 with open(img_path, 'rb') as f:
