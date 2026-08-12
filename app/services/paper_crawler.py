@@ -18,6 +18,7 @@ import zipfile
 import shutil
 import subprocess
 import base64
+import random
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urljoin
@@ -63,14 +64,61 @@ def _lazy(modname):
     except Exception:
         return None
 
+
+def _soffice_bin():
+    """定位 LibreOffice 的 soffice 可执行文件（优先显式路径，回退 PATH）。"""
+    import shutil as _sh
+    candidates = [
+        os.environ.get("LIBREOFFICE_SOFFICE"),
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        "soffice",
+    ]
+    for c in candidates:
+        if not c:
+            continue
+        if os.path.exists(c):
+            return c
+        p = _sh.which(c)
+        if p:
+            return p
+    return "soffice"
+
 # ========== 站点与采集参数 ==========
 BASE_URL = "https://www.shijuan1.com"
-# (学科, 年级, 列表页 URL 后缀)。默认只开语文·一年级，扩科按此扩展。
-SUBJECT_GRADE_MAP = [
-    ("语文", "一年级", "/a/sjyw1/"),
-    # ("语文", "二年级", "/a/sjyw2/"),
-    # ("数学", "一年级", "/a/sjsx1/"),
+
+# 学科前缀（首页导航实测）：语文sjyw / 数学sjsx / 英语sjyy / 物理sjwl /
+# 化学sjhx / 政治sjzz / 历史sjls / 地理sjdl / 生物sjsw
+SUBJECT_PREFIX = [
+    ("语文", "sjyw"), ("数学", "sjsx"), ("英语", "sjyy"), ("物理", "sjwl"),
+    ("化学", "sjhx"), ("政治", "sjzz"), ("历史", "sjls"), ("地理", "sjdl"), ("生物", "sjsw"),
 ]
+# 年级后缀（首页导航实测）：小学 1-6 / 初中 7-9 / 中考 zk / 高中 g1-g3
+GRADE_SUFFIX = [
+    ("一年级", "1"), ("二年级", "2"), ("三年级", "3"), ("四年级", "4"),
+    ("五年级", "5"), ("六年级", "6"), ("七年级", "7"), ("八年级", "8"),
+    ("九年级", "9"), ("中考", "zk"), ("高一", "g1"), ("高二", "g2"), ("高三", "g3"),
+]
+
+
+def build_subject_grade_map():
+    """生成 (学科, 年级, 列表页URL后缀) 全量组合；空分类在采集时自动跳过。"""
+    out = []
+    for subj, prefix in SUBJECT_PREFIX:
+        for grade, suffix in GRADE_SUFFIX:
+            out.append((subj, grade, f"/a/{prefix}{suffix}/"))
+    return out
+
+
+# 全量九科 ×（一年级~高三 + 中考）。实际采集受下方采样上限控制。
+SUBJECT_GRADE_MAP = build_subject_grade_map()
+
+# 采样控制：用户要求总计不到一百份，且各学科/年级尽量均衡覆盖。
+# 通过「确定性打散 + 总量上限 + 每类上限」实现。
+GLOBAL_MAX_PAPERS = 90     # 全局采集试卷总数上限（< 100）
+PER_CATEGORY_MAX = 2       # 单个 (学科,年级) 分类最多采集份数
+SHUFFLE_SEED = 20260812    # 确定性打散种子，保证各学科/年级均衡覆盖
+
 REQUEST_INTERVAL = 30      # 多轮之间的休眠（秒）
 MAX_PAGES_PER_SUBJECT = 20
 DOWNLOAD_DELAY = 1         # 每份试卷下载后休眠（秒）
@@ -107,9 +155,11 @@ def get_html(url):
 # ========== HTML 转换（图片 base64 内联） ==========
 def convert_with_libreoffice(input_file, output_dir):
     ensure_dir(output_dir)
-    cmd = ["soffice", "--headless", "--convert-to", "html", "--outdir", str(output_dir), str(input_file)]
+    cmd = [_soffice_bin(), "--headless", "--convert-to", "html", "--outdir", str(output_dir), str(input_file)]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        # 用 errors='ignore' 容忍 soffice 输出中的非 UTF-8 字节，避免 UnicodeDecodeError
+        subprocess.run(cmd, check=True, capture_output=True, text=True,
+                       encoding="utf-8", errors="ignore")
         base_name = os.path.splitext(os.path.basename(input_file))[0]
         html_file = Path(output_dir) / (base_name + ".html")
         if html_file.exists():
@@ -191,7 +241,8 @@ def convert_document_to_html(file_path):
     html_file = convert_with_libreoffice(file_path, str(TEMP_HTML_DIR))
     if html_file:
         return embed_images_as_base64(html_file)
-    if ext == '.docx' and mammoth is not None:
+    if ext == '.docx':
+        # LibreOffice 失败时回退到 mammoth（convert_docx_mammoth 内部懒加载 mammoth）
         return convert_docx_mammoth(file_path)
     if ext == '.pdf':
         return convert_pdf_text(file_path)
@@ -203,29 +254,51 @@ def convert_document_to_html(file_path):
 
 
 # ========== 试卷列表 / 下载链接 ==========
+# 详情页链接：/a/<学科前缀><年级后缀>/<数字>.html（覆盖所有学科与年级，不再写死 sjyw）
+DETAIL_RE = re.compile(r'^/a/[a-z]+\d*/\d+\.html$')
+# 分页链接：list_<分类id>_<页码>.html（如 list_106_2.html），从页面动态提取
+LIST_PAGE_RE = re.compile(r'list_\d+_\d+\.html')
+
+
 def get_paper_list(subject_grade_url, max_pages=MAX_PAGES_PER_SUBJECT):
+    """获取某 (学科,年级) 分类下的试卷列表（自动翻页，动态提取分页链接）。"""
     papers = []
-    for page in range(1, max_pages + 1):
-        page_url = (f"{BASE_URL}{subject_grade_url}" if page == 1
-                    else f"{BASE_URL}{subject_grade_url}list_727_{page}.html")
-        print(f"    📄 获取第 {page} 页: {page_url}")
+    seen = set()
+
+    # 第 1 页 = 分类根；并从中动态提取后续分页链接（不再写死 list_727）
+    page_urls = [f"{BASE_URL}{subject_grade_url}"]
+    first_html = get_html(page_urls[0])
+    bs4 = _bs4()
+    if first_html and bs4:
+        soup = bs4(first_html, 'lxml')
+        for a in soup.find_all('a', href=LIST_PAGE_RE):
+            h = a.get('href')
+            if h:
+                page_urls.append(urljoin(BASE_URL, h))
+    # 去重并按 URL 长度/字典序稳定排序，限制页数
+    page_urls = sorted(set(page_urls), key=lambda u: (len(u), u))[:max_pages]
+
+    for idx, page_url in enumerate(page_urls, 1):
+        print(f"    📄 获取第 {idx} 页: {page_url}")
         html = get_html(page_url)
         bs4 = _bs4()
         if not html or not bs4:
-            break
+            continue
         soup = bs4(html, 'lxml')
-        links = soup.find_all('a', href=re.compile(r'^/a/sjyw\d+/\d+\.html$'))
+        links = soup.find_all('a', href=DETAIL_RE)
         if not links:
             links = soup.select('td a[href^="/a/"]')
         if not links:
             break
         for a in links:
             href = a.get('href')
-            if not href or not re.search(r'/\d+\.html$', href):
+            if not href or not DETAIL_RE.match(href):
                 continue
             title = a.get_text(strip=True)
-            if title:
-                papers.append({'title': title, 'detail_url': urljoin(BASE_URL, href)})
+            if not title or href in seen:
+                continue
+            seen.add(href)
+            papers.append({'title': title, 'detail_url': urljoin(BASE_URL, href)})
         time.sleep(1)
     return papers
 
@@ -381,15 +454,29 @@ def run_collection(once=False):
     ensure_dir(CLEAN_DIR)
     ensure_dir(TEMP_HTML_DIR)
 
+    # 确定性打散分类顺序，使采样在「各学科 / 各年级」间均衡覆盖
+    categories = list(SUBJECT_GRADE_MAP)
+    random.Random(SHUFFLE_SEED).shuffle(categories)
+
+    collected_total = 0
     while True:
         try:
-            for subject_name, grade_name, url_suffix in SUBJECT_GRADE_MAP:
+            for subject_name, grade_name, url_suffix in categories:
+                if collected_total >= GLOBAL_MAX_PAPERS:
+                    break
                 print(f"\n📚 [{datetime.now():%Y-%m-%d %H:%M:%S}] 处理: {subject_name} - {grade_name}")
                 papers = get_paper_list(url_suffix)
-                print(f"  找到 {len(papers)} 份试卷")
+                if not papers:
+                    print(f"  ⚠️ 该分类无试卷（可能不存在），跳过")
+                    continue
+                print(f"  找到 {len(papers)} 份试卷，本类最多采 {PER_CATEGORY_MAX} 份")
 
                 new_count = 0
                 for paper in papers:
+                    if collected_total >= GLOBAL_MAX_PAPERS:
+                        break
+                    if new_count >= PER_CATEGORY_MAX:
+                        break
                     source_url = paper['detail_url']
                     # 去重：已采集过的不再采集
                     with SessionLocal() as session:
@@ -411,6 +498,8 @@ def run_collection(once=False):
                         continue
 
                     for doc_path in kept_files:
+                        if collected_total >= GLOBAL_MAX_PAPERS:
+                            break
                         print(f"  📄 {paper['title']}")
                         html_content = convert_document_to_html(doc_path)
                         if html_content:
@@ -435,12 +524,13 @@ def run_collection(once=False):
                         pass
 
                     new_count += 1
+                    collected_total += 1
                     time.sleep(DOWNLOAD_DELAY)
 
-                print(f"  ✅ {subject_name}-{grade_name} 完成，新增 {new_count} 份")
+                print(f"  ✅ {subject_name}-{grade_name} 完成，新增 {new_count} 份（累计 {collected_total}/{GLOBAL_MAX_PAPERS}）")
 
-            if once:
-                print("\n✅ 单次采集完成（--once）")
+            if once or collected_total >= GLOBAL_MAX_PAPERS:
+                print("\n✅ 单次采集完成（--once 或已达总量上限）")
                 break
             print(f"\n💤 本轮完成，等待 {REQUEST_INTERVAL} 秒...")
             time.sleep(REQUEST_INTERVAL)
