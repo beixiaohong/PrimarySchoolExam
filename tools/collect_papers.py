@@ -25,6 +25,13 @@ from app.database import init_db  # noqa: E402
 
 
 def main():
+    """试卷采集命令行入口：封装采集/迁移/统计/答案补全等子命令。
+
+    参数：见 argparse（--once / --migrate-demo / --stats / --fill-answers / --grade / --subject 等）。
+    副作用：向主库 papers / paper_questions 表写入采集结果；--fill-answers 会调用 AI 回填答案；
+            运行前先 init_db 确保表结构与冗余列（grade/subject）到位。
+    注意：采集按 source_url 去重；--fill-answers 可能产生 AI 调用成本，建议用 --limit/--dry-run 控量。
+    """
     # 任何子命令前先确保表结构/冗余列（grade/subject）到位，避免 MySQL 旧表缺列入库失败
     init_db()
 

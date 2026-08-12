@@ -28,6 +28,13 @@ KEEP = {"admins", "admin_operation_logs", "system_config", "schema_migrations"}
 
 
 def main():
+    """MySQL 迁移前清理：先整体备份现有行到 JSON，再清空业务表（保留 admins/system_config/schema_migrations）。
+
+    参数：无（连接信息取自 app.config.DATABASE_URL；保留表见模块级 KEEP）。
+    副作用：① 在 tools/ 下生成 mysql_backup_<时间戳>.json 备份；
+            ② 对线上 MySQL 业务表执行 DELETE FROM 清空（已关闭外键检查以安全删子表）。
+    注意：运行前务必确认已切到目标 MySQL 且接受清空；备份文件即回滚依据，删除前请妥善保存。
+    """
     eng = create_engine(DATABASE_URL, pool_pre_ping=True)
     meta = MetaData()
     meta.reflect(bind=eng)
@@ -68,12 +75,14 @@ def main():
 
     with eng.begin() as conn:
         try:
+            # 临时关闭外键检查，允许无条件删除子表（会话级，末尾重新开启）
             conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
         except Exception:
             pass
         for name in order:
             n = conn.execute(text(f"SELECT COUNT(*) FROM `{name}`")).scalar()
             if n:
+                # 【危险操作】DELETE 清空整张表，不可回滚；务必先确认上方 JSON 备份已生成
                 conn.execute(text(f"DELETE FROM `{name}`"))
                 print(f"[clear] {name}: 删除 {n} 行")
         try:

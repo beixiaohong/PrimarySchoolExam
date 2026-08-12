@@ -29,6 +29,15 @@ MIME = {
 
 
 def _resolve(path, search_dirs):
+    """按 image_path 定位真实图片文件，支持绝对/相对/仅文件名三种查找策略。
+
+    Args:
+        path: 题目中存储的图片路径（可能绝对、相对或仅文件名）。
+        search_dirs: 额外搜索目录列表（Path），优先于仅文件名回退。
+    Returns:
+        str | None: 命中则返回文件路径，未找到返回 None（调用方计为缺失）。
+    副作用：只读文件系统，不改库。
+    """
     if os.path.isabs(path) and os.path.exists(path):
         return path
     # 相对路径：尝试项目根 + 各搜索目录
@@ -46,6 +55,13 @@ def _resolve(path, search_dirs):
 
 
 def main():
+    """回填 questions.image_base64：扫描带 image_path 的题目，读取图片转 base64 写入。
+
+    参数：--search-dir 可多次指定额外图片搜索目录。
+    副作用：① 幂等确保 questions 表存在 image_base64 列（ALTER ADD COLUMN）；
+            ② 对缺失 base64 的题目 UPDATE 写入 data:<mime>;base64,...；文件缺失则跳过统计。
+    注意：会直接修改线上题目表数据；ALTER 加列若已存在会自动忽略报错。
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--search-dir", action="append", default=[],
                         help="除项目根外，额外搜索图片的目录（可多次）")
@@ -58,6 +74,7 @@ def main():
     col_def = "MEDIUMTEXT" if DB_DRIVER == "mysql" else "TEXT DEFAULT ''"
     try:
         with engine.connect() as c:
+            # 【危险操作】ALTER TABLE ADD COLUMN 加列（已存在时报错，可忽略）
             c.execute(text(f"ALTER TABLE questions ADD COLUMN image_base64 {col_def}"))
             c.commit()
         print("✅ 已确保 questions.image_base64 列存在")
@@ -84,6 +101,7 @@ def main():
                 with open(real, 'rb') as f:
                     b64 = base64.b64encode(f.read()).decode()
                 ext = os.path.splitext(real)[1].lower()
+                # 写回 base64（随下方 session.commit 一并 UPDATE 题目表）
                 q.image_base64 = f"data:{MIME.get(ext, 'image/png')};base64,{b64}"
                 recovered += 1
             except Exception:

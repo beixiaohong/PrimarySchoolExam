@@ -75,6 +75,13 @@ def build_column_def(name: str, info: dict, comment: str) -> str:
 
 
 def main():
+    """将模型层定义的表/列注释同步到线上 MySQL（建表后补齐 COMMENT）。
+
+    参数：无；是否实际执行由模块级 DRY（取决于命令行 --dry-run）决定。
+    副作用：对线上 MySQL 执行 ALTER TABLE 改表注释、ALTER TABLE ... MODIFY COLUMN 改列注释。
+    注意：列注释修改须 MODIFY COLUMN 重述完整列定义，脚本已尽量原样保留类型/默认值；
+          建议在低峰期运行，sqlpub 代理可能限制部分 DDL，故每条语句独立容错。
+    """
     eng = create_engine(DATABASE_URL, pool_pre_ping=True)
     altered_col, altered_tbl, skipped, failed = 0, 0, 0, 0
     conn = eng.connect()  # DDL 隐式提交，逐条执行互不影响
@@ -89,6 +96,7 @@ def main():
             # ── 表注释 ──
             want_tbl = table.comment or ""
             if want_tbl and tbl_comment != want_tbl:
+                # 【危险操作】ALTER TABLE 修改表注释（轻量 DDL，不涉及数据）
                 stmt = f"ALTER TABLE `{tname}` COMMENT='{esc(want_tbl)}'"
                 if DRY:
                     print(f"[dry-table] {stmt}")
@@ -115,6 +123,7 @@ def main():
                 if info["comment"] == want:
                     continue
                 coldef = build_column_def(col.name, info, want)
+                # 【危险操作】ALTER TABLE MODIFY COLUMN 改列注释，会重述整列定义
                 stmt = f"ALTER TABLE `{tname}` MODIFY COLUMN {coldef}"
                 if DRY:
                     print(f"[dry-col] {stmt}")

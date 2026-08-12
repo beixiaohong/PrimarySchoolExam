@@ -17,6 +17,13 @@ except Exception:
 
 
 def main():
+    """迁移后修复 AUTO_INCREMENT 计数器：将每张自增表重置为 MAX(id)+1。
+
+    参数：无（连接信息取自 app.config.DATABASE_URL）。
+    副作用：会对线上 MySQL 各业务表执行 ALTER TABLE ... AUTO_INCREMENT，修改自增起点。
+    注意：运行前务必确认目标 MySQL 的 DB_DRIVER 已切到 mysql；此操作会改自增计数器，
+          在并发写入或有显式 id 导入场景下需谨慎。
+    """
     eng = create_engine(DATABASE_URL, pool_pre_ping=True)
     with eng.begin() as conn:
         tables = [r[0] for r in conn.execute(text(
@@ -29,6 +36,7 @@ def main():
                 skipped += 1
                 continue
             try:
+                # 【危险操作】ALTER TABLE 修改 AUTO_INCREMENT 自增起点，直接改动表结构
                 conn.execute(text(f"ALTER TABLE `{t}` AUTO_INCREMENT = {mx + 1}"))
                 print(f"[fix] {t}: AUTO_INCREMENT={mx + 1}")
                 fixed += 1

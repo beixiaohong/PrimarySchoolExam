@@ -17,6 +17,12 @@ TABLES = [
 ]
 
 def main():
+    """校验数据迁移完整性：逐表对比 MySQL 与 SQLite 的关键表行数。
+
+    参数：无（表清单见模块级 TABLES 常量；连接信息取自 app.config）。
+    副作用：只读，不修改任何数据；同时连接线上 MySQL（config.DATABASE_URL）与本地 primary_school.db。
+    注意：运行前须确保 .env 已设 DB_DRIVER=mysql 且主库已完成迁移；末尾 bad 计数表示不一致/报错的表数。
+    """
     print(f"driver={config.DB_DRIVER}")
     eng = create_engine(config.DATABASE_URL, pool_pre_ping=True)
     sq = sqlite3.connect(str(ROOT / "primary_school.db"))

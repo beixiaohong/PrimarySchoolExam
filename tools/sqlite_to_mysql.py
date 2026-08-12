@@ -86,6 +86,14 @@ def _ensure_admin(engine) -> None:
 
 
 def main():
+    """SQLite → MySQL 全量数据迁移（P1 模型基线方案）。
+
+    参数：见 argparse 定义（--dry-run / --tables / --sqlite / --ensure-admin）。
+    副作用：连接线上 MySQL 与本地 SQLite；非 dry-run 时会建表、预置迁移记录、批量 INSERT 数据，
+            并在 --ensure-admin 时写入 admins 初始管理员。
+    注意：运行前务必配好 .env（DB_DRIVER=mysql、DB_*）并提前建好空库；
+          本脚本会向 MySQL 大量写入，建议先在目标库备份；迁移期间临时关闭外键检查以容忍孤儿行。
+    """
     ap = argparse.ArgumentParser(description="SQLite → MySQL 数据迁移")
     ap.add_argument("--dry-run", action="store_true", help="只报告行数，不写入")
     ap.add_argument("--tables", default="", help="仅迁移指定表（逗号分隔）")
@@ -120,6 +128,7 @@ def main():
     # ── 建表 + 预置迁移记录 ──
     if not args.dry_run:
         print("[2/4] Base.metadata.create_all 建表（模型基线）...")
+        # 【危险操作】按模型在 MySQL 建全部表（仅在空库运行，已有表不重建）
         Base.metadata.create_all(bind=mysql_engine)
         versions = _list_migration_versions()
         with Session(mysql_engine) as db:
@@ -163,6 +172,7 @@ def main():
         cleaned = [{k: v for k, v in dict(r).items() if k in dst_cols} for r in rows]
         if not args.dry_run:
             for i in range(0, len(cleaned), BATCH):
+                # 【危险操作】批量 INSERT 写入 MySQL（仅插入 SQLite 中存在的列）
                 mig_conn.execute(dst_table.insert(), cleaned[i:i + BATCH])
             mig_conn.commit()
         report.append((name, f"{len(cleaned)} 行" + ("（dry-run 未写入）" if args.dry_run else " 已写入")))
