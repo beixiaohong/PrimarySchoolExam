@@ -2179,6 +2179,8 @@
 
 <div class="toast" :class="{on: toast.show}">{{toast.msg}}</div>
 
+<SearchView v-if="tab==='search'"></SearchView>
+<SyncView v-if="tab==='sync'"></SyncView>
 
 </div>
 </template>

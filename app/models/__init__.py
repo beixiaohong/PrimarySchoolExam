@@ -24,6 +24,7 @@ from .ai_usage import AIUsageLog, WeeklyReport, AiQa
 from .sprint4 import ChallengeRecord, TeachingRecord
 from .middle import MiddleQuestion, TeachingProgress
 from .paper import Paper, PaperQuestion
+from .sync import SyncQuizLog
 
 __all__ = [
     "Word", "WordBook",
@@ -53,4 +54,5 @@ __all__ = [
     "ChallengeRecord", "TeachingRecord",
     "MiddleQuestion", "TeachingProgress",
     "Paper", "PaperQuestion",
+    "SyncQuizLog",
 ]

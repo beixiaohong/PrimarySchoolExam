@@ -10,6 +10,8 @@ export const NAV_GROUPS = [
       { tab: 'dict', label: '听写磨耳朵', ico: '👂' },
       { tab: 'papers', label: '试卷中心', ico: '📄' },
       { tab: 'wrong', label: '错题本', ico: '📝', badge: 'wrong' },
+      { tab: 'search', label: '搜题', ico: '🔍' },
+      { tab: 'sync', label: '同步学', ico: '📚' },
       { tab: 'focus', label: '专注钟', ico: '⏰' },
     ],
   },
