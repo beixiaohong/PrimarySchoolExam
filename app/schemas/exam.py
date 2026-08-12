@@ -97,6 +97,38 @@ class MarkWrongRequest(BaseModel):
     seqs: Optional[List[int]] = Field(None, description="试卷内序号列表")
 
 
+class CollectionPracticeQuestionOut(BaseModel):
+    """采集题库刷题抽题输出（单题）
+
+    字段对应 paper_questions 表；options 已解析为列表，便于前端直接渲染选择题。
+    correct_answer 受 include_answer 控制：练习时传 False 则不返回，避免提前泄底。
+    """
+    id: int
+    paper_id: int
+    seq: int
+    grade: str = ""
+    subject: str = ""
+    qtype: str = ""
+    section: str = ""
+    question_html: str = ""
+    image_base64: str = ""
+    options: List[str] = []
+    correct_answer: str = ""
+
+    class Config:
+        from_attributes = True
+
+
+class CollectionSubmitRequest(BaseModel):
+    """采集题库刷题提交判分请求
+
+    与原有 submit-answers 解耦：本题库 id 空间为 paper_questions，
+    不写入原有 questions 错题本（ID 空间隔离）。
+    """
+    user_id: str = Field("", max_length=64, description="用户标识")
+    answers: List[dict] = Field(..., description="作答列表：[{question_id, user_answer}]")
+
+
 class WrongPracticeRequest(BaseModel):
     """错题专项练习请求
 
