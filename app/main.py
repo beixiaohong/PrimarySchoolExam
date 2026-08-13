@@ -112,18 +112,31 @@ if QR_DIR.exists():
 # 前端 Vue Router 使用 hash 模式，因此只需托管 /admin（index.html）与 /admin/assets（静态资源），
 # 客户端路由形如 /admin#/users，无需服务端 SPA 回退。
 ADMIN_DIST_DIR = Path(__file__).resolve().parent.parent / "admin" / "dist"
-if ADMIN_DIST_DIR.exists() and (ADMIN_DIST_DIR / "index.html").exists():
+ADMIN_INDEX = ADMIN_DIST_DIR / "index.html"
+
+# 静态资源仅在构建产物存在时挂载，避免目录缺失导致启动失败。
+if ADMIN_DIST_DIR.exists() and (ADMIN_DIST_DIR / "assets").exists():
     app.mount("/admin/assets", StaticFiles(directory=str(ADMIN_DIST_DIR / "assets")),
               name="admin-assets")
 
-    @app.get("/admin", include_in_schema=False)
-    @app.get("/admin/", include_in_schema=False)
-    def admin_index():
-        """管理后台首页：返回 admin/dist/index.html"""
-        return FileResponse(ADMIN_DIST_DIR / "index.html")
-else:
-    logging.getLogger("app.main").warning(
-        "admin/dist 不存在，管理后台未托管。请先 `cd admin && npm ci && npm run build` 生成构建产物。"
+
+@app.get("/admin", include_in_schema=False)
+@app.get("/admin/", include_in_schema=False)
+def admin_index():
+    """管理后台首页：返回 admin/dist/index.html。
+
+    无论 admin/dist 是否已构建，/admin 都返回可读的响应（而非 FastAPI 默认 404），
+    避免「构建缺失却只报 Not Found」的困惑。
+    """
+    if ADMIN_INDEX.exists():
+        return FileResponse(ADMIN_INDEX)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "管理后台未构建：请先在服务器执行 `cd admin && npm ci && npm run build` "
+                      "生成 admin/dist，然后重启应用。",
+        },
     )
 
 # 静态资源（图片、音频）
