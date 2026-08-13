@@ -1456,7 +1456,7 @@ const appOptions = {
           const items = this._quizItemsFromSession(r.items);
           if (!items.length) { this.showToast('练习题生成失败，请重试'); return; }
           this.startQuiz({
-            title: '✍️ 测一测 · ' + (ws.mode === 'new' ? '新词' : '复习') + `（${w.word}）`,
+            title: '✍️ 测一测 · ' + (ws.mode === 'new' ? '新词' : '复习') + `（第 ${i + 1}/${ws.words.length} 个）`,
             items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode, perItem: true, index: i },
           });
         }).catch(e => this.showToast(e.message));
