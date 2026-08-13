@@ -53,7 +53,7 @@ ALLOW_NICKNAME_LOGIN = os.environ.get("ALLOW_NICKNAME_LOGIN", "false").strip().l
 # 收款 / 客服二维码：图片放在 web/public/qr/ 下，构建后由 FastAPI 的 /qr 静态路由托管。
 # 默认指向 /qr/xxx.png（与 public/qr 对应）；如需改用外链图床或自定义文件名，用环境变量覆盖即可。
 RECHARGE_WECHAT_QR = os.environ.get("RECHARGE_WECHAT_QR", "/qr/wx.png").strip()    # 微信收款二维码
-RECHARGE_ALIPAY_QR = os.environ.get("RECHARGE_ALIPAY_QR", "/qr/zfb.png").strip()   # 支付宝收款二维码
+RECHARGE_ALIPAY_QR = os.environ.get("RECHARGE_ALIPAY_QR", "/qr/zfb.jpg").strip()   # 支付宝收款二维码
 RECHARGE_CS_WX_QR = os.environ.get("RECHARGE_CS_WX_QR", "/qr/cs_wx.png").strip()   # 客服微信加好友二维码
-RECHARGE_CS_CONTACT = os.environ.get("RECHARGE_CS_CONTACT", "").strip()  # 客服联系方式（微信号 / QQ 等），需自行填写
+RECHARGE_CS_CONTACT = os.environ.get("RECHARGE_CS_CONTACT", "beidou669").strip()  # 客服联系方式（微信号 / QQ 等），需自行填写
 RECHARGE_RATE = 1  # 汇率：1 元 = RECHARGE_RATE 钻石（固定 1:1）
