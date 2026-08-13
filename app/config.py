@@ -57,3 +57,10 @@ RECHARGE_ALIPAY_QR = os.environ.get("RECHARGE_ALIPAY_QR", "/qr/zfb.jpg").strip()
 RECHARGE_CS_WX_QR = os.environ.get("RECHARGE_CS_WX_QR", "/qr/cs_wx.png").strip()   # 客服微信加好友二维码
 RECHARGE_CS_CONTACT = os.environ.get("RECHARGE_CS_CONTACT", "beidou669").strip()  # 客服联系方式（微信号 / QQ 等），需自行填写
 RECHARGE_RATE = 1  # 汇率：1 元 = RECHARGE_RATE 钻石（固定 1:1）
+
+# ── 文档与鉴权（安全） ──
+# 生产环境默认关闭 Swagger(/docs) / ReDoc(/redoc) / OpenAPI(/openapi.json)，避免接口结构暴露。
+# 本地调试可设 ENABLE_DOCS=true 临时开启。
+ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "false").strip().lower() in ("1", "true", "yes", "on")
+# 普通用户登录会话 token 有效期（小时），与管理员一致
+USER_TOKEN_TTL_HOURS = int(os.environ.get("USER_TOKEN_TTL_HOURS", "12"))

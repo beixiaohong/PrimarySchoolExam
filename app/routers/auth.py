@@ -14,11 +14,11 @@ import secrets
 import string
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..config import ALLOW_NICKNAME_LOGIN
+from ..config import ALLOW_NICKNAME_LOGIN, USER_TOKEN_TTL_HOURS
 from ..database import get_db
 from ..models.auth import AuthCode
 from ..models.user import User
@@ -199,6 +199,25 @@ def _mask_phone(phone: str) -> str:
     return f"{phone[:3]}****{phone[7:]}"
 
 
+def require_user(authorization: str = Header(default=""),
+                 db: Session = Depends(get_db)) -> User:
+    """普通用户登录鉴权（Bearer token 会话制，与管理员 _require_admin 一致）。
+
+    返回已登录且未过期的 User；缺失/非法/过期一律 401。
+    业务路由统一通过 dependencies=[Depends(require_user)] 强制登录，
+    但保留各接口原有的 user_id 参数语义（家长代管孩子场景）。
+    """
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(401, "未登录或登录已过期")
+    user = db.query(User).filter(User.token == token).first()
+    if not user or not user.token:
+        raise HTTPException(401, "未登录或登录已过期")
+    if user.token_expires_at and user.token_expires_at < datetime.now():
+        raise HTTPException(401, "登录已过期，请重新登录")
+    return user
+
+
 # ═══════════════ 接口 ═══════════════
 
 @router.post("/send-code", summary="发送验证码（注册/绑定/重置密码）")
@@ -259,9 +278,14 @@ def register(req: RegisterReq, db: Session = Depends(get_db)):
         email=target, email_verified=True,
         last_login_at=datetime.now(), last_login_date=date.today(),
     )
+    # 注册即签发登录会话 token
+    user.token = secrets.token_urlsafe(32)
+    user.token_expires_at = datetime.now() + timedelta(hours=USER_TOKEN_TTL_HOURS)
     db.add(user)
     db.commit()
-    return _login_payload(db, user, is_new=True)
+    payload = _login_payload(db, user, is_new=True)
+    payload["token"] = user.token
+    return payload
 
 
 @router.post("/login", summary="邮箱+密码登录")
@@ -284,7 +308,12 @@ def auth_login(req: LoginReq, db: Session = Depends(get_db)):
         raise HTTPException(400, "该账号未设置密码，请先重置密码")
     if not _verify_pwd(req.password or "", user.password_hash):
         raise HTTPException(403, "密码不正确")
-    return _login_payload(db, user)
+    # 签发登录会话 token（Bearer 鉴权）
+    user.token = secrets.token_urlsafe(32)
+    user.token_expires_at = datetime.now() + timedelta(hours=USER_TOKEN_TTL_HOURS)
+    payload = _login_payload(db, user)
+    payload["token"] = user.token
+    return payload
 
 
 @router.post("/bind", summary="登录后绑定另一通道（邮箱/手机号）")
@@ -330,17 +359,14 @@ def reset_password(req: ResetPwdReq, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.get("/me", summary="当前账号认证信息（脱敏）")
-def auth_me(user_id: str, db: Session = Depends(get_db)):
-    """当前账号认证信息（脱敏）。
+@router.get("/me", summary="当前账号认证信息（脱敏，需登录）")
+def auth_me(user: User = Depends(require_user)):
+    """当前账号认证信息（脱敏，需携带登录 token）。
 
-    查询参数：user_id；无需家长密码。
+    依赖：Authorization: Bearer <token>；无需家长密码。
     返回：{user_id, nickname, auth_type, email(脱敏), phone(脱敏), has_password, allow_nickname_login}。
     副作用：只读，无写库。
     """
-    user = db.query(User).filter(User.user_id == user_id.strip()).first()
-    if not user:
-        raise HTTPException(404, "用户不存在")
     return {
         "user_id": user.user_id,
         "nickname": user.nickname,

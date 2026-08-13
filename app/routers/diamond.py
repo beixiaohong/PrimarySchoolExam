@@ -9,13 +9,15 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_CS_WX_QR, RECHARGE_RATE
 from ..services import diamond as diamond_svc
+from .admin import _require_admin
+from .auth import require_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/diamond", tags=["diamond"])
 
 
-@router.get("/balance", summary="查询用户钻石余额")
+@router.get("/balance", summary="查询用户钻石余额", dependencies=[Depends(require_user)])
 def get_balance(
     user_id: str = Query(..., description="用户名"),
     db: Session = Depends(get_db),
@@ -32,7 +34,7 @@ class AdjustRequest(BaseModel):
     reason: str = Field("admin_adjust", description="原因说明")
 
 
-@router.post("/adjust", summary="增减钻石（管理接口）")
+@router.post("/adjust", summary="增减钻石（管理接口，需管理员）", dependencies=[Depends(_require_admin)])
 def adjust_diamonds(req: AdjustRequest, db: Session = Depends(get_db)):
     """管理员增减用户钻石。amount 为正时增加，为负时扣除。"""
     if req.amount == 0:
@@ -60,14 +62,14 @@ class GrantAllRequest(BaseModel):
     amount: float = Field(1000000.0, description="赠送数量")
 
 
-@router.post("/grant-all", summary="为所有用户赠送钻石（首次初始化）")
+@router.post("/grant-all", summary="为所有用户赠送钻石（首次初始化，需管理员）", dependencies=[Depends(_require_admin)])
 def grant_all(req: GrantAllRequest, db: Session = Depends(get_db)):
     """为所有尚未创建钻石账户的用户赠送指定数量钻石"""
     count = diamond_svc.grant_all_existing(db, req.amount)
     return {"granted_count": count, "amount_per_user": req.amount}
 
 
-@router.get("/ledger", summary="查询钻石收支明细")
+@router.get("/ledger", summary="查询钻石收支明细", dependencies=[Depends(require_user)])
 def get_ledger(
     user_id: str = Query(..., description="用户名"),
     limit: int = Query(50, ge=1, le=200),

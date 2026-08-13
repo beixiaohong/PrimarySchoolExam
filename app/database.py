@@ -57,6 +57,9 @@ def _ensure_columns():
     _ensure_column("reward_coupons", "cycle_start_date", "VARCHAR(10)")
     # 申诉裁决备注（家长判对/判错时填写，可空）
     _ensure_column("answer_appeals", "note", "TEXT")
+    # 普通用户登录会话 token（028_user_token）：VARCHAR 可空、DATETIME 可空
+    _ensure_column("users", "token", "VARCHAR(64)")
+    _ensure_column("users", "token_expires_at", "DATETIME")
 
 
 def _backfill_pq_grade_subject():

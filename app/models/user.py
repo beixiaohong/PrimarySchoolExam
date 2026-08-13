@@ -33,6 +33,10 @@ class User(Base):
     phone_verified = Column(Boolean, default=False, comment="手机号是否已验证")
     city = Column(String(50), nullable=True, comment="天气城市（首页天气卡）")
 
+    # ── 登录会话 token（Bearer 鉴权，028_user_token）──
+    token = Column(String(64), nullable=True, index=True, comment="登录会话 token（Bearer 鉴权）")
+    token_expires_at = Column(DateTime, nullable=True, comment="token 过期时间")
+
     # ── 时间 ──
     created_at = Column(DateTime, default=datetime.now, comment="首次使用时间")
     last_login_at = Column(DateTime, default=datetime.now, comment="最近活跃时间")

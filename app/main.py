@@ -9,13 +9,15 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .database import init_db
+from .config import ENABLE_DOCS
 from .migrations.runner import run_migrations
 from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm
+from .routers.auth import require_user
 from .services.init_data import ensure_initial_data
 
 # P5 工程化前端构建产物（Vite build 输出，唯一托管的前端）
@@ -40,45 +42,55 @@ app = FastAPI(
     description="小学数学/英语试卷自动生成 API，支持题型管理、难度配置、在线做题、错题本",
     version="1.0.0",
     lifespan=lifespan,
+    # 生产环境默认关闭 Swagger / ReDoc / OpenAPI 文档（ENABLE_DOCS=true 才开启）
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url="/redoc" if ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
 )
 
+# 业务路由统一鉴权：除登录入口 /api/auth 与管理员 /api/admin 外，全部要求登录会话 token。
+# 注意：各接口仍保留 user_id 参数（家长代管孩子场景），token 仅证明「调用者已登录」。
+user_auth_deps = [Depends(require_user)]
+
 # 路由注册：业务逻辑模块挂载
-app.include_router(words.router, prefix="/api/words", tags=["英语单词"])
-app.include_router(phrases.router, prefix="/api/english", tags=["英语词组与句子"])
-app.include_router(math.router, prefix="/api/math", tags=["数学题目"])
-app.include_router(exam.router, prefix="/api/exam", tags=["试卷生成"])
-app.include_router(vocab.router, prefix="/api/vocab", tags=["背单词"])
-app.include_router(classical.router, prefix="/api/classical", tags=["古诗文背诵"])
-app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"])
-app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"])
-app.include_router(search.router, prefix="/api/search", tags=["搜题智能解答"])
-app.include_router(sync.router, prefix="/api/sync", tags=["同步学"])
-app.include_router(reading.router, prefix="/api/reading", tags=["阅读理解专项"])
-app.include_router(weather.router, prefix="/api/weather", tags=["天气"])
+# 业务路由统一要求登录会话（Bearer token）；/api/auth 与 /api/admin 例外
+# （auth 自身是登录入口；admin 使用独立的 _require_admin 管理员鉴权）
+app.include_router(words.router, prefix="/api/words", tags=["英语单词"], dependencies=user_auth_deps)
+app.include_router(phrases.router, prefix="/api/english", tags=["英语词组与句子"], dependencies=user_auth_deps)
+app.include_router(math.router, prefix="/api/math", tags=["数学题目"], dependencies=user_auth_deps)
+app.include_router(exam.router, prefix="/api/exam", tags=["试卷生成"], dependencies=user_auth_deps)
+app.include_router(vocab.router, prefix="/api/vocab", tags=["背单词"], dependencies=user_auth_deps)
+app.include_router(classical.router, prefix="/api/classical", tags=["古诗文背诵"], dependencies=user_auth_deps)
+app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"], dependencies=user_auth_deps)
+app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"], dependencies=user_auth_deps)
+app.include_router(search.router, prefix="/api/search", tags=["搜题智能解答"], dependencies=user_auth_deps)
+app.include_router(sync.router, prefix="/api/sync", tags=["同步学"], dependencies=user_auth_deps)
+app.include_router(reading.router, prefix="/api/reading", tags=["阅读理解专项"], dependencies=user_auth_deps)
+app.include_router(weather.router, prefix="/api/weather", tags=["天气"], dependencies=user_auth_deps)
 app.include_router(admin.router, prefix="/api/admin", tags=["管理后台"])
-app.include_router(user.router, prefix="/api/user", tags=["用户系统"])
+app.include_router(user.router, prefix="/api/user", tags=["用户系统"], dependencies=user_auth_deps)
 app.include_router(auth.router, prefix="/api/auth", tags=["用户认证"])
-app.include_router(tasks.router, prefix="/api/tasks", tags=["每日任务"])
-app.include_router(ai.router, prefix="/api/ai", tags=["AI 能力"])
-app.include_router(grading.router, prefix="/api/ai", tags=["AI 主观题判分"])
-app.include_router(mood.router, prefix="/api/mood", tags=["心情打卡"])
-app.include_router(rewards.router, prefix="/api/rewards", tags=["奖励闭环"])
-app.include_router(challenge.router, prefix="/api/challenge", tags=["限时挑战赛"])
-app.include_router(teach.router, prefix="/api/teach", tags=["小老师模式"])
-app.include_router(goals.router, prefix="/api/goals", tags=["目标倒计时"])
-app.include_router(qa.router, prefix="/api/qa", tags=["十万个为什么"])
-app.include_router(parent.router, prefix="/api/parent", tags=["家长功能"])
-app.include_router(appeal.router, prefix="/api/appeal", tags=["申诉复核"])
-app.include_router(pet.router, prefix="/api/pet", tags=["金币宠物"])
-app.include_router(tree.router, prefix="/api/tree", tags=["成长树"])
-app.include_router(badges.router, prefix="/api/badges", tags=["成就徽章"])
-app.include_router(cards.router, prefix="/api/cards", tags=["知识卡图鉴"])
-app.include_router(dictation.router, prefix="/api/dictation", tags=["听写磨耳朵"])
-app.include_router(focus.router, prefix="/api/focus", tags=["番茄专注钟"])
-app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"])
-app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"])
+app.include_router(tasks.router, prefix="/api/tasks", tags=["每日任务"], dependencies=user_auth_deps)
+app.include_router(ai.router, prefix="/api/ai", tags=["AI 能力"], dependencies=user_auth_deps)
+app.include_router(grading.router, prefix="/api/ai", tags=["AI 主观题判分"], dependencies=user_auth_deps)
+app.include_router(mood.router, prefix="/api/mood", tags=["心情打卡"], dependencies=user_auth_deps)
+app.include_router(rewards.router, prefix="/api/rewards", tags=["奖励闭环"], dependencies=user_auth_deps)
+app.include_router(challenge.router, prefix="/api/challenge", tags=["限时挑战赛"], dependencies=user_auth_deps)
+app.include_router(teach.router, prefix="/api/teach", tags=["小老师模式"], dependencies=user_auth_deps)
+app.include_router(goals.router, prefix="/api/goals", tags=["目标倒计时"], dependencies=user_auth_deps)
+app.include_router(qa.router, prefix="/api/qa", tags=["十万个为什么"], dependencies=user_auth_deps)
+app.include_router(parent.router, prefix="/api/parent", tags=["家长功能"], dependencies=user_auth_deps)
+app.include_router(appeal.router, prefix="/api/appeal", tags=["申诉复核"], dependencies=user_auth_deps)
+app.include_router(pet.router, prefix="/api/pet", tags=["金币宠物"], dependencies=user_auth_deps)
+app.include_router(tree.router, prefix="/api/tree", tags=["成长树"], dependencies=user_auth_deps)
+app.include_router(badges.router, prefix="/api/badges", tags=["成就徽章"], dependencies=user_auth_deps)
+app.include_router(cards.router, prefix="/api/cards", tags=["知识卡图鉴"], dependencies=user_auth_deps)
+app.include_router(dictation.router, prefix="/api/dictation", tags=["听写磨耳朵"], dependencies=user_auth_deps)
+app.include_router(focus.router, prefix="/api/focus", tags=["番茄专注钟"], dependencies=user_auth_deps)
+app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"], dependencies=user_auth_deps)
+app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"], dependencies=user_auth_deps)
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
-app.include_router(task_confirm.router, prefix="/api/task-confirm", tags=["完成确认"])
+app.include_router(task_confirm.router, prefix="/api/task-confirm", tags=["完成确认"], dependencies=user_auth_deps)
 
 # 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
 # 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。
