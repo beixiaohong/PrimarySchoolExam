@@ -160,31 +160,72 @@ def _streak(db: Session, user_id: str) -> int:
     return best
 
 
-# ═══════════════════ 称号系统（Sprint 4，纯派生计算） ═══════════════════
+# ═══════════════════ 称号系统（成长积分制） ═══════════════════
+#
+# 旧版：称号只看「累计作答量」（做题+灭错+单词+古诗文，含复习），
+#       复习量也能刷，导致很快到顶。
+# 新版：称号由「成长积分(GP)」决定，GP = 基础学习 + 任务积分 + 成就计分，
+#       且基础学习与任务积分【每天限额】，防止单日猛刷快速升级。
+#
+#   · 基础学习（每天封顶 BASE_CAP_PER_DAY）：仅统计"新学"动作，不含复习——
+#       新学单词 +1/个、新学古诗文 +2/篇、做题答对 +1/题。
+#   · 任务积分（每天封顶 TASK_CAP_PER_DAY）：每完成一个每日任务 +TASK_PTS。
+#   · 成就计分：里程碑式一次性加分（各徽章解锁即得分），天然有上限，不与每日刷量挂钩。
+#
+# 称号阶梯按 GP 阈值划分，档位更多、级差更小，需长期稳定积累才能到顶。
 
-# 顶档累计作答量由 1000 大幅调高至 10000，并新增过渡档（800/200），
-# 使最高称号需要长期积累，避免轻易到顶。
+# ── 成长积分参数 ──
+BASE_PTS_WORD = 1      # 每新学一个单词
+BASE_PTS_TEXT = 2      # 每新学一篇古诗文
+BASE_PTS_EXAM = 1      # 每答对一道题
+BASE_CAP_PER_DAY = 20  # 基础学习：单日计入上限（≈ 20 个新学动作）
+
+TASK_PTS = 5           # 每完成一个每日任务
+TASK_CAP_PER_DAY = 15  # 任务积分：单日计入上限（≈ 3 个强制任务）
+
+# 成就计分：徽章解锁即得分（一次性，总量有限，不与每日刷量挂钩）
+ACHIEVEMENT_POINTS = {
+    "master": 20,     # 错题克星（掌握错题 ≥20）
+    "word": 20,       # 单词小达人（累计学单词 ≥100）
+    "poem": 15,       # 诗词小状元（古诗文 ≥10）
+    "streak": 15,     # 全勤达人（连续完成天 ≥7）
+    "challenger": 10, # 挑战高手（单场最高答对 ≥10）
+}
+
+# 称号阶梯（GP 阈值，由高到低；档位多、级差小，需长期积累）
 TITLE_LADDER = [
-    (10000, "超级学霸", "👑"),
-    (5000, "知识探险家", "🧭"),
-    (2000, "学霸学徒", "📚"),
-    (800, "博学少年", "🎓"),
-    (200, "勤学小将", "⚔️"),
-    (50, "刷题小能手", "✏️"),
-    (10, "答题小新星", "⭐"),
+    (4500, "超级学霸", "👑"),
+    (3700, "鸿儒硕学", "🏛️"),
+    (3000, "满腹经纶", "📜"),
+    (2500, "学海扬帆", "⛵"),
+    (2000, "博闻多识", "🌟"),
+    (1600, "勤思学霸", "📚"),
+    (1250, "睿智学童", "🔆"),
+    (960, "知识探险家", "🧭"),
+    (720, "思辨新锐", "💡"),
+    (520, "笃学标兵", "🏅"),
+    (350, "博学少年", "🎓"),
+    (220, "进阶学子", "📖"),
+    (120, "勤学小将", "⚔️"),
+    (50, "求知小苗", "🌿"),
     (0, "学习萌新", "🌱"),
 ]
 
 
 @router.get("/titles", summary="称号与徽章（按累计学习数据派生）")
 def get_titles(user_id: str, db: Session = Depends(get_db)):
-    """称号与徽章（纯派生计算，按累计学习数据）。
+    """称号与徽章（成长积分制，纯派生只读计算）。
 
-    称号按累计作答量（total_answered）对照 TITLE_LADDER 阈值取当前/下一档；
-    徽章含 5 项达成条件：错题克星(掌握≥20)/单词小达人(单词≥100)/诗词小状元(古诗文≥10)/
-    全勤达人(连续完成天≥7)/挑战高手(单场最高答对≥10)。
+    称号由「成长积分(GP)」对照 TITLE_LADDER 阈值决定：
+        GP = 基础学习(按天封顶,仅新学不含复习)
+           + 任务积分(按天封顶,每完成一个每日任务)
+           + 成就计分(徽章解锁一次性加分)
+    —— 基础学习与任务积分均设每日上限，防止单日猛刷快速升级；
+       复习量不再计入基础，避免靠刷题/复习堆量到顶。
+    徽章含 5 项成就（见 ACHIEVEMENT_POINTS）。
     参数（Query）：user_id。
-    返回：{main, next, total_answered, badges[], stats{...}}。
+    返回：{main, next, total_answered(=GP,兼容), growth{base,task,achievement,...},
+           badges[], stats{...}}。
     副作用：无（只读）。无需家长密码。
     """
     from ..models.exam import ExamAttempt, WrongRecord
@@ -193,9 +234,7 @@ def get_titles(user_id: str, db: Session = Depends(get_db)):
     from ..models.sprint4 import ChallengeRecord
 
     total_exam = db.query(ExamAttempt).filter(ExamAttempt.user_id == user_id).all()
-    answered_exam = sum(a.total or 0 for a in total_exam)
     study_errs = db.query(StudyError).filter(StudyError.user_id == user_id).all()
-    answered_study = sum(e.error_count or 0 for e in study_errs)
 
     vocab_learned = db.query(VocabDailyLog).filter(
         VocabDailyLog.user_id == user_id).all()
@@ -211,10 +250,9 @@ def get_titles(user_id: str, db: Session = Depends(get_db)):
         StudyError.user_id == user_id, StudyError.is_mastered.is_(True)).count()
 
     # 全勤连续天数（含今天，以三科全 done 的天数为连续单位）
-    done_dates = set()
-    for row in db.query(DailyTask).filter(
-            DailyTask.user_id == user_id, DailyTask.status == "done").all():
-        done_dates.add(row.task_date)
+    done_tasks = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.status == "done").all()
+    done_dates = {row.task_date for row in done_tasks}
     streak = 0
     d = date.today()
     while d in done_dates:
@@ -225,19 +263,48 @@ def get_titles(user_id: str, db: Session = Depends(get_db)):
         ChallengeRecord.user_id == user_id).all()
     challenge_best = max((r.correct for r in best), default=0)
 
-    total_answered = answered_exam + answered_study + words + texts
+    # ── 成长积分（GP）计算 ──
+    # 1) 基础学习：按天聚合"新学"动作，单日封顶 BASE_CAP_PER_DAY（不含复习，避免刷复习升级）
+    base_by_day = {}
+    for r in vocab_learned:
+        d = r.learn_date
+        base_by_day[d] = base_by_day.get(d, 0) + (r.new_words_learned or 0) * BASE_PTS_WORD
+    for r in classical_rows:
+        d = r.learn_date
+        base_by_day[d] = base_by_day.get(d, 0) + (r.texts_learned or 0) * BASE_PTS_TEXT
+    for a in total_exam:
+        d = (a.created_at or datetime.now()).date()
+        base_by_day[d] = base_by_day.get(d, 0) + (a.correct or 0) * BASE_PTS_EXAM
+    base_gp = sum(min(v, BASE_CAP_PER_DAY) for v in base_by_day.values())
+
+    # 2) 任务积分：按天聚合已完成任务，单日封顶 TASK_CAP_PER_DAY
+    task_by_day = {}
+    for t in done_tasks:
+        task_by_day[t.task_date] = task_by_day.get(t.task_date, 0) + TASK_PTS
+    task_gp = sum(min(v, TASK_CAP_PER_DAY) for v in task_by_day.values())
+
+    # 3) 成就计分：徽章解锁即得分（里程碑式一次性加分，总量有限）
+    ach_gp = 0
+    if mastered >= 20: ach_gp += ACHIEVEMENT_POINTS["master"]
+    if words >= 100: ach_gp += ACHIEVEMENT_POINTS["word"]
+    if texts >= 10: ach_gp += ACHIEVEMENT_POINTS["poem"]
+    if streak >= 7: ach_gp += ACHIEVEMENT_POINTS["streak"]
+    if challenge_best >= 10: ach_gp += ACHIEVEMENT_POINTS["challenger"]
+
+    gp = base_gp + task_gp + ach_gp
+
     main = TITLE_LADDER[0]
     next_t = None
     for t in TITLE_LADDER:
-        if total_answered >= t[0]:
+        if gp >= t[0]:
             main = t
             break
     for t in reversed(TITLE_LADDER):
-        if t[0] > total_answered:
+        if t[0] > gp:
             next_t = t
     if next_t:
         next_t = {"name": next_t[1], "icon": next_t[2],
-                  "need": next_t[0] - total_answered, "total": next_t[0]}
+                  "need": next_t[0] - gp, "total": next_t[0]}
 
     badges = [
         {"code": "master", "name": "错题克星", "icon": "📕",
@@ -254,7 +321,16 @@ def get_titles(user_id: str, db: Session = Depends(get_db)):
     return {
         "main": {"name": main[1], "icon": main[2]},
         "next": next_t,
-        "total_answered": total_answered,
+        "total_answered": gp,   # 兼容旧字段，现表示成长积分(GP)
+        "growth": {
+            "total": gp,
+            "base": base_gp,
+            "task": task_gp,
+            "achievement": ach_gp,
+            "base_cap": BASE_CAP_PER_DAY,
+            "task_cap": TASK_CAP_PER_DAY,
+            "achievement_max": sum(ACHIEVEMENT_POINTS.values()),
+        },
         "badges": badges,
         "stats": {"words": words, "texts": texts, "mastered": mastered,
                   "streak": streak, "challenge_best": challenge_best},
