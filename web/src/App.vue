@@ -158,6 +158,14 @@
           </div>
         </div>
 
+        <!-- 首页子导航：今日 / 奖励激励 / 家园互动 -->
+        <div class="home-subnav">
+          <button class="hs-btn" :class="{active: homeSub==='today'}" @click="homeSub='today'">📅 今日</button>
+          <button class="hs-btn" :class="{active: homeSub==='reward'}" @click="homeSub='reward'">🎁 奖励激励</button>
+          <button class="hs-btn" :class="{active: homeSub==='family'}" @click="homeSub='family'">🏡 家园互动</button>
+        </div>
+
+        <template v-if="homeSub==='today'">
         <!-- 今日提醒条（P5：聚合待办提醒，点击直达） -->
         <div class="today-remind" v-if="taskRemain>0 || wrongBadge>0">
           <span class="tr-ico">⏰</span>
@@ -316,6 +324,9 @@
           </div>
         </div>
 
+        </template>
+
+        <template v-if="homeSub==='family'">
         <!-- 完成确认（孩子提交完成 → 家长确认/拒绝），显示在奖励小屋上方 -->
         <div class="card confirm-card" style="margin-top:14px">
           <div class="card-head">
@@ -323,7 +334,7 @@
             <span class="more">孩子提交完成，家长在首页确认</span>
           </div>
           <div v-if="taskConfirms.length" class="confirm-list">
-            <div class="confirm-item" v-for="c in taskConfirms" :key="c.id">
+            <div class="confirm-item" v-for="c in (showAllConfirms ? taskConfirms : taskConfirms.slice(0,5))" :key="c.id">
               <div class="ci-row">
                 <b class="ci-title">{{c.title}}</b>
                 <span class="ci-sum">{{c.summary}}</span>
@@ -346,11 +357,12 @@
               </div>
             </div>
           </div>
+          <button v-if="taskConfirms.length>5" class="link-btn" @click="showAllConfirms=!showAllConfirms">{{showAllConfirms ? '收起 ▴' : '查看全部 '+taskConfirmsTotal+' 条 ▾'}}</button>
           <p v-else class="pc-empty">家长反馈激励展示</p>
           <!-- 错题申诉结果：家长判对/判错，反馈到首页家长反馈区 -->
           <div v-if="decidedAppeals.length" class="confirm-appeals">
             <div class="ca-head">📨 错题申诉结果 <span class="more">家长对申诉的判对 / 判错</span></div>
-            <div class="ca-item" v-for="a in decidedAppeals" :key="a.id">
+            <div class="ca-item" v-for="a in (showAllAppeals ? decidedAppeals : decidedAppeals.slice(0,5))" :key="a.id">
               <div class="ci-row">
                 <b class="appeal-q" @click="toggleAppeal(a.id)" title="点击查看完整题目">
                   [{{a.subject || '未分科'}}]
@@ -368,8 +380,12 @@
               <div class="ci-row ci-sub"><span class="more">{{a.created_at}} 提交 · {{a.decided_at}} 裁决</span></div>
             </div>
           </div>
+          <button v-if="decidedAppeals.length>5" class="link-btn" @click="showAllAppeals=!showAllAppeals">{{showAllAppeals ? '收起 ▴' : '查看全部 '+decidedAppealsTotal+' 条 ▾'}}</button>
         </div>
 
+        </template>
+
+        <template v-if="homeSub==='reward'">
         <!-- 奖励闭环（Sprint 3） -->
         <div class="card reward-card" style="margin-top:14px" v-if="rewards">
           <div class="card-head"><b>🎁 奖励小屋</b><span class="more" v-if="rewards.wish && rewards.wish.status==='pending'">心愿待家长确认中</span><span class="more" v-else-if="rewards.wish && rewards.wish.status==='pending_redeem'">心愿达标啦！快找家长兑现</span></div>
@@ -404,13 +420,17 @@
           </div>
           <div class="timeline-box" v-if="rewardTimeline.length">
             <div class="tl-title">🏆 成长奖励记录</div>
-            <div class="tl-item" v-for="(it,i) in rewardTimeline" :key="i">
+            <div class="tl-item" v-for="(it,i) in (showAllRewards ? rewardTimeline : rewardTimeline.slice(0,6))" :key="i">
               <span class="tl-ico" :class="it.kind==='wish' ? 't-gold' : 't-blue'">{{it.kind==='wish' ? '🌟' : '🎫'}}</span>
               <div class="tl-body"><b>{{it.title}}</b><span>{{it.reason}}<template v-if="it.at"> · {{it.at}}</template></span></div>
             </div>
           </div>
+          <button v-if="rewardTimeline.length>6" class="link-btn" @click="showAllRewards=!showAllRewards">{{showAllRewards ? '收起 ▴' : '查看全部 '+rewardTimeline.length+' 条 ▾'}}</button>
         </div>
 
+        </template>
+
+        <template v-if="homeSub==='family'">
         <!-- 家长留言（孩子端） -->
         <div class="card msg-card" style="margin-top:14px">
           <div class="card-head">
@@ -429,6 +449,9 @@
           </div>
         </div>
 
+        </template>
+
+        <template v-if="homeSub==='today'">
         <!-- 成长周报入口（Sprint 3） -->
         <div class="card weekly-entry" style="margin-top:14px" @click="openWeekly()">
           <div class="w-ico">📮</div>
@@ -466,6 +489,7 @@
           <div class="card stat-card highlight"><div class="ico">🎯</div><b>{{avgScore}}%</b><span>平均正确率</span></div>
           <div class="card stat-card"><div class="ico">🏅</div><b>{{masteredTotal}}</b><span>已掌握错题</span></div>
         </div>
+      </template>
       </div>
 
       <!-- ═══════════ 刷题中心 ═══════════ -->
@@ -2293,7 +2317,7 @@
   <div class="modal">
     <div class="modal-head"><h2>🎉 任务完成已提交</h2></div>
     <div class="modal-body">
-      <p>请把这次完成的截图，用微信或其他方式发给家长，<br>提醒家长在首页「完成确认」里确认你就完成啦～</p>
+      <p>请把这次完成的截图，用微信或其他方式发给家长，<br>提醒家长在首页「🏡 家园互动」里的「完成确认」中确认你就完成啦～</p>
     </div>
     <div class="modal-foot">
       <button class="btn btn-primary" @click="taskSubmitTip.show=false">我知道了</button>

@@ -135,6 +135,13 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .sub-tabs .pill.active{border-color:var(--primary);box-shadow:none;background:var(--primary);color:#fff}
 
 /* ============ A1 今日学习首页 ============ */
+/* 首页子导航：今日 / 奖励激励 / 家园互动 */
+.home-subnav{display:flex;gap:8px;margin-top:16px;background:var(--card,#fff);border:1.5px solid var(--border,#eee);border-radius:14px;padding:6px}
+.home-subnav .hs-btn{flex:1;border:none;background:transparent;color:var(--text-2,#8a97b0);font-size:14px;font-weight:600;padding:10px 6px;border-radius:10px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:5px}
+.home-subnav .hs-btn.active{background:linear-gradient(135deg,#4E7CF6,#7B9DFB);color:#fff;box-shadow:0 4px 12px rgba(78,124,246,.28)}
+/* 列表「查看全部 / 收起」链接按钮 */
+.link-btn{display:inline-block;margin:6px 2px 0;border:none;background:transparent;color:#4E7CF6;font-size:12.5px;font-weight:600;cursor:pointer;padding:2px 0}
+.link-btn:hover{text-decoration:underline}
 .hero{background:linear-gradient(135deg,#4E7CF6 0%,#7B9DFB 60%,#9DB4FF 100%);border-radius:var(--radius);color:#fff;padding:26px 28px;display:flex;align-items:center;gap:22px;box-shadow:0 10px 30px rgba(78,124,246,.3)}
 .hero h1{font-size:20px;margin-bottom:4px}
 .hero p{font-size:13px;opacity:.92}

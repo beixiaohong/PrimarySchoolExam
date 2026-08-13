@@ -49,8 +49,13 @@ const appOptions = {
       textDetail: { show: false, id: 0, title: '', author: '', dynasty: '', grade: 0, text_type: '', content: '' },
       // 完成确认（孩子提交任务完成 → 家长确认/拒绝）：首页展示 + 家长操作
       taskConfirms: [],
+      taskConfirmsTotal: 0,                       // 历史总条数（用于「查看全部 N 条」）
       taskReject: { id: null, reason: '' },       // 家长拒绝时展开的输入框
       taskSubmitTip: { show: false },             // 孩子完成任务后弹出的「发截图给家长」提示
+      showAllConfirms: false,                     // 首页「完成确认」是否展开全部历史
+      showAllAppeals: false,                      // 首页「错题申诉结果」是否展开全部历史
+      showAllRewards: false,                      // 首页「成长奖励记录」是否展开全部历史
+      homeSub: 'today',                           // 首页子视图：today(今日) / reward(奖励激励) / family(家园互动)
 
       // 错题本
       wrongAnalysis: { total: 0, pending: 0, mastered: 0, mastery_rate: 0, by_cause: [], by_subject: [] },
@@ -78,6 +83,7 @@ const appOptions = {
       // 申诉（AI 判题复核 + 孩子「我做对了」家长二次确认）
       pendingAppeals: [],
       decidedAppeals: [],       // 已裁决（判对/判错），首页「家长反馈」区展示
+      decidedAppealsTotal: 0,   // 已裁决历史总条数
       appealExpanded: {},       // {id: true} 点击展开查看完整题目
       pendingMakeups: [],
       submitWrongIds: {}, submitWrongNew: {},
@@ -1590,8 +1596,11 @@ const appOptions = {
     loadTaskConfirms() {
       if (!this.user) return;
       this.api(`/api/task-confirm/list?user_id=${encodeURIComponent(this.user)}`)
-        .then(r => { this.taskConfirms = (r && r.items) || []; })
-        .catch(() => { this.taskConfirms = []; });
+        .then(r => {
+          this.taskConfirms = (r && r.items) || [];
+          this.taskConfirmsTotal = (r && typeof r.total === 'number') ? r.total : this.taskConfirms.length;
+        })
+        .catch(() => { this.taskConfirms = []; this.taskConfirmsTotal = 0; });
     },
     createTaskConfirm(payload) {
       if (!this.user) return;
@@ -1801,8 +1810,11 @@ const appOptions = {
     loadDecidedAppeals() {
       // 已裁决申诉（家长判对/判错），用于首页「家长反馈」区展示结果
       this.api(`/api/appeal/list?user_id=${encodeURIComponent(this.user)}&status=history`)
-        .then(d => { this.decidedAppeals = (d && d.appeals) || []; })
-        .catch(() => { this.decidedAppeals = []; });
+        .then(d => {
+          this.decidedAppeals = (d && d.appeals) || [];
+          this.decidedAppealsTotal = (d && typeof d.total === 'number') ? d.total : this.decidedAppeals.length;
+        })
+        .catch(() => { this.decidedAppeals = []; this.decidedAppealsTotal = 0; });
     },
     toggleAppeal(id) {
       this.$set(this.appealExpanded, id, !this.appealExpanded[id]);

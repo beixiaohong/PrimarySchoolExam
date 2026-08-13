@@ -89,20 +89,21 @@ def create_confirm(req: CreateReq, db: Session = Depends(get_db)):
 
 
 @router.get("/list", summary="查询孩子的任务完成确认记录（首页展示）")
-def list_confirms(user_id: str = "", db: Session = Depends(get_db)):
-    """返回该用户全部确认记录（倒序，最多 50 条），供首页「完成确认」区块展示。
+def list_confirms(user_id: str = "", limit: int = 200, offset: int = 0,
+                  db: Session = Depends(get_db)):
+    """返回该用户确认记录（倒序），供首页「完成确认」区块展示；支持分页与 total。
 
-    参数（Query）：user_id。
-    返回：{items[{id, task_type, title, summary, status, reject_reason, created_at, resolved_at}]}。
+    参数（Query）：user_id、limit（默认 200，上限 500）、offset（默认 0）。
+    返回：{items[{id, task_type, title, summary, status, reject_reason, created_at, resolved_at}], total}。
     副作用：无（只读）。无需家长密码。
     """
     uid = (user_id or "").strip()
     if not uid:
-        return {"items": []}
-    rows = db.query(TaskConfirm).filter(
-        TaskConfirm.user_id == uid).order_by(
-        TaskConfirm.created_at.desc()).limit(50).all()
-    return {"items": [_serialize(r) for r in rows]}
+        return {"items": [], "total": 0}
+    q = db.query(TaskConfirm).filter(TaskConfirm.user_id == uid)
+    total = q.count()
+    rows = q.order_by(TaskConfirm.created_at.desc()).offset(offset).limit(min(limit, 500)).all()
+    return {"items": [_serialize(r) for r in rows], "total": total}
 
 
 @router.post("/resolve", summary="家长确认/拒绝孩子的任务完成（需家长密码）")

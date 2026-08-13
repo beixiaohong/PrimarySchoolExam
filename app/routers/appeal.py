@@ -110,7 +110,7 @@ def create_appeal(req: AppealCreateReq, db: Session = Depends(get_db)):
 
 @router.get("/list", summary="申诉列表（家长面板待处理 / 历史）")
 def list_appeals(user_id: str, status: str = "pending",
-                 limit: int = 50, db: Session = Depends(get_db)):
+                 limit: int = 200, offset: int = 0, db: Session = Depends(get_db)):
     """申诉列表（家长面板待处理 / 历史）。
 
     查询参数：user_id, status（默认 pending；approved/rejected 查单一状态；history 查已裁决 approved+rejected）；无需家长密码。
@@ -123,7 +123,8 @@ def list_appeals(user_id: str, status: str = "pending",
         q = q.filter(AnswerAppeal.status.in_(["approved", "rejected"]))
     elif status:
         q = q.filter(AnswerAppeal.status == status)
-    rows = q.order_by(AnswerAppeal.id.desc()).limit(min(limit, 100)).all()
+    total = q.count()
+    rows = q.order_by(AnswerAppeal.id.desc()).offset(offset).limit(min(limit, 200)).all()
     return {"appeals": [{
         "id": a.id,
         "source": a.source,
@@ -137,7 +138,7 @@ def list_appeals(user_id: str, status: str = "pending",
         "status": a.status,
         "created_at": str(a.created_at)[:16] if a.created_at else "",
         "decided_at": str(a.decided_at)[:16] if a.decided_at else "",
-    } for a in rows]}
+    } for a in rows], "total": total}
 
 
 @router.post("/decide", summary="家长二次确认：确认做对了（改判）/ 维持判错")
