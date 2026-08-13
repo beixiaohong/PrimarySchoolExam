@@ -7,7 +7,7 @@ from ..database import Base
 
 
 class SyncQuizLog(Base):
-    """单元小测成绩记录（同步学，034 迁移建表；SQLite 测试靠 create_all）"""
+    """单元小测成绩记录（同步学，034 迁移建表；测试库靠 create_all 兜底）"""
     __tablename__ = "sync_quiz_log"
     __table_args__ = {"comment": "同步学单元小测成绩：记录每用户每科每单元的小测得分"}
 

@@ -44,7 +44,7 @@ PAID_DAILY_LIMIT = 100      # 付费链：每个 VIP user_id 每天最多调用�
 
 
 def _load_vip_users() -> set:
-    """从 vip_users 表读取名单（走当前数据库驱动，兼容 SQLite/MySQL）；
+    """从 vip_users 表读取名单（MySQL 驱动）；
     失败返回空集（不阻断启动/调用）"""
     try:
         from sqlalchemy import text

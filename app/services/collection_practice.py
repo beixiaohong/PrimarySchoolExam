@@ -5,7 +5,7 @@
 
 设计要点：
 - grade / subject / qtype 三个维度从 PaperQuestion 自身冗余列筛选，不依赖 JOIN papers。
-- 随机排序使用 database.random_order()（方言兼容：SQLite random() / MySQL rand()）。
+- 随机排序使用 database.random_order()（已统一为 MySQL 的 rand()）。
 - 只负责「抽题 + 统计」，判分逻辑复用 routers.exam._check_answer（保持去重/容错判题一致）。
 """
 from typing import Dict, List, Optional

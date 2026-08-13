@@ -450,7 +450,7 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     for k in STUDY_FLAG_KEYS:
         if k in flags:
             clean[k] = bool(flags[k])
-    # 可移植 upsert（SQLite/MySQL 方言兼容，不用 ON CONFLICT）
+    # 可移植 upsert（MySQL 兼容，不用 ON CONFLICT）
     _params = {"u": req.user_id, "j": json.dumps(clean), "t": datetime.now()}
     exists = db.execute(text("SELECT 1 FROM parent_task_settings WHERE user_id=:u"),
                         {"u": req.user_id}).fetchone()

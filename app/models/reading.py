@@ -1,4 +1,4 @@
-"""阅读理解专项数据模型（036 迁移建表；SQLite 测试靠 create_all）
+"""阅读理解专项数据模型（036 迁移建表；测试库靠 create_all 兜底）
 
 questions_json 结构（每题）：
 {

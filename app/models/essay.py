@@ -1,4 +1,4 @@
-"""作文 / 简答判分数据模型（035 迁移建表；SQLite 测试靠 create_all）"""
+"""作文 / 简答判分数据模型（035 迁移建表；测试库靠 create_all 兜底）"""
 from datetime import datetime
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float
