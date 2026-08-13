@@ -44,7 +44,7 @@ function logout() {
 <style>
 * { box-sizing: border-box; }
 body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f4f6fb; }
-.admin-root { display: flex; min-height: 100vh; }
+.admin-root { display: flex; height: 100%; min-height: 100vh; }
 .side { width: 200px; background: #1f2d3d; color: #fff; display: flex; flex-direction: column; }
 .logo { padding: 20px 16px; font-size: 18px; font-weight: 700; line-height: 1.3; border-bottom: 1px solid #324056; }
 .logo small { display: block; font-size: 12px; font-weight: 400; color: #9fb0c3; margin-top: 2px; }

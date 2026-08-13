@@ -35,7 +35,7 @@ def ensure_initial_data():
 
 
 def _seed_admin(db):
-    """种子默认管理员账号（库内无管理员时创建，凭证来自环境变量，缺省 admin/admin123456）
+    """种子默认管理员账号（库内无管理员时创建，凭证来自环境变量，缺省 admin/Admin@123）
 
     注意：默认口令仅用于首次启动，请上线后立即在后台「修改密码」或配置
     ADMIN_USERNAME / ADMIN_PASSWORD 环境变量后重启。

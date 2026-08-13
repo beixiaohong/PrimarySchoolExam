@@ -13,7 +13,7 @@
         <el-button type="primary" :loading="loading" @click="doLogin" style="width: 100%">登录</el-button>
       </el-form>
       <p v-if="err" class="err">{{ err }}</p>
-      <p class="tip">默认账号 admin / admin123456，请上线后尽快修改密码</p>
+      <p class="tip">默认账号 admin / Admin@123（可用环境变量 ADMIN_USERNAME / ADMIN_INIT_PASSWORD 覆盖），请上线后尽快修改密码</p>
     </el-card>
   </div>
 </template>
@@ -49,7 +49,7 @@ async function doLogin() {
 </script>
 
 <style scoped>
-.login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #1f2d3d; }
+.login-wrap { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 100vh; background: #1f2d3d; }
 .login-card { width: 360px; }
 .login-card h2 { margin: 0 0 20px; text-align: center; font-size: 20px; }
 .err { color: #f56c6c; font-size: 13px; margin: 10px 0 0; }
