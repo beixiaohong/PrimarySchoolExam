@@ -2128,31 +2128,27 @@
         <button class="icon-btn" @click="wordSession.active=false" title="退出">✕</button>
       </div>
       <div class="word-card" v-if="wordSession.words.length">
-        <template v-if="wordSession.mode==='new'">
-          <div class="word-big" @click="wordSpeak" style="cursor:pointer" title="点击朗读">🔊 {{wordSession.words[wordSession.i].word}}</div>
-          <div class="word-phonetic">{{wordSession.words[wordSession.i].phonetic || ''}}</div>
-          <div class="word-meaning" v-if="wordSession.revealed">{{wordSession.words[wordSession.i].pos}} {{wordSession.words[wordSession.i].meaning}}</div>
-          <div class="word-unit" v-if="wordSession.revealed">📚 {{wordSession.words[wordSession.i].unit || '未分单元'}}</div>
-          <div v-if="!wordSession.revealed"><button class="btn btn-ghost btn-lg" @click="wordSession.revealed=true">👁 显示释义</button></div>
-          <div v-else><button class="btn btn-success btn-lg" @click="wordNext(true)">学会了 →</button></div>
-        </template>
-        <template v-else>
-          <div class="word-big" @click="wordSpeak" style="cursor:pointer" title="点击朗读">🔊 {{wordSession.words[wordSession.i].word}}</div>
-          <div class="word-phonetic">{{wordSession.words[wordSession.i].phonetic || ''}}</div>
-          <div class="word-meaning">{{wordSession.words[wordSession.i].meaning}}</div>
-          <div class="word-btns">
-            <button class="btn btn-danger" @click="wordNext(false)">没记住</button>
-            <button class="btn btn-success" @click="wordNext(true)">记住了</button>
+        <div class="word-big" @click="wordSpeak" style="cursor:pointer" title="点击朗读">🔊 {{curWord.word}}</div>
+        <div class="word-phonetic">{{curWord.phonetic || ''}}</div>
+        <transition name="fade">
+          <div v-if="wordSession.revealed || wordSession.mode!=='new'" class="word-meaning-block">
+            <div class="word-meaning">{{curWord.pos}} {{curWord.meaning}}</div>
+            <div class="word-unit">📚 {{curWord.unit || '未分单元'}}</div>
           </div>
-        </template>
+        </transition>
+        <div class="word-btns">
+          <button class="btn btn-ghost" @click="wordSpeak">🔊 听</button>
+          <button v-if="wordSession.mode==='new' && !wordSession.revealed" class="btn btn-ghost btn-lg" @click="wordSession.revealed=true">👁 看释义</button>
+          <button class="btn btn-primary btn-lg" @click="wordTest()">✍️ 测一测 →</button>
+        </div>
       </div>
-      <p class="dictate-hint">📌 翻完卡片后还要默写一遍，全部写对才算完成哦 ✍️</p>
+      <p class="dictate-hint">💡 听清读音、看懂意思，点「测一测」做几道小题，做对就过关！</p>
     </div>
   </template>
   <div v-else-if="wordSession.done" class="done-wrap">
     <div class="done-illus">🎉</div>
     <h2>{{wordSession.mode==='new' ? '新词学习完成！' : '复习完成！'}}</h2>
-    <p class="sub">共学习 {{wordSession.words.length}} 个单词 · 默写全部通过 ✍️</p>
+    <p class="sub">共 {{wordSession.words.length}} 个单词 · 全部通过 ✍️</p>
     <div class="done-actions"><button class="btn btn-primary" @click="wordSession.active=false; refreshAll()">完成</button></div>
   </div>
 </div>
@@ -2168,20 +2164,25 @@
         <button class="icon-btn" @click="textSession.active=false" title="退出">✕</button>
       </div>
       <div class="word-card text-card" v-if="textSession.texts.length">
-        <div class="text-title">《{{textSession.texts[textSession.i].title}}》<span>{{textSession.texts[textSession.i].author}} · {{textSession.texts[textSession.i].dynasty}}</span></div>
-        <div class="text-content" @click="textSpeak" style="cursor:pointer" title="点击朗读">🔊 {{textSession.texts[textSession.i].content}}</div>
+        <div class="text-title">《{{curText.title}}》<span>{{curText.author}} · {{curText.dynasty}}</span></div>
+        <div class="text-lines" @click="textSpeak" style="cursor:pointer" title="点击朗读">
+          <div class="text-line" v-for="(ln, idx) in textLines" :key="idx">
+            <div class="text-py" v-if="curText.pinyin && curText.pinyin[idx]">{{curText.pinyin[idx]}}</div>
+            <div class="text-txt">🔊 {{ln}}</div>
+          </div>
+        </div>
         <div class="word-btns">
-          <button class="btn btn-danger" @click="textNext(false)">还没背熟</button>
-          <button class="btn btn-success" @click="textNext(true)">背熟了 →</button>
+          <button class="btn btn-ghost" @click="textSpeak">🔊 跟读</button>
+          <button class="btn btn-primary btn-lg" @click="textTest()">✍️ 测一测 →</button>
         </div>
       </div>
-      <p class="dictate-hint">📌 背完卡片后还要填空默写，全部写对才算完成哦 ✍️</p>
+      <p class="dictate-hint">💡 跟着拼音读几遍，点「测一测」填一填，做对就过关！</p>
     </div>
   </template>
   <div v-else-if="textSession.done" class="done-wrap">
     <div class="done-illus">🏮</div>
-    <h2>{{textSession.mode==='new' ? '今日古诗文完成！' : '复习默写完成！'}}</h2>
-    <p class="sub">背诵 {{textSession.okCount}} 篇 · 默写全部通过 ✍️</p>
+    <h2>{{textSession.mode==='new' ? '古诗文学习完成！' : '复习完成！'}}</h2>
+    <p class="sub">全部通过 ✍️</p>
     <div class="done-actions"><button class="btn btn-primary" @click="textSession.active=false; refreshAll()">完成</button></div>
   </div>
 </div>

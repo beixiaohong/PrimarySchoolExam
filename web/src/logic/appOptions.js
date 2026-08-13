@@ -208,6 +208,16 @@ const appOptions = {
     textPct() {
       return this.textSession.texts.length ? Math.round(this.textSession.i / this.textSession.texts.length * 100) : 0;
     },
+    curWord() {
+      return (this.wordSession && this.wordSession.words && this.wordSession.words[this.wordSession.i]) || {};
+    },
+    curText() {
+      return (this.textSession && this.textSession.texts && this.textSession.texts[this.textSession.i]) || {};
+    },
+    textLines() {
+      // 与后端 _pinyin_lines 逐行对齐（均过滤空行）
+      return (this.curText.content || '').split('\n').map(s => s.trim()).filter(s => s);
+    },
     donutSegs() {
       const causes = this.wrongAnalysis.by_cause || [];
       const total = causes.reduce((s, c) => s + (c.pending || 0), 0);
@@ -1432,6 +1442,23 @@ const appOptions = {
           });
         }).catch(e => { ws.active = false; this.showToast(e.message); });
     },
+    /* 逐词「测一测」：学完一个词立即做 4 道客观题（听音辨义/填空/拼写），
+       用客观提取替代「学会了/没记住」的二进制自报，提升记忆效率。 */
+    wordTest() {
+      const ws = this.wordSession;
+      const w = ws.words[ws.i];
+      if (!w) return;
+      this.dtOk = this.dtOk || {};
+      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${w.word_id}&mode=${ws.mode}&grade=${this.grade}&mix_errors=1`)
+        .then(r => {
+          const items = this._quizItemsFromSession(r.items);
+          if (!items.length) { this.showToast('练习题生成失败，请重试'); return; }
+          this.startQuiz({
+            title: '✍️ 测一测 · ' + (ws.mode === 'new' ? '新词' : '复习') + `（${w.word}）`,
+            items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode, perItem: true, index: ws.i },
+          });
+        }).catch(e => this.showToast(e.message));
+    },
     startTextSession(mode) {
       const raw = mode === 'new' ? (this.classicalToday.new_texts || []) : (this.classicalToday.review_texts || []);
       if (!raw.length) { this.showToast(mode === 'new' ? '篇目库已全部背完，太棒了！' : '今日没有到期复习的篇目'); return; }
@@ -1464,6 +1491,22 @@ const appOptions = {
             items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode },
           });
         }).catch(e => { ts.active = false; this.showToast(e.message); });
+    },
+    /* 逐篇「测一测」：学完一篇立即做客观题（填空/理解），用客观提取替代「背熟了」自报。 */
+    textTest() {
+      const ts = this.textSession;
+      const t = ts.texts[ts.i];
+      if (!t) return;
+      this.dtOk = this.dtOk || {};
+      this.api(`/api/classical/session-quiz?user_id=${encodeURIComponent(this.user)}&text_ids=${t.text_id}&mode=${ts.mode}&mix_errors=1`)
+        .then(r => {
+          const items = this._quizItemsFromSession(r.items);
+          if (!items.length) { this.showToast('练习题生成失败，请重试'); return; }
+          this.startQuiz({
+            title: '✍️ 测一测 · ' + (ts.mode === 'new' ? '新篇' : '复习') + `（《${t.title}》）`,
+            items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode, perItem: true, index: ts.i },
+          });
+        }).catch(e => this.showToast(e.message));
     },
     openTextDetail(t) {
       this.textDetail = { show: true, id: t.id, title: t.title, author: t.author || '', dynasty: t.dynasty || '', grade: t.grade, text_type: t.text_type || 'poem', content: t.content };
@@ -2701,11 +2744,21 @@ const appOptions = {
         const errorQuizItems = items.filter(it => it.error_id && it.error_id > 0);   // 混入的错题本题目
         const normalItems = items.filter(it => !(it.error_id && it.error_id > 0));   // 本轮正常背诵题目
 
-        const afterDone = () => {
+        const afterRecite = () => {
           this.quiz.active = false;
-          if (src.kind === 'text') this.textSession.done = true;
-          else this.wordSession.done = true;
-          this.refreshAll();
+          if (src.kind === 'text') {
+            const ts = this.textSession;
+            if (src.perItem && src.index < ts.texts.length - 1) {
+              ts.i = src.index + 1; ts.phase = 'card';
+              this.$nextTick(() => setTimeout(() => this.textSpeak(), 250));
+            } else { ts.done = true; this.refreshAll(); }
+          } else {
+            const ws = this.wordSession;
+            if (src.perItem && src.index < ws.words.length - 1) {
+              ws.i = src.index + 1; ws.phase = 'card'; ws.revealed = false;
+              this.$nextTick(() => setTimeout(() => this.wordSpeak(), 250));
+            } else { ws.done = true; this.refreshAll(); }
+          }
         };
 
         if (src.kind === 'word') {
@@ -2743,7 +2796,7 @@ const appOptions = {
               this.loadAnalysis();
               const okN = saved.length, badN = studyErrors.length;
               this.showToast(okN ? `已掌握 ${okN} 个单词` + (badN ? `，${badN} 个待巩固（已加入错题本）` : '，太棒了！') : '本次需巩固，已加入错题本');
-              afterDone();
+              afterRecite();
             });
           }).catch(e => { this.quiz.active = false; ws.active = false; this.showToast(e.message); });
         } else {
@@ -2779,7 +2832,7 @@ const appOptions = {
               this.loadAnalysis();
               const okN = saved.length, badN = studyErrors.length;
               this.showToast(okN ? `已背诵 ${okN} 篇` + (badN ? `，${badN} 篇待巩固（已加入错题本）` : '，太棒了！') : '本次需巩固，已加入错题本');
-              afterDone();
+              afterRecite();
             });
           }).catch(e => { this.quiz.active = false; ts.active = false; this.showToast(e.message); });
         }
