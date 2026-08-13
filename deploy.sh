@@ -91,15 +91,21 @@ fi
 
 # ---------- 3.7 构建管理后台前端（admin/dist） ----------
 # 管理后台为独立 Vite 工程，构建产物 admin/dist 由后端在 /admin 托管（见 app/main.py）。
+# 管理后台是核心功能，构建失败必须报错退出（不再静默跳过，避免 /admin 静默不可用）。
 info "构建管理后台前端（npm ci + vite build）..."
-if command -v npm &>/dev/null && [ -f "$APP_DIR/admin/package.json" ]; then
-    (cd "$APP_DIR/admin" && npm ci --no-audit --no-fund && npm run build) \
-        && info "管理后台构建完成" \
-        || error "管理后台构建失败：请检查 Node 版本(需 18+) 与 admin/package.json"
-    chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
-else
-    warn "未安装 Node.js/npm 或缺少 admin/package.json：跳过管理后台构建（/admin 将不可用）。"
+if ! command -v npm &>/dev/null; then
+    error "未检测到 Node.js/npm：无法构建管理后台，请先安装 Node 18+ 后重试。"
 fi
+if [ ! -f "$APP_DIR/admin/package.json" ]; then
+    error "缺少 $APP_DIR/admin/package.json：无法构建管理后台，/admin 将不可用。"
+fi
+(cd "$APP_DIR/admin" && npm ci --no-audit --no-fund && npm run build) \
+    && info "管理后台构建完成" \
+    || error "管理后台构建失败：请检查 Node 版本(需 18+) 与 admin/package.json 的 build 脚本"
+if [ ! -f "$APP_DIR/admin/dist/index.html" ]; then
+    error "管理后台构建产物缺失 admin/dist/index.html（构建可能未成功），/admin 将不可用。"
+fi
+chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
 
 # ---------- 4. 配置 systemd 服务 ----------
 info "配置 systemd 服务..."
