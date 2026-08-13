@@ -20,7 +20,7 @@ cd /home/PrimarySchoolExam
 sudo bash deploy.sh
 ```
 
-脚本自动完成：创建虚拟环境 → 安装依赖 → 构建工程化前端（web/dist，Vite + Vue 3；无 Node 时跳过构建，启动后访问 / 会返回「前端未构建」提示）→ 配置 systemd（自动注入 `.env` 环境变量）→ 配置 nginx → 启动服务 → `/health` 健康自检（失败即报错退出）。
+脚本自动完成：创建虚拟环境 → 安装依赖 → 构建孩子端前端（web/dist，Vite + Vue 3）→ 构建管理后台前端（admin/dist）→ 配置 systemd（自动注入 `.env` 环境变量）→ 配置 nginx → 启动服务 → `/health` 健康自检（失败即报错退出）。无 Node 时 web/admin 构建均跳过（启动后 `/` 或 `/admin` 会返回「前端未构建」提示）。
 
 > 部署前请先创建 `.env`（参考 `.env.example`：MySQL 连接、AI API key、邮件配置等），否则应用将使用默认 MySQL 连接（127.0.0.1:3306）与内置配置。
 
@@ -102,11 +102,14 @@ ss -tlnp | grep -E ':80|:443|:8000'
 ```bash
 cd /home/PrimarySchoolExam
 git pull
-# 前端（web/）有改动时需重新构建，否则线上仍是旧版前端
-cd web && npm ci && npm run build
-cd ..
+# 孩子端前端（web/）有改动时需重新构建
+cd web && npm ci && npm run build && cd ..
+# 管理后台前端（admin/）有改动时也需重新构建（/admin 托管 admin/dist）
+cd admin && npm ci && npm run build && cd ..
 systemctl restart exam-app
 ```
+
+> 简化：直接 `sudo bash deploy.sh` 会**每次都重新构建 web 与 admin 两个前端**，无需手动逐条 build（见第二章）。
 
 ## 七、工程化前端（web/，Vite + Vue 3 + Pinia）
 
@@ -128,7 +131,23 @@ cd web
 npm run dev          # http://localhost:5173
 ```
 
-管理后台：原独立前端 `frontend-admin/` 已移除，后台管理功能通过 API 路由（用户管理 / 数据看板 / 操作日志）操作。
+## 七·五、管理后台前端（admin/，Vite 独立工程）
+
+管理后台是**独立的 Vite 工程** `admin/`，构建产物 `admin/dist` 由后端托管在 `/admin`：
+
+- 访问入口：`http://<域名>/admin`（Vue Router 使用 hash 模式，路由形如 `/admin#/users`，无需服务端 SPA 回退）。
+- 构建（服务器需 Node.js 18+）：
+
+```bash
+cd /home/PrimarySchoolExam/admin
+npm ci
+npm run build        # 产物输出到 admin/dist
+systemctl restart exam-app
+```
+
+- 若 `admin/dist` 不存在，访问 `/admin` 会返回提示「管理后台未托管，请先 `cd admin && npm ci && npm run build`」。
+- 管理接口本身（`/api/admin/*`）由后端 `admin.router` 提供，使用独立的 `_require_admin` 管理员鉴权（默认账号见部署脚本末尾提示）。
+- 本地开发联调：`cd admin && npm run dev`（Vite 默认 5173 端口，自带 /api 代理）。
 
 ## 八、自动化测试（pytest）
 
@@ -158,7 +177,8 @@ python -m pytest tests -q
 │   ├── services/             # 业务逻辑（出题 / 生成 docx / AI 路由 …）
 │   ├── migrations/           # 数据库迁移系统（40 个版本脚本，MySQL-only）
 │   └── data/                 # 种子 CSV（小学/初中单词、词组、句子）
-├── web/                      # 生产前端（Vue 3 + Vite + Pinia），产物 web/dist 由后端托管
+├── web/                      # 孩子端生产前端（Vue 3 + Vite + Pinia），产物 web/dist 由后端托管
+├── admin/                    # 管理后台生产前端（独立 Vite 工程），产物 admin/dist 由后端托管在 /admin
 ├── tools/                    # 运维 / 迁移 / 题库发布工具（qb_release 等）
 ├── tests/                    # pytest 回归套件（58 用例 / 9 文件）
 ├── output/                   # 生成文件（docx / figures / audio，gitignore）
