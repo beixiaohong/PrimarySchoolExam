@@ -55,3 +55,25 @@ def test_admin_users_and_dashboard(client, admin_token):
 
     r = client.get("/api/admin/logs", headers=h)
     assert r.status_code == 200
+
+
+def test_admin_analytics(client, admin_token):
+    h = {"Authorization": f"Bearer {admin_token}"}
+    r = client.get("/api/admin/analytics", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert "overview" in body
+    assert "registration_trend" in body
+    assert "feature_activity" in body
+
+
+def test_admin_study_records_user_not_found(client, admin_token):
+    h = {"Authorization": f"Bearer {admin_token}"}
+    r = client.get("/api/admin/users/__not_exist__/study-records", headers=h)
+    assert r.status_code == 404
+
+
+def test_admin_ledger_user_not_found(client, admin_token):
+    h = {"Authorization": f"Bearer {admin_token}"}
+    r = client.get("/api/admin/users/__not_exist__/ledger", headers=h)
+    assert r.status_code == 404
