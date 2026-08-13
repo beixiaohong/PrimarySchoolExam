@@ -1721,14 +1721,14 @@
             <div class="pc-title">🎫 兑换券管理 <span class="more">可设全勤天数门槛，孩子达成即获得；家长核销兑现 · 成长奖励记录只展示已获取的券</span></div>
             <div class="pc-row" style="flex-wrap:wrap">
               <input v-model="newCoupon.title" class="fill-input" maxlength="30" placeholder="如：周末看动画半小时" style="min-width:150px">
-              <select v-model="newCoupon.kind" class="fill-input" style="max-width:110px">
+              <select v-model="newCoupon.kind" class="fill-input" style="min-width:140px">
                 <option value="cartoon">动画时间</option><option value="snack">零食券</option>
                 <option value="sticker">贴纸券</option><option value="toy">玩具券</option>
                 <option value="outing">外出券</option><option value="custom">自定义</option>
               </select>
-              <input v-model.number="newCoupon.requiredDays" type="number" min="0" max="30" class="fill-input" style="max-width:84px" placeholder="全勤几天">
+              <input v-model.number="newCoupon.requiredDays" type="number" min="0" max="30" class="fill-input" style="width:120px" placeholder="全勤几天">
               <span class="more">0=添加即获得</span>
-              <input v-model.number="newCoupon.requiredWithinDays" type="number" min="0" max="365" :disabled="!newCoupon.requiredDays" class="fill-input" style="max-width:84px" placeholder="限几天内">
+              <input v-model.number="newCoupon.requiredWithinDays" type="number" min="0" max="365" :disabled="!newCoupon.requiredDays" class="fill-input" style="width:120px" placeholder="限几天内">
               <span class="more">0=不限期</span>
               <input v-model="newCoupon.reason" class="fill-input" maxlength="50" placeholder="奖励理由（选填）" style="min-width:150px">
               <button class="btn btn-primary btn-sm" @click="createCoupon()">添加</button>
