@@ -2168,7 +2168,12 @@
           <div class="quiz-actions">
             <button class="btn btn-ghost" v-if="quiz.items[quiz.i].qid" :disabled="quiz.items[quiz.i].explaining" @click="askQuizExplain()" title="标记为做错并生成 AI 讲解">{{quiz.items[quiz.i].explaining ? '⏳ 讲解中…' : '🤖 AI 讲解'}}</button>
             <button class="btn btn-ghost" @click="closeQuiz()">保存退出</button>
-            <button class="btn btn-primary" v-if="quiz.items[quiz.i].answered" :disabled="quiz.items[quiz.i].explaining" @click="quizNext()">{{quiz.i===quiz.items.length-1 ? '查看结果 →' : '下一题 →'}}</button>
+            <button class="btn btn-primary" v-if="quiz.items[quiz.i].answered" :disabled="quiz.items[quiz.i].explaining" @click="quizNext()">
+              <template v-if="quiz.source && quiz.source.perItem && quiz.i===quiz.items.length-1">
+                {{ quiz.items[quiz.i].correct ? (quiz.source.kind==='word' ? '✓ 下一个单词 →' : '✓ 下一篇 →') : '再测一次 →' }}
+              </template>
+              <template v-else>{{quiz.i===quiz.items.length-1 ? '查看结果 →' : '下一题 →'}}</template>
+            </button>
           </div>
         </template>
         <div v-else class="empty">⏳ 题目加载中…</div>

@@ -1531,7 +1531,7 @@ const appOptions = {
       const ws = this.wordSession;
       const reIds = (ws.comprehensiveIds && ws.comprehensiveIds.length) ? ws.comprehensiveIds : null;
       const ids = reIds ? reIds.join(',') : ws.words.map(w => w.word_id).join(',');
-      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${ids}&mode=${ws.mode}&grade=${this.grade}&mix_errors=0`)
+      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${ids}&mode=${ws.mode}&grade=${this.grade}&mix_errors=0&per_word=1`)
         .then(r => {
           const items = this._quizItemsFromSession(r.items);
           if (!items.length) { ws.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); return; }
@@ -1566,16 +1566,37 @@ const appOptions = {
         ts.texts.forEach(t => {
           if (normal.some(it => (it.text_id || src.text_id) === t.text_id && !it.correct)) wrong.push(t.text_id);
         });
-        if (!wrong.length) { ts.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); this.submitReciteCompletion(src); }
-        else { ts.comprehensiveIds = wrong; this.startTextComprehensive(); }
+        if (!wrong.length) {
+          // 综合测试（含错题重测）全部通过 → 才标记本轮全部篇目为已背诵
+          const passedIds = ts.texts.map(t => t.text_id);
+          this.api('/api/classical/dictate', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: this.user, mode: src.mode2, passed_ids: passedIds }),
+          }).then(() => {
+            ts.done = true; this.refreshAll();
+            this.showToast(`🎉 本轮 ${ts.texts.length} 篇全部背对，已掌握！`);
+            this.submitReciteCompletion(src);
+          }).catch(e => this.showToast(e.message));
+        } else { ts.comprehensiveIds = wrong; this.startTextComprehensive(); }
       } else {
         const ws = this.wordSession;
         const wrong = [];
         ws.words.forEach(w => {
           if (normal.some(it => it.qid === w.word_id && !it.correct)) wrong.push(w.word_id);
         });
-        if (!wrong.length) { ws.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); this.submitReciteCompletion(src); }
-        else { ws.comprehensiveIds = wrong; this.startWordComprehensive(); }
+        if (!wrong.length) {
+          // 综合测试（含错题重测）全部通过 → 才标记本轮全部单词为已掌握
+          const results = ws.words.map(w => ({ word_id: w.word_id, answer: w.word }));
+          this.api('/api/vocab/dictate', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: this.user, mode: src.mode2, results }),
+          }).then(r => {
+            const saved = (r && r.saved) || [];
+            ws.done = true; this.refreshAll();
+            this.showToast(`🎉 本轮 ${ws.words.length} 个单词全部背对，已掌握 ${saved.length} 个！`);
+            this.submitReciteCompletion(src);
+          }).catch(e => this.showToast(e.message));
+        } else { ws.comprehensiveIds = wrong; this.startWordComprehensive(); }
       }
     },
     /* 孩子完成一轮背诵 → 提交「完成确认」并弹出提示：发截图给家长确认 */
@@ -2917,6 +2938,9 @@ const appOptions = {
         };
 
         if (src.kind === 'word') {
+          // 逐词测一测 / 综合测试：绝不在这一步标记掌握，避免「测 1 个词却标记全部 20 个」。
+          // 逐词仅作过关闸门（对→下一词，错→重测）；综合测试由 _finishComprehensive 统一判定并落库。
+          if (src.perItem || src.comprehensive) { afterRecite(); return; }
           const ws = this.wordSession;
           // 每个单词的默写答案（取填空题作答）
           const ansMap = {};
@@ -2955,6 +2979,8 @@ const appOptions = {
             });
           }).catch(e => { this.quiz.active = false; ws.active = false; this.showToast(e.message); });
         } else {
+          // 逐篇测一测 / 综合测试：同单词逻辑，仅作闸门或统一落库，不在每篇即时标记掌握
+          if (src.perItem || src.comprehensive) { afterRecite(); return; }
           const ts = this.textSession;
           // 按篇目判定：所有子题全对才算通过
           const textOk = {};
