@@ -95,6 +95,24 @@ QR_DIR = WEB_DIST_DIR / "qr"
 if QR_DIR.exists():
     app.mount("/qr", StaticFiles(directory=str(QR_DIR)), name="qr")
 
+# 管理后台静态资源：独立 Vite 工程构建产物 admin/dist，由后端托管在 /admin。
+# 前端 Vue Router 使用 hash 模式，因此只需托管 /admin（index.html）与 /admin/assets（静态资源），
+# 客户端路由形如 /admin#/users，无需服务端 SPA 回退。
+ADMIN_DIST_DIR = Path(__file__).resolve().parent.parent / "admin" / "dist"
+if ADMIN_DIST_DIR.exists() and (ADMIN_DIST_DIR / "index.html").exists():
+    app.mount("/admin/assets", StaticFiles(directory=str(ADMIN_DIST_DIR / "assets")),
+              name="admin-assets")
+
+    @app.get("/admin", include_in_schema=False)
+    @app.get("/admin/", include_in_schema=False)
+    def admin_index():
+        """管理后台首页：返回 admin/dist/index.html"""
+        return FileResponse(ADMIN_DIST_DIR / "index.html")
+else:
+    logging.getLogger("app.main").warning(
+        "admin/dist 不存在，管理后台未托管。请先 `cd admin && npm ci && npm run build` 生成构建产物。"
+    )
+
 # 静态资源（图片、音频）
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 

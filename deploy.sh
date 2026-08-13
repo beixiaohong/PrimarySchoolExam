@@ -89,6 +89,18 @@ else
     error "未安装 Node.js/npm 或缺少 web/package.json：无法构建前端。请先安装 Node 18+ 后重试。"
 fi
 
+# ---------- 3.7 构建管理后台前端（admin/dist） ----------
+# 管理后台为独立 Vite 工程，构建产物 admin/dist 由后端在 /admin 托管（见 app/main.py）。
+info "构建管理后台前端（npm ci + vite build）..."
+if command -v npm &>/dev/null && [ -f "$APP_DIR/admin/package.json" ]; then
+    (cd "$APP_DIR/admin" && npm ci --no-audit --no-fund && npm run build) \
+        && info "管理后台构建完成" \
+        || error "管理后台构建失败：请检查 Node 版本(需 18+) 与 admin/package.json"
+    chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
+else
+    warn "未安装 Node.js/npm 或缺少 admin/package.json：跳过管理后台构建（/admin 将不可用）。"
+fi
+
 # ---------- 4. 配置 systemd 服务 ----------
 info "配置 systemd 服务..."
 cat > /etc/systemd/system/${APP_NAME}.service <<EOF
@@ -206,6 +218,7 @@ echo -e "${GREEN} 部署完成！${NC}"
 echo "=========================================="
 echo ""
 echo "  访问地址:  http://<服务器IP>"
+echo "  管理后台:  http://<服务器IP>/admin   （默认管理员 admin / Admin@123，请尽快修改密码）"
 echo "  应用端口:  ${APP_PORT} (内部)"
 echo "  Nginx端口: ${NGINX_PORT} (对外)"
 echo ""
@@ -219,6 +232,8 @@ echo "  更新代码后（deploy.sh 已改为每次重新构建前端，无需�
 echo "    cd ${APP_DIR} && git pull && sudo bash deploy.sh"
 echo "    # 若只改了前端且已 pull，也可仅："
 echo "    cd web && npm ci && npm run build && systemctl restart ${APP_NAME}"
+echo "    # 若只改了管理后台："
+echo "    cd admin && npm ci && npm run build && systemctl restart ${APP_NAME}"
 echo ""
 echo "  运行自动化测试（需先 pip install -r requirements-dev.txt）:"
 echo "    ${APP_DIR}/venv/bin/python -m pytest tests -q"
