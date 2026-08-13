@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 
 from .database import init_db
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm
 from .services.init_data import ensure_initial_data
 
 # P5 工程化前端构建产物（Vite build 输出，唯一托管的前端）
@@ -78,6 +78,7 @@ app.include_router(focus.router, prefix="/api/focus", tags=["番茄专注钟"])
 app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"])
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
+app.include_router(task_confirm.router, prefix="/api/task-confirm", tags=["完成确认"])
 
 # 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
 # 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。

@@ -589,6 +589,19 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .pc-item .c-body span{color:var(--text-2);margin-top:2px;font-size:11.5px}
 .pc-empty{margin-top:10px;font-size:12.5px;color:var(--text-2)}
 
+/* ═══════════ 完成确认（孩子提交 → 家长确认/拒绝） ═══════════ */
+.confirm-card .confirm-list{display:flex;flex-direction:column;gap:10px}
+.confirm-item{padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,#F1F6FF,#FFF);border:1px solid var(--line)}
+.confirm-item .ci-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.confirm-item .ci-title{font-size:14px;color:var(--text-1)}
+.confirm-item .ci-sum{font-size:12.5px;color:var(--text-2)}
+.confirm-item .ci-sub{margin-top:4px;justify-content:space-between}
+.confirm-item .ci-time{font-size:11.5px;color:var(--text-3)}
+.confirm-item .ci-reason{margin-top:6px;font-size:12.5px;color:var(--danger);background:var(--danger-light);padding:6px 10px;border-radius:8px}
+.confirm-item .ci-actions{margin-top:8px;display:flex;gap:8px}
+.confirm-item .ci-reject-box{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.confirm-item .ci-reject-box .fill-input{flex:1;min-width:160px}
+
 /* ═══════════ Sprint 4：称号 / 挑战赛 / 目标 / 小老师 ═══════════ */
 .title-badge{display:inline-block;vertical-align:middle;margin-left:6px;padding:3px 12px;border-radius:999px;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);font-size:13px;font-weight:700;letter-spacing:.5px}
 .title-card{background:linear-gradient(135deg,#F2F0FF,#FFF);border-color:#DDD6F8}

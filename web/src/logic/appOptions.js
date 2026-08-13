@@ -47,6 +47,11 @@ const appOptions = {
       wordSession: { active: false, done: false, mode: 'new', words: [], i: 0, revealed: false, okCount: 0, results: [] },
       textSession: { active: false, done: false, mode: 'new', texts: [], i: 0, okCount: 0, failCount: 0, results: [] },
       textDetail: { show: false, id: 0, title: '', author: '', dynasty: '', grade: 0, text_type: '', content: '' },
+      // 完成确认（孩子提交任务完成 → 家长确认/拒绝）：首页展示 + 家长操作
+      taskConfirms: [],
+      taskReject: { id: null, reason: '' },       // 家长拒绝时展开的输入框
+      taskSubmitTip: { show: false },             // 孩子完成任务后弹出的「发截图给家长」提示
+
       // 错题本
       wrongAnalysis: { total: 0, pending: 0, mastered: 0, mastery_rate: 0, by_cause: [], by_subject: [] },
       wrongScreen: 'list', wrongKind: 'all', wrongStatus: 'pending',
@@ -1036,6 +1041,7 @@ const appOptions = {
       this.loadBadges(false);
       this.loadCards();
       this.loadFocus();
+      this.loadTaskConfirms();
     },
 
     /* ─────────── 首页 ─────────── */
@@ -1551,7 +1557,7 @@ const appOptions = {
         ts.texts.forEach(t => {
           if (normal.some(it => (it.text_id || src.text_id) === t.text_id && !it.correct)) wrong.push(t.text_id);
         });
-        if (!wrong.length) { ts.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); }
+        if (!wrong.length) { ts.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); this.submitReciteCompletion(src); }
         else { ts.comprehensiveIds = wrong; this.startTextComprehensive(); }
       } else {
         const ws = this.wordSession;
@@ -1559,9 +1565,56 @@ const appOptions = {
         ws.words.forEach(w => {
           if (normal.some(it => it.qid === w.word_id && !it.correct)) wrong.push(w.word_id);
         });
-        if (!wrong.length) { ws.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); }
+        if (!wrong.length) { ws.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); this.submitReciteCompletion(src); }
         else { ws.comprehensiveIds = wrong; this.startWordComprehensive(); }
       }
+    },
+    /* 孩子完成一轮背诵 → 提交「完成确认」并弹出提示：发截图给家长确认 */
+    submitReciteCompletion(src) {
+      const isText = src.kind === 'text';
+      const sess = isText ? this.textSession : this.wordSession;
+      const modeLabel = sess.mode === 'new' ? '新学' : '复习';
+      const n = (isText ? sess.texts : sess.words).length;
+      const summary = isText ? `${modeLabel}古诗文 ${n} 篇` : `${modeLabel}单词 ${n} 个`;
+      this.createTaskConfirm({
+        task_type: isText ? 'recite_text' : 'recite_word',
+        title: '背诵任务完成',
+        summary,
+      });
+      // 弹窗提示：把完成截图通过微信等方式发给家长确认
+      this.taskSubmitTip = { show: true };
+    },
+    loadTaskConfirms() {
+      if (!this.user) return;
+      this.api(`/api/task-confirm/list?user_id=${encodeURIComponent(this.user)}`)
+        .then(r => { this.taskConfirms = (r && r.items) || []; })
+        .catch(() => { this.taskConfirms = []; });
+    },
+    createTaskConfirm(payload) {
+      if (!this.user) return;
+      this.api('/api/task-confirm/create', {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({ user_id: this.user }, payload)),
+      }).then(() => { this.loadTaskConfirms(); }).catch(() => {});
+    },
+    openReject(id) {
+      this.taskReject = { id, reason: '' };
+    },
+    cancelReject() {
+      this.taskReject = { id: null, reason: '' };
+    },
+    /* 家长确认/拒绝（家长模式开启时调用，api 自动携带 X-Parent-Pwd） */
+    resolveTaskConfirm(id, action) {
+      if (!this.user) return;
+      const reason = (this.taskReject && this.taskReject.id === id) ? this.taskReject.reason : '';
+      this.api('/api/task-confirm/resolve', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, id, action, reject_reason: reason }),
+      }).then(() => {
+        if (action === 'reject') this.cancelReject();
+        this.loadTaskConfirms();
+        this.showToast(action === 'approve' ? '已通过，太棒了！✅' : '已拒绝并记录理由');
+      }).catch(e => this.showToast(e.message || '操作失败'));
     },
     openTextDetail(t) {
       this.textDetail = { show: true, id: t.id, title: t.title, author: t.author || '', dynasty: t.dynasty || '', grade: t.grade, text_type: t.text_type || 'poem', content: t.content };

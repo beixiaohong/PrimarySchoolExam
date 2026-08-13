@@ -316,6 +316,39 @@
           </div>
         </div>
 
+        <!-- 完成确认（孩子提交完成 → 家长确认/拒绝），显示在奖励小屋上方 -->
+        <div class="card confirm-card" style="margin-top:14px">
+          <div class="card-head">
+            <b>📋 完成确认</b>
+            <span class="more">孩子提交完成，家长在首页确认</span>
+          </div>
+          <div v-if="taskConfirms.length" class="confirm-list">
+            <div class="confirm-item" v-for="c in taskConfirms" :key="c.id">
+              <div class="ci-row">
+                <b class="ci-title">{{c.title}}</b>
+                <span class="ci-sum">{{c.summary}}</span>
+              </div>
+              <div class="ci-row ci-sub">
+                <span class="ci-time">{{c.created_at}}</span>
+                <span class="tag" :class="c.status==='pending' ? 'tag-orange' : (c.status==='approved' ? 'tag-green' : 'tag-red')">
+                  {{c.status==='pending' ? '待确认' : (c.status==='approved' ? '已通过 ✓' : '已拒绝')}}
+                </span>
+              </div>
+              <div v-if="c.status==='rejected' && c.reject_reason" class="ci-reason">家长意见：{{c.reject_reason}}</div>
+              <div v-if="c.status==='pending' && parentPhase==='open'" class="ci-actions">
+                <button class="btn btn-success btn-sm" @click="resolveTaskConfirm(c.id,'approve')">通过 ✓</button>
+                <button class="btn btn-ghost btn-sm" @click="openReject(c.id)">拒绝</button>
+              </div>
+              <div v-if="taskReject.id===c.id" class="ci-reject-box">
+                <input v-model="taskReject.reason" class="fill-input" maxlength="100" placeholder="请填写拒绝理由（必填）">
+                <button class="btn btn-primary btn-sm" @click="resolveTaskConfirm(c.id,'reject')">提交拒绝</button>
+                <button class="btn btn-ghost btn-sm" @click="cancelReject()">取消</button>
+              </div>
+            </div>
+          </div>
+          <p v-else class="pc-empty">还没有提交的完成任务～完成背诵会在这里请家长确认</p>
+        </div>
+
         <!-- 奖励闭环（Sprint 3） -->
         <div class="card reward-card" style="margin-top:14px" v-if="rewards">
           <div class="card-head"><b>🎁 奖励小屋</b><span class="more" v-if="rewards.wish && rewards.wish.status==='pending'">心愿待家长确认中</span><span class="more" v-else-if="rewards.wish && rewards.wish.status==='pending_redeem'">心愿达标啦！快找家长兑现</span></div>
@@ -2224,6 +2257,18 @@
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" @click="attemptDetail.show=false">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" :class="{on: taskSubmitTip.show}">
+  <div class="modal">
+    <div class="modal-head"><h2>🎉 任务完成已提交</h2></div>
+    <div class="modal-body">
+      <p>请把这次完成的截图，用微信或其他方式发给家长，<br>提醒家长在首页「完成确认」里确认你就完成啦～</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" @click="taskSubmitTip.show=false">我知道了</button>
     </div>
   </div>
 </div>

@@ -29,6 +29,7 @@ from .essay import EssayGrade
 from .reading import ReadingPassage
 from .content_review import ContentReview
 from .parent_custom_task import ParentCustomTask
+from .task_confirm import TaskConfirm
 
 __all__ = [
     "Word", "WordBook",
@@ -63,4 +64,5 @@ __all__ = [
     "ReadingPassage",
     "ContentReview",
     "ParentCustomTask",
+    "TaskConfirm",
 ]
