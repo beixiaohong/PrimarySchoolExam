@@ -371,7 +371,10 @@ const appOptions = {
       this._tt = setTimeout(() => { this.toast.show = false; }, 2400);
     },
     saveUser() {
-      if (this.user) localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject, nickname: this.userName, token: this.token }));
+      if (this.user) {
+        localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject, nickname: this.userName, token: this.token }));
+        if (this.token) localStorage.setItem('zx_token', this.token);
+      }
     },
 
     /* ─────────── 登录 / 注册 / 退出 ─────────── */
