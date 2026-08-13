@@ -7,6 +7,8 @@ output/
 primary_school.db
 web/node_modules/
 web/dist/
+admin/node_modules/
+admin/dist/
 tools/mysql_backup_*.json
 app/models/__init__.py
 demo/
