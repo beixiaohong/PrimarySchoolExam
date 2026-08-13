@@ -45,6 +45,7 @@ class AppealDecideReq(BaseModel):
     user_id: str
     appeal_id: int
     action: str  # approve / reject
+    note: str = ""  # 家长裁决备注（可选）
 
 
 @router.post("/create", summary="孩子发起申诉（判错的题标记「我做对了」）")
@@ -138,6 +139,7 @@ def list_appeals(user_id: str, status: str = "pending",
         "status": a.status,
         "created_at": str(a.created_at)[:16] if a.created_at else "",
         "decided_at": str(a.decided_at)[:16] if a.decided_at else "",
+        "note": a.note or "",
     } for a in rows], "total": total}
 
 
@@ -172,6 +174,7 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
 
     a.status = "approved" if req.action == "approve" else "rejected"
     a.decided_at = datetime.now()
+    a.note = (req.note or "").strip()[:500]
     db.commit()
     return {"id": a.id, "status": a.status}
 

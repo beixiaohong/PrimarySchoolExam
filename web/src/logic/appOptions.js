@@ -85,6 +85,7 @@ const appOptions = {
       decidedAppeals: [],       // 已裁决（判对/判错），首页「家长反馈」区展示
       decidedAppealsTotal: 0,   // 已裁决历史总条数
       appealExpanded: {},       // {id: true} 点击展开查看完整题目
+      appealNotes: {},          // {id: '备注'} 家长判题时填写的备注
       pendingMakeups: [],
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务设置
@@ -1841,11 +1842,13 @@ const appOptions = {
       this.$set(this.appealExpanded, id, !this.appealExpanded[id]);
     },
     decideAppeal(a, ok) {
+      const note = (this.appealNotes[a.id] || '').trim();
       this.api('/api/appeal/decide', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject' }),
+        body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject', note }),
       }).then(() => {
         this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
+        this.$delete(this.appealNotes, a.id);
         this.loadAppeals();
         this.loadDecidedAppeals();
         this.loadChildStats();

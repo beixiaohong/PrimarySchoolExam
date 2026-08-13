@@ -366,8 +366,8 @@
               <div class="ci-row">
                 <b class="appeal-q" @click="toggleAppeal(a.id)" title="点击查看完整题目">
                   [{{a.subject || '未分科'}}]
-                  <template v-if="!appealExpanded[a.id]">{{ a.question.length > 50 ? a.question.slice(0,50)+'…' : a.question }}</template>
-                  <template v-else>{{ a.question }}</template>
+                  <template v-if="!appealExpanded[a.id]">{{ (a.question || '').length > 50 ? (a.question || '').slice(0,50)+'…' : (a.question || '') }}</template>
+                  <template v-else>{{ a.question || '' }}</template>
                   <span class="q-toggle">{{ appealExpanded[a.id] ? '收起 ▴' : '查看完整题目 ▾' }}</span>
                 </b>
               </div>
@@ -378,6 +378,7 @@
                 </span>
               </div>
               <div class="ci-row ci-sub"><span class="more">{{a.created_at}} 提交 · {{a.decided_at}} 裁决</span></div>
+              <div class="ci-row ci-sub" v-if="a.note"><span class="appeal-note-text">📝 备注：{{a.note}}</span></div>
             </div>
           </div>
           <button v-if="decidedAppeals.length>5" class="link-btn" @click="showAllAppeals=!showAllAppeals">{{showAllAppeals ? '收起 ▴' : '查看全部 '+decidedAppealsTotal+' 条 ▾'}}</button>
@@ -1611,12 +1612,13 @@
                 <div class="c-body" style="flex:1;min-width:220px">
                   <b class="appeal-q" @click="toggleAppeal(a.id)" title="点击查看完整题目">
                     [{{a.subject || '未分科'}}]
-                    <template v-if="!appealExpanded[a.id]">{{ a.question.length > 60 ? a.question.slice(0,60)+'…' : a.question }}</template>
-                    <template v-else>{{ a.question }}</template>
+                    <template v-if="!appealExpanded[a.id]">{{ (a.question || '').length > 60 ? (a.question || '').slice(0,60)+'…' : (a.question || '') }}</template>
+                    <template v-else>{{ a.question || '' }}</template>
                     <span class="q-toggle">{{ appealExpanded[a.id] ? '收起 ▴' : '查看完整题目 ▾' }}</span>
                   </b>
                   <span>孩子答案：{{a.user_answer}} · 参考答案：{{a.correct_answer}}</span>
                   <span class="more">{{a.created_at}} 提交</span>
+                  <input class="fill-input appeal-note" v-model="appealNotes[a.id]" placeholder="判题备注（可选）：可填写判对/判错的理由" />
                 </div>
                 <button class="btn btn-success btn-sm" @click="decideAppeal(a, true)" title="确认后该题改判正确、本卷得分重算">确认做对了 ✓</button>
                 <button class="btn btn-ghost btn-sm" @click="decideAppeal(a, false)">维持判错</button>

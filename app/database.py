@@ -55,6 +55,8 @@ def _ensure_columns():
     # 卡券限期窗口字段（required_within_days 有默认值，cycle_start_date 可空）
     _ensure_column("reward_coupons", "required_within_days", "INT DEFAULT 0")
     _ensure_column("reward_coupons", "cycle_start_date", "VARCHAR(10)")
+    # 申诉裁决备注（家长判对/判错时填写，可空）
+    _ensure_column("answer_appeals", "note", "TEXT")
 
 
 def _backfill_pq_grade_subject():

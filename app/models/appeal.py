@@ -27,3 +27,4 @@ class AnswerAppeal(Base):
     status = Column(String(20), nullable=False, default="pending", comment="pending / approved / rejected")
     created_at = Column(DateTime, default=datetime.now, comment="申诉发起时间")
     decided_at = Column(DateTime, nullable=True, comment="家长裁决时间")
+    note = Column(Text, nullable=True, comment="家长裁决备注（可选）")
