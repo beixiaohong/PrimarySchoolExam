@@ -6,7 +6,7 @@ const appOptions = {
   data() {
     return {
       // 登录
-      user: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
+      user: '', userName: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
       promotedInfo: null,   // 升年级引导弹窗（登录响应 promoted）
       // 学习同步（家长面板）：预习/课堂同步/小升初衔接 + 教学进度
       studyFlags: { include_next: false, sync_mode: false, xsc_bridge: false },
@@ -360,7 +360,7 @@ const appOptions = {
       this._tt = setTimeout(() => { this.toast.show = false; }, 2400);
     },
     saveUser() {
-      if (this.user) localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject }));
+      if (this.user) localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject, nickname: this.userName }));
     },
 
     /* ─────────── 登录 / 注册 / 退出 ─────────── */
@@ -376,11 +376,12 @@ const appOptions = {
     },
     onLoginOk(r) {
       this.user = r.user_id;
+      this.userName = r.nickname || r.user_id;
       this.streakDays = r.streak_days || 0;
       this.grade = r.grade || 6;
       this.subject = r.subject || '英语';
       this.saveUser();
-      this.showToast(`欢迎回来，${r.user_id}！`);
+      this.showToast(`欢迎回来，${this.userName}！`);
       this.loadAuthInfo();
       this.loadWeather();
       // 升年级引导：9月1日自动升级后登录弹窗
@@ -454,7 +455,7 @@ const appOptions = {
     loadAuthInfo() {
       if (!this.user) return;
       this.api(`/api/auth/me?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.authInfo = d || {}; })
+        .then(d => { this.authInfo = d || {}; if (d && d.nickname) this.userName = d.nickname; })
         .catch(() => { this.authInfo = {}; });
     },
     loadWeather() {
@@ -3238,6 +3239,7 @@ const appOptions = {
     if (saved && saved.user) {
       this.user = saved.user;
       this.username = saved.user;
+      this.userName = saved.nickname || saved.user;
       this.grade = saved.grade || 6;
       this.subject = saved.subject || '英语';
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;

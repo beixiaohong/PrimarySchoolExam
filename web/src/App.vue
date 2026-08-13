@@ -115,8 +115,8 @@
       </div>
     </nav>
     <div class="user">
-      <div class="avatar">{{user.charAt(0)}}</div>
-      <div><b>{{user}}</b><span>🔥 连续学习 {{streakDays}} 天</span></div>
+      <div class="avatar">{{userName.charAt(0)}}</div>
+      <div><b>{{userName}}</b><span>🔥 连续学习 {{streakDays}} 天</span></div>
     </div>
   </aside>
 
@@ -127,8 +127,8 @@
       </div>
       <button class="icon-btn" @click="showToast('🔔 暂无新通知，加油学习！')">🔔</button>
       <div class="me">
-        <div class="avatar" style="width:32px;height:32px;font-size:12px">{{user.charAt(0)}}</div>
-        <b>{{user}}</b><span class="streak">🔥{{streakDays}}</span><span class="diamonds" title="钻石余额">💎{{diamonds}}</span>
+        <div class="avatar" style="width:32px;height:32px;font-size:12px">{{userName.charAt(0)}}</div>
+        <b>{{userName}}</b><span class="streak">🔥{{streakDays}}</span><span class="diamonds" title="钻石余额">💎{{diamonds}}</span>
       </div>
     </header>
 
@@ -137,7 +137,7 @@
       <div v-if="tab==='home'" class="fade-enter">
         <div class="hero">
           <div style="flex:1">
-            <h1>{{greeting}}，{{user}} 👋 <span class="title-badge" v-if="titleInfo" :title="titleInfo.next ? '再做 '+titleInfo.next.need+' 项学习升级' : '已是最高称号'">{{titleInfo.icon}} {{titleInfo.name}}</span></h1>
+            <h1>{{greeting}}，{{userName}} 👋 <span class="title-badge" v-if="titleInfo" :title="titleInfo.next ? '再做 '+titleInfo.next.need+' 项学习升级' : '已是最高称号'">{{titleInfo.icon}} {{titleInfo.name}}</span></h1>
             <p v-if="taskRemain>0">今天还差 <b style="color:#fff">{{taskRemain}}</b> 项任务完成全勤<template v-if="dailyTaskStats.streak_days"> · 🔥 已连续 {{dailyTaskStats.streak_days}} 天</template>，点击任务卡即可开始</p>
             <p v-else>🎉 三科任务全部完成，今天全勤！<template v-if="dailyTaskStats.streak_days">已连续 {{dailyTaskStats.streak_days}} 天 🔥</template></p>
           </div>

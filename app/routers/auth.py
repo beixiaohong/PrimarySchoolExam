@@ -179,6 +179,7 @@ def _login_payload(db: Session, user: User, is_new: bool = False) -> dict:
     _auto_upgrade_grade(db)
     return {
         "user_id": user.user_id,
+        "nickname": user.nickname,
         "grade": user.grade,
         "subject": user.subject,
         "is_new": is_new,
