@@ -70,24 +70,24 @@ mkdir -p "$APP_DIR/data"
 mkdir -p "$APP_DIR/output"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || true
 
-# ---------- 3.5 检查 .env（DB_DRIVER/AI key/邮件等由它注入） ----------
+# ---------- 3.5 检查 .env（MySQL 连接 / AI key / 邮件等由它注入） ----------
 if [ ! -f "$APP_DIR/.env" ]; then
-    warn "未找到 $APP_DIR/.env，请先创建（参考 .env.example：DB_DRIVER/AI_API_KEY/邮件配置等）"
+    warn "未找到 $APP_DIR/.env，请先创建（参考 .env.example：MySQL 连接 / AI_API_KEY / 邮件配置等）"
 fi
 
-# ---------- 3.6 构建 P5 前端（web/dist，缺失时回退旧版前端） ----------
+# ---------- 3.6 构建前端（web/dist） ----------
 info "检查前端构建产物..."
 if [ -f "$APP_DIR/web/dist/index.html" ]; then
     info "web/dist 已存在，跳过前端构建"
 elif command -v npm &>/dev/null && [ -f "$APP_DIR/web/package.json" ]; then
-    info "构建 P5 前端（npm ci + vite build）..."
+    info "构建前端（npm ci + vite build）..."
     (cd "$APP_DIR/web" && npm ci --no-audit --no-fund && npm run build) \
         && info "前端构建完成" \
-        || warn "前端构建失败，将回退旧版前端（不阻塞部署）"
+        || warn "前端构建失败：部署后访问 / 会返回「前端未构建」提示，需手动 build"
     chown -R "$APP_USER:$APP_USER" "$APP_DIR/web/dist" 2>/dev/null || true
 else
-    warn "未安装 Node.js/npm 且 web/dist 不存在，将使用旧版前端；"
-    warn "如需 P5 前端：安装 Node 18+ 后执行 cd $APP_DIR/web && npm ci && npm run build"
+    warn "未安装 Node.js/npm 且 web/dist 不存在：部署后访问 / 会返回「前端未构建」提示；"
+    warn "如需前端：安装 Node 18+ 后执行 cd $APP_DIR/web && npm ci && npm run build"
 fi
 
 # ---------- 4. 配置 systemd 服务 ----------

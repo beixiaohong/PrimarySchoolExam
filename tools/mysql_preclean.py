@@ -1,7 +1,7 @@
 """MySQL 迁移前清理：备份 MySQL 现有行到 JSON → 清空业务表（保留 admins/system_config/schema_migrations）
 
 背景：MySQL 中已有 P2~P5 验证期间产生的少量测试数据，与 SQLite 原始数据主键会冲突。
-本脚本先整体备份再清空，保证可回滚；随后运行 sqlite_to_mysql.py 完成正式迁移。
+本脚本先整体备份再清空，保证可回滚（一次性迁移已完成后通常不再需要）。
 """
 import json
 import os
@@ -89,7 +89,7 @@ def main():
             conn.execute(text("SET FOREIGN_KEY_CHECKS=1"))
         except Exception:
             pass
-    print("[done] 清理完成，可运行 sqlite_to_mysql.py 正式迁移")
+    print("[done] 清理完成（sqlite_to_mysql.py 已归档删除，无需再运行）")
 
 
 if __name__ == "__main__":

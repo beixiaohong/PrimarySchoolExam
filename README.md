@@ -69,17 +69,17 @@
 | 层 | 技术 | 说明 |
 |---|---|---|
 | 后端 | FastAPI + Uvicorn | Python 3.12，31 个 API 路由模块 |
-| 数据库 | MySQL 8（生产，utf8mb4）/ SQLite（仅开发测试） | SQLAlchemy 2.0 ORM + 自建迁移系统（33 个版本脚本，029+ 仅 MySQL 执行） |
+| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（40 个版本脚本，001-025 历史基线 + 026+ 幂等执行，均仅 MySQL） |
 | 前端 | Vue 3 + Vite 工程化（`web/`） | SPA，构建产物 `web/dist` 由后端托管 |
 | AI | 智谱 / Relay / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档与媒体 | python-docx / matplotlib / edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | 58 个回归用例（9 个文件），临时 SQLite 隔离，AI/邮件全打桩 |
+| 测试 | pytest + FastAPI TestClient | 58 个回归用例（9 个文件），独立 MySQL 测试库（`DB_NAME` + `_test`）隔离，AI/邮件全打桩 |
 
 ---
 
 ## 三、快速开始
 
-### 本地开发（SQLite）
+### 本地开发（MySQL）
 
 ```powershell
 py -3.12 -m venv .venv
@@ -97,7 +97,7 @@ npm run dev              # 开发调试
 npm run build            # 构建到 web/dist
 ```
 
-配置项见 `.env.example`（数据库驱动、AI Key、邮件 SMTP、昵称登录开关等）。
+配置项见 `.env.example`（MySQL 连接、AI Key、邮件 SMTP、昵称登录开关等）。
 首次启动自动建表、执行迁移、导入种子数据（小学单词 1969 / 初中单词 434 / 词组 / 句子 /
 古诗文（含初中 48 篇）/ 数学题型 / 初中六科题库 / 初中语法点）。
 注：六科题库与初中词库为 AI 生成种子数据，结构正确可判分可出题，内容准确性需家长/老师后续校对扩充。
@@ -106,7 +106,9 @@ npm run build            # 构建到 web/dist
 
 见 [DEPLOY.md](DEPLOY.md)：Nginx + systemd（服务名 `exam-app`），
 MySQL 需 utf8mb4 字符集；前端有改动时部署必须重新 `npm run build`。
-
+cd /home/PrimarySchoolExam && git pull origin main
+cd web && npm ci && npm run build
+sudo systemctl restart exam-app && systemctl status exam-app
 ### 测试
 
 ```powershell

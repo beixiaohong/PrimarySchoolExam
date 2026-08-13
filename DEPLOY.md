@@ -20,9 +20,9 @@ cd /home/PrimarySchoolExam
 sudo bash deploy.sh
 ```
 
-脚本自动完成：创建虚拟环境 → 安装依赖 → 构建工程化前端（web/dist，Vite + Vue 3；无 Node 时回退旧版前端不阻塞）→ 配置 systemd（自动注入 `.env` 环境变量）→ 配置 nginx → 启动服务 → `/health` 健康自检（失败即报错退出）。
+脚本自动完成：创建虚拟环境 → 安装依赖 → 构建工程化前端（web/dist，Vite + Vue 3；无 Node 时跳过构建，启动后访问 / 会返回「前端未构建」提示）→ 配置 systemd（自动注入 `.env` 环境变量）→ 配置 nginx → 启动服务 → `/health` 健康自检（失败即报错退出）。
 
-> 部署前请先创建 `.env`（参考 `.env.example`：`DB_DRIVER`/MySQL 连接、AI API key、邮件配置等），否则应用将使用默认 SQLite 与内置配置。
+> 部署前请先创建 `.env`（参考 `.env.example`：MySQL 连接、AI API key、邮件配置等），否则应用将使用默认 MySQL 连接（127.0.0.1:3306）与内置配置。
 
 ### 常见问题：status=217/USER
 
@@ -111,7 +111,7 @@ systemctl restart exam-app
 ## 七、工程化前端（web/，Vite + Vue 3 + Pinia）
 
 孩子端新前端位于 `web/`（Vite + Vue 3 + Pinia），构建产物 `web/dist` 由后端直接托管：
-存在时访问 `/` 自动使用新前端，不存在时回退旧版 `frontend/`。
+存在时访问 `/` 托管新前端；若不存在，应用返回 404 JSON 提示「前端未构建，请先 `npm run build`」。
 
 ```bash
 # 服务器需 Node.js 18+（仅构建时需要）
@@ -128,11 +128,11 @@ cd web
 npm run dev          # http://localhost:5173
 ```
 
-管理后台前端为 `frontend-admin/`（独立工程，/admin 访问），无需构建。
+管理后台：原独立前端 `frontend-admin/` 已移除，后台管理功能通过 API 路由（用户管理 / 数据看板 / 操作日志）操作。
 
 ## 八、自动化测试（pytest）
 
-API 回归测试位于 `tests/`，使用临时 SQLite 库，不依赖外部服务（AI 判题与邮件发送均已打桩），不污染真实数据库。
+API 回归测试位于 `tests/`，使用独立 MySQL 测试库（`DB_NAME` + `_test`，与线上库隔离），不依赖外部服务（AI 判题与邮件发送均已打桩），不污染真实数据库。
 
 ```bash
 # 安装开发依赖（不影响生产 requirements.txt）
@@ -156,12 +156,10 @@ python -m pytest tests -q
 │   ├── schemas/              # Pydantic 请求 / 响应模型
 │   ├── routers/              # API 路由（31 个文件）
 │   ├── services/             # 业务逻辑（出题 / 生成 docx / AI 路由 …）
-│   ├── migrations/           # 数据库迁移系统（33 个版本脚本）
+│   ├── migrations/           # 数据库迁移系统（40 个版本脚本，MySQL-only）
 │   └── data/                 # 种子 CSV（小学/初中单词、词组、句子）
 ├── web/                      # 生产前端（Vue 3 + Vite + Pinia），产物 web/dist 由后端托管
-├── frontend/                 # 旧版前端（已废弃，web/dist 缺失时自动回退）
-├── frontend-admin/           # 管理后台前端（/admin 访问，无需构建）
-├── tools/                    # 运维 / 迁移工具（sqlite_to_mysql 等）
+├── tools/                    # 运维 / 迁移 / 题库发布工具（qb_release 等）
 ├── tests/                    # pytest 回归套件（58 用例 / 9 文件）
 ├── output/                   # 生成文件（docx / figures / audio，gitignore）
 ├── run.py                    # 启动入口

@@ -19,7 +19,7 @@
 - 语文/英语三线增强：题库与素材扩充、AI 主观题判分（作文/阅读简答）、阅读理解专项（全部要）。
 
 **约束（延续既定决策）**：
-- 生产 MySQL；新迁移仅写 MySQL 路径，runner 对 SQLite 跳过（测试建表靠 create_all）；
+- 生产 MySQL；新迁移仅写 MySQL 路径，runner 在 MySQL 下顺序执行（测试建表靠 create_all）；
 - AI 种子数据标注「种子版，需人工校对」，不追求一步到位的内容准确性；
 - AI 功能全部走钻石计费 + 限频，沿用现有体系；
 - 语文课内课文全文不收录（版权），同步素材以古诗文 + 字词为主。
@@ -226,7 +226,7 @@ D4 已决议覆盖九科：grade>=7 时同步学页展示全部九科单元。
 | 037_lang_seed | 初中语文题库 + 英语初中短语句子 + classical_texts.unit 标注 + middle_questions.unit 列与六科章节标注、题库扩充 | 加列+种子 |
 | 038_content_review | content_reviews 多 AI 校对记录表 + middle_questions/reading_passages 加 review_status 列 | 建表+加列 |
 
-配套 ORM 模型（app/models/）：EssayGrade、ReadingPassage、SyncQuizLog、ContentReview，供 create_all 在 SQLite 测试建表。ai_qa 无需加列（q_type='search' 复用）。
+配套 ORM 模型（app/models/）：EssayGrade、ReadingPassage、SyncQuizLog、ContentReview，供 create_all 在测试库建表。ai_qa 无需加列（q_type='search' 复用）。
 
 ## 7. API 总览（新增 15 个）
 

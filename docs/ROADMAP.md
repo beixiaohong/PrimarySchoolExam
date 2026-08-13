@@ -27,8 +27,7 @@
 | + | 测试 | ✅ 已完成 | tests/test_middle.py 9 用例，全量 58 用例全绿 |
 
 **与原路线的偏差说明**：
-1. 迁移脚本 029+ 仅 MySQL 执行（不再为 SQLite 单独编写迁移，开发期仍可用 SQLite 跑通）：029+ 迁移 SQLite 驱动直接跳过，
-   表结构由 create_all 兜底，测试用例自行插入种子数据
+1. 迁移脚本统一为 MySQL-only（共 40 个：001-025 为历史基线、启动时预置已执行，026+ 幂等顺序执行）：表结构由 create_all 兜底，测试用例自行插入种子数据
 2. 出题方案采用三选一中的 **a) 静态题库**：六科新增学科全部走 middle_questions 选择题，
    零 AI 成本、可离线判分；AI 动态出题仅作钻石计费补充
 3. C1 词量为起步种子（七/八/九年级共约 434 词），课标全量词表需后续人工扩充
@@ -103,7 +102,7 @@
 
 ### B1 教学进度模型（1 天）
 
-- 迁移 **030_teaching_progress.py**（方言兼容，SQLite/MySQL 都建表）：
+- 迁移 **030_teaching_progress.py**（MySQL 建表，幂等）：
   ```sql
   CREATE TABLE teaching_progress (
     id INTEGER PRIMARY KEY AUTO_INCREMENT,
@@ -194,8 +193,7 @@
 
 ## 风险与注意事项
 
-1. **迁移脚本**：029+ 为 MySQL-only（runner 对 SQLite 驱动跳过并标记已应用），
-   026-028 遵循方言兼容幂等写法（inspector 检查列/表存在性）
+1. **迁移脚本**：全部 MySQL-only（001-025 历史基线、026+ 幂等执行，均不依赖 SQLite）；026-028 遵循幂等写法（inspector 检查列/表存在性）
 2. **学期判断边界**：2 月寒假与 8 月暑假的学期归属需与家长确认（当前方案：2-8 月为下学期，
    7-8 月实际是暑假，可通过 include_next 预习开关覆盖）
 3. **unit 排序**：词库 unit 字段为字符串（如 "Unit 10"），已用解析函数 `_unit_sort_key`
@@ -226,8 +224,8 @@
 
 ### 数据模型与约束
 
-- 新 ORM 模型：`SyncQuizLog`、`EssayGrade`、`ReadingPassage`、`ContentReview`（create_all 在 SQLite 测试建表；MySQL 生产由 034-038 迁移建表/加列）
-- 新迁移均为 MySQL-only（runner 对 SQLite 跳过并标记已应用）；AI 种子标注「种子版，需人工校对」
+- 新 ORM 模型：`SyncQuizLog`、`EssayGrade`、`ReadingPassage`、`ContentReview`（create_all 在测试库建表；MySQL 生产由 034-038 迁移建表/加列）
+- 新迁移均为 MySQL-only（runner 在 MySQL 下顺序执行，幂等可重跑）；AI 种子标注「种子版，需人工校对」
 - AI 功能全部走钻石计费 + 限频（作文 3/min、简答 5/min、阅读 5/min），失败不阻断
 - 语文课内课文全文不收录（版权约束），同步素材以古诗文 + 字词为主
 - 拍照搜题依 D2 决议延期至下期，本期仅保留前端入口与流程预留

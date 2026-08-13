@@ -9,11 +9,11 @@
 | 层 | 技术 | 说明 |
 |---|---|---|
 | 后端框架 | FastAPI + Uvicorn | Python 3.12，ASGI 异步服务，31 个路由模块 |
-| 数据库 | MySQL 8（生产 utf8mb4）/ SQLite（开发） | SQLAlchemy 2.0 ORM + 自建迁移系统（33 个版本脚本，MySQL 基线策略见下） |
-| 前端 | Vue 3 + Vite 工程化（web/） | SPA，构建产物 web/dist 由后端托管；frontend/ 旧版已废弃 |
+| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（40 个版本脚本，MySQL-only，基线策略见下） |
+| 前端 | Vue 3 + Vite 工程化（web/） | SPA，构建产物 web/dist 由后端托管（已移除旧版 frontend/ 与 frontend-admin/） |
 | AI 接入 | 智谱 GLM / Relay 中转 / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档生成 | python-docx + matplotlib + edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | tests/ 目录 58 个回归用例（9 个文件），临时 SQLite 隔离 |
+| 测试 | pytest + FastAPI TestClient | tests/ 目录 58 个回归用例（9 个文件），独立 MySQL 测试库（DB_NAME + _test）隔离 |
 
 ---
 
@@ -26,7 +26,6 @@ run.py                          # 启动入口（uvicorn 启动 FastAPI）
 requirements.txt                # Python 依赖清单
 .env.example                    # 环境变量模板（AI API Key 等）
 .gitignore                      # Git 忽略规则
-primary_school.db               # SQLite 数据库文件（运行后自动生成）
 README.md                       # 项目简介与启动说明
 DEPLOY.md                       # 服务器部署指南（Nginx + systemd）
 deploy.sh                       # 一键部署脚本（Ubuntu/CentOS）
@@ -174,12 +173,11 @@ app/migrations/versions/        # 33 个版本化迁移脚本
     033_middle_question_seed.py    # 初中六科题库种子（每科 20 题，MySQL-only）
 ```
 
-**MySQL 基线策略**（runner.py）：001-025 均为 SQLite 方言存量迁移，
-MySQL 侧由 `Base.metadata.create_all` 直接建表，启动时自动把这些版本预置为已执行；
-026-028 用方言兼容写法（两种驱动都会真实执行）；
-**029 及之后为 MySQL-only 迁移**：SQLite 驱动直接跳过并标记已应用（表结构由 create_all 兜底），
-种子类数据在测试环境由用例自行插入。
-数据迁移工具见 tools/sqlite_to_mysql.py（逐表迁移 + 行数对账 + --ensure-admin 补建管理员）。
+**MySQL-only 迁移策略**（runner.py）：001-025 为历史 SQLite 方言存量迁移，
+MySQL 侧由 `Base.metadata.create_all` 直接建表，启动时自动把这些版本预置为已执行（不再执行其 SQLite 方言 SQL）；
+026+ 全部为幂等迁移（inspector / checkfirst / try-except），启动时会真实顺序执行（含建表、加列、种子）；
+历史存量数据（小学/初中词库、题库等）在测试环境由用例或种子逻辑自行插入。
+题库发布工具见 tools/qb_release.py（本地增量抽取采集式题库 → 生成版本化更新脚本，手动传到线上执行）。
 
 ### app/data/ — 种子数据
 
@@ -196,15 +194,9 @@ app/data/sentences_primary_school.csv  # 77 个英语句子
 app/tools/wulal.py              # PDF 转图片工具（PyMuPDF）
 ```
 
-### frontend/ — 旧版前端（已废弃，仅存档）
+### frontend/ 与 frontend-admin/（已删除）
 
-> 生产前端已迁移到 web/（Vue 3 + Vite 工程化），以下文件不再维护。
-
-```
-frontend/index.html             # 旧版主页面模板
-frontend/static/app.js          # 旧版 Vue 应用逻辑
-frontend/static/style.css       # 旧版样式表
-```
+> 旧版 `frontend/` 与管理后台 `frontend-admin/` 已于 MySQL-only 重构时移除，统一使用工程化前端 `web/`（Vue 3 + Vite + Pinia）。后端不再挂载旧版 `/static`、`/admin-static`、`/admin` 入口。
 
 ### web/ — 生产前端（Vue 3 + Vite）
 
@@ -224,7 +216,7 @@ web/dist/                       # 构建产物（gitignore，部署时 npm run b
 ### tests/ — pytest 回归套件（58 用例 / 9 文件）
 
 ```
-tests/conftest.py               # 临时 SQLite + session 级 TestClient + AI/邮件打桩
+tests/conftest.py               # 独立 MySQL 测试库（DB_NAME + _test）+ session 级 TestClient + AI/邮件打桩
 tests/test_system.py            # 健康检查与前端入口
 tests/test_auth_user.py         # 注册/登录/验证码/频控
 tests/test_exam.py              # 出卷/判分/错题本/自动难度定档（含去空题口径）/30%错题题型
@@ -239,10 +231,10 @@ tests/test_admin.py             # 管理员登录与后台接口
 ### tools/ — 运维与迁移工具
 
 ```
-tools/sqlite_to_mysql.py        # SQLite → MySQL 全量迁移（批量 500/外键拓扑序/行数对账，--dry-run/--ensure-admin）
-tools/chk_mysql_data.py         # MySQL 数据核对
 tools/mysql_preclean.py         # 迁移前清空目标表
 tools/mysql_fix_autoincr.py     # 自增主键修正
+tools/qb_release.py             # 题库更新脚本生成/应用（本地增量抽取 → 版本化更新脚本，手动传线上）
+tools/collect_papers.py         # 采集式题库抓取与入库
 ```
 
 ### output/ — 生成文件（gitignore）
@@ -293,7 +285,7 @@ output/*.docx                   # 生成的试卷文档
 ### 1. 前端迁移到 Vue 组件化（Vite + SFC）
 
 **当前状态**：已完成。生产前端已迁移到 web/（Vue 3 + Vite + vue-router + pinia），
-App.vue ~2,200 行 + logic/appOptions.js ~2,800 行；旧版 frontend/ 已废弃存档。
+App.vue ~2,200 行 + logic/appOptions.js ~2,800 行；旧版 frontend/ 与 frontend-admin/ 已移除（统一使用 web/ 工程化前端）。
 
 **工作内容**：
 - 搭建 Vite + Vue 3 工程化脚手架（vue-router、pinia）
@@ -312,8 +304,7 @@ App.vue ~2,200 行 + logic/appOptions.js ~2,800 行；旧版 frontend/ 已废弃
 
 ### 2. 数据库从 SQLite 迁移到 MySQL
 
-**当前状态**：已完成。生产环境运行 MySQL 8（utf8mb4），DB_DRIVER 切换驱动，
-迁移脚本已扩至 33 个（026+ 方言兼容），数据经 tools/sqlite_to_mysql.py 全量迁移并对账。
+**当前状态**：已完成。项目已统一为 MySQL 8（utf8mb4，生产 / 本地一致），移除 SQLite 支持（DB_DRIVER 被强制回退 mysql）；迁移脚本共 40 个（001-025 历史基线 + 026+ 幂等执行），存量数据经一次性迁移并对账（tools/sqlite_to_mysql.py 已归档删除）。
 
 **工作内容**：
 - 部署 MySQL 实例 + 创建数据库
@@ -328,7 +319,7 @@ App.vue ~2,200 行 + logic/appOptions.js ~2,800 行；旧版 frontend/ 已废弃
 
 **预估工作量**：**3-5 天**
 
-**风险点**：部分路由中直接写了 SQLite 原生 SQL（如 `runner.py` 中的 `INSERT OR IGNORE`），需要逐一排查替换；`func.random()` 在多处使用需替换为 `func.rand()`；日期函数差异较多。
+**风险点（已解决）**：SQLite 支持已彻底移除，代码与迁移统一 MySQL；历史 `func.random()` → `func.rand()`、日期函数差异等方言问题已修复。
 
 ---
 
