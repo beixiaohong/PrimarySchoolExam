@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import base64
 import random
+import traceback
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urljoin
@@ -142,6 +143,9 @@ CURRENT_YEAR = datetime.now().year
 YEAR_MIN = CURRENT_YEAR - 10      # 仅采集最近 10 年（如 2026 -> 2016 起）
 DAILY_MAX_PAPERS = 200           # 每日采集新卷上限（约 200 份/天）
 PER_CATEGORY_CAP = 6             # 单个 (学科,年级) 分类每日最多采集份数（保证各学科均衡）
+# 学段每日配额：保证「初中优先」且小学/高中也都能覆盖到（否则 200 额度会被初中吃光，高中永远采不到）
+# 合计 200 = 初中 120 + 小学 50 + 高中 30
+STAGE_CAP = {"初中": 120, "小学": 50, "高中": 30}
 
 # 年份解析：从标题提取 4 位年份，过滤掉 10 年前的旧卷
 _YEAR_RE = re.compile(r'(?:19|20)\d{2}')
@@ -183,6 +187,15 @@ TEMP_HTML_DIR = CACHE_DIR / "html_temp"
 # ========== 基础工具 ==========
 def ensure_dir(path):
     Path(path).mkdir(parents=True, exist_ok=True)
+
+
+def _safe_remove(path):
+    """尽量删除临时文件；删除失败（含安全删除拦截、权限问题）一律忽略，不影响主流程。"""
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except BaseException:
+        pass
 
 
 def safe_filename(text):
@@ -573,6 +586,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
 
     remaining_quota = daily_limit
     print(f"📌 本日采集上限 {remaining_quota} 份新卷（学段优先级：初中→小学→高中；"
+          f"学段配额 初中{STAGE_CAP['初中']}/小学{STAGE_CAP['小学']}/高中{STAGE_CAP['高中']}；"
           f"仅最近 {CURRENT_YEAR - YEAR_MIN} 年，{YEAR_MIN} 年起）")
 
     # 按学段优先级（初中→小学→高中）重排分类，保证优先采集初中、各学科均衡覆盖
@@ -580,11 +594,16 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
 
     collected_total = 0
     new_paper_ids = []
+    stage_collected = {k: 0 for k in STAGE_CAP}
     while True:
         try:
             for subject_name, grade_name, url_suffix in categories:
                 if collected_total >= remaining_quota:
                     break
+                # 学段每日配额：保证初中优先且小学/高中也覆盖到（否则 200 额度被初中吃光，高中采不到）
+                stage = GRADE_STAGE.get(grade_name, "初中")
+                if stage_collected.get(stage, 0) >= STAGE_CAP.get(stage, 10):
+                    continue
                 # 续跑优化：该 (学科,年级) 今日已采满，跳过整类列表抓取，直接下一个分类
                 with SessionLocal() as s:
                     have = s.execute(
@@ -608,61 +627,67 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                         break
                     source_url = paper['detail_url']
                     # 去重：已采集过的不再采集
-                    with SessionLocal() as session:
-                        if session.execute(
-                            select(Paper.id).where(Paper.source_url == source_url)
-                        ).first():
-                            print(f"  ⏭ 已采集，跳过: {paper['title']}")
+                    try:
+                        with SessionLocal() as session:
+                            if session.execute(
+                                select(Paper.id).where(Paper.source_url == source_url)
+                            ).first():
+                                print(f"  ⏭ 已采集，跳过: {paper['title']}")
+                                continue
+                    except BaseException:
+                        continue
+
+                    # 单份试卷处理异常时跳过并续跑（自动化每日任务不能因一份坏卷中断）
+                    try:
+                        download_url = get_download_url(source_url)
+                        if not download_url:
+                            continue
+                        archive_path = download_file(download_url, str(DOWNLOAD_DIR))
+                        if not archive_path:
+                            continue
+                        kept_files = extract_and_clean(
+                            archive_path, str(EXTRACT_DIR), str(CLEAN_DIR), KEEP_EXTENSIONS)
+                        if not kept_files:
                             continue
 
-                    download_url = get_download_url(source_url)
-                    if not download_url:
-                        continue
-                    archive_path = download_file(download_url, str(DOWNLOAD_DIR))
-                    if not archive_path:
-                        continue
-                    kept_files = extract_and_clean(
-                        archive_path, str(EXTRACT_DIR), str(CLEAN_DIR), KEEP_EXTENSIONS)
-                    if not kept_files:
-                        continue
+                        # 优先取「试卷正文」文档，避开答案/解析（避免答案覆盖试卷）
+                        for doc_path in _select_exam_doc(kept_files):
+                            if collected_total >= remaining_quota:
+                                break
+                            yr = parse_year(paper['title']) or 0
+                            print(f"  📄 {paper['title']}")
+                            html_content = convert_document_to_html(doc_path)
+                            if html_content:
+                                print(f"    ✅ 转换成功，HTML 长度: {len(html_content)} 字符")
+                            else:
+                                print(f"    ⚠️ 转换失败，仅记录元信息")
+                            paper_id, _is_new, q_count = store_paper_full(
+                                subject_name, grade_name, paper['title'],
+                                source_url, download_url, html_content, year=yr)
+                            print(f"    📝 入库试卷 ID={paper_id}，题目 {q_count} 道")
+                            new_paper_ids.append(paper_id)
 
-                    # 优先取「试卷正文」文档，避开答案/解析（避免答案覆盖试卷）
-                    for doc_path in _select_exam_doc(kept_files):
-                        if collected_total >= remaining_quota:
-                            break
-                        yr = parse_year(paper['title']) or 0
-                        print(f"  📄 {paper['title']}")
-                        html_content = convert_document_to_html(doc_path)
-                        if html_content:
-                            print(f"    ✅ 转换成功，HTML 长度: {len(html_content)} 字符")
-                        else:
-                            print(f"    ⚠️ 转换失败，仅记录元信息")
-                        paper_id, _is_new, q_count = store_paper_full(
-                            subject_name, grade_name, paper['title'],
-                            source_url, download_url, html_content, year=yr)
-                        print(f"    📝 入库试卷 ID={paper_id}，题目 {q_count} 道")
-                        new_paper_ids.append(paper_id)
+                            # 不使用 doc 保存：转换入库后删除原件
+                            _safe_remove(doc_path)
 
-                        # 不使用 doc 保存：转换入库后删除原件
+                        # 删除压缩包与多余文档，避免长期占用磁盘
+                        for f in kept_files:
+                            _safe_remove(f)
+                        _safe_remove(archive_path)
+
+                        new_count += 1
+                        collected_total += 1
+                        stage_collected[stage] = stage_collected.get(stage, 0) + 1
+                        time.sleep(DOWNLOAD_DELAY)
+                    except BaseException as e:
+                        print(f"  ⚠️ 处理试卷异常，跳过: {paper['title']} -> {type(e).__name__}: {e}")
+                        traceback.print_exc()
                         try:
-                            os.remove(doc_path)
-                        except Exception:
+                            if 'archive_path' in dir() and archive_path:
+                                _safe_remove(archive_path)
+                        except BaseException:
                             pass
-
-                    # 删除压缩包与多余文档，避免长期占用磁盘
-                    for f in kept_files:
-                        try:
-                            os.remove(f)
-                        except Exception:
-                            pass
-                    try:
-                        os.remove(archive_path)
-                    except Exception:
-                        pass
-
-                    new_count += 1
-                    collected_total += 1
-                    time.sleep(DOWNLOAD_DELAY)
+                        continue
 
                 print(f"  ✅ {subject_name}-{grade_name} 完成，新增 {new_count} 份（本次累计 {collected_total}/{remaining_quota}）")
 
@@ -675,20 +700,25 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
         except KeyboardInterrupt:
             print("\n🛑 用户中断，退出")
             break
-        except Exception as e:
-            print(f"❌ 异常: {e}")
+        except BaseException as e:
+            print(f"❌ 主循环异常: {type(e).__name__}: {e}")
+            traceback.print_exc()
             if once:
                 break
             time.sleep(REQUEST_INTERVAL)
 
-    # 采集后优先为新卷补全 AI 答案，再按 cap 继续全局空缺补全
+    # 采集后优先为新卷补全 AI 答案（受每日上限约束，避免无限制消耗）
+    # 单独 try 包裹：AI 补全异常绝不影响已采集试卷。
     if fill_answers_after and new_paper_ids:
         from app.services.answer_generator import fill_missing_answers
-        print(f"\n🤖 优先为本次新采集的 {len(new_paper_ids)} 份试卷补全 AI 答案...")
-        fill_missing_answers(paper_ids=new_paper_ids)
-        if answer_cap and answer_cap > 0:
-            print(f"\n🤖 继续全局补全缺失答案（本日上限 {answer_cap} 题）...")
-            fill_missing_answers(limit=answer_cap)
+        cap = answer_cap if answer_cap and answer_cap > 0 else None
+        print(f"\n🤖 优先为本次新采集的 {len(new_paper_ids)} 份试卷补全 AI 答案"
+              f"{('（本日上限 ' + str(cap) + ' 题）') if cap else '（不限额）'}...")
+        try:
+            fill_missing_answers(paper_ids=new_paper_ids, limit=cap)
+        except BaseException as e:
+            print(f"⚠️ AI 答案补全异常（不影响已采集试卷）: {type(e).__name__}: {e}")
+            traceback.print_exc()
 
     return new_paper_ids
 

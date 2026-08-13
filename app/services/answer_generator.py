@@ -69,6 +69,9 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
         return (0, 0, 0)
 
     processed = skipped = ok = 0
+    # 持续限流/超时保护：连续失败达到阈值即判定 AI 暂不可用，放弃本次补全，
+    # 剩余题目留待后续运行（避免对 5671 道缺失题死循环刷接口、卡住数十小时）。
+    MAX_CONSECUTIVE_FAILS = 10
     with SessionLocal() as s:
         q = s.query(PaperQuestion).filter(
             (PaperQuestion.correct_answer == None) | (PaperQuestion.correct_answer == "")
@@ -91,11 +94,15 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
             if ans is None:
                 skipped += 1
                 consecutive_skip += 1
+                if consecutive_skip >= MAX_CONSECUTIVE_FAILS:
+                    logger.warning("连续 %d 题 AI 失败（多为限流/超时），判定为持续不可用，"
+                                   "放弃本次补全；剩余 %d 题留待后续运行",
+                                   consecutive_skip, total_missing - processed)
+                    break
                 # 温和退避：限流/超时时放慢节奏，不猛撞 API（用户要求「慢慢补充」）
                 if consecutive_skip >= 5:
                     logger.warning("连续 %d 题 AI 失败（多为限流/超时），冷却 60s 后继续", consecutive_skip)
                     time.sleep(60)
-                    consecutive_skip = 0
                 else:
                     time.sleep(2)
                 continue
