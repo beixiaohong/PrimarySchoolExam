@@ -1,8 +1,10 @@
 #!/bin/bash
 #============================================================
-# 小学试卷系统 - 一键部署脚本
+# 小学试卷系统 - 一键部署脚本 (支持 HTTPS)
 # 用法: sudo bash deploy.sh
 # 适用: Ubuntu 20.04+ / Debian 11+ / CentOS 7+
+# 域名: liusijin.com / www.liusijin.com
+# 证书: /etc/letsencrypt/live/www.liusijin.com/
 #============================================================
 
 set -e
@@ -12,7 +14,8 @@ APP_NAME="exam-app"
 APP_DIR="/home/PrimarySchoolExam"
 APP_PORT=8000
 NGINX_PORT=80
-DOMAIN="_"   # 有域名改成你的域名，没有就保持 _ 表示所有
+DOMAIN="liusijin.com"          # 主域名
+DOMAIN_WWW="www.liusijin.com"  # www 域名
 
 # 自动检测 web 用户（CentOS=nginx, Ubuntu=www-data）
 if id "www-data" &>/dev/null; then
@@ -70,40 +73,35 @@ mkdir -p "$APP_DIR/data"
 mkdir -p "$APP_DIR/output"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || true
 
-# ---------- 3.5 检查 .env（MySQL 连接 / AI key / 邮件等由它注入） ----------
+# ---------- 3.5 检查 .env ----------
 if [ ! -f "$APP_DIR/.env" ]; then
-    warn "未找到 $APP_DIR/.env，请先创建（参考 .env.example：MySQL 连接 / AI_API_KEY / 邮件配置等）"
+    warn "未找到 $APP_DIR/.env，请先创建（参考 .env.example）"
 fi
 
-# ---------- 3.6 构建前端（web/dist） ----------
-# 重要：前端改动（App.vue / appOptions.js / style.css 等）只有在「重新构建」后才会生效。
-# 因此每次部署都重新构建，不因为 web/dist 已存在而跳过——
-# 否则拉取新代码后再跑本脚本，仍会服务旧的构建产物（界面不更新，如首页三块、兑换券输入框等）。
+# ---------- 3.6 构建前端 ----------
 info "构建前端（npm ci + vite build）..."
 if command -v npm &>/dev/null && [ -f "$APP_DIR/web/package.json" ]; then
     (cd "$APP_DIR/web" && npm ci --no-audit --no-fund && npm run build) \
         && info "前端构建完成" \
-        || error "前端构建失败：请检查 Node 版本(需 18+) 与 web/package.json，构建未成功将导致前端不可用"
+        || error "前端构建失败：请检查 Node 版本(需 18+)"
     chown -R "$APP_USER:$APP_USER" "$APP_DIR/web/dist" 2>/dev/null || true
 else
-    error "未安装 Node.js/npm 或缺少 web/package.json：无法构建前端。请先安装 Node 18+ 后重试。"
+    error "未安装 Node.js/npm 或缺少 web/package.json"
 fi
 
-# ---------- 3.7 构建管理后台前端（admin/dist） ----------
-# 管理后台为独立 Vite 工程，构建产物 admin/dist 由后端在 /admin 托管（见 app/main.py）。
-# 管理后台是核心功能，构建失败必须报错退出（不再静默跳过，避免 /admin 静默不可用）。
+# ---------- 3.7 构建管理后台 ----------
 info "构建管理后台前端（npm ci + vite build）..."
 if ! command -v npm &>/dev/null; then
-    error "未检测到 Node.js/npm：无法构建管理后台，请先安装 Node 18+ 后重试。"
+    error "未检测到 Node.js/npm"
 fi
 if [ ! -f "$APP_DIR/admin/package.json" ]; then
-    error "缺少 $APP_DIR/admin/package.json：无法构建管理后台，/admin 将不可用。"
+    error "缺少 $APP_DIR/admin/package.json"
 fi
 (cd "$APP_DIR/admin" && npm ci --no-audit --no-fund && npm run build) \
     && info "管理后台构建完成" \
-    || error "管理后台构建失败：请检查 Node 版本(需 18+) 与 admin/package.json 的 build 脚本"
+    || error "管理后台构建失败"
 if [ ! -f "$APP_DIR/admin/dist/index.html" ]; then
-    error "管理后台构建产物缺失 admin/dist/index.html（构建可能未成功），/admin 将不可用。"
+    error "管理后台构建产物缺失"
 fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
 
@@ -132,8 +130,8 @@ systemctl daemon-reload
 systemctl enable ${APP_NAME}
 info "systemd 服务已配置并设为开机自启"
 
-# ---------- 5. 配置 Nginx 反向代理 ----------
-info "配置 Nginx (端口 ${NGINX_PORT})..."
+# ---------- 5. 配置 Nginx (支持 HTTPS) ----------
+info "配置 Nginx (HTTP 80 + HTTPS 443)..."
 
 NGINX_CONF="/etc/nginx/sites-available/${APP_NAME}"
 NGINX_LINK="/etc/nginx/sites-enabled/${APP_NAME}"
@@ -145,9 +143,17 @@ if [ ! -d "/etc/nginx/sites-available" ]; then
 fi
 
 cat > "$NGINX_CONF" <<EOF
+# HTTPS 服务器配置（443 端口）
 server {
-    listen ${NGINX_PORT};
-    server_name ${DOMAIN};
+    listen 443 ssl http2;
+    server_name ${DOMAIN} ${DOMAIN_WWW};
+
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN_WWW}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_WWW}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
 
     client_max_body_size 50m;
 
@@ -160,17 +166,22 @@ server {
         proxy_read_timeout 120s;
     }
 
-    # 静态文件直接由 nginx 处理（可选优化）
     location /output/ {
         alias ${APP_DIR}/output/;
         expires 7d;
     }
 }
+
+# HTTP 跳转配置（80 端口）
+server {
+    listen 80;
+    server_name ${DOMAIN} ${DOMAIN_WWW};
+    return 301 https://\$server_name\$request_uri;
+}
 EOF
 
 if [ -n "$NGINX_LINK" ]; then
     ln -sf "$NGINX_CONF" "$NGINX_LINK"
-    # 移除默认站点避免冲突
     rm -f /etc/nginx/sites-enabled/default
 fi
 
@@ -188,12 +199,12 @@ else
     error "应用启动失败，查看日志: journalctl -u ${APP_NAME} -n 50"
 fi
 
-# 健康检查自检
+# 健康检查
 if command -v curl &>/dev/null; then
     if curl -fsS "http://127.0.0.1:${APP_PORT}/health" >/dev/null 2>&1; then
         info "健康检查通过 (/health)"
     else
-        error "健康检查失败: curl http://127.0.0.1:${APP_PORT}/health，查看日志: journalctl -u ${APP_NAME} -n 50"
+        error "健康检查失败，查看日志: journalctl -u ${APP_NAME} -n 50"
     fi
 fi
 
@@ -202,19 +213,21 @@ systemctl enable nginx
 systemctl restart nginx
 
 if systemctl is-active --quiet nginx; then
-    info "Nginx 运行正常 (端口 ${NGINX_PORT})"
+    info "Nginx 运行正常 (HTTP 80, HTTPS 443)"
 else
     error "Nginx 启动失败，查看日志: journalctl -u nginx -n 50"
 fi
 
-# ---------- 7. 防火墙放行 ----------
+# ---------- 7. 防火墙放行 HTTP 和 HTTPS ----------
 if command -v ufw &>/dev/null; then
-    ufw allow ${NGINX_PORT}/tcp >/dev/null 2>&1
-    info "UFW 已放行端口 ${NGINX_PORT}"
+    ufw allow 80/tcp >/dev/null 2>&1
+    ufw allow 443/tcp >/dev/null 2>&1
+    info "UFW 已放行端口 80 和 443"
 elif command -v firewall-cmd &>/dev/null; then
-    firewall-cmd --permanent --add-port=${NGINX_PORT}/tcp >/dev/null 2>&1
+    firewall-cmd --permanent --add-port=80/tcp >/dev/null 2>&1
+    firewall-cmd --permanent --add-port=443/tcp >/dev/null 2>&1
     firewall-cmd --reload >/dev/null 2>&1
-    info "Firewalld 已放行端口 ${NGINX_PORT}"
+    info "Firewalld 已放行端口 80 和 443"
 fi
 
 # ---------- 完成 ----------
@@ -223,10 +236,11 @@ echo "=========================================="
 echo -e "${GREEN} 部署完成！${NC}"
 echo "=========================================="
 echo ""
-echo "  访问地址:  http://<服务器IP>"
-echo "  管理后台:  http://<服务器IP>/admin   （默认管理员 admin / Admin@123，请尽快修改密码）"
+echo "  访问地址:  https://${DOMAIN}  /  https://${DOMAIN_WWW}"
+echo "  管理后台:  https://${DOMAIN}/admin   （默认管理员 admin / Admin@123）"
 echo "  应用端口:  ${APP_PORT} (内部)"
-echo "  Nginx端口: ${NGINX_PORT} (对外)"
+echo "  HTTP端口:  80 (自动跳转 HTTPS)"
+echo "  HTTPS端口: 443 (加密传输)"
 echo ""
 echo "  常用命令:"
 echo "    查看状态:  systemctl status ${APP_NAME}"
@@ -234,13 +248,9 @@ echo "    查看日志:  journalctl -u ${APP_NAME} -f"
 echo "    重启应用:  systemctl restart ${APP_NAME}"
 echo "    重启Nginx: systemctl restart nginx"
 echo ""
-echo "  更新代码后（deploy.sh 已改为每次重新构建前端，无需手动 build）:"
+echo "  更新代码后运行:"
 echo "    cd ${APP_DIR} && git pull && sudo bash deploy.sh"
-echo "    # 若只改了前端且已 pull，也可仅："
-echo "    cd web && npm ci && npm run build && systemctl restart ${APP_NAME}"
-echo "    # 若只改了管理后台："
-echo "    cd admin && npm ci && npm run build && systemctl restart ${APP_NAME}"
 echo ""
-echo "  运行自动化测试（需先 pip install -r requirements-dev.txt）:"
-echo "    ${APP_DIR}/venv/bin/python -m pytest tests -q"
-echo ""
+echo "  证书自动续期 (Let's Encrypt):"
+echo "    certbot renew --dry-run  # 测试续期"
+echo "=========================================="
