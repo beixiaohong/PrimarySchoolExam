@@ -89,6 +89,12 @@ else:
         "web/dist 不存在，前端未托管。请先 `cd web && npm run build` 生成构建产物。"
     )
 
+# 充值 / 客服二维码等静态图：构建产物 web/dist/qr（由 web/public/qr 拷贝而来）。
+# 仅当 dist/qr 存在时才挂载，避免目录缺失导致启动失败。
+QR_DIR = WEB_DIST_DIR / "qr"
+if QR_DIR.exists():
+    app.mount("/qr", StaticFiles(directory=str(QR_DIR)), name="qr")
+
 # 静态资源（图片、音频）
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 

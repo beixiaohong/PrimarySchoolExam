@@ -2365,8 +2365,12 @@
         <button class="btn btn-ghost btn-sm" @click="copyRechargeAccount()">{{rechargeCopied ? '已复制 ✓' : '复制'}}</button>
       </div>
 
-      <div class="recharge-cs" v-if="rechargeCfg && rechargeCfg.cs_contact">
-        📞 客服联系方式：<b>{{rechargeCfg.cs_contact}}</b>
+      <div class="recharge-cs" v-if="rechargeCfg && (rechargeCfg.cs_contact || rechargeCfg.cs_wx_qr)">
+        <div v-if="rechargeCfg.cs_contact">📞 客服微信：<b>{{rechargeCfg.cs_contact}}</b></div>
+        <div v-if="rechargeCfg.cs_wx_qr" class="cs-qr-wrap">
+          <img :src="rechargeCfg.cs_wx_qr" alt="客服微信加好友二维码" class="cs-qr-img">
+          <span class="cs-qr-tip">扫码添加客服微信</span>
+        </div>
       </div>
       <div class="recharge-cs" v-else>
         📞 付款后请联系客服，提供「付款截图 + 账号」即可发放钻石。

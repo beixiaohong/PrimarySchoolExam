@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
+from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_CS_WX_QR, RECHARGE_RATE
 from ..services import diamond as diamond_svc
 
 logger = logging.getLogger(__name__)
@@ -105,5 +105,6 @@ def recharge_config():
         "wechat_qr": RECHARGE_WECHAT_QR,
         "alipay_qr": RECHARGE_ALIPAY_QR,
         "cs_contact": RECHARGE_CS_CONTACT,
+        "cs_wx_qr": RECHARGE_CS_WX_QR,
         "rate": RECHARGE_RATE,
     }
