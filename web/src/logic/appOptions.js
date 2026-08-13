@@ -1379,7 +1379,7 @@ const appOptions = {
     startWordSession(mode) {
       const words = mode === 'new' ? (this.vocabToday.new_words || []) : (this.vocabToday.review_words || []);
       if (!words.length) { this.showToast(mode === 'new' ? '词库已全部学完，太棒了！' : '今日没有到期复习的单词'); return; }
-      this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [] };
+      this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [], comprehensiveIds: null };
       this.$nextTick(() => setTimeout(() => this.wordSpeak(), 350));
     },
     wordNext(ok) {
@@ -1444,9 +1444,10 @@ const appOptions = {
     },
     /* 逐词「测一测」：学完一个词立即做 4 道客观题（听音辨义/填空/拼写），
        用客观提取替代「学会了/没记住」的二进制自报，提升记忆效率。 */
-    wordTest() {
+    wordTest(idx) {
       const ws = this.wordSession;
-      const w = ws.words[ws.i];
+      const i = (idx != null) ? idx : ws.i;
+      const w = ws.words[i];
       if (!w) return;
       this.dtOk = this.dtOk || {};
       this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${w.word_id}&mode=${ws.mode}&grade=${this.grade}&mix_errors=1`)
@@ -1455,7 +1456,7 @@ const appOptions = {
           if (!items.length) { this.showToast('练习题生成失败，请重试'); return; }
           this.startQuiz({
             title: '✍️ 测一测 · ' + (ws.mode === 'new' ? '新词' : '复习') + `（${w.word}）`,
-            items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode, perItem: true, index: ws.i },
+            items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode, perItem: true, index: i },
           });
         }).catch(e => this.showToast(e.message));
     },
@@ -1465,7 +1466,7 @@ const appOptions = {
       this.textSession = {
         active: true, done: false, phase: 'card', mode,
         texts: raw.map(x => ({ ...x, dynasty: x.dynasty || '' })),
-        i: 0, okCount: 0, failCount: 0, results: [],
+        i: 0, okCount: 0, failCount: 0, results: [], comprehensiveIds: null,
       };
       this.$nextTick(() => setTimeout(() => this.textSpeak(), 350));
     },
@@ -1493,9 +1494,10 @@ const appOptions = {
         }).catch(e => { ts.active = false; this.showToast(e.message); });
     },
     /* 逐篇「测一测」：学完一篇立即做客观题（填空/理解），用客观提取替代「背熟了」自报。 */
-    textTest() {
+    textTest(idx) {
       const ts = this.textSession;
-      const t = ts.texts[ts.i];
+      const i = (idx != null) ? idx : ts.i;
+      const t = ts.texts[i];
       if (!t) return;
       this.dtOk = this.dtOk || {};
       this.api(`/api/classical/session-quiz?user_id=${encodeURIComponent(this.user)}&text_ids=${t.text_id}&mode=${ts.mode}&mix_errors=1`)
@@ -1504,9 +1506,61 @@ const appOptions = {
           if (!items.length) { this.showToast('练习题生成失败，请重试'); return; }
           this.startQuiz({
             title: '✍️ 测一测 · ' + (ts.mode === 'new' ? '新篇' : '复习') + `（《${t.title}》）`,
-            items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode, perItem: true, index: ts.i },
+            items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode, perItem: true, index: i },
           });
         }).catch(e => this.showToast(e.message));
+    },
+    /* 综合测试：本轮全部学完后，对所有条目做一次统一测试；出错只重测出错项，直至全对 */
+    startWordComprehensive() {
+      const ws = this.wordSession;
+      const reIds = (ws.comprehensiveIds && ws.comprehensiveIds.length) ? ws.comprehensiveIds : null;
+      const ids = reIds ? reIds.join(',') : ws.words.map(w => w.word_id).join(',');
+      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${ids}&mode=${ws.mode}&grade=${this.grade}&mix_errors=0`)
+        .then(r => {
+          const items = this._quizItemsFromSession(r.items);
+          if (!items.length) { ws.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); return; }
+          this.startQuiz({
+            title: (reIds ? '🔁 综合补测 · 仅错题' : '📝 综合测试 · 本轮全部') + (ws.mode === 'new' ? '（新词）' : '（复习）'),
+            items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode, comprehensive: true },
+          });
+        }).catch(e => this.showToast(e.message));
+    },
+    startTextComprehensive() {
+      const ts = this.textSession;
+      const reIds = (ts.comprehensiveIds && ts.comprehensiveIds.length) ? ts.comprehensiveIds : null;
+      const ids = reIds ? reIds.join(',') : ts.texts.map(t => t.text_id).join(',');
+      this.api(`/api/classical/session-quiz?user_id=${encodeURIComponent(this.user)}&text_ids=${ids}&mode=${ts.mode}&mix_errors=0`)
+        .then(r => {
+          const items = this._quizItemsFromSession(r.items);
+          if (!items.length) { ts.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); return; }
+          this.startQuiz({
+            title: (reIds ? '🔁 综合补测 · 仅错题' : '📝 综合测试 · 本轮全部') + (ts.mode === 'new' ? '（新篇）' : '（复习）'),
+            items, source: { mode: 'dictate', kind: 'text', mode2: ts.mode, comprehensive: true },
+          });
+        }).catch(e => this.showToast(e.message));
+    },
+    /* 综合测试结束：统计本轮正确情况，全对→任务完成；有错→仅重测出错项（循环） */
+    _finishComprehensive() {
+      const src = this.quiz.source;
+      const items = this.quiz.items;
+      const normal = items.filter(it => !(it.error_id && it.error_id > 0));
+      if (src.kind === 'text') {
+        const ts = this.textSession;
+        const wrong = [];
+        ts.texts.forEach(t => {
+          if (normal.some(it => (it.text_id || src.text_id) === t.text_id && !it.correct)) wrong.push(t.text_id);
+        });
+        if (!wrong.length) { ts.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); }
+        else { ts.comprehensiveIds = wrong; this.startTextComprehensive(); }
+      } else {
+        const ws = this.wordSession;
+        const wrong = [];
+        ws.words.forEach(w => {
+          if (normal.some(it => it.qid === w.word_id && !it.correct)) wrong.push(w.word_id);
+        });
+        if (!wrong.length) { ws.done = true; this.refreshAll(); this.showToast('🎉 本轮全部背对，背诵任务完成！'); }
+        else { ws.comprehensiveIds = wrong; this.startWordComprehensive(); }
+      }
     },
     openTextDetail(t) {
       this.textDetail = { show: true, id: t.id, title: t.title, author: t.author || '', dynasty: t.dynasty || '', grade: t.grade, text_type: t.text_type || 'poem', content: t.content };
@@ -2746,17 +2800,31 @@ const appOptions = {
 
         const afterRecite = () => {
           this.quiz.active = false;
+          if (src.comprehensive) { this._finishComprehensive(); return; }
+          // 逐条测试闸门：当前条目有错 → 重测同一题；全对 → 才进入下一个
+          const items = this.quiz.items;
+          const normal = items.filter(it => !(it.error_id && it.error_id > 0));
           if (src.kind === 'text') {
             const ts = this.textSession;
+            const t = ts.texts[src.index];
+            const curWrong = normal.some(it => (it.text_id || src.text_id) === t.text_id && !it.correct);
             if (src.perItem && src.index < ts.texts.length - 1) {
-              ts.i = src.index + 1; ts.phase = 'card';
-              this.$nextTick(() => setTimeout(() => this.textSpeak(), 250));
+              if (curWrong) { this.showToast('这一篇还没背熟，再测一次 ✊'); this.textTest(src.index); }
+              else { ts.i = src.index + 1; ts.phase = 'card'; this.$nextTick(() => setTimeout(() => this.textSpeak(), 250)); }
+            } else if (src.perItem && src.index === ts.texts.length - 1) {
+              if (curWrong) { this.showToast('这一篇还没背熟，再测一次 ✊'); this.textTest(src.index); }
+              else { ts.phase = 'comprehensive'; this.startTextComprehensive(); }
             } else { ts.done = true; this.refreshAll(); }
           } else {
             const ws = this.wordSession;
+            const w = ws.words[src.index];
+            const curWrong = normal.some(it => it.qid === w.word_id && !it.correct);
             if (src.perItem && src.index < ws.words.length - 1) {
-              ws.i = src.index + 1; ws.phase = 'card'; ws.revealed = false;
-              this.$nextTick(() => setTimeout(() => this.wordSpeak(), 250));
+              if (curWrong) { this.showToast('这个单词还没记住，再测一次 ✊'); this.wordTest(src.index); }
+              else { ws.i = src.index + 1; ws.phase = 'card'; ws.revealed = false; this.$nextTick(() => setTimeout(() => this.wordSpeak(), 250)); }
+            } else if (src.perItem && src.index === ws.words.length - 1) {
+              if (curWrong) { this.showToast('这个单词还没记住，再测一次 ✊'); this.wordTest(src.index); }
+              else { ws.phase = 'comprehensive'; this.startWordComprehensive(); }
             } else { ws.done = true; this.refreshAll(); }
           }
         };

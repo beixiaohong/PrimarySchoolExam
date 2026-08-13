@@ -2147,8 +2147,8 @@
   </template>
   <div v-else-if="wordSession.done" class="done-wrap">
     <div class="done-illus">🎉</div>
-    <h2>{{wordSession.mode==='new' ? '新词学习完成！' : '复习完成！'}}</h2>
-    <p class="sub">共 {{wordSession.words.length}} 个单词 · 全部通过 ✍️</p>
+    <h2>本轮单词背诵完成！</h2>
+    <p class="sub">共 {{wordSession.words.length}} 个单词 · 综合测试全部背对 ✅</p>
     <div class="done-actions"><button class="btn btn-primary" @click="wordSession.active=false; refreshAll()">完成</button></div>
   </div>
 </div>
@@ -2181,8 +2181,8 @@
   </template>
   <div v-else-if="textSession.done" class="done-wrap">
     <div class="done-illus">🏮</div>
-    <h2>{{textSession.mode==='new' ? '古诗文学习完成！' : '复习完成！'}}</h2>
-    <p class="sub">全部通过 ✍️</p>
+    <h2>本轮古诗文背诵完成！</h2>
+    <p class="sub">共 {{textSession.texts.length}} 篇 · 综合测试全部背对 ✅</p>
     <div class="done-actions"><button class="btn btn-primary" @click="textSession.active=false; refreshAll()">完成</button></div>
   </div>
 </div>
