@@ -24,7 +24,7 @@ router = APIRouter()
 
 APPEAL_LIMIT = 20  # 次/小时/用户（防刷屏）
 APPEAL_LIMIT_WIN = 3600
-APPEAL_DAILY_LIMIT = 5  # 次/日/用户（防反复申诉抬分）
+APPEAL_DAILY_LIMIT = 50  # 次/日/用户（防反复申诉抬分）
 
 
 class AppealCreateReq(BaseModel):
