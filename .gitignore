@@ -16,3 +16,5 @@ demo/
 temp/
 # WorkBuddy 本地数据（不入库）
 .workbuddy/
+# 题库更新脚本：本地 generate 生成、手动传到线上执行，不进 git
+qb_versions/
