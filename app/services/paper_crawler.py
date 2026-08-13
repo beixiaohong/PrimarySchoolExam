@@ -598,53 +598,6 @@ def run_collection(once=False):
             time.sleep(REQUEST_INTERVAL)
 
 
-# ========== 迁移 demo 已采集试卷到主库 ==========
-def migrate_demo_papers(demo_db_path=None):
-    """把 demo/learning.db 中已采集的试卷（含 HTML）迁入主库，确保不再重复采集。"""
-    if demo_db_path is None:
-        demo_db_path = BASE_DIR / "demo" / "learning.db"
-    if not os.path.exists(demo_db_path):
-        print(f"⚠️ 未找到 demo 数据库: {demo_db_path}")
-        return 0, 0
-
-    import sqlite3
-    src = sqlite3.connect(str(demo_db_path))
-    cur = src.cursor()
-
-    # course_id -> (subject, grade)
-    course_map = {}
-    try:
-        for cid, sid, gid in cur.execute(
-            "SELECT c.id, c.subject_id, c.grade_id FROM courses c"):
-            sname = cur.execute("SELECT name FROM subjects WHERE id=?", (sid,)).fetchone()
-            gname = cur.execute("SELECT name FROM grades WHERE id=?", (gid,)).fetchone()
-            course_map[cid] = (sname[0] if sname else "", gname[0] if gname else "")
-    except Exception as e:
-        print(f"  ⚠️ 读取 course 映射失败: {e}")
-        course_map = {}
-
-    rows = cur.execute(
-        "SELECT id, course_id, title, source_url, download_url, html_content, answers, total_questions "
-        "FROM papers WHERE html_content IS NOT NULL"
-    ).fetchall()
-    src.close()
-
-    migrated = 0
-    q_total = 0
-    with SessionLocal() as session:
-        for pid, course_id, title, source_url, download_url, html_content, answers, total in rows:
-            subject, grade = course_map.get(course_id, ("", ""))
-            paper_id, is_new = _upsert_paper(
-                session, subject, grade, title, source_url or f"demo:{pid}",
-                download_url or "", html_content, answers)
-            if is_new:
-                migrated += 1
-            q = _store_questions(session, paper_id, html_content)
-            q_total += q
-    print(f"✅ 迁移完成：新增试卷 {migrated} 份，解析题目 {q_total} 道")
-    return migrated, q_total
-
-
 def print_stats():
     with SessionLocal() as session:
         papers = session.execute(select(func.count(Paper.id))).scalar() or 0

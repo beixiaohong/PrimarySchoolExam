@@ -381,12 +381,12 @@ def parse_paper(html_content):
 
 
 if __name__ == "__main__":
-    import sqlite3
-    from app.config import DB_PATH
-    conn = sqlite3.connect(str(DB_PATH))
-    row = conn.execute(
-        "SELECT id, html_content FROM papers WHERE html_content IS NOT NULL LIMIT 1").fetchone()
-    conn.close()
+    from app.database import SessionLocal
+    from sqlalchemy import text
+    with SessionLocal() as db:
+        row = db.execute(
+            text("SELECT id, html_content FROM papers WHERE html_content IS NOT NULL LIMIT 1")
+        ).fetchone()
     if row:
         qs, ans = parse_paper(row[1])
         print(f"试卷 {row[0]} 解析出 {len(qs)} 道题，参考答案长度 {len(ans) if ans else 0}")

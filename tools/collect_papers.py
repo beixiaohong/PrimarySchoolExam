@@ -1,15 +1,15 @@
 """试卷采集命令行入口（主项目统一入口）
 
 用法：
-  python tools/collect_papers.py                 # 持续采集（按 REQUEST_INTERVAL 循环）
-  python tools/collect_papers.py --once          # 跑一轮即退出
-  python tools/collect_papers.py --migrate-demo  # 把 demo/learning.db 已采集试卷迁入主库
-  python tools/collect_papers.py --stats         # 打印题库统计
+  python tools/collect_papers.py          # 持续采集（按 REQUEST_INTERVAL 循环）
+  python tools/collect_papers.py --once   # 跑一轮即退出
+  python tools/collect_papers.py --stats  # 打印题库统计
 
 说明：
-- 采集结果入库到主库 primary_school.db 的 papers / paper_questions 表；
+- 采集结果入库到主库（MySQL）的 papers / paper_questions 表；
 - 按 source_url 去重，已采集过的试卷不会重复采集；
-- 试卷以 HTML 富文本（图片 base64 内联）保存，不保存 doc 原件。
+- 试卷以 HTML 富文本（图片 base64 内联）保存，不保存 doc 原件；
+- 本地新采集的题库如需同步到线上，请用 tools/qb_release.py generate 生成更新脚本。
 """
 import argparse
 import sys
@@ -19,15 +19,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.services.paper_crawler import run_collection, migrate_demo_papers, print_stats  # noqa: E402
+from app.services.paper_crawler import run_collection, print_stats  # noqa: E402
 from app.services.answer_generator import fill_missing_answers, count_missing_answers  # noqa: E402
 from app.database import init_db  # noqa: E402
 
 
 def main():
-    """试卷采集命令行入口：封装采集/迁移/统计/答案补全等子命令。
+    """试卷采集命令行入口：封装采集/统计/答案补全等子命令。
 
-    参数：见 argparse（--once / --migrate-demo / --stats / --fill-answers / --grade / --subject 等）。
+    参数：见 argparse（--once / --stats / --fill-answers / --grade / --subject 等）。
     副作用：向主库 papers / paper_questions 表写入采集结果；--fill-answers 会调用 AI 回填答案；
             运行前先 init_db 确保表结构与冗余列（grade/subject）到位。
     注意：采集按 source_url 去重；--fill-answers 可能产生 AI 调用成本，建议用 --limit/--dry-run 控量。
@@ -37,10 +37,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="试卷采集与入库（第一试卷网）")
     parser.add_argument("--once", action="store_true", help="只跑一轮采集即退出")
-    parser.add_argument("--migrate-demo", action="store_true",
-                        help="将 demo/learning.db 中已采集的试卷迁入主库")
     parser.add_argument("--stats", action="store_true", help="打印题库统计后退出")
-    parser.add_argument("--demo-db", default=None, help="指定 demo 数据库路径（覆盖默认）")
     parser.add_argument("--fill-answers", action="store_true",
                         help="为缺失答案的采集题目调用 AI 补全（保留自带答案）")
     parser.add_argument("--count-missing", action="store_true",
@@ -65,11 +62,6 @@ def main():
         return
 
     if args.stats:
-        print_stats()
-        return
-
-    if args.migrate_demo:
-        migrate_demo_papers(args.demo_db)
         print_stats()
         return
 

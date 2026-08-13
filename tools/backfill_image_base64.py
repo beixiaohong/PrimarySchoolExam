@@ -67,11 +67,11 @@ def main():
                         help="除项目根外，额外搜索图片的目录（可多次）")
     args = parser.parse_args()
     # 确保 image_base64 列已存在（跨 dialect 幂等加列）；显式打印错误便于排查
-    from app.database import init_db, engine, DB_DRIVER
+    from app.database import init_db, engine
     from sqlalchemy import text
     init_db()
-    # MySQL 的 TEXT/MEDIUMTEXT 列不允许有 DEFAULT 值，故 MySQL 侧不带 DEFAULT。
-    col_def = "MEDIUMTEXT" if DB_DRIVER == "mysql" else "TEXT DEFAULT ''"
+    # 本项目已移除 SQLite：统一 MySQL，其 TEXT/MEDIUMTEXT 列不允许有 DEFAULT 值，故不带 DEFAULT。
+    col_def = "MEDIUMTEXT"
     try:
         with engine.connect() as c:
             # 【危险操作】ALTER TABLE ADD COLUMN 加列（已存在时报错，可忽略）

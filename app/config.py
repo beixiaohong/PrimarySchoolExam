@@ -1,8 +1,8 @@
 """应用配置：项目根目录 .env 驱动（python-dotenv 加载）
 
-数据库驱动由 DB_DRIVER 控制：
-- sqlite（默认）：使用项目根目录 primary_school.db，本地开发零门槛
-- mysql：从 DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME 拼 pymysql 连接串
+数据库：本项目仅支持 MySQL（生产 / 本地统一），由 .env 的
+DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME 拼 pymysql 连接串。
+已移除 SQLite 支持（DB_DRIVER 即便误设为其它值也会回退到 mysql）。
 """
 import os
 from pathlib import Path
@@ -17,21 +17,20 @@ load_dotenv(BASE_DIR / ".env", override=False)
 
 # 数据存储目录
 DATA_DIR = BASE_DIR / "app" / "data"
-# SQLite 数据库文件路径（可用 DB_SQLITE_PATH 环境变量覆盖，测试用临时库）
-DB_PATH = Path(os.environ.get("DB_SQLITE_PATH", "")) if os.environ.get("DB_SQLITE_PATH", "").strip() \
-    else BASE_DIR / "primary_school.db"
 
-# ── 数据库驱动 ──
-DB_DRIVER = os.environ.get("DB_DRIVER", "sqlite").strip().lower()
-if DB_DRIVER == "mysql":
-    DATABASE_URL = (
-        f"mysql+pymysql://{quote_plus(os.environ.get('DB_USER', 'root'))}"
-        f":{quote_plus(os.environ.get('DB_PASSWORD', ''))}"
-        f"@{os.environ.get('DB_HOST', '127.0.0.1')}:{os.environ.get('DB_PORT', '3306')}"
-        f"/{os.environ.get('DB_NAME', 'primary_school')}?charset=utf8mb4"
-    )
-else:
-    DATABASE_URL = f"sqlite:///{DB_PATH}"
+# ── 数据库驱动（仅 MySQL）──
+# 历史曾支持 sqlite 本地零配置开发，现已统一为 MySQL；
+# 即使环境变量误配，也强制回退到 mysql，避免误用已移除的 SQLite 路径。
+DB_DRIVER = os.environ.get("DB_DRIVER", "mysql").strip().lower()
+if DB_DRIVER != "mysql":
+    DB_DRIVER = "mysql"
+
+DATABASE_URL = (
+    f"mysql+pymysql://{quote_plus(os.environ.get('DB_USER', 'root'))}"
+    f":{quote_plus(os.environ.get('DB_PASSWORD', ''))}"
+    f"@{os.environ.get('DB_HOST', '127.0.0.1')}:{os.environ.get('DB_PORT', '3306')}"
+    f"/{os.environ.get('DB_NAME', 'primary_school')}?charset=utf8mb4"
+)
 
 # 输出目录（生成的试卷存放位置）
 OUTPUT_DIR = BASE_DIR / "output"

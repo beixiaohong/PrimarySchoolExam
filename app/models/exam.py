@@ -14,13 +14,12 @@ try:
 except Exception:  # pragma: no cover
     MEDIUMTEXT = None
 
-from ..config import DB_DRIVER
 from ..database import Base
 
 
 def _longtext():
-    """大文本：MySQL 用 MEDIUMTEXT 承载 base64 图片，SQLite 用 TEXT。"""
-    return MEDIUMTEXT() if (DB_DRIVER == "mysql" and MEDIUMTEXT) else Text()
+    """大文本：MySQL 用 MEDIUMTEXT 承载 base64 图片（已移除 SQLite 支持）。"""
+    return MEDIUMTEXT() if MEDIUMTEXT else Text()
 
 
 class ExamRecord(Base):

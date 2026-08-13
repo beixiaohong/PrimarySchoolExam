@@ -10,18 +10,14 @@ from datetime import datetime
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
 
-try:
-    from sqlalchemy.dialects.mysql import MEDIUMTEXT
-except Exception:  # pragma: no cover
-    MEDIUMTEXT = None
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 
-from ..config import DB_DRIVER
 from ..database import Base
 
 
 def _longtext():
-    """大文本：MySQL 用 MEDIUMTEXT（>64KB，承载 base64 图片），SQLite 用 TEXT。"""
-    return MEDIUMTEXT() if (DB_DRIVER == "mysql" and MEDIUMTEXT) else Text()
+    """大文本：统一用 MySQL 的 MEDIUMTEXT（>64KB，承载 base64 图片）。"""
+    return MEDIUMTEXT()
 
 
 class Paper(Base):
