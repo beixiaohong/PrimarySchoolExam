@@ -1383,29 +1383,46 @@ const appOptions = {
     /* 检测环节：翻完卡片后混合题检测（默写+理解型），任一题错整轮重学 */
     _quizItemsFromSession(items) {
       // 后端 session-quiz 题目 → 通用 quiz 项；选择题答案转字母供本地判分
+      // error_id>0 表示这是混入的「错题本」题目，提交时需走专项连击回写
       return (items || []).map(q => {
         if ((q.options || []).length) {
           const ansIdx = q.options.indexOf(q.answer);
           return {
-            qid: q.word_id || 0, text_id: q.text_id || 0,
+            qid: q.word_id || 0, text_id: q.text_id || 0, error_id: q.error_id || 0,
             question: q.question, sub: '🌟 ' + (q.context || ''),
             options: q.options, answer: 'ABCDEFGH'[Math.max(ansIdx, 0)],
             _answerText: q.answer, explanation: '',
           };
         }
         return {
-          qid: q.word_id || 0, text_id: q.text_id || 0,
+          qid: q.word_id || 0, text_id: q.text_id || 0, error_id: q.error_id || 0,
           question: q.question, sub: q.context || '',
           placeholder: q.word_id ? '请输入英文单词' : '默写内容',
           options: [], answer: q.answer, explanation: '',
         };
       });
     },
+    /* 背诵检测混入的错题本题目：按 error_id 整组提交，batch=true 表示「整组=1次尝试」，
+       后端连续 3 次全对（每次4题）即移除错题本，任一错则连击清零重计。 */
+    _submitErrorBatch(errorItems, subject) {
+      if (!errorItems || !errorItems.length) return Promise.resolve();
+      const results = errorItems.map(it => ({
+        kind: 'study', record_id: it.error_id,
+        correct: !!it.correct, qid: it.qid || 0,
+        question: it.question || '', user_answer: it.userAnswer || '',
+        correct_answer: it._answerText || it.answer || '',
+        subject: subject || '', batch: true,
+      }));
+      return this.api('/api/study/practice-submit', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, results }),
+      }).then(() => { this.loadWrongItems(); }).catch(() => {});
+    },
     startWordDictate() {
       const ws = this.wordSession;
       this.dtOk = {};
       const ids = ws.words.map(w => w.word_id).join(',');
-      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${ids}&mode=${ws.mode}&grade=${this.grade}`)
+      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${ids}&mode=${ws.mode}&grade=${this.grade}&mix_errors=1`)
         .then(r => {
           const items = this._quizItemsFromSession(r.items);
           if (!items.length) { ws.active = false; this.showToast('检测题生成失败，请重试'); return; }
@@ -1438,7 +1455,7 @@ const appOptions = {
       const ts = this.textSession;
       this.dtOk = {};
       const ids = ts.texts.map(t => t.text_id).join(',');
-      this.api(`/api/classical/session-quiz?user_id=${encodeURIComponent(this.user)}&text_ids=${ids}&mode=${ts.mode}`)
+      this.api(`/api/classical/session-quiz?user_id=${encodeURIComponent(this.user)}&text_ids=${ids}&mode=${ts.mode}&mix_errors=1`)
         .then(r => {
           const items = this._quizItemsFromSession(r.items);
           if (!items.length) { ts.active = false; this.showToast('检测题生成失败，请重试'); return; }
@@ -2678,56 +2695,92 @@ const appOptions = {
         // "任务已完成"提示延迟到下次刷新（如切换学科）才弹出
         p.then(() => { this.loadAnalysis(); this.loadDailyTasks(); }).catch(() => {});
       } else if (src.mode === 'dictate') {
-        // 背诵检测：任一题错（含选择类本地判分）→ 本轮未完成，整轮从头重学
-        const wrongs = this.quiz.items.filter(it => !it.correct);
-        this.quiz.items.forEach(it => { if (it.correct) this.dtOk[it.qid] = it.userAnswer; });
-        if (wrongs.length) {
-          // 错题同步记入错题本（占诗文/单词各自来源）
-          const errorItems = wrongs.map(it => ({
-            source_type: src.kind === 'text' ? 'classical' : 'vocab',
-            source_id: src.kind === 'text' ? it.text_id : it.qid,
-            module_name: src.kind === 'text' ? '古诗文背诵' : '单词背诵',
-            question: it.question, user_answer: it.userAnswer,
-            correct_answer: it._answerText || it.answer,
-            explanation: it.sub || '',
-          }));
-          this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: errorItems }) })
-            .then(() => { this.loadAnalysis(); }).catch(() => {});
+        // 背诵检测：逐题判分——做对即时保存进度，做错进入错题本，不再「整轮从头重来」。
+        // 本轮混入的错题本题目（error_id>0）按「每批4题=1次尝试」回写连击，连续3次全对移除。
+        const items = this.quiz.items;
+        const errorQuizItems = items.filter(it => it.error_id && it.error_id > 0);   // 混入的错题本题目
+        const normalItems = items.filter(it => !(it.error_id && it.error_id > 0));   // 本轮正常背诵题目
+
+        const afterDone = () => {
           this.quiz.active = false;
-          this.showToast('有错误，本轮未完成，从头重新学习！');
-          if (src.kind === 'text') {
-            const ts = this.textSession;
-            ts.phase = 'card'; ts.i = 0; ts.okCount = 0; ts.failCount = 0; ts.results = [];
-            this.$nextTick(() => setTimeout(() => this.textSpeak(), 300));
-          } else {
-            const ws = this.wordSession;
-            ws.phase = 'card'; ws.i = 0; ws.revealed = false; ws.okCount = 0; ws.results = [];
-            this.$nextTick(() => setTimeout(() => this.wordSpeak(), 300));
-          }
-          return;
-        }
-        // 全部默写正确 → 提交后端（后端再核验，全对才真正记录进度）
+          if (src.kind === 'text') this.textSession.done = true;
+          else this.wordSession.done = true;
+          this.refreshAll();
+        };
+
         if (src.kind === 'word') {
           const ws = this.wordSession;
-          const results = (ws.words || []).map(w => ({ word_id: w.word_id, answer: this.dtOk[w.word_id] || w.word }));
-          this.api('/api/vocab/dictate', {
+          // 每个单词的默写答案（取填空题作答）
+          const ansMap = {};
+          normalItems.forEach(it => { if (!it.options || !it.options.length) ansMap[it.qid] = it.userAnswer; });
+          // 按词判定：任一子题错 → 该词错（进错题本）；全对 → 即时保存
+          const wordWrong = {};
+          normalItems.forEach(it => { if (!it.correct) wordWrong[it.qid] = true; });
+          const correctWords = (ws.words || []).filter(w => !wordWrong[w.word_id]);
+          const results = correctWords.map(w => ({
+            word_id: w.word_id,
+            answer: (ansMap[w.word_id] != null && ansMap[w.word_id] !== '') ? ansMap[w.word_id] : w.word,
+          }));
+          const studyErrors = Object.keys(wordWrong).map(wid => {
+            const w = (ws.words || []).find(x => x.word_id === Number(wid)) || {};
+            const it = normalItems.find(i => i.qid === Number(wid) && !i.correct);
+            return {
+              source_type: 'vocab', source_id: Number(wid), module_name: '单词背诵',
+              question: (it && it.question) || ('默写：' + (w.word || '')),
+              user_answer: (it && it.userAnswer) || '', correct_answer: w.word || '',
+              explanation: (it && it.sub) || '',
+            };
+          });
+          const pErr = studyErrors.length
+            ? this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: studyErrors }) })
+            : Promise.resolve();
+          pErr.then(() => this.api('/api/vocab/dictate', {
             method: 'POST',
             body: JSON.stringify({ user_id: this.user, mode: src.mode2, results }),
-          }).then(r => {
-            this.quiz.active = false;
-            if (r && r.passed) { ws.done = true; this.refreshAll(); }
-            else { ws.active = false; this.showToast('有个别拼写仍需核对，再学一遍吧'); this.refreshAll(); }
+          })).then(r => {
+            const saved = (r && r.saved) || [];
+            return this._submitErrorBatch(errorQuizItems, '英语').then(() => {
+              this.loadAnalysis();
+              const okN = saved.length, badN = studyErrors.length;
+              this.showToast(okN ? `已掌握 ${okN} 个单词` + (badN ? `，${badN} 个待巩固（已加入错题本）` : '，太棒了！') : '本次需巩固，已加入错题本');
+              afterDone();
+            });
           }).catch(e => { this.quiz.active = false; ws.active = false; this.showToast(e.message); });
         } else {
           const ts = this.textSession;
-          const textIds = (ts.texts || []).map(t => t.text_id);
-          this.api('/api/classical/dictate', {
+          // 按篇目判定：所有子题全对才算通过
+          const textOk = {};
+          normalItems.forEach(it => {
+            const tid = it.text_id || src.text_id;
+            if (!(tid in textOk)) textOk[tid] = true;
+            if (!it.correct) textOk[tid] = false;
+          });
+          const passedIds = Object.keys(textOk).filter(k => textOk[k]).map(Number);
+          const wrongTextIds = Object.keys(textOk).filter(k => !textOk[k]).map(Number);
+          const studyErrors = wrongTextIds.map(tid => {
+            const t = (ts.texts || []).find(x => x.text_id === tid) || {};
+            const it = normalItems.find(i => (i.text_id === tid) && !i.correct);
+            return {
+              source_type: 'classical', source_id: tid, module_name: '古诗文背诵',
+              question: (it && it.question) || ('默写：《' + (t.title || '') + '》'),
+              user_answer: (it && it.userAnswer) || '', correct_answer: (it && it.answer) || '',
+              explanation: (it && it.sub) || '',
+            };
+          });
+          const pErr = studyErrors.length
+            ? this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: studyErrors }) })
+            : Promise.resolve();
+          pErr.then(() => this.api('/api/classical/dictate', {
             method: 'POST',
-            body: JSON.stringify({ user_id: this.user, mode: src.mode2, text_ids: textIds }),
-          }).then(r => {
-            this.quiz.active = false;
-            if (r && r.passed) { ts.done = true; this.refreshAll(); }
-            else { ts.active = false; this.showToast('默写未通过，本次不计入进度'); this.refreshAll(); }
+            body: JSON.stringify({ user_id: this.user, mode: src.mode2, passed_ids: passedIds }),
+          })).then(r => {
+            const saved = (r && r.saved) || [];
+            return this._submitErrorBatch(errorQuizItems, '语文').then(() => {
+              this.loadAnalysis();
+              const okN = saved.length, badN = studyErrors.length;
+              this.showToast(okN ? `已背诵 ${okN} 篇` + (badN ? `，${badN} 篇待巩固（已加入错题本）` : '，太棒了！') : '本次需巩固，已加入错题本');
+              afterDone();
+            });
           }).catch(e => { this.quiz.active = false; ts.active = false; this.showToast(e.message); });
         }
         return;
