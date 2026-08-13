@@ -1442,15 +1442,16 @@ const appOptions = {
           });
         }).catch(e => { ws.active = false; this.showToast(e.message); });
     },
-    /* 逐词「测一测」：学完一个词立即做 4 道客观题（听音辨义/填空/拼写），
-       用客观提取替代「学会了/没记住」的二进制自报，提升记忆效率。 */
+    /* 逐词「测一测」：学完一个词立即做 1 道客观题（默写填空），
+       用客观提取替代「学会了/没记住」的二进制自报，提升记忆效率。
+       每词只出 1 题（后端 per_word=1，强制默写填空题，任何复习阶段均直接检验拼写记忆）。 */
     wordTest(idx) {
       const ws = this.wordSession;
       const i = (idx != null) ? idx : ws.i;
       const w = ws.words[i];
       if (!w) return;
       this.dtOk = this.dtOk || {};
-      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${w.word_id}&mode=${ws.mode}&grade=${this.grade}&mix_errors=1`)
+      this.api(`/api/vocab/session-quiz?user_id=${encodeURIComponent(this.user)}&word_ids=${w.word_id}&mode=${ws.mode}&grade=${this.grade}&mix_errors=0&per_word=1`)
         .then(r => {
           const items = this._quizItemsFromSession(r.items);
           if (!items.length) { this.showToast('练习题生成失败，请重试'); return; }

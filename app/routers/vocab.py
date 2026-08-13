@@ -444,9 +444,14 @@ def _dictate_item(w: Word, variant: int) -> dict:
 
 
 def _vocab_session_items_for_word(db: Session, w: Word, stage: int,
-                                 book_ids: list, sentence_cache: list) -> list:
-    """每词 4 题：默写+理解混合，默写题干措辞按 variant 区分避免重复
-    stage0 2默写+2理解 → stage1-3 1+3 → stage4+ 全理解"""
+                                 book_ids: list, sentence_cache: list,
+                                 per_word: int = 4) -> list:
+    """每词题目数由 per_word 控制（默认 4）：默写+理解混合，默写题干措辞按 variant 区分避免重复。
+    per_word=1 时只出 1 道默写题（直接检验单词拼写记忆，任何复习阶段都适用）；
+    per_word=4：stage0 2默写+2理解 → stage1-3 1+3 → stage4+ 全理解。"""
+    if per_word == 1:
+        # 逐词「测一测」：只出 1 道默写填空题，直接检验拼写记忆（不依赖理解题，各阶段均可用）
+        return [_dictate_item(w, random.randint(0, 3))]
     if stage <= 0:
         n_dict = 2
     elif stage <= 3:
@@ -504,7 +509,7 @@ def _vocab_session_items_for_word(db: Session, w: Word, stage: int,
         vi += 1
     while len(items) < 4:
         items.append(_dictate_item(w, 0))
-    return items[:4]
+    return items[:max(1, min(per_word, 4))]
 
 
 @router.get("/session-quiz", summary="背诵会话检测：每词 4 题混合题型（理解题随复习阶段递增）")
@@ -514,14 +519,16 @@ def vocab_session_quiz(
     mode: str = Query("new", description="new=新学 / review=复习"),
     grade: int = Query(6),
     mix_errors: bool = Query(False, description="是否混入未掌握的单词错题（每词4题，打 error_id 标记）"),
+    per_word: int = Query(4, description="每词题目数：默认4；逐词测一测传1（只出1道默写题）"),
     db: Session = Depends(get_db),
 ):
-    """背诵会话检测：为新学/复习的每个单词生成 4 道混合题（默写+理解型）。
+    """背诵会话检测：为新学/复习的每个单词生成混合题（默写+理解型），每词题数由 per_word 控制。
 
     理解题占比随复习阶段递增（stage0: 2默写2理解 → stage1-3: 1默写3理解 → stage4+: 全理解）；
+    per_word=1 时每词只出 1 道默写填空题（直接检验拼写记忆，各阶段均适用）。
     选择题干扰项从同年级词库取，拼写题用邻近变体。答案由前端判分。
-    参数（Query）：user_id、word_ids（逗号分隔）、mode、grade。
-    返回：{items[每词4题]};word_ids 空 400、单词不存在 404。
+    参数（Query）：user_id、word_ids（逗号分隔）、mode、grade、per_word。
+    返回：{items[每词 per_word 题]};word_ids 空 400、单词不存在 404。
     副作用：无（只读，仅生成题目）。无需家长密码。
     """
     from ..models.phrase import Sentence
@@ -546,7 +553,7 @@ def vocab_session_quiz(
     items = []
     for w in words:
         items.extend(_vocab_session_items_for_word(db, w, stages.get(w.id, 0),
-                                                   book_ids, sentence_cache))
+                                                   book_ids, sentence_cache, per_word))
 
     # 错题混入：拉取少量未掌握的单词错题，生成题并打 error_id 标记，
     # 前端据此在提交时回写「连续答对连击」，满 3 次移除错题本。
@@ -562,7 +569,7 @@ def vocab_session_quiz(
             emap = {e.source_id: e.id for e in errs}
             for ew in err_words:
                 for qi in _vocab_session_items_for_word(db, ew, stages.get(ew.id, 0),
-                                                        book_ids, sentence_cache):
+                                                        book_ids, sentence_cache, per_word):
                     qi["error_id"] = emap.get(ew.id)
                     items.append(qi)
     return {"items": items}
