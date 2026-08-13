@@ -96,7 +96,7 @@ def test_business_endpoint_requires_login():
     from app.main import app
     with TestClient(app) as c:
         # 不带 Authorization 头直接访问业务接口
-        r = c.get("/api/user/grade", params={"user_id": "test_auth_uid"})
+        r = c.get("/api/user/info", params={"user_id": "test_auth_uid"})
         assert r.status_code == 401
 
 
@@ -108,4 +108,37 @@ def test_docs_disabled_by_default():
         assert c.get("/docs").status_code == 404
         assert c.get("/redoc").status_code == 404
         assert c.get("/openapi.json").status_code == 404
+
+
+def test_strict_binding_blocks_other_user_id(client):
+    """严格账号绑定（安全回归）：用「本人 token」+「他人 user_id」调业务接口必须 403。
+
+    关键点：显式传入 test_auth_uid 的 token（本人），但请求 user_id 写成他人，
+    以此证明 require_self 拒绝「token 账号 ≠ 请求 user_id」。
+    注意不可依赖 AuthClient 的自动按请求 user_id 签 token（会误判为合法）。
+    """
+    token = client._mint_token("test_auth_uid")  # 本人 token
+    r = client.get("/api/user/info",
+                   headers={"Authorization": f"Bearer {token}"},
+                   params={"user_id": "someone_else_xyz"})
+    assert r.status_code == 403, r.text
+
+
+def test_strict_binding_allows_self(client):
+    """严格账号绑定（安全回归）：本人 token + 本人 user_id 调业务接口正常 200。
+
+    AuthClient 会按请求 user_id 自动签匹配 token，等价于「本人调本人」。
+    """
+    r = client.get("/api/user/info", params={"user_id": "test_auth_uid"})
+    assert r.status_code == 200, r.text
+
+
+def test_strict_binding_blocks_other_user_id_body(client):
+    """严格账号绑定（POST/JSON body 形态）：本人 token + 他人 user_id 必须 403。"""
+    token = client._mint_token("test_auth_uid")  # 本人 token
+    r = client.post("/api/parent/message",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"user_id": "someone_else_xyz", "content": "测试留言"})
+    assert r.status_code == 403, r.text
+
 

@@ -44,33 +44,78 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 
 class AuthClient:
-    """测试用客户端：自动为所有业务请求注入一个已登录用户的 Bearer token。
+    """测试用客户端：自动为所有业务请求注入一个「与该请求 user_id 绑定」的 Bearer token。
 
-    业务接口现已统一要求登录（require_user）。集成测试只需关注业务逻辑，
-    不必逐条带 token；管理员接口仍可在调用时显式传 headers（会覆盖此处注入）。
+    业务接口现已统一要求登录 + 严格账号绑定（require_self：登录 token 对应的账号
+    必须与请求中的 user_id 一致，否则 403）。集成测试多数直接用任意 user_id 当业务主键，
+    因此这里按「请求里出现的 user_id」临时签发匹配的 token，保证既有测试行为与鉴权前一致。
+
+    管理员接口调用时显式传 headers 即可覆盖（管理员鉴权走 _require_admin，不受影响）。
+    若需测试严格绑定的拒绝路径，可显式传入 mismatched 的 headers（见 test_auth_user 相关用例）。
     """
 
-    def __init__(self, client, token):
+    def __init__(self, client, db, user_model, token_ttl_hours):
         self._c = client
-        self._h = {"Authorization": f"Bearer {token}"}
+        self._db = db
+        self._User = user_model
+        self._ttl = token_ttl_hours
 
-    def _merge(self, kwargs):
-        h = dict(self._h)
-        h.update(kwargs.pop("headers", None) or {})
-        kwargs["headers"] = h
+    def _mint_token(self, user_id: str) -> str:
+        """为该 user_id 签发/复用登录 token（落库，使 require_self 校验通过）。"""
+        import secrets
+        from datetime import datetime, timedelta
+        u = self._db.query(self._User).filter(
+            self._User.user_id == user_id).first()
+        if not u:
+            u = self._User(user_id=user_id, nickname=user_id,
+                           grade=6, subject="英语")
+            self._db.add(u)
+        u.token = secrets.token_urlsafe(32)
+        u.token_expires_at = datetime.now() + timedelta(hours=self._ttl)
+        self._db.commit()
+        return u.token
+
+    @staticmethod
+    def _extract_user_id(args, kwargs) -> str:
+        """从请求参数中找 user_id：优先 JSON body，其次 query/params，再次 f-string URL。"""
+        # 1) JSON body
+        json_body = kwargs.get("json")
+        if isinstance(json_body, dict) and json_body.get("user_id"):
+            return str(json_body["user_id"])
+        # 2) query / params
+        params = kwargs.get("params") or kwargs.get("data")
+        if isinstance(params, dict) and params.get("user_id"):
+            return str(params["user_id"])
+        # 3) URL 内联 ?user_id=（含 f-string 已展开）
+        for a in args:
+            if isinstance(a, str) and "user_id=" in a:
+                seg = a.split("user_id=", 1)[1]
+                val = seg.split("&", 1)[0]
+                if val:
+                    return val
+        return ""
+
+    def _merge(self, args, kwargs):
+        if "headers" in kwargs:
+            return kwargs  # 显式 headers（如管理员）不覆盖
+        # 提取请求中的 user_id（业务接口主键）；缺省回退到 test_auth_uid，
+        # 使「不带 user_id 的业务请求」也能通过 require_self（无 user_id 可比对）。
+        uid = self._extract_user_id(args, kwargs) or "test_auth_uid"
+        token = self._mint_token(uid)
+        kwargs["headers"] = {"Authorization": f"Bearer {token}"}
         return kwargs
 
     def get(self, *a, **k):
-        return self._c.get(*a, **self._merge(k))
+        return self._c.get(*a, **self._merge(a, k))
 
     def post(self, *a, **k):
-        return self._c.post(*a, **self._merge(k))
+        return self._c.post(*a, **self._merge(a, k))
 
     def put(self, *a, **k):
-        return self._c.put(*a, **self._merge(k))
+        return self._c.put(*a, **self._merge(a, k))
 
     def delete(self, *a, **k):
-        return self._c.delete(*a, **self._merge(k))
+        return self._c.delete(*a, **self._merge(a, k))
 
     def __getattr__(self, name):
         return getattr(self._c, name)
@@ -92,20 +137,19 @@ def client():
     from app.main import app
     with TestClient(app) as c:
         db = SessionLocal()
-        try:
-            u = db.query(User).filter(User.user_id == "test_auth_uid").first()
-            if not u:
-                u = User(user_id="test_auth_uid", nickname="test",
-                         email="test_auth@test.com", auth_type="email",
-                         email_verified=True, grade=6, subject="英语")
-                db.add(u)
-            u.token = secrets.token_urlsafe(32)
-            u.token_expires_at = datetime.now() + timedelta(hours=USER_TOKEN_TTL_HOURS)
-            db.commit()
-            token = u.token
-        finally:
-            db.close()
-        yield AuthClient(c, token)
+        u = db.query(User).filter(User.user_id == "test_auth_uid").first()
+        if not u:
+            u = User(user_id="test_auth_uid", nickname="test",
+                     email="test_auth@test.com", auth_type="email",
+                     email_verified=True, grade=6, subject="英语")
+            db.add(u)
+        u.token = secrets.token_urlsafe(32)
+        u.token_expires_at = datetime.now() + timedelta(hours=USER_TOKEN_TTL_HOURS)
+        db.commit()
+        # 注：db 会话保持打开，供 AuthClient 在测试期间按需为新 user_id 签发绑定 token；
+        # 测试会话结束后统一关闭。
+        yield AuthClient(c, db, User, USER_TOKEN_TTL_HOURS)
+        db.close()
 
 
 @pytest.fixture(autouse=True)
