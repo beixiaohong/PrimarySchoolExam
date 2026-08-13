@@ -2,9 +2,10 @@
 
 职责：构建 FastAPI 实例、注册全部业务路由（/api/*）、同源托管前端静态资源、提供健康检查。
 启动流程由 lifespan 控制：建表 → 执行迁移脚本 → 导入种子数据（见 init_db/run_migrations/ensure_initial_data）。
-前端挂载优先级：优先 web/dist（Vite 构建产物），缺失时回退旧版 frontend/；管理后台走独立 /admin。
+前端仅托管 web/dist（Vite 构建产物，需先 `cd web && npm run build`）；本项目已移除旧版 frontend/ 与管理后台 frontend-admin/。
 前端由本应用同源托管，故未启用 CORSMiddleware；若前后端分离部署需跨域，请在此自行添加。
 """
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,12 +18,8 @@ from .migrations.runner import run_migrations
 from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading
 from .services.init_data import ensure_initial_data
 
-# 定义前端静态资源目录路径（旧版单体前端，web/dist 不存在时回退使用）
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-# P5 工程化前端构建产物（Vite build 输出，优先托管）
+# P5 工程化前端构建产物（Vite build 输出，唯一托管的前端）
 WEB_DIST_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
-# 管理后台前端目录（独立工程，/admin 路径挂载）
-ADMIN_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-admin"
 # 定义输出目录路径（用于存储生成的试卷等文件）
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 # 确保输出目录存在
@@ -82,33 +79,34 @@ app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"])
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
 
-# 前端静态资源：优先挂载 P5 构建产物 web/dist（含 hash 资源），否则回退旧版 frontend/static
+# 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
+# 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。
 if WEB_DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(WEB_DIST_DIR / "assets")), name="web-assets")
 else:
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
+    logging.getLogger("app.main").warning(
+        "web/dist 不存在，前端未托管。请先 `cd web && npm run build` 生成构建产物。"
+    )
 
 # 静态资源（图片、音频）
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 
-# 管理后台前端（独立工程，/admin 访问，静态资源走 /admin-static；目录缺失时不挂载）
-if ADMIN_FRONTEND_DIR.exists():
-    app.mount("/admin-static", StaticFiles(directory=str(ADMIN_FRONTEND_DIR / "static")),
-              name="admin-static")
-
 
 @app.get("/", tags=["系统"], include_in_schema=False)
 def index():
-    """前端首页：优先 P5 构建产物，回退旧版单体前端"""
-    if (WEB_DIST_DIR / "index.html").exists():
-        return FileResponse(WEB_DIST_DIR / "index.html")
-    return FileResponse(FRONTEND_DIR / "index.html")
+    """前端首页：返回 Vite 构建产物 web/dist/index.html。
 
-
-@app.get("/admin", tags=["系统"], include_in_schema=False)
-def admin_index():
-    """管理后台首页"""
-    return FileResponse(ADMIN_FRONTEND_DIR / "index.html")
+    若 web/dist 未构建（缺失 index.html），返回 404 并提示先执行 `npm run build`，
+    避免回退到已移除的旧版前端。
+    """
+    index_file = WEB_DIST_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "前端未构建：请先执行 `cd web && npm run build` 生成 web/dist。"},
+    )
 
 
 @app.get("/health", tags=["系统"])
