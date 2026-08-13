@@ -347,6 +347,27 @@
             </div>
           </div>
           <p v-else class="pc-empty">还没有提交的完成任务～完成背诵会在这里请家长确认</p>
+          <!-- 错题申诉结果：家长判对/判错，反馈到首页家长反馈区 -->
+          <div v-if="decidedAppeals.length" class="confirm-appeals">
+            <div class="ca-head">📨 错题申诉结果 <span class="more">家长对申诉的判对 / 判错</span></div>
+            <div class="ca-item" v-for="a in decidedAppeals" :key="a.id">
+              <div class="ci-row">
+                <b class="appeal-q" @click="toggleAppeal(a.id)" title="点击查看完整题目">
+                  [{{a.subject || '未分科'}}]
+                  <template v-if="!appealExpanded[a.id]">{{ a.question.length > 50 ? a.question.slice(0,50)+'…' : a.question }}</template>
+                  <template v-else>{{ a.question }}</template>
+                  <span class="q-toggle">{{ appealExpanded[a.id] ? '收起 ▴' : '查看完整题目 ▾' }}</span>
+                </b>
+              </div>
+              <div class="ci-row ci-sub">
+                <span class="more">孩子答案 {{a.user_answer}} · 参考 {{a.correct_answer}}</span>
+                <span class="tag" :class="a.status==='approved' ? 'tag-green' : 'tag-red'">
+                  {{ a.status==='approved' ? '判对 ✓' : '判错（维持）' }}
+                </span>
+              </div>
+              <div class="ci-row ci-sub"><span class="more">{{a.created_at}} 提交 · {{a.decided_at}} 裁决</span></div>
+            </div>
+          </div>
         </div>
 
         <!-- 奖励闭环（Sprint 3） -->
@@ -1564,7 +1585,12 @@
             <div class="pc-list" v-if="pendingAppeals.length">
               <div class="pc-item" v-for="a in pendingAppeals" :key="a.id" style="flex-wrap:wrap">
                 <div class="c-body" style="flex:1;min-width:220px">
-                  <b>[{{a.subject || '未分科'}}] {{a.question}}</b>
+                  <b class="appeal-q" @click="toggleAppeal(a.id)" title="点击查看完整题目">
+                    [{{a.subject || '未分科'}}]
+                    <template v-if="!appealExpanded[a.id]">{{ a.question.length > 60 ? a.question.slice(0,60)+'…' : a.question }}</template>
+                    <template v-else>{{ a.question }}</template>
+                    <span class="q-toggle">{{ appealExpanded[a.id] ? '收起 ▴' : '查看完整题目 ▾' }}</span>
+                  </b>
                   <span>孩子答案：{{a.user_answer}} · 参考答案：{{a.correct_answer}}</span>
                   <span class="more">{{a.created_at}} 提交</span>
                 </div>

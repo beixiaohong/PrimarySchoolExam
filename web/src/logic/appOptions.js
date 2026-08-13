@@ -77,6 +77,8 @@ const appOptions = {
       rewardTimeline: [],
       // 申诉（AI 判题复核 + 孩子「我做对了」家长二次确认）
       pendingAppeals: [],
+      decidedAppeals: [],       // 已裁决（判对/判错），首页「家长反馈」区展示
+      appealExpanded: {},       // {id: true} 点击展开查看完整题目
       pendingMakeups: [],
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务设置
@@ -1042,6 +1044,7 @@ const appOptions = {
       this.loadCards();
       this.loadFocus();
       this.loadTaskConfirms();
+      this.loadDecidedAppeals();
     },
 
     /* ─────────── 首页 ─────────── */
@@ -1795,6 +1798,15 @@ const appOptions = {
         .then(d => { this.pendingAppeals = (d && d.appeals) || []; })
         .catch(() => { this.pendingAppeals = []; });
     },
+    loadDecidedAppeals() {
+      // 已裁决申诉（家长判对/判错），用于首页「家长反馈」区展示结果
+      this.api(`/api/appeal/list?user_id=${encodeURIComponent(this.user)}&status=history`)
+        .then(d => { this.decidedAppeals = (d && d.appeals) || []; })
+        .catch(() => { this.decidedAppeals = []; });
+    },
+    toggleAppeal(id) {
+      this.$set(this.appealExpanded, id, !this.appealExpanded[id]);
+    },
     decideAppeal(a, ok) {
       this.api('/api/appeal/decide', {
         method: 'POST',
@@ -1802,6 +1814,7 @@ const appOptions = {
       }).then(() => {
         this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
         this.loadAppeals();
+        this.loadDecidedAppeals();
         this.loadChildStats();
       }).catch(e => this.showToast(e.message));
     },

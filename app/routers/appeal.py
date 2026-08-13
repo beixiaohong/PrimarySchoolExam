@@ -113,12 +113,15 @@ def list_appeals(user_id: str, status: str = "pending",
                  limit: int = 50, db: Session = Depends(get_db)):
     """申诉列表（家长面板待处理 / 历史）。
 
-    查询参数：user_id, status（默认 pending；可查 approved/rejected/history）；无需家长密码。
-    返回：{appeals:[{id, source, question_id/record_id, question, user_answer, correct_answer, status, created_at}]}。
+    查询参数：user_id, status（默认 pending；approved/rejected 查单一状态；history 查已裁决 approved+rejected）；无需家长密码。
+    返回：{appeals:[{id, source, question_id/record_id, question, user_answer, correct_answer, status, created_at, decided_at}]}。
     副作用：只读，无写库。
     """
     q = db.query(AnswerAppeal).filter(AnswerAppeal.user_id == user_id)
-    if status:
+    if status == "history":
+        # 已裁决（家长已判对/判错），用于首页「家长反馈」区展示结果
+        q = q.filter(AnswerAppeal.status.in_(["approved", "rejected"]))
+    elif status:
         q = q.filter(AnswerAppeal.status == status)
     rows = q.order_by(AnswerAppeal.id.desc()).limit(min(limit, 100)).all()
     return {"appeals": [{
@@ -133,6 +136,7 @@ def list_appeals(user_id: str, status: str = "pending",
         "subject": a.subject,
         "status": a.status,
         "created_at": str(a.created_at)[:16] if a.created_at else "",
+        "decided_at": str(a.decided_at)[:16] if a.decided_at else "",
     } for a in rows]}
 
 
