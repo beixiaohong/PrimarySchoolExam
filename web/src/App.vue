@@ -1457,7 +1457,10 @@
               <div class="wc-label">补签卡</div>
             </div>
           </div>
-          <div class="wallet-coming">💳 充值 / 兑换商城 · 即将上线</div>
+          <div class="wallet-actions">
+            <button class="btn btn-primary" @click="openRecharge()">💎 购买钻石</button>
+            <span class="wallet-hint">1 元 = 1 钻石 · 扫码付款后联系客服发放</span>
+          </div>
           <div class="wallet-ledger card" v-if="wallet.diamondLedger.length">
             <h3>💎 钻石明细</h3>
             <div class="wl-row" v-for="r in wallet.diamondLedger" :key="r.id">
@@ -2326,6 +2329,51 @@
     </div>
     <div class="modal-foot">
       <button class="btn btn-primary" @click="taskSubmitTip.show=false">我知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 购买钻石弹窗 ═══════════ -->
+<div class="modal-mask" :class="{on: rechargeOpen}">
+  <div class="modal modal-recharge">
+    <div class="modal-head"><h2>💎 购买钻石</h2><span class="tag tag-blue">1 元 = 1 钻石</span></div>
+    <div class="modal-body">
+      <p class="rc-tip">选择充值数量，扫码付款后请在<strong>转账留言 / 备注</strong>中填写你的账号，客服核对后为你发放钻石。</p>
+      <div class="recharge-pkgs">
+        <button v-for="p in [10,30,50,100,200]" :key="p" class="rc-pkg" :class="{on: rechargePkg===p}" @click="selectRechargePkg(p)">
+          <span class="rc-pkg-num">{{p}}</span>
+          <span class="rc-pkg-price">¥{{p * (rechargeCfg ? rechargeCfg.rate : 1)}}</span>
+        </button>
+      </div>
+
+      <div class="recharge-qrs" v-if="rechargePkg">
+        <div class="rc-qr">
+          <div class="rc-qr-title">💚 微信支付</div>
+          <img v-if="rechargeCfg && rechargeCfg.wechat_qr" :src="rechargeCfg.wechat_qr" alt="微信收款码" class="rc-qr-img">
+          <div v-else class="rc-qr-empty">请联系客服获取微信收款码</div>
+        </div>
+        <div class="rc-qr">
+          <div class="rc-qr-title">🔵 支付宝</div>
+          <img v-if="rechargeCfg && rechargeCfg.alipay_qr" :src="rechargeCfg.alipay_qr" alt="支付宝收款码" class="rc-qr-img">
+          <div v-else class="rc-qr-empty">请联系客服获取支付宝收款码</div>
+        </div>
+      </div>
+
+      <div class="recharge-account">
+        <span class="rc-acc-label">付款留言请填写账号：</span>
+        <code class="rc-acc-value">{{user}}</code>
+        <button class="btn btn-ghost btn-sm" @click="copyRechargeAccount()">{{rechargeCopied ? '已复制 ✓' : '复制'}}</button>
+      </div>
+
+      <div class="recharge-cs" v-if="rechargeCfg && rechargeCfg.cs_contact">
+        📞 客服联系方式：<b>{{rechargeCfg.cs_contact}}</b>
+      </div>
+      <div class="recharge-cs" v-else>
+        📞 付款后请联系客服，提供「付款截图 + 账号」即可发放钻石。
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" @click="closeRecharge()">我知道了</button>
     </div>
   </div>
 </div>

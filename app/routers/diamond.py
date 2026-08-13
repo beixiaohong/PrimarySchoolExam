@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
 from ..services import diamond as diamond_svc
 
 logger = logging.getLogger(__name__)
@@ -91,3 +92,18 @@ def get_ledger(
         }
         for r in records
     ]
+
+
+@router.get("/recharge/config", summary="钻石充值配置（收款二维码 / 客服 / 汇率）")
+def recharge_config():
+    """返回手动充值所需的前端配置（无需登录）。
+
+    内容：微信收款二维码、支付宝收款二维码、客服联系方式、汇率（1 元 = rate 钻石）。
+    充值流程：用户扫码付款 → 在转账留言/备注填写自己的账号 → 客服核对后通过管理接口手动发放钻石。
+    """
+    return {
+        "wechat_qr": RECHARGE_WECHAT_QR,
+        "alipay_qr": RECHARGE_ALIPAY_QR,
+        "cs_contact": RECHARGE_CS_CONTACT,
+        "rate": RECHARGE_RATE,
+    }

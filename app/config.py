@@ -47,3 +47,10 @@ DEFAULT_PAGE_SIZE = 50
 # ── 用户体系（P2） ──
 # 昵称快捷登录开关：登录方式已统一为「邮箱 + 密码」，关闭昵称快捷登录
 ALLOW_NICKNAME_LOGIN = os.environ.get("ALLOW_NICKNAME_LOGIN", "false").strip().lower() in ("1", "true", "yes", "on")
+
+# ── 钻石充值（手动充值：扫码付款 + 客服核对账号后手动发放）──
+# 收款二维码为图片 URL（可放图床或本站 /output 静态目录）；留空则前端提示「联系客服获取收款码」。
+RECHARGE_WECHAT_QR = os.environ.get("RECHARGE_WECHAT_QR", "").strip()    # 微信收款二维码图片 URL
+RECHARGE_ALIPAY_QR = os.environ.get("RECHARGE_ALIPAY_QR", "").strip()    # 支付宝收款二维码图片 URL
+RECHARGE_CS_CONTACT = os.environ.get("RECHARGE_CS_CONTACT", "").strip()  # 客服联系方式（微信号 / QQ 等）
+RECHARGE_RATE = 1  # 汇率：1 元 = RECHARGE_RATE 钻石（固定 1:1）

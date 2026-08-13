@@ -12,23 +12,24 @@ from ..models.diamond import DiamondAccount, DiamondLedger
 logger = logging.getLogger("diamond")
 
 TOKENS_PER_DIAMOND = 10000  # 1 万 token = 1 钻石
-DEFAULT_GRANT = 1_000_000.0  # 新用户/现有用户赠送 100 万钻石
+# 注册赠送：新用户首次查询余额自动赠送 10 钻石（额外钻石通过「购买」手动充值，1 元 = 1 钻石）
+REGISTRATION_GIFT = 10.0
 
 
 def get_balance(db: Session, user_id: str) -> float:
-    """查询用户钻石余额（不存在则自动创建并赠送初始钻石）"""
+    """查询用户钻石余额（不存在则自动创建并赠送注册赠送钻石）"""
     acc = db.query(DiamondAccount).filter(DiamondAccount.user_id == user_id).first()
     if not acc:
-        acc = DiamondAccount(user_id=user_id, balance=DEFAULT_GRANT)
+        acc = DiamondAccount(user_id=user_id, balance=REGISTRATION_GIFT)
         db.add(acc)
         db.flush()
         # 记录赠送明细
         db.add(DiamondLedger(
-            user_id=user_id, amount=DEFAULT_GRANT, balance_after=DEFAULT_GRANT,
+            user_id=user_id, amount=REGISTRATION_GIFT, balance_after=REGISTRATION_GIFT,
             reason="initial_grant",
         ))
         db.commit()
-        return DEFAULT_GRANT
+        return REGISTRATION_GIFT
     return acc.balance
 
 
@@ -93,7 +94,7 @@ def check_and_deduct(db: Session, user_id: str, prompt_tokens: int, completion_t
             "error": "" if ok else "钻石不足"}
 
 
-def grant_all_existing(db: Session, amount: float = DEFAULT_GRANT) -> int:
+def grant_all_existing(db: Session, amount: float = REGISTRATION_GIFT) -> int:
     """为所有现有用户赠送钻石（幂等：已有账户的不重复赠送）"""
     from ..models.user import User
     users = db.query(User).all()

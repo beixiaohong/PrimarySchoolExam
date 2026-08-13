@@ -366,6 +366,30 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 
 /* 做题记录详情弹窗 */
 .modal-wide{width:680px;max-width:94vw}
+
+/* 购买钻石弹窗 */
+.modal-recharge{width:460px;max-width:94vw}
+.wallet-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.wallet-hint{font-size:12px;color:var(--text-3)}
+.rc-tip{font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:14px}
+.rc-tip strong{color:var(--text-1)}
+.recharge-pkgs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.rc-pkg{flex:1;min-width:74px;border:1.5px solid var(--border);background:#fff;border-radius:14px;padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;transition:.15s}
+.rc-pkg:hover{border-color:var(--primary)}
+.rc-pkg.on{border-color:var(--primary);background:var(--primary-soft,#EEF3FF);box-shadow:0 4px 14px rgba(74,108,247,.14)}
+.rc-pkg-num{font-size:18px;font-weight:700;color:var(--text-1)}
+.rc-pkg-price{font-size:12px;color:var(--text-3)}
+.recharge-qrs{display:flex;gap:14px;margin-bottom:14px}
+.rc-qr{flex:1;border:1px solid var(--border);border-radius:14px;padding:12px;text-align:center;background:#fff}
+.rc-qr-title{font-size:13px;font-weight:600;color:var(--text-1);margin-bottom:8px}
+.rc-qr-img{width:100%;max-width:160px;height:auto;border-radius:8px;display:inline-block}
+.rc-qr-empty{font-size:12px;color:var(--text-3);padding:30px 0}
+.recharge-account{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg-soft,#F4F6FB);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.rc-acc-label{font-size:13px;color:var(--text-2)}
+.rc-acc-value{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:700;color:var(--primary);background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px 8px}
+.recharge-cs{font-size:13px;color:var(--text-2);line-height:1.6}
+.recharge-cs b{color:var(--text-1)}
+.tag-blue{background:rgba(74,108,247,.12);color:var(--primary)}
 .attempt-detail-list{max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
 .ad-item{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:#fff}
 .ad-item.wrong{border-color:rgba(242,96,76,.35);background:rgba(242,96,76,.04)}
