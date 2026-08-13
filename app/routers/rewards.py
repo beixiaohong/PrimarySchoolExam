@@ -32,6 +32,7 @@ class CouponReq(BaseModel):
     max_per_month: int = 2
     reason: str = ""  # 发券理由（成长奖励记录）
     required_days: int = 0  # 需全勤天数才可获得 1 张；0 = 添加即获得（即时券）
+    required_within_days: int = 0  # 必须在多少天内达成 required_days 全勤；0 = 不限期
 
 
 class WishReq(BaseModel):
@@ -58,12 +59,28 @@ class ParentNoteReq(BaseModel):
 
 
 def _coupon_out(c):
+    # 计算限期窗口剩余天数（仅当设置了 required_within_days 且 required_days>0）
+    days_left = None
+    cycle_deadline = None
+    if (c.required_days or 0) > 0 and (c.required_within_days or 0) > 0 and c.cycle_start_date:
+        from datetime import date, timedelta
+        try:
+            start = date.fromisoformat(str(c.cycle_start_date))
+            deadline = start + timedelta(days=c.required_within_days)
+            cycle_deadline = str(deadline)
+            days_left = (deadline - date.today()).days
+        except Exception:
+            days_left = None
     return {
         "id": c.id, "title": c.title, "kind": c.kind,
         "kind_label": COUPON_KINDS.get(c.kind, "自定义"),
         "max_per_month": c.max_per_month, "used_count": c.used_count,
         "reason": c.reason or "", "status": c.status,
         "required_days": c.required_days or 0,
+        "required_within_days": c.required_within_days or 0,
+        "cycle_start_date": str(c.cycle_start_date) if c.cycle_start_date else "",
+        "cycle_deadline": cycle_deadline or "",
+        "days_left": days_left,
         "progress_days": c.progress_days or 0,
         "granted_count": c.granted_count or 0,
         "redeemed_count": c.redeemed_count or 0,
@@ -161,12 +178,14 @@ def create_coupon(req: CouponReq, request: Request, db: Session = Depends(get_db
     """家长创建兑换券。
 
     参数（Body）：user_id、title、kind（cartoon/snack/sticker/toy/outing/custom）、
-                  max_per_month（默认 2）、reason、required_days（0=即时券，>0=需全勤天数）。
+                  max_per_month（默认 2）、reason、required_days（0=即时券，>0=需全勤天数）、
+                  required_within_days（0=不限期；>0=必须在指定天数内达成 required_days 全勤，否则该周期进度清零重启）。
     请求头：需 X-Parent-Pwd（ensure_parent_pwd 校验，否则 403）。
     返回：券详情；title 空/类型非法返回 400。
-    副作用：写 reward_coupons；max_per_month 夹到 1-12，required_days 夹到 0-30。
+    副作用：写 reward_coupons；max_per_month 夹到 1-12，required_days 夹到 0-30，required_within_days 夹到 0-365。
     需要家长密码。
     """
+    from datetime import date
     from ..models.reward import RewardCoupon
     ensure_parent_pwd(db, req.user_id, request)
     title = (req.title or "").strip()
@@ -176,10 +195,15 @@ def create_coupon(req: CouponReq, request: Request, db: Session = Depends(get_db
         raise HTTPException(400, f"券类型只能是 {list(COUPON_KINDS)}")
     max_n = max(1, min(12, req.max_per_month or 2))  # 每月上限夹到 1-12
     rd = max(0, min(30, req.required_days or 0))  # 所需全勤天数夹到 0-30（0=即时券）
+    within = max(0, min(365, req.required_within_days or 0))  # 限期天数夹到 0-365（0=不限期）
+    # 限期不能短于所需全勤天数（否则永远达不成），parent 端有提示，后端兜底夹取
+    if within and within < rd:
+        within = rd
     c = RewardCoupon(user_id=req.user_id, title=title[:100], kind=req.kind,
                      max_per_month=max_n, status="active",
                      reason=(req.reason or "").strip()[:200] or None,
-                     required_days=rd,
+                     required_days=rd, required_within_days=within,
+                     cycle_start_date=str(date.today()) if rd > 0 else None,
                      granted_count=0 if rd > 0 else 1)
     db.add(c)
     db.commit()
@@ -504,6 +528,16 @@ def sync_coupon_progress(db: Session, user_id: str):
             RewardCoupon.required_days > 0).all():
         if c.progress_date == today_str:
             continue  # 今天已累计过
+        # 硬性限期窗口：超过 required_within_days 仍未达成 → 进度清零并重启周期
+        if (c.required_within_days or 0) > 0 and c.cycle_start_date:
+            try:
+                from datetime import datetime as _dt
+                start = _dt.strptime(c.cycle_start_date, "%Y-%m-%d").date()
+                if (today - start).days > c.required_within_days:
+                    c.progress_days = 0
+                    c.cycle_start_date = today_str
+            except Exception:
+                pass
         # 中断超过 3 天 → 进度清零
         if c.progress_date and (c.progress_days or 0) > 0:
             try:
@@ -521,6 +555,9 @@ def sync_coupon_progress(db: Session, user_id: str):
         if c.progress_days >= c.required_days:
             c.granted_count = (c.granted_count or 0) + 1
             c.progress_days = 0
+            # 达成后重启限期窗口，下一张也需在窗口内达成
+            if (c.required_within_days or 0) > 0:
+                c.cycle_start_date = today_str
         changed = True
     if changed:
         db.commit()

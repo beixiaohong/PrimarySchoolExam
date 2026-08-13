@@ -62,7 +62,7 @@ const appOptions = {
       // 奖励闭环 + 成长周报（Sprint 3）
       rewards: null,
       allCoupons: [], pendingWishes: [],
-      newCoupon: { title: '', kind: 'custom', reason: '', requiredDays: 0 },
+      newCoupon: { title: '', kind: 'custom', reason: '', requiredDays: 0, requiredWithinDays: 0 },
       wishOverlay: { show: false, title: '', target: 5, wish_type: 'task_count', daily_target: 3 },
       weeklyOverlay: { show: false }, weeklyLoading: false, weekly: null,
       shareImg: '', parentNote: '',
@@ -2177,13 +2177,21 @@ const appOptions = {
       const title = (this.newCoupon.title || '').trim();
       if (!title) return this.showToast('先写下兑换券内容');
       const requiredDays = Math.max(0, Math.min(30, Number(this.newCoupon.requiredDays) || 0));
+      const within = Math.max(0, Math.min(365, Number(this.newCoupon.requiredWithinDays) || 0));
+      const finalWithin = (within && within < requiredDays) ? requiredDays : within; // 限期不能短于所需天数
       this.api('/api/rewards/coupon', {
         method: 'POST',
-        body: JSON.stringify({ user_id: this.user, title, kind: this.newCoupon.kind, reason: this.newCoupon.reason || '', required_days: requiredDays }),
+        body: JSON.stringify({ user_id: this.user, title, kind: this.newCoupon.kind, reason: this.newCoupon.reason || '', required_days: requiredDays, required_within_days: finalWithin }),
       }).then(() => {
-        this.newCoupon.title = ''; this.newCoupon.reason = ''; this.newCoupon.requiredDays = 0;
+        this.newCoupon.title = ''; this.newCoupon.reason = ''; this.newCoupon.requiredDays = 0; this.newCoupon.requiredWithinDays = 0;
         this.loadParentPanel(); this.loadRewards();
-        this.showToast(requiredDays > 0 ? `已添加：三科全勤 ${requiredDays} 天获取后才计入成长奖励记录 🎫` : '兑换券已添加，孩子已即时获得 🎫');
+        if (requiredDays > 0 && finalWithin > 0) {
+          this.showToast(`已添加：需在 ${finalWithin} 天内三科全勤 ${requiredDays} 天得 1 张，超时进度清零 🎫`);
+        } else if (requiredDays > 0) {
+          this.showToast(`已添加：三科全勤 ${requiredDays} 天获取后才计入成长奖励记录 🎫`);
+        } else {
+          this.showToast('兑换券已添加，孩子已即时获得 🎫');
+        }
       }).catch(e => this.showToast(e.message));
     },
     redeemCoupon(c) {

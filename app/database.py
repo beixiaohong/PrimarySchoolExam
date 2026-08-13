@@ -52,6 +52,9 @@ def _ensure_columns():
     _ensure_column("paper_questions", "subject", "VARCHAR(20) DEFAULT ''")
     # 回填已有 paper_questions 的 grade/subject（来自所属试卷）
     _backfill_pq_grade_subject()
+    # 卡券限期窗口字段（required_within_days 有默认值，cycle_start_date 可空）
+    _ensure_column("reward_coupons", "required_within_days", "INT DEFAULT 0")
+    _ensure_column("reward_coupons", "cycle_start_date", "VARCHAR(10)")
 
 
 def _backfill_pq_grade_subject():

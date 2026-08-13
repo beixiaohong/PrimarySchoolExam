@@ -19,6 +19,8 @@ class RewardCoupon(Base):
     used_count = Column(Integer, default=0, comment="已兑换次数")
     reason = Column(String(200), nullable=True, comment="发券理由（成长奖励记录）")
     required_days = Column(Integer, default=0, comment="需全勤天数才可得 1 张；0=即时券")
+    required_within_days = Column(Integer, default=0, comment="必须在多少天内达成全勤天数；0=不限期（旧行为）")
+    cycle_start_date = Column(String(10), nullable=True, comment="当前计周期起始日（YYYY-MM-DD），用于 within_days 窗口；到期未达标则重置该周期")
     progress_days = Column(Integer, default=0, comment="已累计全勤天数")
     progress_date = Column(String(10), nullable=True, comment="最近累计日期（同日不重复）")
     granted_count = Column(Integer, default=0, comment="已获得张数")

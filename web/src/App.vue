@@ -346,7 +346,7 @@
               </div>
             </div>
           </div>
-          <p v-else class="pc-empty">还没有提交的完成任务～完成背诵会在这里请家长确认</p>
+          <p v-else class="pc-empty">家长反馈激励展示</p>
           <!-- 错题申诉结果：家长判对/判错，反馈到首页家长反馈区 -->
           <div v-if="decidedAppeals.length" class="confirm-appeals">
             <div class="ca-head">📨 错题申诉结果 <span class="more">家长对申诉的判对 / 判错</span></div>
@@ -395,7 +395,7 @@
               <span class="ci">{{couponIcon(c.kind)}}</span>
               <div class="c-body">
                 <b>{{c.title}}</b>
-                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得，当前 {{c.progress_days}}/{{c.required_days}} 天</template><span class="more" style="font-size:11px"> · 7天内最多缺1天，超出从头计算</span></span>
+                <span v-if="c.required_days>0">{{c.kind_label}}<template v-if="c.granted_count>0"> · ✅ 已获得 {{c.granted_count}} 张，剩余 {{c.left}} 张</template><template v-else> · 三科任务全勤 {{c.required_days}} 天可得<template v-if="c.required_within_days>0">，限 {{c.required_within_days}} 天内（剩 {{c.days_left>=0 ? c.days_left : 0}} 天，截止 {{c.cycle_deadline}}）</template>，当前 {{c.progress_days}}/{{c.required_days}} 天</template><template v-if="c.required_within_days>0"><span class="more" style="font-size:11px"> · 超时进度清零重启</span></template><template v-else><span class="more" style="font-size:11px"> · 7天内最多缺1天，超出从头计算</span></template></span>
                 <span v-else>{{c.kind_label}} · 可直接使用，剩余 {{c.left}} 张</span>
                 <span v-if="c.reason" class="c-reason">🎯 {{c.reason}}</span>
               </div>
@@ -1702,6 +1702,8 @@
               </select>
               <input v-model.number="newCoupon.requiredDays" type="number" min="0" max="30" class="fill-input" style="max-width:84px" placeholder="全勤几天">
               <span class="more">0=添加即获得</span>
+              <input v-model.number="newCoupon.requiredWithinDays" type="number" min="0" max="365" :disabled="!newCoupon.requiredDays" class="fill-input" style="max-width:84px" placeholder="限几天内">
+              <span class="more">0=不限期</span>
               <input v-model="newCoupon.reason" class="fill-input" maxlength="50" placeholder="奖励理由（选填）" style="min-width:150px">
               <button class="btn btn-primary btn-sm" @click="createCoupon()">添加</button>
             </div>
@@ -1710,7 +1712,7 @@
                 <span class="ci">{{couponIcon(c.kind)}}</span>
                 <div class="c-body">
                   <b>{{c.title}}</b>
-                  <span>{{c.kind_label}}<template v-if="c.required_days>0"> · 三科全勤 {{c.required_days}} 天得 1 张<span class="more" style="font-size:11px"> · 7天内最多缺1天，超出从头计算</span></template><template v-if="c.reason"> · 🎯 {{c.reason}}</template></span>
+                  <span>{{c.kind_label}}<template v-if="c.required_days>0"> · 三科全勤 {{c.required_days}} 天得 1 张<template v-if="c.required_within_days>0"> · 限 {{c.required_within_days}} 天内<span class="more" style="font-size:11px"> · 超时进度清零重启</span></template><template v-else><span class="more" style="font-size:11px"> · 7天内最多缺1天，超出从头计算</span></template></template><template v-if="c.reason"> · 🎯 {{c.reason}}</template></span>
                   <span v-if="c.status==='active'">已获得 {{c.granted_count}} 张 · 剩余 {{c.left}} 张</span>
                   <span v-else>已停用（历史获得 {{c.granted_count}} 张）</span>
                 </div>
