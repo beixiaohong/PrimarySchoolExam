@@ -110,14 +110,57 @@ def build_subject_grade_map():
     return out
 
 
-# 全量九科 ×（一年级~高三 + 中考）。实际采集受下方采样上限控制。
+# 全量九科 ×（一年级~高三 + 中考），按学段优先级（初中→小学→高中）重排。
 SUBJECT_GRADE_MAP = build_subject_grade_map()
 
-# 采样控制：用户要求总计不到一百份，且各学科/年级尽量均衡覆盖。
-# 通过「确定性打散 + 总量上限 + 每类上限」实现。
-GLOBAL_MAX_PAPERS = 90     # 全局采集试卷总数上限（< 100）
-PER_CATEGORY_MAX = 2       # 单个 (学科,年级) 分类最多采集份数
-SHUFFLE_SEED = 20260812    # 确定性打散种子，保证各学科/年级均衡覆盖
+# ── 学段优先级（用户要求：优先初中，再小学，最后高中）──
+GRADE_STAGE = {
+    "七年级": "初中", "八年级": "初中", "九年级": "初中", "中考": "初中",
+    "一年级": "小学", "二年级": "小学", "三年级": "小学",
+    "四年级": "小学", "五年级": "小学", "六年级": "小学",
+    "高一": "高中", "高二": "高中", "高三": "高中",
+}
+STAGE_PRIORITY = ["初中", "小学", "高中"]
+
+
+def build_ordered_category_map():
+    """按学段优先级重排分类（初中→小学→高中），保证优先采集初中、各学科均衡覆盖。"""
+    by_stage = {s: [] for s in STAGE_PRIORITY}
+    for subj, prefix in SUBJECT_PREFIX:
+        for grade, suffix in GRADE_SUFFIX:
+            by_stage[GRADE_STAGE[grade]].append((subj, grade, f"/a/{prefix}{suffix}/"))
+    ordered = []
+    for s in STAGE_PRIORITY:
+        ordered.extend(by_stage[s])
+    return ordered
+
+
+ORDERED_CATEGORY_MAP = build_ordered_category_map()
+
+# ── 采集配额（用户要求：每天约 200 份新卷，每学科均衡覆盖；仅最近 10 年）──
+CURRENT_YEAR = datetime.now().year
+YEAR_MIN = CURRENT_YEAR - 10      # 仅采集最近 10 年（如 2026 -> 2016 起）
+DAILY_MAX_PAPERS = 200           # 每日采集新卷上限（约 200 份/天）
+PER_CATEGORY_CAP = 6             # 单个 (学科,年级) 分类每日最多采集份数（保证各学科均衡）
+
+# 年份解析：从标题提取 4 位年份，过滤掉 10 年前的旧卷
+_YEAR_RE = re.compile(r'(?:19|20)\d{2}')
+
+
+def parse_year(title):
+    """从标题解析年份；无法识别返回 None（视为近期，不误删）。"""
+    m = _YEAR_RE.search(title or "")
+    if m:
+        y = int(m.group())
+        if 1990 <= y <= CURRENT_YEAR + 1:
+            return y
+    return None
+
+
+def within_year_window(title):
+    """标题含明确年份且小于最近 10 年下限的，判为过期卷（跳过）。"""
+    y = parse_year(title)
+    return y is None or y >= YEAR_MIN
 
 REQUEST_INTERVAL = 30      # 多轮之间的休眠（秒）
 MAX_PAGES_PER_SUBJECT = 20
@@ -315,7 +358,11 @@ def get_paper_list(subject_grade_url, max_pages=MAX_PAGES_PER_SUBJECT):
             seen.add(href)
             papers.append({'title': title, 'detail_url': urljoin(BASE_URL, href)})
         time.sleep(1)
-    return papers
+    # 年份过滤：仅保留最近 10 年（标题无年份者视为近期，不过滤）
+    filtered = [p for p in papers if within_year_window(p['title'])]
+    if len(filtered) != len(papers):
+        print(f"    🗓 年份过滤：{len(papers)} -> {len(filtered)} 份（仅保留 {YEAR_MIN} 年起）")
+    return filtered
 
 
 def get_download_url(detail_url):
@@ -402,7 +449,7 @@ def extract_and_clean(archive_path, extract_dir, clean_dir, keep_exts):
 
 
 # ========== 入库（主库，按 source_url 去重） ==========
-def _upsert_paper(session, subject, grade, title, source_url, download_url, html_content, answers):
+def _upsert_paper(session, subject, grade, title, source_url, download_url, html_content, answers, year=0):
     """按 source_url 去重；存在则更新内容，返回 (paper_id, is_new)。"""
     existing = session.execute(
         select(Paper).where(Paper.source_url == source_url)
@@ -413,13 +460,15 @@ def _upsert_paper(session, subject, grade, title, source_url, download_url, html
         existing.subject = subject
         existing.grade = grade
         existing.title = title
+        if year:
+            existing.year = year
         session.commit()
         return existing.id, False
     paper = Paper(
         subject=subject, grade=grade, title=title,
         source_url=source_url, download_url=download_url,
         html_content=html_content or "", answers=answers or "",
-        total_questions=0,
+        total_questions=0, year=year,
     )
     session.add(paper)
     session.commit()
@@ -460,7 +509,7 @@ def _store_questions(session, paper_id, html_content):
     return len(questions)
 
 
-def store_paper_full(subject, grade, title, source_url, download_url, html_content):
+def store_paper_full(subject, grade, title, source_url, download_url, html_content, year=0):
     """对外封装：去重入库 + 解析题目。返回 (paper_id, is_new, q_count)。
 
     超大 HTML（> MAX_HTML_CHARS）会超出 MySQL max_allowed_packet 导致连接中断，
@@ -473,15 +522,47 @@ def store_paper_full(subject, grade, title, source_url, download_url, html_conte
         html_content = ""
     with SessionLocal() as session:
         paper_id, is_new = _upsert_paper(
-            session, subject, grade, title, source_url, download_url, html_content, None)
+            session, subject, grade, title, source_url, download_url, html_content, None, year=year)
         q_count = _store_questions(session, paper_id, html_content) if html_content else 0
         return paper_id, is_new, q_count
 
 
 # ========== 主采集循环 ==========
-def run_collection(once=False):
-    # 确保表结构/冗余列（grade/subject 等）到位，否则 MySQL 旧表会缺列导致入库失败。
-    # init_db 幂等：create_all + _ensure_columns 均忽略已存在项。
+_ANSWER_HINT = ("答案", "答", "解析", "详解", "key", "Key", "KEY")
+_EXAM_HINT = ("试卷", "试题", "练习", "期中", "期末", "月考", "中考", "高考", "模拟", "测验", "单元")
+
+
+def _select_exam_doc(kept_files):
+    """从解压出的文档中挑选最像「试卷正文」的一份（避开答案/解析），避免答案覆盖试卷。
+
+    返回单文件路径列表（复用既有单卷入库逻辑）。无文档返回空列表。
+    """
+    if not kept_files:
+        return []
+    if len(kept_files) == 1:
+        return kept_files
+    candidates = []
+    for p in kept_files:
+        n = os.path.basename(p)
+        if any(h in n for h in _ANSWER_HINT):
+            continue
+        candidates.append(p)
+    if candidates:
+        return [candidates[0]]
+    return [kept_files[0]]
+
+
+def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
+                   fill_answers_after=False, answer_cap=0):
+    """按日采集最新试卷入库（去重、年份过滤、学段优先级）。
+
+    参数：
+      once: 跑一轮即退出（自动化每日用）。
+      daily_limit: 本日最多采集的新卷数（默认 200，约 200 份/天）。
+      fill_answers_after: 采集后是否调用 AI 优先补全新卷答案（再继续全局空缺）。
+      answer_cap: 全局答案补全每日上限（0 表示仅补新卷，不补历史空缺）。
+    返回：本次新增的试卷 id 列表（供后续优先补全答案）。
+    """
     from app.database import init_db
     init_db()
 
@@ -490,45 +571,40 @@ def run_collection(once=False):
     ensure_dir(CLEAN_DIR)
     ensure_dir(TEMP_HTML_DIR)
 
-    # 配额按「本会话已爬取卷数」（demo 迁移占 1~49，爬取卷 id>=50）动态计算，
-    # 保证多次续跑不会重复累加突破 GLOBAL_MAX_PAPERS 上限。
-    with SessionLocal() as s:
-        crawl_count = s.execute(
-            select(func.count(Paper.id)).where(Paper.id > 49)
-        ).scalar() or 0
-    remaining_quota = max(0, GLOBAL_MAX_PAPERS - crawl_count)
-    print(f"📌 已爬取 {crawl_count} 份，本次续跑上限 {remaining_quota} 份（全局上限 {GLOBAL_MAX_PAPERS}）")
+    remaining_quota = daily_limit
+    print(f"📌 本日采集上限 {remaining_quota} 份新卷（学段优先级：初中→小学→高中；"
+          f"仅最近 {CURRENT_YEAR - YEAR_MIN} 年，{YEAR_MIN} 年起）")
 
-    # 确定性打散分类顺序，使采样在「各学科 / 各年级」间均衡覆盖
-    categories = list(SUBJECT_GRADE_MAP)
-    random.Random(SHUFFLE_SEED).shuffle(categories)
+    # 按学段优先级（初中→小学→高中）重排分类，保证优先采集初中、各学科均衡覆盖
+    categories = ORDERED_CATEGORY_MAP
 
     collected_total = 0
+    new_paper_ids = []
     while True:
         try:
             for subject_name, grade_name, url_suffix in categories:
                 if collected_total >= remaining_quota:
                     break
-                # 续跑优化：该 (学科,年级) 已采满，跳过整类列表抓取，直接下一个分类
+                # 续跑优化：该 (学科,年级) 今日已采满，跳过整类列表抓取，直接下一个分类
                 with SessionLocal() as s:
                     have = s.execute(
                         select(func.count(Paper.id)).where(
                             Paper.subject == subject_name, Paper.grade == grade_name)
                     ).scalar() or 0
-                if have >= PER_CATEGORY_MAX:
+                if have >= PER_CATEGORY_CAP:
                     continue
                 print(f"\n📚 [{datetime.now():%Y-%m-%d %H:%M:%S}] 处理: {subject_name} - {grade_name}")
                 papers = get_paper_list(url_suffix)
                 if not papers:
-                    print(f"  ⚠️ 该分类无试卷（可能不存在），跳过")
+                    print(f"  ⚠️ 该分类无（近10年）试卷，跳过")
                     continue
-                print(f"  找到 {len(papers)} 份试卷，本类最多采 {PER_CATEGORY_MAX} 份")
+                print(f"  找到 {len(papers)} 份（近10年）试卷，本类最多采 {PER_CATEGORY_CAP} 份")
 
                 new_count = 0
                 for paper in papers:
                     if collected_total >= remaining_quota:
                         break
-                    if new_count >= PER_CATEGORY_MAX:
+                    if new_count >= PER_CATEGORY_CAP:
                         break
                     source_url = paper['detail_url']
                     # 去重：已采集过的不再采集
@@ -550,9 +626,11 @@ def run_collection(once=False):
                     if not kept_files:
                         continue
 
-                    for doc_path in kept_files:
+                    # 优先取「试卷正文」文档，避开答案/解析（避免答案覆盖试卷）
+                    for doc_path in _select_exam_doc(kept_files):
                         if collected_total >= remaining_quota:
                             break
+                        yr = parse_year(paper['title']) or 0
                         print(f"  📄 {paper['title']}")
                         html_content = convert_document_to_html(doc_path)
                         if html_content:
@@ -561,8 +639,9 @@ def run_collection(once=False):
                             print(f"    ⚠️ 转换失败，仅记录元信息")
                         paper_id, _is_new, q_count = store_paper_full(
                             subject_name, grade_name, paper['title'],
-                            source_url, download_url, html_content)
+                            source_url, download_url, html_content, year=yr)
                         print(f"    📝 入库试卷 ID={paper_id}，题目 {q_count} 道")
+                        new_paper_ids.append(paper_id)
 
                         # 不使用 doc 保存：转换入库后删除原件
                         try:
@@ -570,7 +649,12 @@ def run_collection(once=False):
                         except Exception:
                             pass
 
-                    # 删除压缩包，避免长期占用磁盘
+                    # 删除压缩包与多余文档，避免长期占用磁盘
+                    for f in kept_files:
+                        try:
+                            os.remove(f)
+                        except Exception:
+                            pass
                     try:
                         os.remove(archive_path)
                     except Exception:
@@ -583,7 +667,7 @@ def run_collection(once=False):
                 print(f"  ✅ {subject_name}-{grade_name} 完成，新增 {new_count} 份（本次累计 {collected_total}/{remaining_quota}）")
 
             if once or collected_total >= remaining_quota:
-                print("\n✅ 单次采集完成（--once 或已达总量上限）")
+                print(f"\n✅ 单次采集完成（--once 或已达本日上限 {remaining_quota}），新增 {collected_total} 份")
                 break
             print(f"\n💤 本轮完成，等待 {REQUEST_INTERVAL} 秒...")
             time.sleep(REQUEST_INTERVAL)
@@ -596,6 +680,17 @@ def run_collection(once=False):
             if once:
                 break
             time.sleep(REQUEST_INTERVAL)
+
+    # 采集后优先为新卷补全 AI 答案，再按 cap 继续全局空缺补全
+    if fill_answers_after and new_paper_ids:
+        from app.services.answer_generator import fill_missing_answers
+        print(f"\n🤖 优先为本次新采集的 {len(new_paper_ids)} 份试卷补全 AI 答案...")
+        fill_missing_answers(paper_ids=new_paper_ids)
+        if answer_cap and answer_cap > 0:
+            print(f"\n🤖 继续全局补全缺失答案（本日上限 {answer_cap} 题）...")
+            fill_missing_answers(limit=answer_cap)
+
+    return new_paper_ids
 
 
 def print_stats():

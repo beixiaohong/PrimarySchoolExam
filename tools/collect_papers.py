@@ -1,14 +1,18 @@
 """试卷采集命令行入口（主项目统一入口）
 
 用法：
-  python tools/collect_papers.py          # 持续采集（按 REQUEST_INTERVAL 循环）
-  python tools/collect_papers.py --once   # 跑一轮即退出
-  python tools/collect_papers.py --stats  # 打印题库统计
+  python tools/collect_papers.py                 # 持续采集（按 REQUEST_INTERVAL 循环）
+  python tools/collect_papers.py --once          # 跑一轮（每日配额）即退出
+  python tools/collect_papers.py --stats         # 打印题库统计
+  python tools/collect_papers.py --once --daily-limit 200 --fill-new --answer-cap 4000
+                                                # 每日流水线：采近10年新卷(初中优先)→AI补答案
 
 说明：
 - 采集结果入库到主库（MySQL）的 papers / paper_questions 表；
 - 按 source_url 去重，已采集过的试卷不会重复采集；
+- 仅采集最近 10 年试卷（标题年份过滤），学段优先级 初中→小学→高中，每学科均衡覆盖；
 - 试卷以 HTML 富文本（图片 base64 内联）保存，不保存 doc 原件；
+- --fill-new 采集后优先为新卷调用 AI 补全答案，再按 --answer-cap 继续全局空缺补全；
 - 本地新采集的题库如需同步到线上，请用 tools/qb_release.py generate 生成更新脚本。
 """
 import argparse
@@ -48,6 +52,12 @@ def main():
     parser.add_argument("--subject", default=None, help="限定学科（如 数学）")
     parser.add_argument("--dry-run", action="store_true",
                         help="--fill-answers 仅预览不写库")
+    parser.add_argument("--daily-limit", type=int, default=200,
+                        help="--once 时本日采集新卷上限（默认 200，约 200 份/天）")
+    parser.add_argument("--answer-cap", type=int, default=0,
+                        help="--fill-new 时继续全局补全答案的每日上限（0=仅补新卷）")
+    parser.add_argument("--fill-new", action="store_true",
+                        help="采集后优先为新卷调用 AI 补全答案（再按 --answer-cap 补全局）")
     args = parser.parse_args()
 
     if args.count_missing:
@@ -65,7 +75,14 @@ def main():
         print_stats()
         return
 
-    run_collection(once=args.once)
+    new_ids = run_collection(
+        once=args.once,
+        daily_limit=args.daily_limit,
+        fill_answers_after=args.fill_new,
+        answer_cap=args.answer_cap,
+    )
+    if args.fill_new:
+        print(f"🆕 本次新采集试卷 {len(new_ids)} 份，答案已优先补全")
     print_stats()
 
 

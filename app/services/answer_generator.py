@@ -53,11 +53,13 @@ def generate_answer_for(q, max_tokens: int = 400) -> str | None:
 
 
 def fill_missing_answers(limit: int | None = None, grade: str | None = None,
-                          subject: str | None = None, dry_run: bool = False):
+                          subject: str | None = None, dry_run: bool = False,
+                          paper_ids: list | None = None):
     """为 correct_answer 为空的 PaperQuestion 补全答案。
 
     返回 (处理数, 成功数, 跳过数)。dry_run=True 时不写库，仅打印预览。
     limit：最多处理多少题（控成本/控时长）；None 表示全部。
+    paper_ids：仅补全这些试卷下的题目（用于优先补全新采集卷）；None 表示全部试卷。
     """
     from ..database import SessionLocal
     from ..models.paper import PaperQuestion
@@ -75,6 +77,9 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
             q = q.filter(PaperQuestion.grade == grade)
         if subject:
             q = q.filter(PaperQuestion.subject == subject)
+        if paper_ids:
+            q = q.filter(PaperQuestion.paper_id.in_(paper_ids))
+        q = q.order_by(PaperQuestion.id)
         rows = q.all()
         total_missing = len(rows)
         if limit:
