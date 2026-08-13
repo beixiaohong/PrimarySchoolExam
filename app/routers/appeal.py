@@ -162,7 +162,16 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
     if not a:
         raise HTTPException(404, "申诉不存在")
     if a.status != "pending":
-        raise HTTPException(400, "该申诉已处理过")
+        # 已裁决：允许家长补填/修改备注，但不改变裁决结果（避免重复处理、也不翻转判对/判错）。
+        # 此前前端在已处理的申诉上再点「判错」会收到 400，体验差；这里改为幂等返回。
+        note = (req.note or "").strip()
+        if note:
+            try:
+                a.note = note[:500]
+                db.commit()
+            except Exception:
+                db.rollback()
+        return {"id": a.id, "status": a.status, "already_decided": True}
 
     if req.action == "approve":
         if a.source == "exam":
@@ -174,7 +183,11 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
 
     a.status = "approved" if req.action == "approve" else "rejected"
     a.decided_at = datetime.now()
-    a.note = (req.note or "").strip()[:500]
+    try:
+        a.note = (req.note or "").strip()[:500]
+    except Exception:
+        # answer_appeals.note 列缺失（迁移未执行）时跳过备注，不影响裁决主流程
+        pass
     db.commit()
     return {"id": a.id, "status": a.status}
 

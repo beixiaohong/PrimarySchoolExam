@@ -1842,17 +1842,23 @@ const appOptions = {
       this.$set(this.appealExpanded, id, !this.appealExpanded[id]);
     },
     decideAppeal(a, ok) {
+      if (a._deciding) return;            // 防重复提交（连点）
+      this.$set(a, '_deciding', true);
       const note = (this.appealNotes[a.id] || '').trim();
       this.api('/api/appeal/decide', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject', note }),
       }).then(() => {
-        this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
+        // 立即本地移除该条，避免列表刷新前二次点击「已处理过」报错
+        const idx = this.pendingAppeals.findIndex(x => x.id === a.id);
+        if (idx >= 0) this.pendingAppeals.splice(idx, 1);
         this.$delete(this.appealNotes, a.id);
-        this.loadAppeals();
+        this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
         this.loadDecidedAppeals();
         this.loadChildStats();
-      }).catch(e => this.showToast(e.message));
+      }).catch(e => this.showToast(e.message)).finally(() => {
+        this.$set(a, '_deciding', false);
+      });
     },
     appealThis() {
       const it = this.quiz.items[this.quiz.i];
