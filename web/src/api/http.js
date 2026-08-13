@@ -7,8 +7,19 @@ export function api(path, opts = {}) {
     // 服务端据此授权访问/操作敏感数据（如补签、转账），避免每次手动传参
     const pp = sessionStorage.getItem('zx_parent_pwd')
     if (pp) headers['X-Parent-Pwd'] = pp
+    // 登录会话 token：后端业务接口要求 Bearer 鉴权
+    const tk = localStorage.getItem('zx_token')
+    if (tk) headers['Authorization'] = 'Bearer ' + tk
   } catch (e) { /* 隐私模式等异常忽略 */ }
   return fetch(path, Object.assign({ headers }, opts)).then(async r => {
+    // 401：登录态失效，清除本地会话并回到登录页（登录/注册入口本身不会 401）
+    if (r.status === 401) {
+      const hadSession = !!localStorage.getItem('zx_user')
+      try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token') } catch (e) {}
+      // 仅当原本已登录才跳登录页，避免未登录时首页加载公开内容触发重定向循环
+      if (hadSession && path.indexOf('/api/auth/') === -1) location.href = '/'
+      throw new Error('登录已过期，请重新登录')
+    }
     const t = await r.text()
     let d = t
     try { d = JSON.parse(t) } catch (e) { /* 非 JSON（如纯文本响应）原样返回 */ }

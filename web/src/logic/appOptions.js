@@ -6,7 +6,7 @@ const appOptions = {
   data() {
     return {
       // 登录
-      user: '', userName: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
+      user: '', userName: '', token: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
       promotedInfo: null,   // 升年级引导弹窗（登录响应 promoted）
       // 学习同步（家长面板）：预习/课堂同步/小升初衔接 + 教学进度
       studyFlags: { include_next: false, sync_mode: false, xsc_bridge: false },
@@ -344,9 +344,20 @@ const appOptions = {
       try {
         const pp = sessionStorage.getItem('zx_parent_pwd');
         if (pp) headers['X-Parent-Pwd'] = pp;
+        // 登录会话 token：后端业务接口要求 Bearer 鉴权
+        const tk = localStorage.getItem('zx_token');
+        if (tk) headers['Authorization'] = 'Bearer ' + tk;
       } catch (e) { /* 隐私模式等异常忽略 */ }
       return fetch(path, Object.assign({ headers }, opts))
         .then(async r => {
+          // 401：登录态失效，清除本地会话并回到登录页（登录/注册入口本身不会 401）
+          if (r.status === 401) {
+            const hadSession = !!localStorage.getItem('zx_user');
+            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); } catch (e) {}
+            // 仅当原本已登录才跳登录页，避免未登录时首页加载公开内容触发重定向循环
+            if (hadSession && path.indexOf('/api/auth/') === -1) location.href = '/';
+            throw new Error('登录已过期，请重新登录');
+          }
           const t = await r.text();
           let d = t;
           try { d = JSON.parse(t); } catch (e) { /* 非 JSON */ }
@@ -360,7 +371,7 @@ const appOptions = {
       this._tt = setTimeout(() => { this.toast.show = false; }, 2400);
     },
     saveUser() {
-      if (this.user) localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject, nickname: this.userName }));
+      if (this.user) localStorage.setItem('zx_user', JSON.stringify({ user: this.user, grade: this.grade, subject: this.subject, nickname: this.userName, token: this.token }));
     },
 
     /* ─────────── 登录 / 注册 / 退出 ─────────── */
@@ -377,6 +388,7 @@ const appOptions = {
     onLoginOk(r) {
       this.user = r.user_id;
       this.userName = r.nickname || r.user_id;
+      this.token = r.token || '';
       this.streakDays = r.streak_days || 0;
       this.grade = r.grade || 6;
       this.subject = r.subject || '英语';
@@ -487,6 +499,7 @@ const appOptions = {
     },
     logout() {
       localStorage.removeItem('zx_user');
+      localStorage.removeItem('zx_token');
       sessionStorage.removeItem('zx_parent_open');
       sessionStorage.removeItem('zx_parent_pwd');
       this.user = ''; this.username = ''; this.tab = 'home'; this.showGradeModal = false;
@@ -3235,7 +3248,6 @@ const appOptions = {
   },
 
   mounted() {
-    this.loadMathCategories();
     this.loadEngTypes();
     this.turbo = localStorage.getItem('zx_turbo') === '1';
     const saved = JSON.parse(localStorage.getItem('zx_user') || 'null');
@@ -3243,9 +3255,11 @@ const appOptions = {
       this.user = saved.user;
       this.username = saved.user;
       this.userName = saved.nickname || saved.user;
+      this.token = saved.token || '';
       this.grade = saved.grade || 6;
       this.subject = saved.subject || '英语';
       this.engTypes = this.subject === '语文' ? this._chiTypes : this._engTypes;
+      this.loadMathCategories();   // 仅在已登录后加载（接口需登录 token）
       this.refreshAll();
       this.loadAuthInfo();
       this.loadWeather();
