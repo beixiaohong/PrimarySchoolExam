@@ -2356,7 +2356,7 @@
         <div class="cs-head" @click="toggleRechargeQr()">
           <span v-if="rechargeCfg && rechargeCfg.cs_contact">📞 客服微信：<b>{{rechargeCfg.cs_contact}}</b></span>
           <span v-else>📞 付款后请联系客服，提供「付款截图 + 账号」即可发放钻石。</span>
-          <span class="cs-toggle">{{ rechargeQrOpen ? '收起 ▴' : '查看收款 / 客服二维码 ▾' }}</span>
+          <span class="cs-toggle">{{ rechargeQrOpen ? '收起 ▴' : '查看收款二维码 ▾' }}</span>
         </div>
         <div class="cs-detail" v-if="rechargeQrOpen">
           <div class="recharge-qrs" v-if="rechargePkg">
@@ -2370,10 +2370,6 @@
               <img v-if="rechargeCfg && rechargeCfg.alipay_qr" :src="rechargeCfg.alipay_qr" alt="支付宝收款码" class="rc-qr-img">
               <div v-else class="rc-qr-empty">请联系客服获取支付宝收款码</div>
             </div>
-          </div>
-          <div class="cs-qr-wrap" v-if="rechargeCfg && rechargeCfg.cs_wx_qr">
-            <img :src="rechargeCfg.cs_wx_qr" alt="客服微信加好友二维码" class="cs-qr-img">
-            <span class="cs-qr-tip">扫码添加客服微信</span>
           </div>
         </div>
       </div>

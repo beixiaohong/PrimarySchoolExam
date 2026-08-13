@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_CS_WX_QR, RECHARGE_RATE
+from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
 from ..services import diamond as diamond_svc
 from .admin import _require_admin
 from .auth import require_user
@@ -100,13 +100,14 @@ def get_ledger(
 def recharge_config():
     """返回手动充值所需的前端配置（无需登录）。
 
-    内容：微信收款二维码、支付宝收款二维码、客服联系方式、汇率（1 元 = rate 钻石）。
+    内容：微信收款二维码、支付宝收款二维码、客服微信（仅文字 ID，便于用户手动添加）、汇率（1 元 = rate 钻石）。
+    注意：刻意不返回客服「加好友二维码」(cs_wx_qr)，避免在公开接口泄露个人微信二维码；
+          支付收款码（微信/支付宝）与汇率保持公开，供用户扫码付款。
     充值流程：用户扫码付款 → 在转账留言/备注填写自己的账号 → 客服核对后通过管理接口手动发放钻石。
     """
     return {
         "wechat_qr": RECHARGE_WECHAT_QR,
         "alipay_qr": RECHARGE_ALIPAY_QR,
         "cs_contact": RECHARGE_CS_CONTACT,
-        "cs_wx_qr": RECHARGE_CS_WX_QR,
         "rate": RECHARGE_RATE,
     }
