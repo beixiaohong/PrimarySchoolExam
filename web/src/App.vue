@@ -2118,7 +2118,7 @@
 </div>
 
 <!-- ═══════════ 单词学习浮层 ═══════════ -->
-<div class="quiz-overlay" v-if="wordSession.active && (wordSession.phase==='card' || wordSession.done)">
+<div class="quiz-overlay" v-if="wordSession.active && (wordSession.phase==='card' || wordSession.done) && !quiz.active">
   <template v-if="!wordSession.done && wordSession.phase==='card'">
     <div class="quiz-shell">
       <div class="quiz-top">
@@ -2154,7 +2154,7 @@
 </div>
 
 <!-- ═══════════ 古诗文背诵浮层 ═══════════ -->
-<div class="quiz-overlay" v-if="textSession.active && (textSession.phase==='card' || textSession.done)">
+<div class="quiz-overlay" v-if="textSession.active && (textSession.phase==='card' || textSession.done) && !quiz.active">
   <template v-if="!textSession.done && textSession.phase==='card'">
     <div class="quiz-shell">
       <div class="quiz-top">
