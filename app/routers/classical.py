@@ -13,6 +13,13 @@ from ..database import get_db
 from ..models.classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
 from ..models.study_error import StudyError
 
+# 拼音（古诗文逐行展示用）：缺依赖时优雅降级，仅隐藏拼音，不影响主流程
+try:
+    from pypinyin import pinyin as _py_pinyin, Style as _PyStyle
+    _HAS_PINYIN = True
+except Exception:
+    _HAS_PINYIN = False
+
 router = APIRouter()
 
 # 艾宾浩斯间隔（天）
@@ -44,6 +51,7 @@ class ClassicalTextOut(BaseModel):
     grade: int
     content: str
     lines: list
+    pinyin: list = []   # 逐行拼音（带声调），前端逐行展示用
     tags: str
 
 
@@ -73,6 +81,17 @@ class ReviewRequest(BaseModel):
 def _parse_lines(content: str) -> list:
     """将全文按换行分割成行列表，过滤空行"""
     return [line.strip() for line in content.strip().split("\n") if line.strip()]
+
+
+def _pinyin_lines(content: str) -> list:
+    """返回与正文逐行对应的拼音行（每行空格分隔带声调），无 pypinyin 时返回空列表。"""
+    if not _HAS_PINYIN:
+        return []
+    out = []
+    for ln in _parse_lines(content or ""):
+        py = _py_pinyin(ln, style=_PyStyle.TONE, heteronym=False)
+        out.append(" ".join(seg[0] for seg in py))
+    return out
 
 
 def _calc_next_review(stage: int, from_date: date) -> date:
@@ -216,6 +235,7 @@ def list_texts(
             id=t.id, title=t.title, author=t.author, dynasty=t.dynasty,
             text_type=t.text_type, grade=t.grade, content=t.content,
             lines=json.loads(t.lines_json) if t.lines_json else _parse_lines(t.content),
+            pinyin=_pinyin_lines(t.content),
             tags=t.tags,
         )
         for t in texts
@@ -231,6 +251,7 @@ def get_text(text_id: int, db: Session = Depends(get_db)):
         id=text.id, title=text.title, author=text.author, dynasty=text.dynasty,
         text_type=text.text_type, grade=text.grade, content=text.content,
         lines=json.loads(text.lines_json) if text.lines_json else _parse_lines(text.content),
+        pinyin=_pinyin_lines(text.content),
         tags=text.tags,
     )
 
@@ -513,6 +534,7 @@ def get_today_task(
                 "title": text.title,
                 "author": text.author,
                 "content": text.content,
+                "pinyin": _pinyin_lines(text.content),
                 "review_stage": p.review_stage,
                 "next_review_date": str(p.next_review_date) if p.next_review_date else None,
             })
@@ -558,6 +580,7 @@ def get_today_task(
                 "author": t.author,
                 "content": t.content,
                 "text_type": t.text_type,
+                "pinyin": _pinyin_lines(t.content),
             })
 
     # 统计
