@@ -2346,34 +2346,36 @@
         </button>
       </div>
 
-      <div class="recharge-qrs" v-if="rechargePkg">
-        <div class="rc-qr">
-          <div class="rc-qr-title">💚 微信支付</div>
-          <img v-if="rechargeCfg && rechargeCfg.wechat_qr" :src="rechargeCfg.wechat_qr" alt="微信收款码" class="rc-qr-img">
-          <div v-else class="rc-qr-empty">请联系客服获取微信收款码</div>
-        </div>
-        <div class="rc-qr">
-          <div class="rc-qr-title">🔵 支付宝</div>
-          <img v-if="rechargeCfg && rechargeCfg.alipay_qr" :src="rechargeCfg.alipay_qr" alt="支付宝收款码" class="rc-qr-img">
-          <div v-else class="rc-qr-empty">请联系客服获取支付宝收款码</div>
-        </div>
-      </div>
-
       <div class="recharge-account">
         <span class="rc-acc-label">付款留言请填写账号：</span>
         <code class="rc-acc-value">{{user}}</code>
         <button class="btn btn-ghost btn-sm" @click="copyRechargeAccount()">{{rechargeCopied ? '已复制 ✓' : '复制'}}</button>
       </div>
 
-      <div class="recharge-cs" v-if="rechargeCfg && (rechargeCfg.cs_contact || rechargeCfg.cs_wx_qr)">
-        <div v-if="rechargeCfg.cs_contact">📞 客服微信：<b>{{rechargeCfg.cs_contact}}</b></div>
-        <div v-if="rechargeCfg.cs_wx_qr" class="cs-qr-wrap">
-          <img :src="rechargeCfg.cs_wx_qr" alt="客服微信加好友二维码" class="cs-qr-img">
-          <span class="cs-qr-tip">扫码添加客服微信</span>
+      <div class="recharge-cs">
+        <div class="cs-head" @click="toggleRechargeQr()">
+          <span v-if="rechargeCfg && rechargeCfg.cs_contact">📞 客服微信：<b>{{rechargeCfg.cs_contact}}</b></span>
+          <span v-else>📞 付款后请联系客服，提供「付款截图 + 账号」即可发放钻石。</span>
+          <span class="cs-toggle">{{ rechargeQrOpen ? '收起 ▴' : '查看收款 / 客服二维码 ▾' }}</span>
         </div>
-      </div>
-      <div class="recharge-cs" v-else>
-        📞 付款后请联系客服，提供「付款截图 + 账号」即可发放钻石。
+        <div class="cs-detail" v-if="rechargeQrOpen">
+          <div class="recharge-qrs" v-if="rechargePkg">
+            <div class="rc-qr">
+              <div class="rc-qr-title">💚 微信支付</div>
+              <img v-if="rechargeCfg && rechargeCfg.wechat_qr" :src="rechargeCfg.wechat_qr" alt="微信收款码" class="rc-qr-img">
+              <div v-else class="rc-qr-empty">请联系客服获取微信收款码</div>
+            </div>
+            <div class="rc-qr">
+              <div class="rc-qr-title">🔵 支付宝</div>
+              <img v-if="rechargeCfg && rechargeCfg.alipay_qr" :src="rechargeCfg.alipay_qr" alt="支付宝收款码" class="rc-qr-img">
+              <div v-else class="rc-qr-empty">请联系客服获取支付宝收款码</div>
+            </div>
+          </div>
+          <div class="cs-qr-wrap" v-if="rechargeCfg && rechargeCfg.cs_wx_qr">
+            <img :src="rechargeCfg.cs_wx_qr" alt="客服微信加好友二维码" class="cs-qr-img">
+            <span class="cs-qr-tip">扫码添加客服微信</span>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-foot">

@@ -24,7 +24,7 @@ const appOptions = {
       streakDays: 0, totalTodo: 0, avgScore: 0,
       masteredTotal: 0, wrongBadge: 0, diamonds: 0,
       // 钻石充值（手动充值：扫码付款 + 客服核对账户后发放）
-      rechargeOpen: false, rechargeCfg: null, rechargePkg: 0, rechargeCopied: false,
+      rechargeOpen: false, rechargeCfg: null, rechargePkg: 0, rechargeCopied: false, rechargeQrOpen: false,
       // 首页
       dashboard: null, todayTasks: [],
       dailyTasks: null, dailyTaskStats: { done_count: 0, total: 3, streak_days: 0 }, makeupCards: 0,
@@ -653,15 +653,18 @@ const appOptions = {
     // 打开钻石购买弹窗并加载充值配置（收款二维码/客服/汇率）
     openRecharge() {
       this.rechargeOpen = true;
+      this.rechargeQrOpen = false;
       if (!this.rechargeCfg) {
         this.api('/api/diamond/recharge/config')
           .then(c => { this.rechargeCfg = c || null; })
           .catch(() => { this.rechargeCfg = null; });
       }
     },
-    closeRecharge() { this.rechargeOpen = false; this.rechargeCopied = false; },
+    closeRecharge() { this.rechargeOpen = false; this.rechargeCopied = false; this.rechargeQrOpen = false; },
     // 选择充值套餐（点击即展示对应收款二维码）
     selectRechargePkg(n) { this.rechargePkg = n; this.rechargeCopied = false; },
+    // 展开 / 收起「收款 / 客服二维码」（默认收起，仅显示客服微信号；点击展开）
+    toggleRechargeQr() { this.rechargeQrOpen = !this.rechargeQrOpen; },
     copyRechargeAccount() {
       const acc = this.user || '';
       try {
