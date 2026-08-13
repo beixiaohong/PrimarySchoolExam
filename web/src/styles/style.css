@@ -7,9 +7,9 @@
   --warning:#F5A623; --warning-light:#FEF4E5;
   --danger:#F2604C;  --danger-light:#FEEBEA;
   --violet:#8B7CF6;  --violet-light:#F0EEFE;
-  --bg:#F4F6FB; --card:#FFFFFF;
-  --text:#24304B; --text-2:#5A6B8C; --text-3:#93A1BD;
-  --border:#E5EAF4;
+  --bg:#F4F6FB; --bg-soft:#F4F6FB; --card:#FFFFFF;
+  --text:#24304B; --text-1:#24304B; --text-2:#5A6B8C; --text-3:#93A1BD;
+  --border:#E5EAF4; --line:#E5EAF4;
   --radius:16px; --radius-sm:10px;
   --shadow:0 4px 20px rgba(36,48,75,.06);
   --shadow-lg:0 14px 44px rgba(36,48,75,.14);
