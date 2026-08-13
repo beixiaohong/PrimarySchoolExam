@@ -391,6 +391,7 @@ class PracticeSubmitItem(BaseModel):
     user_answer: str = ""
     correct_answer: str = ""
     subject: str = ""
+    batch: bool = False  # 专项错题：整组（如每词4题）视为「一次」尝试，用于背诵检测混入的错题
 
 
 class PracticeSubmitRequest(BaseModel):
@@ -426,7 +427,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
         {"key": i, "question": it.question, "answer": it.correct_answer,
          "user_answer": it.user_answer, "subject": it.subject}
         for i, it in enumerate(req.results)
-        if not it.correct and (it.question or it.user_answer)
+        if not it.correct and (it.question or it.user_answer) and not it.batch
     ]
     if ai_items:
         from ..services.judge import judge_wrong_items
@@ -511,7 +512,29 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
             ).first()
             if not rec:
                 continue
-            if len(items) >= 3:
+            if getattr(items[0], "batch", False):
+                # 专项错题：整组（如每词4题）视为「一次」尝试，用于背诵检测混入的错题
+                # 全对 → 连击 +1（满 3 掌握）；任一错 → 连击清零、重激活
+                all_correct = all(it.correct for it in items)
+                if all_correct:
+                    rec.correct_streak += 1
+                    if rec.correct_streak >= MASTER_STREAK:
+                        rec.is_mastered = True
+                        rec.mastered_at = _dt.now()
+                        rec.next_review_date = None
+                        status = "mastered"
+                    else:
+                        rec.next_review_date = None   # 答对即出队（明日复习队列只留「重做仍错」）
+                        status = "streak"
+                else:
+                    rec.correct_streak = 0
+                    rec.error_count += 1
+                    rec.is_mastered = False
+                    rec.mastered_at = None
+                    rec.wrong_at = _dt.now()
+                    rec.next_review_date = date.today() + timedelta(days=1)   # 重做仍错 → 明天再来一次
+                    status = "reactivated"
+            elif len(items) >= 3:
                 # 修正模式：整组判定
                 if all_correct:
                     rec.correct_streak = max(rec.correct_streak, MASTER_STREAK)

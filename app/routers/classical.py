@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models.classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
+from ..models.study_error import StudyError
 
 router = APIRouter()
 
@@ -444,6 +445,7 @@ def classical_session_quiz(
     user_id: str = Query(...),
     text_ids: str = Query(..., description="篇目ID，逗号分隔"),
     mode: str = Query("new", description="new=新学 / review=复习"),
+    mix_errors: bool = Query(False, description="是否混入未掌握的古诗文错题（每篇3题，打 error_id 标记）"),
     db: Session = Depends(get_db),
 ):
     ids = []
@@ -466,6 +468,23 @@ def classical_session_quiz(
     items = []
     for t in texts:
         items.extend(_session_quiz_for_text(db, t, stages.get(t.id, 0), line_pool))
+
+    # 错题混入：拉取少量未掌握的古诗文错题，生成题并打 error_id 标记，
+    # 前端据此在提交时回写「连续答对连击」，满 3 次移除错题本。
+    if mix_errors:
+        errs = db.query(StudyError).filter(
+            StudyError.user_id == user_id,
+            StudyError.source_type == "classical",
+            StudyError.is_mastered.is_(False),
+        ).order_by(StudyError.wrong_at.desc()).limit(3).all()
+        err_ids = [e.source_id for e in errs if e.source_id]
+        if err_ids:
+            err_texts = db.query(ClassicalText).filter(ClassicalText.id.in_(err_ids)).all()
+            emap = {e.source_id: e.id for e in errs}
+            for et in err_texts:
+                for qi in _session_quiz_for_text(db, et, stages.get(et.id, 0), line_pool):
+                    qi["error_id"] = emap.get(et.id)
+                    items.append(qi)
     return {"items": items}
 
 
@@ -657,32 +676,38 @@ def submit_review(req: ReviewRequest, db: Session = Depends(get_db)):
 class DictateRequest(BaseModel):
     user_id: str
     mode: str = "new"  # new=新学 / review=复习
-    text_ids: List[int]
+    text_ids: List[int] = []      # 向后兼容：旧前端传「全部正确」的篇目
+    passed_ids: List[int] = []    # 新：默写正确的篇目（前端判分后仅传正确的，错的已剔除）
 
 
-@router.post("/dictate", summary="古诗文默写提交：全对才落库（new=学会 / review=复习推进）")
+@router.post("/dictate", summary="古诗文默写提交：分项存储（passed_ids 记录，错的剔除）")
 def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
-    """默写结果提交（前端随机填空题判分，全对才允许调用本接口）：
+    """默写结果提交（前端随机填空题判分，分项存储）：
 
-    - mode=new：全部默写正确 → 与 /learn 相同落库（建进度 + 今日新学数 +N）
-    - mode=review：全部正确 → 按全部 correct 提交复习（记忆曲线推进，达满掌握）
-    - text_ids 为空 → 不落库，视为未通过
+    - 仅对 passed_ids（默写正确的篇目）记录进度；错的已剔除交前端进错题本
+    - 向后兼容：未传 passed_ids 时回退使用 text_ids（旧前端整轮全对才调用）
+    - text_ids / passed_ids 均为空 → 不落库，视为未通过
+    返回 saved(已记录篇目 id)、updated(记录数)、passed(是否通过)。
     """
-    if not req.text_ids:
-        return {"passed": False, "updated": 0}
+    record_ids = req.passed_ids if req.passed_ids else req.text_ids
+    if not record_ids:
+        return {"passed": False, "saved": [], "updated": 0}
 
     today = date.today()
     log = _get_today_log(db, req.user_id, today)
     results = []
+    saved: list = []
 
     if req.mode == "new":
-        for tid in req.text_ids:
+        for tid in record_ids:
             existing = db.query(ClassicalProgress).filter(
                 ClassicalProgress.user_id == req.user_id,
                 ClassicalProgress.text_id == tid,
             ).first()
             if existing:
                 results.append({"text_id": tid, "status": "already_exists"})
+                # 已存在仍计入 saved（避免前端重复处理），但不重复计数
+                saved.append(tid)
                 continue
             progress = ClassicalProgress(
                 user_id=req.user_id, text_id=tid,
@@ -695,11 +720,12 @@ def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
             log.texts_learned += 1
             log.correct_count += 1
             results.append({"text_id": tid, "status": "learned"})
+            saved.append(tid)
         db.commit()
-        return {"passed": True, "updated": len(results), "details": results}
+        return {"passed": True, "saved": saved, "updated": len(saved), "details": results}
 
-    # mode=review：全部按 correct 提交复习（全对才落库，等同 /review 的 correct 分支）
-    for tid in req.text_ids:
+    # mode=review：对 passed_ids 全部按 correct 提交复习
+    for tid in record_ids:
         progress = db.query(ClassicalProgress).filter(
             ClassicalProgress.user_id == req.user_id,
             ClassicalProgress.text_id == tid,
@@ -718,8 +744,9 @@ def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
             progress.status = "mastered"
         results.append({"text_id": tid, "status": "correct",
                         "next_review": str(progress.next_review_date)})
+        saved.append(tid)
     db.commit()
-    return {"passed": True, "updated": len(results), "details": results}
+    return {"passed": True, "saved": saved, "updated": len(saved), "details": results}
 
 
 @router.get("/stats", summary="古诗文学习统计")

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.word import Word, WordBook
 from ..models.vocab import VocabProgress, VocabDailyLog
+from ..models.study_error import StudyError
 from ..schemas.vocab import (
     VocabWordOut, LearnRequest, ReviewRequest,
     VocabStatsOut, TodayTaskOut, VocabProgressOut,
@@ -512,6 +513,7 @@ def vocab_session_quiz(
     word_ids: str = Query(..., description="单词ID，逗号分隔"),
     mode: str = Query("new", description="new=新学 / review=复习"),
     grade: int = Query(6),
+    mix_errors: bool = Query(False, description="是否混入未掌握的单词错题（每词4题，打 error_id 标记）"),
     db: Session = Depends(get_db),
 ):
     """背诵会话检测：为新学/复习的每个单词生成 4 道混合题（默写+理解型）。
@@ -545,6 +547,24 @@ def vocab_session_quiz(
     for w in words:
         items.extend(_vocab_session_items_for_word(db, w, stages.get(w.id, 0),
                                                    book_ids, sentence_cache))
+
+    # 错题混入：拉取少量未掌握的单词错题，生成题并打 error_id 标记，
+    # 前端据此在提交时回写「连续答对连击」，满 3 次移除错题本。
+    if mix_errors:
+        errs = db.query(StudyError).filter(
+            StudyError.user_id == user_id,
+            StudyError.source_type == "vocab",
+            StudyError.is_mastered.is_(False),
+        ).order_by(StudyError.wrong_at.desc()).limit(3).all()
+        err_ids = [e.source_id for e in errs if e.source_id]
+        if err_ids:
+            err_words = db.query(Word).filter(Word.id.in_(err_ids)).all()
+            emap = {e.source_id: e.id for e in errs}
+            for ew in err_words:
+                for qi in _vocab_session_items_for_word(db, ew, stages.get(ew.id, 0),
+                                                        book_ids, sentence_cache):
+                    qi["error_id"] = emap.get(ew.id)
+                    items.append(qi)
     return {"items": items}
 
 
@@ -563,18 +583,21 @@ class DictateRequest(BaseModel):
     results: List[DictateItem]
 
 
-@router.post("/dictate", summary="单词听写判分：全对才落库（new=学会 / review=复习推进）")
+@router.post("/dictate", summary="单词听写判分：逐词存储（做对记录进度，做错进错题本）")
 def dictate_words(req: DictateRequest, db: Session = Depends(get_db)):
-    """默写判分（规则：全对才算通过）：
+    """默写判分（规则：逐词判分，做对即记录进度，做错不记录）：
 
     - 判分忽略大小写与首尾空白（如 Apple/apple 均正确）
-    - mode=new：全部拼写正确 → 与「标记学会」相同落库（建进度 + 今日新学数 +N）；
-      有拼写错误 → 不落库，返回错词及正确答案，孩子重默
-    - mode=review：全部正确 → 按全部 correct 提交复习（记忆曲线推进）；
-      有错误 → 不落库（孩子重默，错词也一并返回）
+    - mode=new：拼写正确 → 建/保留进度记录（今日新学数 +1）；错误词不记录，返回供前端进错题本
+    - mode=review：拼写正确 → 推进该词记忆曲线；错误词不记录
+    - 返回 saved(已记录的 word_id 列表)、wrong(错词及正确答案)、updated(记录数)、passed(是否全对)
+      这样前端无需「整批从头重来」：做对的即时保存，做错的进入错题本后续巩固。
     """
     today = date.today()
-    wrong = []
+    log = _get_today_log(db, req.user_id, today)
+    saved: list = []
+    wrong: list = []
+
     for it in req.results:
         w = db.query(Word).filter(Word.id == it.word_id).first()
         key = (w.word or "").strip().lower() if w else ""
@@ -582,37 +605,31 @@ def dictate_words(req: DictateRequest, db: Session = Depends(get_db)):
         if not w or ans != key:
             wrong.append({"word_id": it.word_id, "correct": False,
                           "correct_answer": w.word if w else ""})
-    if not req.results or wrong:
-        return {"passed": False, "wrong": wrong, "updated": 0}
-
-    log = _get_today_log(db, req.user_id, today)
-    if req.mode == "new":
-        # 全对 → 与 /learn 相同：建进度记录
-        for it in req.results:
+            continue
+        # 拼写正确 → 记录进度（按词独立落库）
+        if req.mode == "new":
             existing = db.query(VocabProgress).filter(
                 VocabProgress.user_id == req.user_id,
                 VocabProgress.word_id == it.word_id,
             ).first()
-            if existing:
-                continue
-            progress = VocabProgress(
-                user_id=req.user_id, word_id=it.word_id,
-                status="learning", review_stage=0,
-                first_learn_date=today, last_review_date=today,
-                next_review_date=today + timedelta(days=EBBINGHAUS_INTERVALS[0]),
-                correct_count=1, total_reviews=1,
-            )
-            db.add(progress)
-            log.new_words_learned += 1
+            if not existing:
+                progress = VocabProgress(
+                    user_id=req.user_id, word_id=it.word_id,
+                    status="learning", review_stage=0,
+                    first_learn_date=today, last_review_date=today,
+                    next_review_date=today + timedelta(days=EBBINGHAUS_INTERVALS[0]),
+                    correct_count=1, total_reviews=1,
+                )
+                db.add(progress)
+                log.new_words_learned += 1
             log.correct_count += 1
-    else:
-        # 全对 → 全部按 correct 提交复习
-        for it in req.results:
+        else:
             progress = db.query(VocabProgress).filter(
                 VocabProgress.user_id == req.user_id,
                 VocabProgress.word_id == it.word_id,
             ).first()
             if not progress:
+                # 复习但无进度记录：跳过记录（不计为错），避免误入错题本
                 continue
             progress.total_reviews += 1
             progress.last_review_date = today
@@ -623,8 +640,11 @@ def dictate_words(req: DictateRequest, db: Session = Depends(get_db)):
                 progress.status = "mastered"
             log.words_reviewed += 1
             log.correct_count += 1
+        saved.append(it.word_id)
+
     db.commit()
-    return {"passed": True, "wrong": [], "updated": len(req.results)}
+    return {"passed": len(wrong) == 0, "saved": saved, "wrong": wrong,
+            "updated": len(saved)}
 
 
 @router.get("/stats", response_model=VocabStatsOut, summary="用户词汇学习统计")
