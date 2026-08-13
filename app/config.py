@@ -45,5 +45,5 @@ MIDDLE_WORD_CSV_PATH = DATA_DIR / "words_middle_school.csv"
 DEFAULT_PAGE_SIZE = 50
 
 # ── 用户体系（P2） ──
-# 昵称快捷登录开关：正式上线前置为 false
-ALLOW_NICKNAME_LOGIN = os.environ.get("ALLOW_NICKNAME_LOGIN", "true").strip().lower() in ("1", "true", "yes", "on")
+# 昵称快捷登录开关：登录方式已统一为「邮箱 + 密码」，关闭昵称快捷登录
+ALLOW_NICKNAME_LOGIN = os.environ.get("ALLOW_NICKNAME_LOGIN", "false").strip().lower() in ("1", "true", "yes", "on")

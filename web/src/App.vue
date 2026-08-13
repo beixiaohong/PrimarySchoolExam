@@ -15,23 +15,22 @@
     <!-- 登录 -->
     <template v-if="authMode==='login'">
       <div class="field">
-        <label>账号</label>
-        <input v-model="username" placeholder="邮箱 / 手机号 / 昵称" @keyup.enter="login">
+        <label>邮箱</label>
+        <input v-model="username" placeholder="请输入邮箱" @keyup.enter="login">
       </div>
       <div class="field" v-if="isAccountCredential">
         <label>密码</label>
         <input v-model="loginPwd" type="password" placeholder="请输入密码" @keyup.enter="login">
       </div>
       <button class="btn btn-primary btn-lg login-btn" :disabled="!username.trim()" @click="login">进入学习 →</button>
-      <p class="login-tip" v-if="!isAccountCredential && username.trim()">老账号：输入名字即可直接进入</p>
       <p class="login-tip link" @click="authMode='reset'">忘记密码？</p>
     </template>
 
     <!-- 注册 -->
     <template v-if="authMode==='register'">
       <div class="field">
-        <label>邮箱或手机号</label>
-        <input v-model="regTarget" placeholder="用于接收验证码">
+        <label>邮箱</label>
+        <input v-model="regTarget" placeholder="用于接收验证码" @keyup.enter="register">
       </div>
       <div class="field">
         <label>验证码</label>
@@ -45,8 +44,8 @@
         <input v-model="regPwd" type="password" placeholder="以后登录用">
       </div>
       <div class="field">
-        <label>昵称（可选）</label>
-        <input v-model="regNickname" placeholder="不填则用账号作为昵称">
+        <label>昵称（可选，仅作展示名）</label>
+        <input v-model="regNickname" placeholder="不填则取邮箱前缀作为昵称">
       </div>
       <button class="btn btn-primary btn-lg login-btn" :disabled="!regTarget.trim() || regCode.trim().length<6 || !regPwd" @click="register">注册并开始学习 →</button>
     </template>
@@ -173,9 +172,9 @@
           <button v-if="wrongBadge>0" class="tr-item tr-warn" @click="goTab('wrong')">📕 <b>{{wrongBadge}}</b> 道错题待消灭</button>
         </div>
 
-        <!-- 绑定引导（P5：昵称登录且未绑定邮箱/手机时提醒） -->
-        <div class="bind-guide" v-if="authInfo && !authInfo.email && !authInfo.phone">
-          <span>🔒 绑定邮箱或手机号，可跨设备登录与找回密码</span>
+        <!-- 绑定引导：未绑定邮箱时提醒 -->
+        <div class="bind-guide" v-if="authInfo && !authInfo.email">
+          <span>🔒 绑定邮箱，可跨设备登录与找回密码</span>
           <button class="bg-btn" @click="goTab('settings')">去绑定 →</button>
         </div>
 
@@ -1488,14 +1487,13 @@
           </div>
         </div>
         <div class="card" style="max-width:640px;margin-top:16px">
-          <div class="card-head"><b>🔐 账号安全</b><span class="more">绑定邮箱/手机号后可跨设备登录与找回密码</span></div>
+          <div class="card-head"><b>🔐 账号安全</b><span class="more">绑定邮箱后可跨设备登录与找回密码</span></div>
           <div class="info-row"><span>邮箱</span><b>{{authInfo.email || '未绑定'}}</b></div>
-          <div class="info-row"><span>手机号</span><b>{{authInfo.phone || '未绑定'}}</b></div>
           <div class="info-row"><span>登录密码</span><b>{{authInfo.has_password ? '已设置' : '未设置'}}</b></div>
-          <div v-if="!authInfo.email || !authInfo.phone" style="margin-top:12px">
-            <div class="pc-title">{{authInfo.email ? '📱 绑定手机号' : '📧 绑定邮箱'}}</div>
+          <div v-if="!authInfo.email" style="margin-top:12px">
+            <div class="pc-title">📧 绑定邮箱</div>
             <div class="pc-row">
-              <input v-model="bindTarget" class="fill-input" :placeholder="authInfo.email ? '输入手机号' : '输入邮箱'" style="max-width:220px">
+              <input v-model="bindTarget" class="fill-input" placeholder="输入邮箱" style="max-width:220px">
               <button class="btn btn-ghost btn-sm" :disabled="authCooldown>0 || !bindTarget.trim()" @click="sendAuthCode('bind', bindTarget)">{{authCooldown>0 ? authCooldown+'s' : '获取验证码'}}</button>
             </div>
             <div class="pc-row" style="margin-top:8px">

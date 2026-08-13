@@ -152,9 +152,9 @@ const appOptions = {
 
   computed: {
     isAccountCredential() {
-      // 账号为邮箱/手机号时需要密码；昵称走快捷入口
+      // 登录统一为邮箱 + 密码
       const a = (this.username || '').trim();
-      return /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(a) || /^1\d{10}$/.test(a);
+      return /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(a);
     },
     subjectOptions() {
       // 九科：初中（grade>=7）额外显示物理/化学/生物/道德与法治/历史/地理
@@ -364,22 +364,13 @@ const appOptions = {
     /* ─────────── 登录 / 注册 / 退出 ─────────── */
     login() {
       const account = this.username.trim();
-      if (!account) return;
-      if (!this.isAccountCredential) return this.nicknameLogin();
+      if (!account) { this.showToast('请输入邮箱'); return; }
+      if (!this.isAccountCredential) { this.showToast('请输入有效的邮箱'); return; }
       if (!this.loginPwd) { this.showToast('请输入密码'); return; }
       this.api('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ account, password: this.loginPwd }),
       }).then(r => this.onLoginOk(r)).catch(e => this.showToast(e.message));
-    },
-    nicknameLogin() {
-      // 存量昵称账号快捷入口（受 ALLOW_NICKNAME_LOGIN 开关控制）
-      const name = this.username.trim();
-      this.api('/api/user/login', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: name }),
-      }).then(r => this.onLoginOk(Object.assign({ user_id: name }, r)))
-        .catch(e => this.showToast(e.message));
     },
     onLoginOk(r) {
       this.user = r.user_id;
@@ -405,7 +396,8 @@ const appOptions = {
     },
     register() {
       const target = this.regTarget.trim();
-      if (!target || this.regCode.trim().length < 6 || !this.regPwd) return;
+      if (!/^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(target)) { this.showToast('请输入有效的邮箱'); return; }
+      if (this.regCode.trim().length < 6 || !this.regPwd) return;
       this.api('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify({

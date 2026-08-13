@@ -1,20 +1,21 @@
-"""用户认证：邮箱/手机号验证码注册、密码登录、绑定、重置密码
+"""用户认证：邮箱验证码注册（字母数字 user_id）、邮箱+密码登录、绑定邮箱、重置密码
 
 规则：
+- 登录方式：邮箱 + 密码（昵称登录已关闭，ALLOW_NICKNAME_LOGIN=false）
+- 注册：仅邮箱，需邮箱验证码；user_id 由服务端生成随机「字母+数字」串，昵称仅作展示名
+- 手机号：暂不开放自注册与绑定（短信通道未配置）；仅保留找回密码的手机入口（实际仍受短信通道限制）
 - 验证码 6 位数字，5 分钟有效，校验失败 5 次作废，消费后 used=True
 - 频控：同一目标 60 秒内最多 1 条、每天最多 5 条
-- 短信通道预留未实现（SMS_PROVIDER 未配置时拒绝手机验证码）
-- 昵称快捷登录受 ALLOW_NICKNAME_LOGIN 开关控制（存量账号兼容）
 """
 import hashlib
 import logging
 import re
 import secrets
+import string
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..config import ALLOW_NICKNAME_LOGIN
@@ -85,6 +86,21 @@ def _classify(target: str) -> str:
 
 def _code_hash(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
+
+
+_USER_ID_ALPHABET = string.ascii_lowercase + string.digits
+
+
+def _gen_user_id(db: Session) -> str:
+    """生成随机「字母+数字」user_id（u 前缀 + 9 位），保证唯一。
+
+    新注册账号不再用昵称/邮箱作 user_id，避免 user_id 与昵称相同。
+    """
+    for _ in range(12):
+        uid = "u" + "".join(secrets.choice(_USER_ID_ALPHABET) for _ in range(9))
+        if not db.query(User).filter(User.user_id == uid).first():
+            return uid
+    raise HTTPException(500, "生成用户ID失败，请稍后重试")
 
 
 def _user_by_target(db: Session, target: str, channel: str):
@@ -191,12 +207,16 @@ def send_code(req: SendCodeReq, db: Session = Depends(get_db)):
     请求：{target(邮箱或手机号), purpose=register/bind/reset}；无需家长密码。
     返回：{ok, channel, expires_in(秒)}。
     副作用：频控（同目标 60 秒 1 条、每日 5 条）；落库 auth_codes（6 位、5 分钟有效）；
-            调用邮件/短信通道发送（未配置则 503/502）。register 时账号已存在、bind/reset 时账号状态不符则拒绝。
+            调用邮件/短信通道发送（未配置则 503/502）。register/bind 仅支持邮箱（手机号拒绝）；
+            reset 仍保留手机入口（实际受短信通道限制）。
     """
     target = (req.target or "").strip().lower() if "@" in (req.target or "") else (req.target or "").strip()
     if req.purpose not in PURPOSES:
         raise HTTPException(400, "验证码用途无效")
     channel = _classify(target)
+    # 暂不支持手机号自注册与绑定（短信通道未配置）
+    if req.purpose in ("register", "bind") and channel == "phone":
+        raise HTTPException(400, "暂不支持手机号注册/绑定，请使用邮箱")
     bound = _user_by_target(db, target, channel)
     if req.purpose == "register" and bound:
         raise HTTPException(400, "该账号已注册，请直接登录")
@@ -209,64 +229,54 @@ def send_code(req: SendCodeReq, db: Session = Depends(get_db)):
     return {"ok": True, "channel": channel, "expires_in": CODE_TTL_SEC}
 
 
-@router.post("/register", summary="邮箱/手机号注册（验证码 + 密码）")
+@router.post("/register", summary="邮箱注册（验证码 + 密码，user_id 随机字母数字）")
 def register(req: RegisterReq, db: Session = Depends(get_db)):
-    """邮箱/手机号注册（验证码 + 密码）。
+    """邮箱注册（验证码 + 密码，user_id 由服务端生成随机字母数字串）。
 
-    请求：{target, code, password, nickname?}；无需家长密码。
+    请求：{target(邮箱), code, password, nickname?}；无需家长密码。
     返回：统一登录态 {user_id, grade, subject, is_new, streak_days, created_at}。
-    副作用：校验验证码（消费）、校验密码强度；user_id 取昵称或账号、冲突追加数字后缀；
-            新建用户（默认 6 年级/英语）并落库、邮件/手机标记为已验证。
+    副作用：校验验证码（消费）、校验密码强度；user_id 为随机「字母+数字」串（u 前缀）；
+            昵称仅作展示名（缺省取邮箱前缀）；新建用户（默认 6 年级/英语）并落库、
+            邮箱标记为已验证。暂不支持手机号注册。
     """
-    target = req.target.strip()
+    target = req.target.strip().lower()
     channel = _classify(target)
+    if channel == "phone":
+        raise HTTPException(400, "暂不支持手机号注册，请使用邮箱")
     if _user_by_target(db, target, channel):
         raise HTTPException(400, "该账号已注册，请直接登录")
     _consume_code(db, "register", target, req.code)
     _validate_pwd(req.password)
 
-    # user_id 取昵称或目标账号，冲突时追加数字后缀
-    nickname = (req.nickname or "").strip()
-    base = nickname or (target if channel == "phone" else target.split("@")[0])
-    uid, n = base[:64], 0
-    while db.query(User).filter(User.user_id == uid).first():
-        n += 1
-        uid = f"{base[:58]}{n}"
+    # user_id 由服务端生成随机字母+数字，与昵称彻底解耦
+    uid = _gen_user_id(db)
+    nickname = (req.nickname or target.split("@")[0]).strip()[:64] or uid
     user = User(
-        user_id=uid, nickname=nickname or uid, auth_type=channel,
+        user_id=uid, nickname=nickname, auth_type="email",
         password_hash=_hash_pwd(req.password),
         grade=6, subject="英语",
+        email=target, email_verified=True,
         last_login_at=datetime.now(), last_login_date=date.today(),
     )
-    if channel == "email":
-        user.email, user.email_verified = target, True
-    else:
-        user.phone, user.phone_verified = target, True
     db.add(user)
     db.commit()
     return _login_payload(db, user, is_new=True)
 
 
-@router.post("/login", summary="账号密码登录（邮箱/手机号/昵称）")
+@router.post("/login", summary="邮箱+密码登录")
 def auth_login(req: LoginReq, db: Session = Depends(get_db)):
-    """账号密码登录（邮箱/手机号/昵称）。
+    """邮箱 + 密码登录（登录方式已统一为邮箱 + 密码）。
 
-    请求：{account, password}；无需家长密码。
+    请求：{account(邮箱), password}；无需家长密码。
     返回：统一登录态（见 _login_payload）。
-    副作用：按账号类型定位用户；无密码的账号要求先重置；校验通过后更新 last_login 并自动升级年级，无写库新建。
+    副作用：按邮箱定位用户；无密码的账号要求先重置；校验通过后更新 last_login 并自动升级年级。
     """
-    account = req.account.strip()
+    account = req.account.strip().lower()
     if not account:
-        raise HTTPException(400, "账号不能为空")
-    if EMAIL_RE.match(account):
-        user = db.query(User).filter(User.email == account).first()
-    elif PHONE_RE.match(account):
-        user = db.query(User).filter(User.phone == account).first()
-    else:
-        if not ALLOW_NICKNAME_LOGIN:
-            raise HTTPException(403, "昵称登录已关闭，请使用邮箱/手机号账号")
-        user = db.query(User).filter(
-            or_(User.user_id == account, User.nickname == account)).first()
+        raise HTTPException(400, "邮箱不能为空")
+    if not EMAIL_RE.match(account):
+        raise HTTPException(400, "请输入有效的邮箱")
+    user = db.query(User).filter(User.email == account).first()
     if not user:
         raise HTTPException(400, "账号不存在")
     if not user.password_hash:
@@ -287,17 +297,16 @@ def bind(req: BindReq, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.user_id == req.user_id.strip()).first()
     if not user:
         raise HTTPException(404, "用户不存在")
-    target = req.target.strip()
+    target = req.target.strip().lower()
     channel = _classify(target)
+    if channel == "phone":
+        raise HTTPException(400, "暂不支持绑定手机号，请使用邮箱")
     if _user_by_target(db, target, channel):
-        raise HTTPException(400, "该邮箱/手机号已被其他账号绑定")
+        raise HTTPException(400, "该邮箱已被其他账号绑定")
     _consume_code(db, "bind", target, req.code)
-    if channel == "email":
-        user.email, user.email_verified = target, True
-    else:
-        user.phone, user.phone_verified = target, True
+    user.email, user.email_verified = target, True
     db.commit()
-    return {"ok": True, "channel": channel}
+    return {"ok": True, "channel": "email"}
 
 
 @router.post("/reset-password", summary="验证码重置密码")
