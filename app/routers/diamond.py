@@ -10,14 +10,14 @@ from ..database import get_db
 from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
 from ..services import diamond as diamond_svc
 from .admin import _require_admin
-from .auth import require_user
+from .auth import require_self
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/diamond", tags=["diamond"])
 
 
-@router.get("/balance", summary="查询用户钻石余额", dependencies=[Depends(require_user)])
+@router.get("/balance", summary="查询用户钻石余额", dependencies=[Depends(require_self)])
 def get_balance(
     user_id: str = Query(..., description="用户名"),
     db: Session = Depends(get_db),
@@ -69,7 +69,7 @@ def grant_all(req: GrantAllRequest, db: Session = Depends(get_db)):
     return {"granted_count": count, "amount_per_user": req.amount}
 
 
-@router.get("/ledger", summary="查询钻石收支明细", dependencies=[Depends(require_user)])
+@router.get("/ledger", summary="查询钻石收支明细", dependencies=[Depends(require_self)])
 def get_ledger(
     user_id: str = Query(..., description="用户名"),
     limit: int = Query(50, ge=1, le=200),

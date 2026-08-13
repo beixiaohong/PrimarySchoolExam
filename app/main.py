@@ -17,7 +17,7 @@ from .database import init_db
 from .config import ENABLE_DOCS
 from .migrations.runner import run_migrations
 from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm
-from .routers.auth import require_user
+from .routers.auth import require_self
 from .services.init_data import ensure_initial_data
 
 # P5 工程化前端构建产物（Vite build 输出，唯一托管的前端）
@@ -49,8 +49,9 @@ app = FastAPI(
 )
 
 # 业务路由统一鉴权：除登录入口 /api/auth 与管理员 /api/admin 外，全部要求登录会话 token。
-# 注意：各接口仍保留 user_id 参数（家长代管孩子场景），token 仅证明「调用者已登录」。
-user_auth_deps = [Depends(require_user)]
+# 严格账号绑定：require_self 在登录校验基础上，强制请求中的 user_id == 当前登录账号，
+# 禁止用他人 user_id 操作/查他人数据（家长代管是同一账号 + 解锁密码，不受影响）。
+user_auth_deps = [Depends(require_self)]
 
 # 路由注册：业务逻辑模块挂载
 # 业务路由统一要求登录会话（Bearer token）；/api/auth 与 /api/admin 例外

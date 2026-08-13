@@ -14,7 +14,7 @@ import secrets
 import string
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -216,6 +216,44 @@ def require_user(authorization: str = Header(default=""),
     if user.token_expires_at and user.token_expires_at < datetime.now():
         raise HTTPException(401, "登录已过期，请重新登录")
     return user
+
+
+async def require_self(authorization: str = Header(default=""),
+                       request: Request = None,
+                       db: Session = Depends(get_db)) -> User:
+    """严格账号绑定：在登录校验基础上，强制请求中的 user_id == 当前登录账号。
+
+    返回登录用户；以下情况分别抛错：
+    - 未登录 / token 失效 → 401（同 require_user）
+    - 请求携带的 user_id 与登录账号不一致 → 403（禁止用他人 user_id 操作/查他人数据）
+
+    设计要点：家长模式 = 同一账号 + 家长密码解锁，故家长代管孩子不会触发 403（user_id 本就相等）。
+    任意登录用户也无法再查/改他人数据（含 /api/diamond/balance、/ledger 等此前仅「需登录」的接口）。
+    请求中未携带 user_id（部分只读接口可省略）时不做强制绑定，仍按登录账号处理下游逻辑。
+    """
+    user = require_user(authorization=authorization, db=db)
+    if request is not None:
+        # 优先 query；其次 await body 解析 JSON（Starlette 会缓存 body，不影响下游路由解析）
+        req_uid = request.query_params.get("user_id") or ""
+        if not req_uid:
+            try:
+                import json
+                ct = request.headers.get("content-type", "")
+                if "application/json" in ct:
+                    raw = await request.body()
+                    if raw:
+                        data = json.loads(raw)
+                        if isinstance(data, dict):
+                            req_uid = data.get("user_id") or ""
+            except Exception:
+                req_uid = ""
+        if req_uid and req_uid != user.user_id:
+            raise HTTPException(
+                403,
+                "无权访问该账号的数据（账号绑定校验未通过）",
+            )
+    return user
+
 
 
 # ═══════════════ 接口 ═══════════════
