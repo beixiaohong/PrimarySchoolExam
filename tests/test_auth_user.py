@@ -25,16 +25,19 @@ def test_register_full_flow(client, fake_mail):
     assert body["user_id"] == "小新"
     assert body["is_new"] is True
 
-    # 密码登录（邮箱账号）
+    # 密码登录（邮箱账号），返回含登录 token
     r = client.post("/api/auth/login",
                     json={"account": REG_EMAIL, "password": REG_PWD})
     assert r.status_code == 200, r.text
     assert r.json()["user_id"] == "小新"
+    token = r.json()["token"]
+    assert token
 
-    # /me 脱敏信息
-    r = client.get("/api/auth/me", params={"user_id": "小新"})
+    # /me 脱敏信息（需携带登录 token；不再接受 user_id 参数）
+    r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     body = r.json()
+    assert body["user_id"] == "小新"
     assert body["auth_type"] == "email"
     assert body["has_password"] is True
     assert "***" in body["email"]
@@ -85,3 +88,24 @@ def test_login_wrong_password(client, fake_mail):
     r = client.post("/api/auth/login",
                     json={"account": REG_EMAIL, "password": "WrongPwd1"})
     assert r.status_code == 403
+
+
+def test_business_endpoint_requires_login():
+    """业务接口未携带登录 token 必须 401（安全回归）"""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        # 不带 Authorization 头直接访问业务接口
+        r = c.get("/api/user/grade", params={"user_id": "test_auth_uid"})
+        assert r.status_code == 401
+
+
+def test_docs_disabled_by_default():
+    """生产默认关闭 Swagger/ReDoc/OpenAPI 文档（安全回归）"""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        assert c.get("/docs").status_code == 404
+        assert c.get("/redoc").status_code == 404
+        assert c.get("/openapi.json").status_code == 404
+

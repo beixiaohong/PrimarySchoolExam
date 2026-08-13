@@ -43,15 +43,69 @@ except Exception as e:  # 无建库权限或库已存在时降级，连接阶段
 from fastapi.testclient import TestClient  # noqa: E402
 
 
+class AuthClient:
+    """测试用客户端：自动为所有业务请求注入一个已登录用户的 Bearer token。
+
+    业务接口现已统一要求登录（require_user）。集成测试只需关注业务逻辑，
+    不必逐条带 token；管理员接口仍可在调用时显式传 headers（会覆盖此处注入）。
+    """
+
+    def __init__(self, client, token):
+        self._c = client
+        self._h = {"Authorization": f"Bearer {token}"}
+
+    def _merge(self, kwargs):
+        h = dict(self._h)
+        h.update(kwargs.pop("headers", None) or {})
+        kwargs["headers"] = h
+        return kwargs
+
+    def get(self, *a, **k):
+        return self._c.get(*a, **self._merge(k))
+
+    def post(self, *a, **k):
+        return self._c.post(*a, **self._merge(k))
+
+    def put(self, *a, **k):
+        return self._c.put(*a, **self._merge(k))
+
+    def delete(self, *a, **k):
+        return self._c.delete(*a, **self._merge(k))
+
+    def __getattr__(self, name):
+        return getattr(self._c, name)
+
+
 @pytest.fixture(scope="session")
 def client():
-    """会话级 TestClient：进入前 drop_all 重建测试库，lifespan 负责建表+迁移+种子。"""
-    from app.database import Base, engine
+    """会话级 TestClient：进入前 drop_all 重建测试库，lifespan 负责建表+迁移+种子。
+
+    同时注入一个已登录测试用户（test_auth_uid）的 token，使业务接口鉴权在测试中可通过。
+    """
+    from app.database import Base, engine, SessionLocal
+    from app.models.user import User
+    from app.config import USER_TOKEN_TTL_HOURS
+    import secrets
+    from datetime import datetime, timedelta
     # 清空测试库，保证每次测试会话从干净状态开始（仅作用于 _test 库）
     Base.metadata.drop_all(bind=engine)
     from app.main import app
     with TestClient(app) as c:
-        yield c
+        db = SessionLocal()
+        try:
+            u = db.query(User).filter(User.user_id == "test_auth_uid").first()
+            if not u:
+                u = User(user_id="test_auth_uid", nickname="test",
+                         email="test_auth@test.com", auth_type="email",
+                         email_verified=True, grade=6, subject="英语")
+                db.add(u)
+            u.token = secrets.token_urlsafe(32)
+            u.token_expires_at = datetime.now() + timedelta(hours=USER_TOKEN_TTL_HOURS)
+            db.commit()
+            token = u.token
+        finally:
+            db.close()
+        yield AuthClient(c, token)
 
 
 @pytest.fixture(autouse=True)
