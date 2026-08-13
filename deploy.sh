@@ -76,18 +76,17 @@ if [ ! -f "$APP_DIR/.env" ]; then
 fi
 
 # ---------- 3.6 构建前端（web/dist） ----------
-info "检查前端构建产物..."
-if [ -f "$APP_DIR/web/dist/index.html" ]; then
-    info "web/dist 已存在，跳过前端构建"
-elif command -v npm &>/dev/null && [ -f "$APP_DIR/web/package.json" ]; then
-    info "构建前端（npm ci + vite build）..."
+# 重要：前端改动（App.vue / appOptions.js / style.css 等）只有在「重新构建」后才会生效。
+# 因此每次部署都重新构建，不因为 web/dist 已存在而跳过——
+# 否则拉取新代码后再跑本脚本，仍会服务旧的构建产物（界面不更新，如首页三块、兑换券输入框等）。
+info "构建前端（npm ci + vite build）..."
+if command -v npm &>/dev/null && [ -f "$APP_DIR/web/package.json" ]; then
     (cd "$APP_DIR/web" && npm ci --no-audit --no-fund && npm run build) \
         && info "前端构建完成" \
-        || warn "前端构建失败：部署后访问 / 会返回「前端未构建」提示，需手动 build"
+        || error "前端构建失败：请检查 Node 版本(需 18+) 与 web/package.json，构建未成功将导致前端不可用"
     chown -R "$APP_USER:$APP_USER" "$APP_DIR/web/dist" 2>/dev/null || true
 else
-    warn "未安装 Node.js/npm 且 web/dist 不存在：部署后访问 / 会返回「前端未构建」提示；"
-    warn "如需前端：安装 Node 18+ 后执行 cd $APP_DIR/web && npm ci && npm run build"
+    error "未安装 Node.js/npm 或缺少 web/package.json：无法构建前端。请先安装 Node 18+ 后重试。"
 fi
 
 # ---------- 4. 配置 systemd 服务 ----------
@@ -216,10 +215,10 @@ echo "    查看日志:  journalctl -u ${APP_NAME} -f"
 echo "    重启应用:  systemctl restart ${APP_NAME}"
 echo "    重启Nginx: systemctl restart nginx"
 echo ""
-echo "  更新代码后:"
-echo "    cd ${APP_DIR} && git pull"
-echo "    cd web && npm ci && npm run build   # 前端有改动时需重新构建"
-echo "    systemctl restart ${APP_NAME}"
+echo "  更新代码后（deploy.sh 已改为每次重新构建前端，无需手动 build）:"
+echo "    cd ${APP_DIR} && git pull && sudo bash deploy.sh"
+echo "    # 若只改了前端且已 pull，也可仅："
+echo "    cd web && npm ci && npm run build && systemctl restart ${APP_NAME}"
 echo ""
 echo "  运行自动化测试（需先 pip install -r requirements-dev.txt）:"
 echo "    ${APP_DIR}/venv/bin/python -m pytest tests -q"
