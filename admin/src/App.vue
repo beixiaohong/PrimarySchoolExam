@@ -10,6 +10,9 @@
           <el-menu-item index="/">仪表盘</el-menu-item>
           <el-menu-item index="/users">用户管理</el-menu-item>
           <el-menu-item index="/analytics">运营分析</el-menu-item>
+          <el-menu-item index="/datacenter">数据中心</el-menu-item>
+          <el-menu-item index="/manage">账本·IM 管理</el-menu-item>
+          <el-menu-item index="/announcements">系统公告</el-menu-item>
         </el-menu>
         <div class="side-foot">
           <span class="uname">{{ username }}</span>
