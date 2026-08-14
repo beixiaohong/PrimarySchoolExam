@@ -133,6 +133,12 @@ def _send_code(db: Session, purpose: str, target: str) -> None:
     ))
     db.commit()
 
+    # 关键：落库完成后立即关闭 DB 会话，释放连接，再进行外部阻塞调用
+    # （SMTP/SMS 最长可达 90s）。否则连接被 get_db 会话占着直到外部调用结束，
+    # 注册/找回密码并发时抽干连接池导致全站卡死（同 267c32c 修复的 AI 接口反模式）。
+    # 调用方 send_code 在 _send_code 之后不再使用 db，关闭安全（get_db 的 finally 会幂等再关一次）。
+    db.close()
+
     if channel == "email":
         if not mail_configured():
             raise HTTPException(503, "邮件通道未配置，请联系管理员")

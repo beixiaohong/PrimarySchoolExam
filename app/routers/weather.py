@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..models.user import User
 from ..services import sysconfig
 
@@ -121,8 +121,7 @@ def _fetch_weather(city_query: str) -> dict:
 # ═══════════════ 接口 ═══════════════
 
 @router.get("/current", summary="当前天气（城市参数 > 用户配置城市 > IP 定位 > 默认城市）")
-def get_current_weather(request: Request, city: str = None, user_id: str = None,
-                        db: Session = Depends(get_db)):
+def get_current_weather(request: Request, city: str = None, user_id: str = None):
     """获取当前天气（实时 + 三日预报）。
 
     城市解析顺序：URL 参数 city → 用户配置城市（传 user_id 时）→ IP 定位 → 默认城市(北京)。
@@ -130,14 +129,20 @@ def get_current_weather(request: Request, city: str = None, user_id: str = None,
     参数（Query）：city、user_id。
     返回：{city, now, forecast[], update_time, cached}；未配置 API Key 返回 503。
     副作用：无（只读，可能写 IP/天气缓存）。无需家长密码。
+
+    严谨性：用户城市查询用短会话（SessionLocal + 即关），绝不把 DB 连接带到
+    后续的外部天气 API 调用（_fetch_weather 含 3 次同步 requests.get，最坏 ~30s）；
+    否则连接被占、并发时抽干连接池导致全站卡死（同 267c32c 修复的 AI 接口反模式）。
     """
     if not weather_configured():
         raise HTTPException(503, "天气服务未配置（QWEATHER_API_KEY）")
 
     target = (city or "").strip()
     if not target and user_id:
-        user = db.query(User).filter(User.user_id == user_id.strip()).first()
-        target = (user.city or "").strip() if user else ""
+        # 短会话：仅查用户城市，立即释放连接，避免占用到外部 API 调用期间
+        with SessionLocal() as s:
+            user = s.query(User).filter(User.user_id == user_id.strip()).first()
+            target = (user.city or "").strip() if user else ""
     if not target:
         target = _get_city_by_ip(_get_client_ip(request))
 
