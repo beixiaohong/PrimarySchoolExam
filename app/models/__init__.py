@@ -32,6 +32,7 @@ from .parent_custom_task import ParentCustomTask
 from .task_confirm import TaskConfirm
 from .ledger import Bill, Account, Location, Merchant, Person, Project, Category, NotificationLog, UserReportSettings, RecurringTransaction
 from .im import Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim, ReadReceipt
+from .announcement import Announcement
 
 __all__ = [
     "Word", "WordBook",
@@ -70,4 +71,5 @@ __all__ = [
     "Bill", "Account", "Location", "Merchant", "Person", "Project", "Category",
     "NotificationLog", "UserReportSettings", "RecurringTransaction",
     "Chat", "Message", "Friendship", "GroupMember", "RedPacket", "RedPacketClaim", "ReadReceipt",
+    "Announcement",
 ]

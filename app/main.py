@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from .database import init_db
 from .config import ENABLE_DOCS
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm, ledger, im
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm, ledger, im, admin_panel, announcement
 from .routers.auth import require_self
 from .services.init_data import ensure_initial_data
 from .logging_setup import apply_logging
@@ -100,6 +100,10 @@ app.include_router(task_confirm.router, prefix="/api/task-confirm", tags=["完�
 # 账本(ledger)与即时通讯(im)：路由内部已用 require_user 鉴权，不挂全局 user_auth_deps
 app.include_router(ledger.router, prefix="/api/ledger", tags=["个人账本"])
 app.include_router(im.router, prefix="/api/im", tags=["即时通讯"])
+# 后台扩展功能（数据看板/账本·IM 管理/公告）：内部用 _require_admin 鉴权
+app.include_router(admin_panel.router, prefix="/api/admin", tags=["管理后台-扩展"])
+# 学生端公告/站内信：内部用 require_user 鉴权
+app.include_router(announcement.router, prefix="/api/announcements", tags=["系统公告"])
 
 # 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
 # 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。
