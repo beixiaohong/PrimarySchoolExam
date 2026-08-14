@@ -1,7 +1,10 @@
 <template>
   <div>
-    <el-button text @click="$router.push('/users')">← 返回用户列表</el-button>
-    <h2>用户详情：{{ userId }}</h2>
+    <div style="display:flex;align-items:center;gap:12px">
+      <el-button text @click="$router.push('/users')">← 返回用户列表</el-button>
+      <h2 style="margin:0">用户详情：{{ userId }}</h2>
+      <el-button type="primary" size="small" @click="openEdit">编辑资料</el-button>
+    </div>
 
     <el-descriptions border :column="4" style="margin: 12px 0">
       <el-descriptions-item label="昵称">{{ info.nickname || '-' }}</el-descriptions-item>
@@ -15,6 +18,12 @@
       <el-descriptions-item label="补签卡">{{ info.makeup_cards }}</el-descriptions-item>
       <el-descriptions-item label="注册">{{ info.created_at || '-' }}</el-descriptions-item>
     </el-descriptions>
+
+    <div class="ops">
+      <el-button size="small" @click="openResetPwd">重置密码</el-button>
+      <el-button v-if="!info.is_vip" size="small" type="warning" @click="openAddVip">设为 VIP</el-button>
+      <el-button v-else size="small" type="danger" @click="removeVip">取消 VIP</el-button>
+    </div>
 
     <el-tabs v-model="tab">
       <!-- 学习记录 -->
@@ -71,6 +80,67 @@
                       @current-change="(p) => { ledgerPage = p; loadLedger() }" />
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 编辑资料弹窗 -->
+    <el-dialog v-model="editOpen" title="编辑用户资料" width="460px">
+      <el-form label-width="72px">
+        <el-form-item label="昵称">
+          <el-input v-model="editForm.nickname" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="年级">
+          <el-input-number v-model="editForm.grade" :min="1" :max="12" />
+        </el-form-item>
+        <el-form-item label="学科">
+          <el-input v-model="editForm.subject" maxlength="20" placeholder="如 英语/数学/语文" />
+        </el-form-item>
+        <el-form-item label="城市">
+          <el-input v-model="editForm.city" maxlength="50" placeholder="用于首页天气" />
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="editForm.email" placeholder="留空表示解绑" />
+        </el-form-item>
+        <el-form-item label="手机">
+          <el-input v-model="editForm.phone" placeholder="留空表示解绑" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editOpen = false">取消</el-button>
+        <el-button type="primary" :loading="editSaving" @click="saveProfile">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 重置密码弹窗 -->
+    <el-dialog v-model="pwdOpen" title="重置登录密码" width="420px">
+      <el-form label-width="80px">
+        <el-form-item label="目标账号">
+          <el-input :model-value="userId" disabled />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="pwdForm.password" type="password" show-password
+                    maxlength="32" placeholder="4-32 位" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pwdOpen = false">取消</el-button>
+        <el-button type="primary" :loading="pwdSaving" @click="submitResetPwd">确认重置</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- VIP 设置弹窗 -->
+    <el-dialog v-model="vipOpen" title="设置 VIP" width="420px">
+      <el-form label-width="80px">
+        <el-form-item label="目标账号">
+          <el-input :model-value="userId" disabled />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="vipForm.note" placeholder="开通原因/有效期" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="vipOpen = false">取消</el-button>
+        <el-button type="primary" :loading="vipSaving" @click="submitAddVip">确认开通</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -129,6 +199,98 @@ async function loadInfo() {
   info.value = data.items.find((u) => u.user_id === userId) || {}
 }
 
+// 编辑资料
+const editOpen = ref(false)
+const editSaving = ref(false)
+const editForm = ref({ nickname: '', grade: 6, subject: '', city: '', email: '', phone: '' })
+
+function openEdit() {
+  editForm.value = {
+    nickname: info.value.nickname || '',
+    grade: info.value.grade || 6,
+    subject: info.value.subject || '',
+    city: info.value.city || '',
+    email: info.value.email || '',
+    phone: info.value.phone || '',
+  }
+  editOpen.value = true
+}
+
+async function saveProfile() {
+  editSaving.value = true
+  try {
+    await api.put('/api/admin/users/' + encodeURIComponent(userId), { ...editForm.value })
+    ElMessage.success('资料已更新')
+    editOpen.value = false
+    loadInfo()
+  } catch (e) {
+    ElMessage.error((e.response && e.response.data && e.response.data.detail) || '保存失败')
+  } finally {
+    editSaving.value = false
+  }
+}
+
+// 重置密码（复用 POST /api/admin/users/account reset_password）
+const pwdOpen = ref(false)
+const pwdSaving = ref(false)
+const pwdForm = ref({ password: '' })
+function openResetPwd() {
+  pwdForm.value = { password: '' }
+  pwdOpen.value = true
+}
+async function submitResetPwd() {
+  const pw = pwdForm.value.password
+  if (!pw || pw.length < 4 || pw.length > 32) {
+    ElMessage.warning('密码需 4-32 位')
+    return
+  }
+  pwdSaving.value = true
+  try {
+    await api.post('/api/admin/users/account', {
+      user_id: userId, action: 'reset_password', value: pw,
+    })
+    ElMessage.success('密码已重置')
+    pwdOpen.value = false
+  } catch (e) {
+    ElMessage.error((e.response && e.response.data && e.response.data.detail) || '操作失败')
+  } finally {
+    pwdSaving.value = false
+  }
+}
+
+// VIP 设置（复用 POST /api/admin/vip add/remove）
+const vipOpen = ref(false)
+const vipSaving = ref(false)
+const vipForm = ref({ note: '' })
+function openAddVip() {
+  vipForm.value = { note: '' }
+  vipOpen.value = true
+}
+async function submitAddVip() {
+  vipSaving.value = true
+  try {
+    await api.post('/api/admin/vip', {
+      user_id: userId, action: 'add', note: vipForm.value.note,
+    })
+    ElMessage.success('已开通 VIP')
+    vipOpen.value = false
+    loadInfo()
+  } catch (e) {
+    ElMessage.error((e.response && e.response.data && e.response.data.detail) || '操作失败')
+  } finally {
+    vipSaving.value = false
+  }
+}
+async function removeVip() {
+  try {
+    await api.post('/api/admin/vip', { user_id: userId, action: 'remove' })
+    ElMessage.success('已取消 VIP')
+    loadInfo()
+  } catch (e) {
+    ElMessage.error((e.response && e.response.data && e.response.data.detail) || '操作失败')
+  }
+}
+
 watch(tab, (t) => {
   if (t === 'ledger') loadLedger()
 })
@@ -141,6 +303,7 @@ onMounted(() => {
 
 <style scoped>
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; }
+.ops { margin: 12px 0; display: flex; gap: 10px; align-items: center; }
 .sum { margin-left: 8px; font-size: 14px; color: #303133; }
 .det { color: #909399; font-size: 12px; margin-top: 2px; }
 </style>
