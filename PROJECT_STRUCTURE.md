@@ -8,12 +8,12 @@
 
 | 层 | 技术 | 说明 |
 |---|---|---|
-| 后端框架 | FastAPI + Uvicorn | Python 3.12，ASGI 异步服务，31 个路由模块 |
-| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（40 个版本脚本，MySQL-only，基线策略见下） |
+| 后端框架 | FastAPI + Uvicorn | Python 3.12，ASGI 异步服务，38 个路由模块 |
+| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（42 个版本脚本，MySQL-only，基线策略见下） |
 | 前端 | Vue 3 + Vite 工程化（web/） | SPA，构建产物 web/dist 由后端托管（已移除旧版 frontend/ 与 frontend-admin/） |
 | AI 接入 | 智谱 GLM / Relay 中转 / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档生成 | python-docx + matplotlib + edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | tests/ 目录 58 个回归用例（9 个文件），独立 MySQL 测试库（DB_NAME + _test）隔离 |
+| 测试 | pytest + FastAPI TestClient | tests/ 目录 58 个回归用例（14 个文件），独立 MySQL 测试库（DB_NAME + _test）隔离 |
 
 ---
 
@@ -36,7 +36,7 @@ PROJECT_STRUCTURE.md            # 本文件
 
 ```
 app/__init__.py                 # 包标识
-app/main.py                     # FastAPI 应用工厂：注册 31 个路由、lifespan 启动流程
+app/main.py                     # FastAPI 应用工厂：注册 38 个路由、lifespan 启动流程
 app/config.py                   # 全局配置：数据库路径、输出目录、默认参数
 app/database.py                 # SQLAlchemy 引擎、会话工厂、Base 声明、init_db()
 ```
@@ -79,7 +79,7 @@ app/schemas/vocab.py            # 单词学习/复习/统计 Schema
 app/schemas/word.py             # 单词/词书 CRUD + 导入 Schema
 ```
 
-### app/routers/ — API 路由（31 个文件）
+### app/routers/ — API 路由（38 个文件）
 
 ```
 app/routers/__init__.py
@@ -137,7 +137,7 @@ app/services/semester.py        # 学期判断公共函数（9-1月=上/2-8月=�
 ```
 app/migrations/__init__.py
 app/migrations/runner.py        # 迁移执行器（启动时自动运行，幂等执行）
-app/migrations/versions/        # 33 个版本化迁移脚本
+app/migrations/versions/        # 42 个版本化迁移脚本（001-025 为 MySQL 下不执行的 SQLite 历史基线）
     001_exam_records_user_id.py    # 对齐 exam_records.user_id 列
     002_classical_seed.py          # 导入古诗文种子数据（1-6 年级）
     003_daily_tasks.py             # 创建 daily_tasks 表
@@ -191,7 +191,7 @@ app/data/sentences_primary_school.csv  # 77 个英语句子
 ### app/tools/
 
 ```
-app/tools/wulal.py              # PDF 转图片工具（PyMuPDF）
+# app/tools/ 当前无源码文件（wulal.py 已于优化清理中删除：全仓零调用，PDF 预览走 PyMuPDF 按需另装）
 ```
 
 ### frontend/ 与 frontend-admin/（已删除）
@@ -213,7 +213,7 @@ web/src/styles/style.css        # 样式表
 web/dist/                       # 构建产物（gitignore，部署时 npm run build 生成）
 ```
 
-### tests/ — pytest 回归套件（58 用例 / 9 文件）
+### tests/ — pytest 回归套件（58 用例 / 14 文件）
 
 ```
 tests/conftest.py               # 独立 MySQL 测试库（DB_NAME + _test）+ session 级 TestClient + AI/邮件打桩

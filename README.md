@@ -68,12 +68,12 @@
 
 | 层 | 技术 | 说明 |
 |---|---|---|
-| 后端 | FastAPI + Uvicorn | Python 3.12，31 个 API 路由模块 |
-| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（40 个版本脚本，001-025 历史基线 + 026+ 幂等执行，均仅 MySQL） |
+| 后端 | FastAPI + Uvicorn | Python 3.12，38 个 API 路由模块 |
+| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（42 个版本脚本，001-025 为 MySQL 下不执行的 SQLite 历史基线、026+ 为生效的幂等迁移） |
 | 前端 | Vue 3 + Vite 工程化（`web/`） | SPA，构建产物 `web/dist` 由后端托管 |
 | AI | 智谱 / Relay / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
 | 文档与媒体 | python-docx / matplotlib / edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | 58 个回归用例（9 个文件），独立 MySQL 测试库（`DB_NAME` + `_test`）隔离，AI/邮件全打桩 |
+| 测试 | pytest + FastAPI TestClient | 58 个回归用例（14 个文件），独立 MySQL 测试库（`DB_NAME` + `_test`）隔离，AI/邮件全打桩 |
 
 ---
 

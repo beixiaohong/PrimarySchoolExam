@@ -25,22 +25,25 @@ from ..models.problem_type import ProblemType
 from ..models.middle import TeachingProgress
 from ..models.sync import SyncQuizLog
 from ..services.semester import current_semester, next_semester
+from ..config import QUIZ_SECRET
 
 # ── 小测答案令牌（无状态签名）──
-_QUIZ_SECRET = "zhixue_sync_quiz_v1"
+# 签名密钥来自 app/config.QUIZ_SECRET（由 .env 的 QUIZ_SECRET 配置，便于轮换），
+# 不再硬编码于源码。默认值与历史值一致，存量签名令牌无需重新签发即可继续验签。
+
 
 
 def _sign(payload: dict) -> str:
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     b = base64.b64encode(raw).decode("ascii")
-    sig = hmac.new(_QUIZ_SECRET.encode(), b.encode(), hashlib.sha256).hexdigest()[:16]
+    sig = hmac.new(QUIZ_SECRET.encode(), b.encode(), hashlib.sha256).hexdigest()[:16]
     return f"{b}.{sig}"
 
 
 def _unsign(token: str) -> Optional[dict]:
     try:
         b, sig = token.rsplit(".", 1)
-        exp = hmac.new(_QUIZ_SECRET.encode(), b.encode(), hashlib.sha256).hexdigest()[:16]
+        exp = hmac.new(QUIZ_SECRET.encode(), b.encode(), hashlib.sha256).hexdigest()[:16]
         if not hmac.compare_digest(exp, sig):
             return None
         return json.loads(base64.b64decode(b.encode()))

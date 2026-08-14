@@ -54,7 +54,6 @@ ALLOW_NICKNAME_LOGIN = os.environ.get("ALLOW_NICKNAME_LOGIN", "false").strip().l
 # 默认指向 /qr/xxx.png（与 public/qr 对应）；如需改用外链图床或自定义文件名，用环境变量覆盖即可。
 RECHARGE_WECHAT_QR = os.environ.get("RECHARGE_WECHAT_QR", "/qr/wx.png").strip()    # 微信收款二维码
 RECHARGE_ALIPAY_QR = os.environ.get("RECHARGE_ALIPAY_QR", "/qr/zfb.jpg").strip()   # 支付宝收款二维码
-RECHARGE_CS_WX_QR = os.environ.get("RECHARGE_CS_WX_QR", "/qr/cs_wx.png").strip()   # 客服微信加好友二维码
 RECHARGE_CS_CONTACT = os.environ.get("RECHARGE_CS_CONTACT", "beidou669").strip()  # 客服联系方式（微信号 / QQ 等），需自行填写
 RECHARGE_RATE = 1  # 汇率：1 元 = RECHARGE_RATE 钻石（固定 1:1）
 
@@ -64,3 +63,5 @@ RECHARGE_RATE = 1  # 汇率：1 元 = RECHARGE_RATE 钻石（固定 1:1）
 ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "false").strip().lower() in ("1", "true", "yes", "on")
 # 普通用户登录会话 token 有效期（小时），与管理员一致
 USER_TOKEN_TTL_HOURS = int(os.environ.get("USER_TOKEN_TTL_HOURS", "12"))
+# 同步学单元小测答案令牌的 HMAC 签名密钥（原硬编码于 sync_service.py，现外置以便轮换）
+QUIZ_SECRET = os.environ.get("QUIZ_SECRET", "zhixue_sync_quiz_v1")
