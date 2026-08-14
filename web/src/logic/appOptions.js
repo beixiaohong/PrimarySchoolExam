@@ -353,7 +353,7 @@ const appOptions = {
           // 401：登录态失效，清除本地会话并回到登录页
           if (r.status === 401) {
             const hadSession = !!localStorage.getItem('zx_user');
-            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); } catch (e) {}
+            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd'); } catch (e) {}
             if (path.indexOf('/api/auth/') === -1) {
               // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
               // 返回永不 resolve 的 Promise，阻止各业务 .catch 弹出重复的"登录已过期" toast——
@@ -510,7 +510,6 @@ const appOptions = {
     logout() {
       localStorage.removeItem('zx_user');
       localStorage.removeItem('zx_token');
-      sessionStorage.removeItem('zx_parent_open');
       sessionStorage.removeItem('zx_parent_pwd');
       this.user = ''; this.username = ''; this.tab = 'home'; this.showGradeModal = false;
       this.loginPwd = ''; this.authInfo = {}; this.authMode = 'login';
@@ -1282,7 +1281,7 @@ const appOptions = {
           // 401：登录态失效，与 api() 一致清会话+跳登录页，不抛错避免重复弹 toast
           if (r.status === 401) {
             const hadSession = !!localStorage.getItem('zx_user');
-            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); } catch (e) {}
+            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd'); } catch (e) {}
             if (hadSession) location.href = '/';
             return;
           }
@@ -1956,7 +1955,6 @@ const appOptions = {
     },
     /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
     exitParentMode() {
-      sessionStorage.removeItem('zx_parent_open');
       sessionStorage.removeItem('zx_parent_pwd');
       this.parentPhase = 'locked';
       this._resetPwdForm();
@@ -1964,8 +1962,8 @@ const appOptions = {
       this.showToast('已退出家长模式 🔒');
     },
     initParentPanel() {
-      // 会话内已解锁过（sessionStorage），直接打开
-      if (sessionStorage.getItem('zx_parent_open') === '1') { this.parentPhase = 'open'; this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); return; }
+      // 每次进入家长管理都重新校验密码状态：已设密码则必须输密码解锁，不再依赖会话记忆免密进入
+      // （sessionStorage 在同标签页刷新时不清除，会导致「解锁一次→刷新仍是家长模式」的安全隐患）
       this.api(`/api/parent/status?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
           this.parentPhase = (d && d.has_password) ? 'locked' : 'unset';
@@ -1987,7 +1985,6 @@ const appOptions = {
       }).then(() => {
         this._resetPwdForm();
         this.parentPhase = 'open';
-        sessionStorage.setItem('zx_parent_open', '1');
         sessionStorage.setItem('zx_parent_pwd', pwd);
         this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('家长密码已设置，家长管理已解锁 🔓');
@@ -2001,7 +1998,6 @@ const appOptions = {
       }).then(() => {
         this._resetPwdForm();
         this.parentPhase = 'open';
-        sessionStorage.setItem('zx_parent_open', '1');
         sessionStorage.setItem('zx_parent_pwd', pwd);
         this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('欢迎回来，家长 👋');
@@ -2030,7 +2026,7 @@ const appOptions = {
       }).then(() => {
         this._resetPwdForm();
         // 家长面板处于解锁态时同步更新本地缓存密码，避免后续敏感接口 403
-        if (sessionStorage.getItem('zx_parent_open') === '1') sessionStorage.setItem('zx_parent_pwd', new1);
+        if (sessionStorage.getItem('zx_parent_pwd')) sessionStorage.setItem('zx_parent_pwd', new1);
         this.showToast('家长密码已修改 ✅');
       }).catch(e => this.showToast(e.message));
     },

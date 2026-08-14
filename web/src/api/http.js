@@ -15,7 +15,7 @@ export function api(path, opts = {}) {
     // 401：登录态失效，清除本地会话并回到登录页
     if (r.status === 401) {
       const hadSession = !!localStorage.getItem('zx_user')
-      try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token') } catch (e) {}
+      try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd') } catch (e) {}
       if (path.indexOf('/api/auth/') === -1) {
         // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
         // 返回永不 resolve 的 Promise，阻止各业务 .catch 弹出重复的"登录已过期" toast
