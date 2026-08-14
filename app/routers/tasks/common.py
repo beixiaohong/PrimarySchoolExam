@@ -1,39 +1,24 @@
-"""每日任务 API：3 强制 + 3 可选双轨制
-
-强制任务（每科 1 条，固定不变）：
-- 数学：完成 1 套数学练习
-- 语文：背诵古诗文（含新背+复习）
-- 英语：学单词（含新学+复习）
-→ 三科强制全部完成 = 当天全勤，计入卡券进度
-
-可选任务（系统每日从任务池随机生成 3 条）：
-→ 全部完成获得 1 张补签卡（可补签中断日）
-→ 不可更换，系统自动分配
-"""
+"""每日任务路由包：常量与共享辅助函数（内部使用，无路由）"""
 import hashlib
 import json
 import logging
 import re
 from datetime import date, datetime, time as dtime, timedelta
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from fastapi import HTTPException
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..services.parent_guard import ensure_parent_pwd
-from ..models.daily_task import DailyTask
-from ..models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
-from ..models.vocab import VocabDailyLog
-from ..models.classical import ClassicalDailyLog
-from ..models.study_error import StudyError
-from ..models.makeup_card import MakeupCard, MakeupUsageLog
-from ..models.parent_custom_task import ParentCustomTask
+from app.database import get_db
+from app.models.daily_task import DailyTask
+from app.models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
+from app.models.vocab import VocabDailyLog
+from app.models.classical import ClassicalDailyLog
+from app.models.study_error import StudyError
+from app.models.makeup_card import MakeupCard, MakeupUsageLog
+from app.models.parent_custom_task import ParentCustomTask
 
 logger = logging.getLogger(__name__)
-
-router = APIRouter()
 
 SUBJECTS = ["数学", "语文", "英语"]
 
@@ -261,62 +246,6 @@ def _task_def_by_code(code: str) -> dict | None:
     return None
 
 
-class SettingsRequest(BaseModel):
-    user_id: str
-    settings: dict = Field(default_factory=dict)
-
-
-@router.get("/settings", summary="获取每日任务配置（目标+启用+强制/可选）")
-def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
-    """获取每日任务配置（目标数/启用状态/追加强制任务/背诵额度/可选任务/学习开关）。
-
-    参数（Query）：user_id。
-    返回：{items[{code,subject,title,default,target,enabled,manual}], mandatory{学科:[追加codes]},
-          quotas{每日新学单词/古诗文数}, optional[家长添加的可选code], study_flags{include_next/sync_mode/xsc_bridge}}。
-    副作用：无（只读）。无需家长密码。
-    """
-    user = _load_settings(db, user_id)
-    targets = user.get("targets", {})
-    enabled_map = user.get("enabled", {})
-    mandatory_map = user.get("mandatory", {})
-    items = []
-    all_tasks = list(MANDATORY_TASKS.values()) + OPTIONAL_POOL
-    for code in CONFIGURABLE_CODES:
-        item = next((t for t in all_tasks if t["code"] == code), None)
-        if not item:
-            continue
-        subj = item.get("subject", "")
-        if not subj:
-            subj = next((s for s, t in MANDATORY_TASKS.items() if t["code"] == code), "")
-        items.append({
-            "code": code, "subject": subj, "title": item["title"],
-            "default": item["target"], "target": targets.get(code, item["target"]),
-            "enabled": enabled_map.get(code, True),
-            "manual": item.get("manual", False),
-        })
-    current_mandatory = {}
-    for subj in SUBJECTS:
-        # 返回家长追加的强制任务 code 列表（默认任务后端保证存在，不存配置）
-        current_mandatory[subj] = [c for c in mandatory_map.get(subj, [])
-                                   if isinstance(c, str)]
-    quotas = {k: int(user.get("quotas", {}).get(k, d)) for k, (_, _, d) in QUOTA_KEYS.items()}
-    # 背诵类任务不在可配置列表，但作为强制任务时仍需返回 target 供前端回显数量
-    for code in _UNCONFIGURABLE_CODES:
-        item = next((t for t in all_tasks if t["code"] == code), None)
-        if not item:
-            continue
-        subj = next((s for s, t in MANDATORY_TASKS.items() if t["code"] == code), "")
-        items.append({
-            "code": code, "subject": subj, "title": item["title"],
-            "default": item["target"], "target": targets.get(code, item["target"]),
-            "enabled": True, "manual": item.get("manual", False),
-        })
-    return {"items": items, "mandatory": current_mandatory, "quotas": quotas,
-            "optional": user.get("optional", []),
-            "study_flags": {k: bool(_load_study_flags(db, user_id).get(k, False))
-                            for k in STUDY_FLAG_KEYS}}
-
-
 def _bounded_target(code: str, v: int) -> int:
     """目标数上下限校验：全局 1-50，个别任务可另设下限"""
     lo = max(MIN_TARGET, CODE_MIN_TARGET.get(code, MIN_TARGET))
@@ -338,145 +267,6 @@ def get_daily_quota(db: Session, user_id: str, key: str) -> int:
 
 # 学习开关（settings_json 顶层 bool）：预习下学期 / 课堂同步 / 小升初衔接
 STUDY_FLAG_KEYS = ("include_next", "sync_mode", "xsc_bridge")
-
-
-@router.post("/settings", summary="保存每日任务配置（家长设置，需家长密码）")
-def save_task_settings(req: SettingsRequest, request: Request, db: Session = Depends(get_db)):
-    """保存每日任务配置（家长权限，需家长密码 X-Parent-Pwd）。
-
-    参数（Body）：user_id、settings{targets/enabled/mandatory/quotas/optional/学习开关}。
-    请求头：必须携带 X-Parent-Pwd（ensure_parent_pwd，否则 403）——防止孩子自行调低目标/禁用任务。
-    返回：重新返回 get_task_settings 结构。
-    副作用：upsert parent_task_settings；同步刷新今日未完成任务的目标/启用/追加项；
-            目标数夹到 MIN_TARGET(1)-MAX_TARGET(50)，背诵类不可禁用。
-    需要家长密码。
-    """
-    if not isinstance(req.settings, dict):
-        raise HTTPException(400, "settings 必须为对象")
-    # 防刷：任务配置是家长权限，孩子不得自行调低目标/禁用任务
-    ensure_parent_pwd(db, req.user_id, request)
-
-    # 学习开关单独提取（bool，可独立提交）
-    flag_updates = {k: bool(req.settings[k]) for k in STUDY_FLAG_KEYS if k in req.settings}
-    _payload = {k: v for k, v in req.settings.items() if k not in STUDY_FLAG_KEYS}
-
-    existing = _load_settings(db, req.user_id)
-    new_targets = dict(existing.get("targets", {}))
-    new_enabled = dict(existing.get("enabled", {}))
-    new_mandatory = dict(existing.get("mandatory", {}))
-    new_quotas = dict(existing.get("quotas", {}))
-    new_optional = list(existing.get("optional", []))
-
-    # 家长添加的可选任务（code 列表，独立字段，可与其它字段分开提交）
-    if "optional" in _payload:
-        if not isinstance(_payload["optional"], list):
-            raise HTTPException(400, "optional 必须为数组")
-        seen, opt = set(), []
-        for code in _payload["optional"]:
-            if not isinstance(code, str) or code not in CONFIGURABLE_CODES:
-                raise HTTPException(400, f"不支持的任务类型: {code}")
-            if code not in seen:
-                seen.add(code)
-                opt.append(code)
-        new_optional = opt
-
-    if "targets" in _payload or "enabled" in _payload or "mandatory" in _payload \
-            or "quotas" in _payload or "optional" in _payload:
-        # 新格式
-        if "targets" in _payload and isinstance(_payload["targets"], dict):
-            for code, val in _payload["targets"].items():
-                # 背诵类也允许保存目标数（仅展示用，完成判定仍为全量背诵+复习）
-                if code not in CONFIGURABLE_CODES and code not in _UNCONFIGURABLE_CODES:
-                    raise HTTPException(400, f"不支持的任务类型: {code}")
-                try:
-                    v = int(val)
-                except (TypeError, ValueError):
-                    raise HTTPException(400, f"{code} 的目标数量必须是整数")
-                new_targets[code] = _bounded_target(code, v)
-        if "enabled" in _payload and isinstance(_payload["enabled"], dict):
-            for code, val in _payload["enabled"].items():
-                if code in _UNCONFIGURABLE_CODES:
-                    continue  # 强制背诵类任务不允许禁用，静默忽略
-                if code not in CONFIGURABLE_CODES:
-                    raise HTTPException(400, f"不支持的任务类型: {code}")
-                new_enabled[code] = bool(val)
-        if "mandatory" in _payload and isinstance(_payload["mandatory"], dict):
-            for subj, val in _payload["mandatory"].items():
-                if subj not in SUBJECTS:
-                    raise HTTPException(400, f"不支持的学科: {subj}")
-                # 兼容旧格式单 code 字符串；只存追加项，默认强制任务后端保证存在
-                codes = [val] if isinstance(val, str) else (val if isinstance(val, list) else [])
-                extra = []
-                for code in codes:
-                    if code == MANDATORY_TASKS[subj]["code"]:
-                        continue
-                    t = _task_def_by_code(code)
-                    if not t or t.get("subject") != subj:
-                        raise HTTPException(400, f"不支持的任务类型: {code}")
-                    if code not in extra:
-                        extra.append(code)
-                new_mandatory[subj] = extra
-        # 每日额度（家长配置：新学单词数 / 新背古诗文数）
-        if "quotas" in _payload and isinstance(_payload["quotas"], dict):
-            for key, val in _payload["quotas"].items():
-                if key not in QUOTA_KEYS:
-                    raise HTTPException(400, f"不支持的额度类型: {key}")
-                lo, hi, _ = QUOTA_KEYS[key]
-                try:
-                    v = int(val)
-                except (TypeError, ValueError):
-                    raise HTTPException(400, f"{key} 必须是整数")
-                if not lo <= v <= hi:
-                    raise HTTPException(400, f"{key} 需在 {lo}-{hi} 之间")
-                new_quotas[key] = v
-    elif _payload:
-        # 旧格式兼容：{code: int}
-        for code, val in _payload.items():
-            if code not in CONFIGURABLE_CODES and code not in _UNCONFIGURABLE_CODES:
-                raise HTTPException(400, f"不支持的任务类型: {code}")
-            try:
-                v = int(val)
-            except (TypeError, ValueError):
-                raise HTTPException(400, f"{code} 的目标数量必须是整数")
-            new_targets[code] = _bounded_target(code, v)
-
-    clean = {"targets": new_targets, "enabled": new_enabled,
-             "mandatory": new_mandatory, "quotas": new_quotas,
-             "optional": new_optional}
-    # 学习开关持久化（顶层字段；未提交的保持原值）
-    flags = _load_study_flags(db, req.user_id)
-    flags.update(flag_updates)
-    for k in STUDY_FLAG_KEYS:
-        if k in flags:
-            clean[k] = bool(flags[k])
-    # 可移植 upsert（MySQL 兼容，不用 ON CONFLICT）
-    _params = {"u": req.user_id, "j": json.dumps(clean), "t": datetime.now()}
-    exists = db.execute(text("SELECT 1 FROM parent_task_settings WHERE user_id=:u"),
-                        {"u": req.user_id}).fetchone()
-    if exists:
-        db.execute(text("UPDATE parent_task_settings SET settings_json=:j, updated_at=:t WHERE user_id=:u"), _params)
-    else:
-        db.execute(text("INSERT INTO parent_task_settings (user_id, settings_json, updated_at) "
-                        "VALUES (:u, :j, :t)"), _params)
-    today = date.today()
-    rows = db.query(DailyTask).filter(
-        DailyTask.user_id == req.user_id, DailyTask.task_date == today).all()
-    for r in rows:
-        if r.status != "done" and r.task_code in new_targets:
-            r.target = new_targets[r.task_code]
-    # 强制任务追加列表变更：删除今日未完成且已不在（默认+追加）列表中的强制行
-    for r in rows:
-        if getattr(r, "task_type", "") == "mandatory" and r.status != "done":
-            valid = _get_mandatory_codes({"mandatory": new_mandatory}, r.subject)
-            if r.task_code not in valid:
-                db.delete(r)
-    # 可选任务配置变更：删除今日未完成的可选行，下次 /daily 按新配置重新生成
-    if new_optional != list(existing.get("optional", [])):
-        for r in rows:
-            if getattr(r, "task_type", "") == "optional" and r.status != "done":
-                db.delete(r)
-    db.commit()
-    return get_task_settings(req.user_id, db)
 
 
 # ═══════════════ 进度追踪辅助 ═══════════════
@@ -527,7 +317,7 @@ def _today_challenge_count(db: Session, user_id: str, kind: str) -> int:
     需求：60 秒挑战赛需通过率 80% 以上才算完成。故只统计
     total>0 且 correct/total ≥ 0.8 的记录，低分挑战不计入每日任务进度。
     """
-    from ..models.sprint4 import ChallengeRecord
+    from app.models.sprint4 import ChallengeRecord
     rows = db.query(ChallengeRecord).filter(
         ChallengeRecord.user_id == user_id,
         ChallengeRecord.kind == kind,
@@ -558,7 +348,7 @@ def _today_dictation_texts(db: Session, user_id: str) -> int:
 
 def _user_grade(db: Session, user_id: str) -> int:
     """取用户年级（背诵任务按年级圈定词库/篇目）"""
-    from ..models.user import User
+    from app.models.user import User
     u = db.query(User).filter_by(user_id=user_id).first()
     return (u.grade if u and u.grade else 6)
 
@@ -570,8 +360,8 @@ def _vocab_all_done(db: Session, user_id: str) -> tuple:
     - 新学完成：新学额度用完（今日新学数达标或词库已无可学新词）
     - 复习完成：无剩余到期复习词（复习提交后 next_review_date 均推进到明天及以后）
     """
-    from ..models.word import Word, WordBook
-    from ..models.vocab import VocabProgress
+    from app.models.word import Word, WordBook
+    from app.models.vocab import VocabProgress
     today = date.today()
     grade = _user_grade(db, user_id)
     book_ids = [b.id for b in db.query(WordBook).filter(WordBook.grade == grade).all()]
@@ -611,7 +401,7 @@ def _classical_all_done(db: Session, user_id: str) -> tuple:
 
     返回 (done, new_done, review_done, learned_today, reviewed_today)。
     """
-    from ..models.classical import ClassicalText, ClassicalProgress
+    from app.models.classical import ClassicalText, ClassicalProgress
     today = date.today()
     grade = _user_grade(db, user_id)
 
@@ -821,53 +611,6 @@ def _grant_makeup_card(db: Session, user_id: str) -> bool:
     return n > 0
 
 
-@router.post("/makeup/use", summary="使用补签卡补签某天")
-def use_makeup_card(
-    req: dict = Body(...),
-    db: Session = Depends(get_db),
-):
-    """孩子直接补签过去某天为全勤（立即生效，扣 1 张补签卡）。
-
-    参数（Body）：user_id、target_date（YYYY-MM-DD，必须早于今天）。
-    返回：{balance, target_date, message}；余额不足/已补签过/日期非法或未来 返回 400。
-    副作用：写 MakeupUsageLog（默认confirmed，计入连续天数/全勤）、扣 card.balance。
-    无需家长密码（补签仅作用于过去日期）。
-    """
-    user_id = req.get("user_id", "").strip()
-    target = req.get("target_date", "")
-    if not user_id or not target:
-        raise HTTPException(400, "需要 user_id 和 target_date")
-    try:
-        d = date.fromisoformat(target)
-    except ValueError:
-        raise HTTPException(400, "日期格式错误，用 YYYY-MM-DD")
-    if d >= date.today():
-        raise HTTPException(400, "只能补签过去的日期")
-    balance = _get_makeup_balance(db, user_id)
-    if balance <= 0:
-        raise HTTPException(400, "没有可用的补签卡")
-    if _has_makeup_card(db, user_id, d):
-        raise HTTPException(400, "该日期已补签过")
-    log = MakeupUsageLog(user_id=user_id, target_date=d)
-    db.add(log)
-    card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
-    card.balance -= 1
-    card.total_used += 1
-    db.commit()
-    return {"balance": card.balance, "target_date": target, "message": "补签成功！当天算全勤"}
-
-
-@router.get("/makeup/balance", summary="查询补签卡余额")
-def get_makeup_balance(user_id: str = Query(...), db: Session = Depends(get_db)):
-    """查询补签卡余额。
-
-    参数（Query）：user_id。
-    返回：{user_id, balance}（无记录则 0）。
-    副作用：无（只读）。无需家长密码。
-    """
-    return {"user_id": user_id, "balance": _get_makeup_balance(db, user_id)}
-
-
 # ═══════════════ 构建返回数据 ═══════════════
 
 def _build_payload(db: Session, user_id: str) -> dict:
@@ -905,7 +648,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
                 # 心愿进度仅统计可选任务（强制任务不计入）
                 if (getattr(row, 'task_type', 'mandatory') or 'mandatory') == "optional":
                     try:
-                        from .rewards import inc_active_wish_progress
+                        from app.routers.rewards import inc_active_wish_progress
                         inc_active_wish_progress(db, user_id, 1)
                     except Exception:
                         pass
@@ -913,7 +656,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
 
     # 检查 optional_streak 类型许愿进度
     try:
-        from .rewards import check_wish_optional_streak
+        from app.routers.rewards import check_wish_optional_streak
         check_wish_optional_streak(db, user_id)
     except Exception:
         pass
@@ -932,7 +675,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
     mandatory_all_done = all(r.status == "done" for r in mandatory_rows) if mandatory_rows else False
     if mandatory_all_done:
         try:
-            from .rewards import sync_coupon_progress
+            from app.routers.rewards import sync_coupon_progress
             sync_coupon_progress(db, user_id)
         except Exception:
             pass
@@ -993,214 +736,18 @@ def _build_payload(db: Session, user_id: str) -> dict:
     }
 
 
-@router.get("/daily", summary="今日任务（3强制+3可选）")
-def get_daily(user_id: str = Query(...), db: Session = Depends(get_db)):
-    """返回今日任务面板（3 强制 + N 可选）。
-
-    内部：确保今日任务行存在 → 按真实学习数据计算进度并自动完成非手动任务 →
-         可选任务全完成发补签卡 → 强制全勤累计卡券 → 组装返回（含连续天数/补签卡余额）。
-    参数（Query）：user_id。
-    返回：{date, tasks[], mandatory_done/total, optional_done/total, streak_days, makeup_cards, ...}。
-    副作用：可能更新 DailyTask 状态、发放补签卡、累计卡券进度。无需家长密码。
-    """
-    return _build_payload(db, user_id)
-
-
-class ClaimRequest(BaseModel):
-    user_id: str
-    subject: str = None
-    task_id: int = None
-
-
-class ChildSubmitRequest(BaseModel):
-    user_id: str
-    task_id: int
-
-
-@router.post("/daily/child_submit", summary="孩子提交完成申请（待家长确认）")
-def child_submit_task(req: ChildSubmitRequest, db: Session = Depends(get_db)):
-    """孩子点击完成按钮，状态变为 pending_confirm，等家长确认"""
-    today = date.today()
-    row = db.query(DailyTask).filter(
-        DailyTask.id == req.task_id, DailyTask.user_id == req.user_id,
-        DailyTask.task_date == today).first()
-    if not row:
-        raise HTTPException(404, "未找到该任务")
-    if row.status == "done":
-        return _build_payload(db, req.user_id)
-    if row.status == "pending_confirm":
-        return _build_payload(db, req.user_id)
-    row.status = "pending_confirm"
-    row.progress = row.target
-    db.commit()
-    return _build_payload(db, req.user_id)
-
-
-class MakeupCompleteRequest(BaseModel):
-    user_id: str
-    task_id: int
-
-
-@router.post("/daily/makeup_complete", summary="孩子发起：用补签卡完成任意任务（待家长确认）")
-def makeup_complete_task(req: MakeupCompleteRequest, db: Session = Depends(get_db)):
-    """孩子发起用补签卡完成某任务：立即扣卡并生成 pending 记录，任务暂不完成。
-
-    需家长在「家长面板」确认后生效；家长拒绝则退回补签卡、任务保持不变。
-    """
-    today = date.today()
-    row = db.query(DailyTask).filter(
-        DailyTask.id == req.task_id, DailyTask.user_id == req.user_id,
-        DailyTask.task_date == today).first()
-    if not row:
-        raise HTTPException(404, "未找到该任务")
-    if row.status == "done":
-        return _build_payload(db, req.user_id)
-    # 同一任务已有待确认补签 → 不允许重复发起
-    exist = db.query(MakeupUsageLog).filter(
-        MakeupUsageLog.user_id == req.user_id,
-        MakeupUsageLog.task_id == req.task_id,
-        MakeupUsageLog.status == "pending",
-    ).first()
-    if exist:
-        raise HTTPException(400, "该任务已有待确认的补签申请")
-    # 检查补签卡余额
-    balance = _get_makeup_balance(db, req.user_id)
-    if balance <= 0:
-        raise HTTPException(400, "没有可用的补签卡")
-    # 立即扣卡
-    card = db.query(MakeupCard).filter(MakeupCard.user_id == req.user_id).first()
-    card.balance -= 1
-    card.total_used += 1
-    # 生成待确认记录（任务暂不完成）
-    log = MakeupUsageLog(
-        user_id=req.user_id, target_date=today,
-        task_id=req.task_id, status="pending",
-    )
-    db.add(log)
-    db.commit()
-    return _build_payload(db, req.user_id)
-
-
-class MakeupConfirmRequest(BaseModel):
-    user_id: str
-    log_id: int
-    action: str  # confirm / reject
-
-
-@router.post("/makeup/confirm", summary="家长确认/拒绝补签卡使用")
-def confirm_makeup(req: MakeupConfirmRequest, request: Request, db: Session = Depends(get_db)):
-    """家长对「孩子发起的补签卡完成任务」进行最终确认或拒绝。
-
-    - confirm：补签生效，关联任务标记为完成并发放金币；
-    - reject ：补签卡退回（余额 +1、已用 -1），关联任务保持原状。
-    需家长密码（由 http.js 自动附加 X-Parent-Pwd）。
-    """
-    ensure_parent_pwd(db, req.user_id, request)
-    log = db.query(MakeupUsageLog).filter(
-        MakeupUsageLog.id == req.log_id, MakeupUsageLog.user_id == req.user_id).first()
-    if not log:
-        raise HTTPException(404, "未找到补签记录")
-    if log.status != "pending":
-        raise HTTPException(400, "该补签记录已处理")
-    card = db.query(MakeupCard).filter(MakeupCard.user_id == req.user_id).first()
-
-    if req.action == "confirm":
-        log.status = "confirmed"
-        if log.task_id:
-            row = db.query(DailyTask).filter(DailyTask.id == log.task_id).first()
-            if row and row.status != "done":
-                row.progress = row.target
-                row.status = "done"
-                try:
-                    from .pet import _grant_coins
-                    _grant_coins(db, req.user_id, 5, "使用补签卡完成任务")
-                except Exception:
-                    pass
-        db.commit()
-        return {"status": "confirmed", "message": "补签已生效，任务完成 ✅"}
-    elif req.action == "reject":
-        log.status = "rejected"
-        if card:
-            card.balance += 1
-            card.total_used = max(0, card.total_used - 1)
-        db.commit()
-        return {"status": "rejected", "message": "已拒绝，补签卡已退回 🔄"}
-    else:
-        raise HTTPException(400, "action 只能是 confirm 或 reject")
-
-
-@router.get("/makeup/pending", summary="查询待家长确认的补签申请")
-def list_pending_makeup(user_id: str = Query(...), db: Session = Depends(get_db)):
-    """家长面板拉取孩子发起的、待确认的补签申请列表"""
-    logs = db.query(MakeupUsageLog).filter(
-        MakeupUsageLog.user_id == user_id,
-        MakeupUsageLog.status == "pending",
-    ).order_by(MakeupUsageLog.used_at.desc()).all()
-    items = []
-    for l in logs:
-        title = ""
-        if l.task_id:
-            row = db.query(DailyTask).filter(DailyTask.id == l.task_id).first()
-            title = row.title if row else ""
-        items.append({
-            "log_id": l.id,
-            "task_id": l.task_id,
-            "task_title": title,
-            "target_date": str(l.target_date),
-            "used_at": str(l.used_at),
-        })
-    return {"items": items}
-
-
-@router.post("/daily/claim", summary="手动确认完成任务（需家长密码）")
-def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db)):
-    """家长手动确认完成一个手动任务（可选任务/家长自定义任务）。
-
-    参数（Body）：user_id、task_id（优先）或 subject（兼容旧逻辑按学科确认强制任务）。
-    请求头：必须携带 X-Parent-Pwd（ensure_parent_pwd，否则 403）——孩子不得自批。
-    返回：刷新后的今日任务面板（_build_payload）。
-    副作用：将对应 DailyTask 置 done 并发放金币 +5（仅手动类任务）；自动判定类任务拒绝手动确认。
-    需要家长密码。
-    """
-    # 防刷：手动确认属于家长权限，孩子不得自批
-    ensure_parent_pwd(db, req.user_id, request)
-    today = date.today()
-    row = None
-    if req.task_id:
-        # 按任务 id 精确确认（支持手动可选任务、家长自定义任务——同一学科可有多个）
-        row = db.query(DailyTask).filter(
-            DailyTask.id == req.task_id, DailyTask.user_id == req.user_id,
-            DailyTask.task_date == today).first()
-    else:
-        if not req.subject:
-            raise HTTPException(400, "需要提供 subject 或 task_id")
-        # 兼容旧逻辑：按学科确认该科强制任务（每科默认唯一）
-        rows = db.query(DailyTask).filter(
-            DailyTask.user_id == req.user_id, DailyTask.task_date == today,
-            DailyTask.subject == req.subject, DailyTask.task_type == "mandatory",
-        ).all()
-        row = rows[0] if rows else None
-    if not row:
-        raise HTTPException(404, "未找到该任务")
-    if not row.manual:
-        raise HTTPException(400, "该任务由学习数据自动判定，无需手动确认")
-    if row.status == "done":
-        return _build_payload(db, req.user_id)
-    row.progress = row.target
-    row.status = "done"
-    # 心愿进度仅统计可选任务，强制任务手动确认不计入
-    try:
-        from .pet import _grant_coins
-        _grant_coins(db, req.user_id, 5, "完成任务")
-    except Exception:
-        pass
-    db.commit()
-    return _build_payload(db, req.user_id)
-
-
-
-# ═══════════════ 自定义任务子路由（拆分到 tasks_custom.py） ═══════════════
-# 孩子端 /custom 与家长端 /custom-task 相关接口已拆入独立子路由，
-# 路径仍为 /api/tasks/custom、/api/tasks/custom-task 等，对调用方零影响。
-from . import tasks_custom
-router.include_router(tasks_custom.router)
+__all__ = [
+    "logger", "SUBJECTS", "MANDATORY_TASKS", "OPTIONAL_POOL",
+    "_UNCONFIGURABLE_CODES", "CONFIGURABLE_CODES", "MIN_TARGET", "MAX_TARGET",
+    "CODE_MIN_TARGET", "QUOTA_KEYS", "TASK_PASS_SCORE",
+    "_pick_daily_optional", "_default_target", "_display_title",
+    "_load_settings", "_load_study_flags", "_setting_target",
+    "_is_task_enabled", "_normalize_mandatory", "_get_mandatory_codes",
+    "_task_def_by_code", "_bounded_target", "get_daily_quota",
+    "STUDY_FLAG_KEYS", "_today_start", "_today_new_attempts",
+    "_today_mastered", "_today_challenge_count", "_today_dictation_words",
+    "_today_dictation_texts", "_user_grade", "_vocab_all_done",
+    "_classical_all_done", "_task_progress", "_ensure_today_rows",
+    "_is_full_day", "_has_makeup_card", "_streak", "_get_makeup_balance",
+    "_grant_makeup_card", "_build_payload",
+]
