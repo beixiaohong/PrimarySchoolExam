@@ -179,6 +179,7 @@ def list_users(keyword: str = "", page: int = 1, page_size: int = 20,
         "total": total, "page": page, "page_size": page_size,
         "items": [{
             "user_id": u.user_id, "nickname": u.nickname, "grade": u.grade,
+            "city": u.city,
             "auth_type": u.auth_type, "email": u.email, "phone": u.phone,
             "has_password": bool(u.password_hash),
             "created_at": u.created_at.strftime("%Y-%m-%d") if u.created_at else "",
