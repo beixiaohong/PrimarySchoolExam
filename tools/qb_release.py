@@ -3,8 +3,10 @@
 
 背景
 ----
-本地通过 tools/collect_papers.py 持续采集试卷到「本地 MySQL」；当要把「新增的题库」
-同步到「线上 MySQL」时，用本工具产出一份带版本号的更新脚本，手动传到线上执行即可。
+本地通过 tools/collect_papers.py 持续采集试卷；主库可用时落「本地 MySQL」，主库达上限/
+不可用时（如 SQLPub）可配置 STAGING_DB_URL 先落「本地 SQLite 暂存库」。
+当要把「新增的题库」同步到「线上 MySQL」时，用本工具产出一份带版本号的更新脚本，
+手动传到线上执行即可。
 
 子命令
 ------
@@ -20,7 +22,8 @@
 - 幂等 upsert：线上按 source_url 定位/写入 papers，再按 (paper_id, seq) 定位/写入题目，
   规避本地与线上 paper_id 自增不一致导致的错位（绝不依赖本地 id）。
 - qb_versions/ 已加入 .gitignore：生成本地留存、手动传线上，不进 git 仓库。
-- 数据库：强制 MySQL（与线上一致）；连接信息复用 .env（DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME）。
+- generate 读源库（STAGING_DB_URL 配置时读本地 SQLite 暂存，否则读主库 MySQL）；
+  apply 写线上 MySQL（强制 MySQL，与线上一致）。连接信息复用 .env。
 """
 import argparse
 import importlib.util
@@ -37,7 +40,7 @@ sys.path.insert(0, str(ROOT))
 
 from sqlalchemy import text, bindparam  # noqa: E402
 
-from app.database import SessionLocal  # noqa: E402
+from app.database import SessionLocal, collection_session  # noqa: E402
 
 QBV_DIR = ROOT / "qb_versions"
 PAPER_COLS = ("subject", "grade", "title", "source_url", "download_url",
@@ -124,9 +127,13 @@ def _ensure_applied(db):
 
 
 def generate(grade=None, subject=None, dry_run=False):
-    """本地：抽取未导出的采集式题库，生成一份版本化更新脚本。"""
+    """本地：抽取未导出的采集式题库，生成一份版本化更新脚本。
+
+    源库：配置了 STAGING_DB_URL 时读本地 SQLite 暂存库，否则读主库 MySQL
+    （由 collection_session() 自动选择）。
+    """
     _ensure_dir()
-    with SessionLocal() as db:
+    with collection_session() as db:
         _ensure_export_state(db)
         exported = {r[0] for r in db.execute(text("SELECT source_url FROM qb_export_state"))}
 
@@ -189,7 +196,7 @@ def generate(grade=None, subject=None, dry_run=False):
     out.write_text(content, encoding="utf-8")
 
     # 记录已导出，保证下一次 generate 只产出增量
-    with SessionLocal() as db:
+    with collection_session() as db:
         _ensure_export_state(db)
         now = datetime.now()
         for p in papers:
