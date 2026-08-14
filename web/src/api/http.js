@@ -12,12 +12,16 @@ export function api(path, opts = {}) {
     if (tk) headers['Authorization'] = 'Bearer ' + tk
   } catch (e) { /* 隐私模式等异常忽略 */ }
   return fetch(path, Object.assign({ headers }, opts)).then(async r => {
-    // 401：登录态失效，清除本地会话并回到登录页（登录/注册入口本身不会 401）
+    // 401：登录态失效，清除本地会话并回到登录页
     if (r.status === 401) {
       const hadSession = !!localStorage.getItem('zx_user')
-      try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token') } catch (e) {}
-      // 仅当原本已登录才跳登录页，避免未登录时首页加载公开内容触发重定向循环
-      if (hadSession && path.indexOf('/api/auth/') === -1) location.href = '/'
+      try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd') } catch (e) {}
+      if (path.indexOf('/api/auth/') === -1) {
+        // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
+        // 返回永不 resolve 的 Promise，阻止各业务 .catch 弹出重复的"登录已过期" toast
+        if (hadSession) location.href = '/'
+        return new Promise(() => {})
+      }
       throw new Error('登录已过期，请重新登录')
     }
     const t = await r.text()

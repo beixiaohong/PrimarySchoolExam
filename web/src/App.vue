@@ -702,7 +702,7 @@
           </div>
           <div class="card">
             <div v-if="!wrongItems.length" class="empty"><div class="em">🎉</div><h3>太棒了，这里没有错题</h3><p>继续保持，或者去刷题中心练练手</p><button class="btn btn-primary" @click="goTab('practice')">去刷题</button></div>
-            <div v-for="w in wrongItems" :key="w.key" class="wrong-item" :class="{mastered: w.mastered}" @click="openWrongDetail(w)">
+            <div v-for="w in (showAllWrong ? wrongItems : wrongItems.slice(0,100))" :key="w.key" class="wrong-item" :class="{mastered: w.mastered}" @click="openWrongDetail(w)">
               <div class="wi-ico" :class="w.kind==='exam'?'t-blue':'t-violet'">{{w.kind==='exam'?'📝':'✏️'}}</div>
               <div class="wi-body">
                 <div class="wi-q">{{w.question}}</div>
@@ -719,6 +719,7 @@
               <span v-if="w.mastered" class="tag tag-green">已掌握</span>
               <span class="arrow">›</span>
             </div>
+            <button v-if="wrongItems.length > 100" class="link-btn" @click="showAllWrong = !showAllWrong" style="margin-top:10px">{{ showAllWrong ? '收起 ▴' : '查看全部 ' + wrongItems.length + ' 条错题 ▾' }}</button>
           </div>
         </div>
 
@@ -1609,7 +1610,7 @@
           <div class="pc-sec">
             <div class="pc-title">✋ 孩子的申诉 <span class="more">孩子觉得题判错了，请家长二次确认</span><span v-if="pendingAppeals.length" class="tag tag-orange">{{pendingAppeals.length}} 条待处理</span></div>
             <div class="pc-list" v-if="pendingAppeals.length">
-              <div class="pc-item" v-for="a in pendingAppeals" :key="a.id" style="flex-wrap:wrap">
+              <div class="pc-item" v-for="a in (showAllPending ? pendingAppeals : pendingAppeals.slice(0,30))" :key="a.id" style="flex-wrap:wrap">
                 <div class="c-body" style="flex:1;min-width:220px">
                   <b class="appeal-q" @click="toggleAppeal(a.id)" title="点击查看完整题目">
                     [{{a.subject || '未分科'}}]
@@ -1621,9 +1622,10 @@
                   <span class="more">{{a.created_at}} 提交</span>
                   <input class="fill-input appeal-note" v-model="appealNotes[a.id]" placeholder="判题备注（可选）：可填写判对/判错的理由" />
                 </div>
-                <button class="btn btn-success btn-sm" @click="decideAppeal(a, true)" title="确认后该题改判正确、本卷得分重算">确认做对了 ✓</button>
-                <button class="btn btn-ghost btn-sm" @click="decideAppeal(a, false)">维持判错</button>
+                <button class="btn btn-success btn-sm" :disabled="a._deciding" @click="decideAppeal(a, true)" title="确认后该题改判正确、本卷得分重算">{{ a._deciding ? '处理中…' : '确认做对了 ✓' }}</button>
+                <button class="btn btn-ghost btn-sm" :disabled="a._deciding" @click="decideAppeal(a, false)">{{ a._deciding ? '处理中…' : '维持判错' }}</button>
               </div>
+              <button v-if="pendingAppeals.length > 30" class="link-btn" @click="showAllPending = !showAllPending">{{ showAllPending ? '收起 ▴' : '查看全部 ' + pendingAppeals.length + ' 条 ▾' }}</button>
             </div>
             <p v-else class="pc-empty">没有待处理的申诉</p>
           </div>

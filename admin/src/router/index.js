@@ -1,22 +1,17 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Login from '../views/Login.vue'
-import Dashboard from '../views/Dashboard.vue'
-import Users from '../views/Users.vue'
-import UserDetail from '../views/UserDetail.vue'
-import Analytics from '../views/Analytics.vue'
-import DataCenter from '../views/DataCenter.vue'
-import Manage from '../views/Manage.vue'
-import Announcements from '../views/Announcements.vue'
 
+// 路由级懒加载：每个视图拆成独立 chunk，避免首屏一次性打包全部视图。
+// 关键点：Dashboard / Analytics 用到了 echarts，拆出去后主包体积与编译期内存都下降，
+// 且 echarts 仅在访问对应页面时才加载（rollup 会把共用的 echarts/core 抽到共享 chunk）。
 const routes = [
-  { path: '/login', name: 'login', component: Login, meta: { public: true } },
-  { path: '/', name: 'dashboard', component: Dashboard },
-  { path: '/users', name: 'users', component: Users },
-  { path: '/users/:userId', name: 'user-detail', component: UserDetail },
-  { path: '/analytics', name: 'analytics', component: Analytics },
-  { path: '/datacenter', name: 'datacenter', component: DataCenter },
-  { path: '/manage', name: 'manage', component: Manage },
-  { path: '/announcements', name: 'announcements', component: Announcements },
+  { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { public: true } },
+  { path: '/', name: 'dashboard', component: () => import('../views/Dashboard.vue') },
+  { path: '/users', name: 'users', component: () => import('../views/Users.vue') },
+  { path: '/users/:userId', name: 'user-detail', component: () => import('../views/UserDetail.vue') },
+  { path: '/analytics', name: 'analytics', component: () => import('../views/Analytics.vue') },
+  { path: '/datacenter', name: 'datacenter', component: () => import('../views/DataCenter.vue') },
+  { path: '/manage', name: 'manage', component: () => import('../views/Manage.vue') },
+  { path: '/announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
 ]
 
 // hash 模式：客户端路由形如 /admin#/users，避免服务端 SPA 回退冲突。

@@ -62,7 +62,7 @@ const appOptions = {
       // 错题本
       wrongAnalysis: { total: 0, pending: 0, mastered: 0, mastery_rate: 0, by_cause: [], by_subject: [] },
       wrongScreen: 'list', wrongKind: 'all', wrongStatus: 'pending',
-      wrongItems: [], curWrong: null,
+      wrongItems: [], curWrong: null, showAllWrong: false,
       // AI 错题讲解（Sprint 2）：内联展示，状态挂在 quiz 题目项 / curWrong 上
       // 心情打卡（Sprint 2）
       moodTrend: null, moodNote: '', moodPicking: false,
@@ -84,6 +84,7 @@ const appOptions = {
       rewardTimeline: [],
       // 申诉（AI 判题复核 + 孩子「我做对了」家长二次确认）
       pendingAppeals: [],
+      showAllPending: false,    // 待处理申诉是否展开全部（避免一次渲染过多卡顿）
       decidedAppeals: [],       // 已裁决（判对/判错），首页「家长反馈」区展示
       decidedAppealsTotal: 0,   // 已裁决历史总条数
       appealExpanded: {},       // {id: true} 点击展开查看完整题目
@@ -350,12 +351,19 @@ const appOptions = {
       } catch (e) { /* 隐私模式等异常忽略 */ }
       return fetch(path, Object.assign({ headers }, opts))
         .then(async r => {
-          // 401：登录态失效，清除本地会话并回到登录页（登录/注册入口本身不会 401）
+          // 401：登录态失效，清除本地会话并回到登录页
           if (r.status === 401) {
             const hadSession = !!localStorage.getItem('zx_user');
-            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); } catch (e) {}
-            // 仅当原本已登录才跳登录页，避免未登录时首页加载公开内容触发重定向循环
-            if (hadSession && path.indexOf('/api/auth/') === -1) location.href = '/';
+            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd'); } catch (e) {}
+            if (path.indexOf('/api/auth/') === -1) {
+              // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
+              // 返回永不 resolve 的 Promise，阻止各业务 .catch 弹出重复的"登录已过期" toast——
+              // 并发请求中第一个 401 已清了 localStorage，后续 401 hadSession=false 不再跳转，
+              // 但如果继续 throw 会被 loadGrammarPoints 等 catch 捕获并 showToast，造成"点刷题中心提示没登录"
+              if (hadSession) location.href = '/';
+              return new Promise(() => {});
+            }
+            // auth 接口 401（如 /api/auth/me）：抛错让调用方处理
             throw new Error('登录已过期，请重新登录');
           }
           const t = await r.text();
@@ -503,7 +511,6 @@ const appOptions = {
     logout() {
       localStorage.removeItem('zx_user');
       localStorage.removeItem('zx_token');
-      sessionStorage.removeItem('zx_parent_open');
       sessionStorage.removeItem('zx_parent_pwd');
       this.user = ''; this.username = ''; this.tab = 'home'; this.showGradeModal = false;
       this.loginPwd = ''; this.authInfo = {}; this.authMode = 'login';
@@ -1261,8 +1268,24 @@ const appOptions = {
         body.english_count = this.genCount;
       }
       this.generating = true;
-      fetch('/api/exam/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      // 必须携带登录 token：/api/exam/generate 挂在 require_self 鉴权依赖下，
+      // 裸 fetch 不带头会直接返回 401「未登录」（这是点击生成题目提示没登录的根因）。
+      const headers = { 'Content-Type': 'application/json' };
+      try {
+        const tk = localStorage.getItem('zx_token');
+        if (tk) headers['Authorization'] = 'Bearer ' + tk;
+        const pp = sessionStorage.getItem('zx_parent_pwd');
+        if (pp) headers['X-Parent-Pwd'] = pp;
+      } catch (e) {}
+      fetch('/api/exam/generate', { method: 'POST', headers, body: JSON.stringify(body) })
         .then(async r => {
+          // 401：登录态失效，与 api() 一致清会话+跳登录页，不抛错避免重复弹 toast
+          if (r.status === 401) {
+            const hadSession = !!localStorage.getItem('zx_user');
+            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd'); } catch (e) {}
+            if (hadSession) location.href = '/';
+            return;
+          }
           const id = r.headers.get('x-exam-id');
           const t = await r.text();
           if (!r.ok) {
@@ -1279,6 +1302,7 @@ const appOptions = {
           return id;
         })
         .then(id => {
+          if (id === undefined) return; // 401 分支已处理（return undefined），跳过后续
           this.generating = false;
           this.showToast('试卷生成成功，开始做题');
           this.loadPapers();
@@ -1932,7 +1956,6 @@ const appOptions = {
     },
     /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
     exitParentMode() {
-      sessionStorage.removeItem('zx_parent_open');
       sessionStorage.removeItem('zx_parent_pwd');
       this.parentPhase = 'locked';
       this._resetPwdForm();
@@ -1940,8 +1963,8 @@ const appOptions = {
       this.showToast('已退出家长模式 🔒');
     },
     initParentPanel() {
-      // 会话内已解锁过（sessionStorage），直接打开
-      if (sessionStorage.getItem('zx_parent_open') === '1') { this.parentPhase = 'open'; this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); return; }
+      // 每次进入家长管理都重新校验密码状态：已设密码则必须输密码解锁，不再依赖会话记忆免密进入
+      // （sessionStorage 在同标签页刷新时不清除，会导致「解锁一次→刷新仍是家长模式」的安全隐患）
       this.api(`/api/parent/status?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
           this.parentPhase = (d && d.has_password) ? 'locked' : 'unset';
@@ -1963,7 +1986,6 @@ const appOptions = {
       }).then(() => {
         this._resetPwdForm();
         this.parentPhase = 'open';
-        sessionStorage.setItem('zx_parent_open', '1');
         sessionStorage.setItem('zx_parent_pwd', pwd);
         this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('家长密码已设置，家长管理已解锁 🔓');
@@ -1977,7 +1999,6 @@ const appOptions = {
       }).then(() => {
         this._resetPwdForm();
         this.parentPhase = 'open';
-        sessionStorage.setItem('zx_parent_open', '1');
         sessionStorage.setItem('zx_parent_pwd', pwd);
         this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
         this.showToast('欢迎回来，家长 👋');
@@ -2006,7 +2027,7 @@ const appOptions = {
       }).then(() => {
         this._resetPwdForm();
         // 家长面板处于解锁态时同步更新本地缓存密码，避免后续敏感接口 403
-        if (sessionStorage.getItem('zx_parent_open') === '1') sessionStorage.setItem('zx_parent_pwd', new1);
+        if (sessionStorage.getItem('zx_parent_pwd')) sessionStorage.setItem('zx_parent_pwd', new1);
         this.showToast('家长密码已修改 ✅');
       }).catch(e => this.showToast(e.message));
     },

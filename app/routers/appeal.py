@@ -151,11 +151,12 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
     返回：{id, status}（approved/rejected）。
     副作用（仅 approve）：exam 源定位最新判错记录改判正确并重算本卷得分、删除本次新建错题痕迹；
             retry 源错题记录 correct_streak+1，累计达 3 次（MASTER_STREAK）自动标记掌握。
-            已处理的申诉不可重复处理。
+    幂等保证：用行锁（FOR UPDATE）串行化并发裁决，已裁决的申诉重复提交不再改分，避免重复点击抬分。
     """
     if req.action not in ("approve", "reject"):
         raise HTTPException(400, "action 仅支持 approve / reject")
-    a = db.query(AnswerAppeal).filter(
+    # 行锁：串行化对同一申诉的并发裁决，杜绝「20 次连点期间全部读到 pending 后重复加分」
+    a = db.query(AnswerAppeal).with_for_update().filter(
         AnswerAppeal.id == req.appeal_id,
         AnswerAppeal.user_id == req.user_id,
     ).first()
@@ -163,7 +164,6 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
         raise HTTPException(404, "申诉不存在")
     if a.status != "pending":
         # 已裁决：允许家长补填/修改备注，但不改变裁决结果（避免重复处理、也不翻转判对/判错）。
-        # 此前前端在已处理的申诉上再点「判错」会收到 400，体验差；这里改为幂等返回。
         note = (req.note or "").strip()
         if note:
             try:
@@ -198,6 +198,9 @@ def _approve_exam(db: Session, a: AnswerAppeal):
     只撤销本次提交造成的错题痕迹：
     - 本次新建的错题记录（wrong_record_id + wrong_new）→ 删除
     - 历史错题记录（重新标错的）→ 不动（历史上确实错过）
+
+    幂等：本卷 correct/wrong/score 一律从作答记录「全量重算」，而非增量 ±1。
+    因此同一条申诉被重复 approve（含并发）也只会改判同一道题一次，不会产生重复加分。
     """
     if not a.question_id:
         raise HTTPException(400, "申诉缺少题目信息，无法改判")
@@ -212,14 +215,26 @@ def _approve_exam(db: Session, a: AnswerAppeal):
     if not answer:
         raise HTTPException(400, "找不到对应的做题记录，无法改判（可维持判错）")
     answer.is_correct = True
+    # 项目 sessionmaker 关闭了 autoflush，必须先 flush 让上面的改判落到当前事务，
+    # 否则下方「全量重算」的 count 看不到本事务内刚改判的 is_correct，导致分数算错。
+    db.flush()
 
     attempt = db.query(ExamAttempt).get(answer.attempt_id)
     if attempt and attempt.total:
-        attempt.correct = (attempt.correct or 0) + 1
-        attempt.wrong = max(0, (attempt.wrong or 0) - 1)
+        # 关键点：从本卷所有作答重新统计，幂等（重复改判同一题不再 +1）
+        correct = db.query(AttemptAnswer).filter(
+            AttemptAnswer.attempt_id == attempt.id,
+            AttemptAnswer.is_correct == True,  # noqa: E712
+        ).count()
+        wrong = db.query(AttemptAnswer).filter(
+            AttemptAnswer.attempt_id == attempt.id,
+            AttemptAnswer.is_correct == False,  # noqa: E712
+        ).count()
+        attempt.correct = correct
+        attempt.wrong = wrong
         attempt.score = int(round(attempt.correct / attempt.total * 100, 1))
 
-    # 撤销本次新建的错题记录（本就不是错题，删除）
+    # 撤销本次新建的错题记录（本就不是错题，删除）；重复执行时记录已删，自动跳过
     if a.wrong_record_id and a.wrong_new:
         rec = db.query(WrongRecord).get(a.wrong_record_id)
         if rec:
