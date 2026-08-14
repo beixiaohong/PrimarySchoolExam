@@ -350,12 +350,19 @@ const appOptions = {
       } catch (e) { /* 隐私模式等异常忽略 */ }
       return fetch(path, Object.assign({ headers }, opts))
         .then(async r => {
-          // 401：登录态失效，清除本地会话并回到登录页（登录/注册入口本身不会 401）
+          // 401：登录态失效，清除本地会话并回到登录页
           if (r.status === 401) {
             const hadSession = !!localStorage.getItem('zx_user');
             try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); } catch (e) {}
-            // 仅当原本已登录才跳登录页，避免未登录时首页加载公开内容触发重定向循环
-            if (hadSession && path.indexOf('/api/auth/') === -1) location.href = '/';
+            if (path.indexOf('/api/auth/') === -1) {
+              // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
+              // 返回永不 resolve 的 Promise，阻止各业务 .catch 弹出重复的"登录已过期" toast——
+              // 并发请求中第一个 401 已清了 localStorage，后续 401 hadSession=false 不再跳转，
+              // 但如果继续 throw 会被 loadGrammarPoints 等 catch 捕获并 showToast，造成"点刷题中心提示没登录"
+              if (hadSession) location.href = '/';
+              return new Promise(() => {});
+            }
+            // auth 接口 401（如 /api/auth/me）：抛错让调用方处理
             throw new Error('登录已过期，请重新登录');
           }
           const t = await r.text();
@@ -1261,8 +1268,24 @@ const appOptions = {
         body.english_count = this.genCount;
       }
       this.generating = true;
-      fetch('/api/exam/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      // 必须携带登录 token：/api/exam/generate 挂在 require_self 鉴权依赖下，
+      // 裸 fetch 不带头会直接返回 401「未登录」（这是点击生成题目提示没登录的根因）。
+      const headers = { 'Content-Type': 'application/json' };
+      try {
+        const tk = localStorage.getItem('zx_token');
+        if (tk) headers['Authorization'] = 'Bearer ' + tk;
+        const pp = sessionStorage.getItem('zx_parent_pwd');
+        if (pp) headers['X-Parent-Pwd'] = pp;
+      } catch (e) {}
+      fetch('/api/exam/generate', { method: 'POST', headers, body: JSON.stringify(body) })
         .then(async r => {
+          // 401：登录态失效，与 api() 一致清会话+跳登录页，不抛错避免重复弹 toast
+          if (r.status === 401) {
+            const hadSession = !!localStorage.getItem('zx_user');
+            try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); } catch (e) {}
+            if (hadSession) location.href = '/';
+            return;
+          }
           const id = r.headers.get('x-exam-id');
           const t = await r.text();
           if (!r.ok) {
@@ -1279,6 +1302,7 @@ const appOptions = {
           return id;
         })
         .then(id => {
+          if (id === undefined) return; // 401 分支已处理（return undefined），跳过后续
           this.generating = false;
           this.showToast('试卷生成成功，开始做题');
           this.loadPapers();
