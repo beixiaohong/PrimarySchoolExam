@@ -157,7 +157,16 @@ def index():
     """
     index_file = WEB_DIST_DIR / "index.html"
     if index_file.exists():
-        return FileResponse(index_file)
+        return FileResponse(
+            index_file,
+            headers={
+                # 禁止缓存 index.html：确保浏览器始终拿到最新构建的 HTML
+                # （HTML 内引用的 /assets/index-<hash>.js 本身有 content hash，可安全缓存）
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
     from fastapi.responses import JSONResponse
     return JSONResponse(
         status_code=404,
