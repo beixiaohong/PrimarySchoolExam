@@ -99,13 +99,16 @@ def list_study_errors(
     source_type: Optional[str] = Query(None, description="过滤来源: grammar/classical"),
     subject: Optional[str] = Query(None, description="学科筛选: 英语→语法错题, 语文→古诗文错题, 数学→无学习错题"),
     only_pending: bool = Query(False, description="只看未掌握"),
+    limit: int = Query(200, ge=1, le=500, description="单次返回上限，避免错题过多时一次性全量返回拖垮前端渲染"),
     db: Session = Depends(get_db),
 ):
     """查询学习错题列表，支持按学科(英语/语文/其他)与来源(grammar/classical)过滤、只看未掌握。
 
-    参数（Query）：user_id、subject、source_type、only_pending。
+    参数（Query）：user_id、subject、source_type、only_pending、limit。
     返回：错题数组（含 id/来源/题目/正误答案/错因/error_count/is_mastered/wrong_at）。
     副作用：无（只读）。无需家长密码。
+    性能：原实现用 .all() 全量返回，用户错题多时一次性渲染几百个节点会卡顿；
+          现加 limit（默认 200）上限，前端配合「查看全部」按需加载。
     """
     q = db.query(StudyError).filter(StudyError.user_id == user_id)
     if subject:
@@ -119,7 +122,7 @@ def list_study_errors(
         q = q.filter(StudyError.source_type == source_type)
     if only_pending:
         q = q.filter(StudyError.is_mastered == False)  # noqa: E712
-    errors = q.order_by(StudyError.wrong_at.desc(), StudyError.id.desc()).all()
+    errors = q.order_by(StudyError.wrong_at.desc(), StudyError.id.desc()).limit(limit).all()
 
     return [
         {
