@@ -33,6 +33,12 @@ class User(Base):
     phone_verified = Column(Boolean, default=False, comment="手机号是否已验证")
     city = Column(String(50), nullable=True, comment="天气城市（首页天气卡）")
 
+    # ── IM 即时通讯扩展字段（031_im_tables 迁移补列）──
+    avatar = Column(String(255), nullable=True, comment="头像 URL（IM 聊天展示）")
+    points = Column(Integer, default=0, nullable=True, comment="IM 积分（红包发放/领取、好友消耗）")
+    is_online = Column(Boolean, default=False, nullable=True, comment="IM 在线状态")
+    last_seen = Column(DateTime, nullable=True, comment="IM 最后活跃时间")
+
     # ── 登录会话 token（Bearer 鉴权，028_user_token）──
     token = Column(String(64), nullable=True, index=True, comment="登录会话 token（Bearer 鉴权）")
     token_expires_at = Column(DateTime, nullable=True, comment="token 过期时间")
