@@ -19,6 +19,10 @@ from .migrations.runner import run_migrations
 from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm
 from .routers.auth import require_self
 from .services.init_data import ensure_initial_data
+from .logging_setup import apply_logging
+
+# 应用导入即配置日志：按天+大小滚动，输出到 log/（控制台 + 文件双写）
+apply_logging()
 
 # P5 工程化前端构建产物（Vite build 输出，唯一托管的前端）
 WEB_DIST_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
@@ -34,6 +38,7 @@ async def lifespan(app: FastAPI):
     init_db()
     run_migrations()
     ensure_initial_data()
+    logging.getLogger("app").info("应用启动完成（lifespan 初始化结束）")
     yield
 
 
