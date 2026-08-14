@@ -6,6 +6,16 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   base: '/admin/',
   plugins: [vue()],
+  server: {
+    // 本地 npm run dev 时，把 /api 代理到后端（默认 127.0.0.1:8000），
+    // 否则前端 baseURL 同源模式下登录等请求会打到 vite 自身而失败。
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     outDir: 'dist',
     chunkSizeWarningLimit: 1500,
