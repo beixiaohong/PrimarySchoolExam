@@ -604,11 +604,16 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                 stage = GRADE_STAGE.get(grade_name, "初中")
                 if stage_collected.get(stage, 0) >= STAGE_CAP.get(stage, 10):
                     continue
-                # 续跑优化：该 (学科,年级) 今日已采满，跳过整类列表抓取，直接下一个分类
+                # 续跑优化：该 (学科,年级) 今日已采满，跳过整类列表抓取，直接下一个分类。
+                # 注意：必须按「今日」计数（created_at >= 今日0点），而非历史累计——
+                # 否则某分类一旦累计达 PER_CATEGORY_CAP 就永久不再采集，既违背「每天约200份新卷」，
+                # 也会让已采满的初中段被整体跳过、破坏「优先初中」的学段优先级。
+                today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
                 with SessionLocal() as s:
                     have = s.execute(
                         select(func.count(Paper.id)).where(
-                            Paper.subject == subject_name, Paper.grade == grade_name)
+                            Paper.subject == subject_name, Paper.grade == grade_name,
+                            Paper.created_at >= today_start)
                     ).scalar() or 0
                 if have >= PER_CATEGORY_CAP:
                     continue
