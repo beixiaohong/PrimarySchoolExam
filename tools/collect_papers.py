@@ -8,12 +8,13 @@
                                                 # 每日流水线：采近10年新卷(初中优先)→AI补答案
 
 说明：
-- 采集结果入库到主库（MySQL）的 papers / paper_questions 表；
+- 采集结果入库（默认主库 MySQL 的 papers / paper_questions 表；若 .env 配置了
+  STAGING_DB_URL 则先落本地 SQLite 暂存库，主库达上限/不可用时无需中断）；
 - 按 source_url 去重，已采集过的试卷不会重复采集；
 - 仅采集最近 10 年试卷（标题年份过滤），学段优先级 初中→小学→高中，每学科均衡覆盖；
 - 试卷以 HTML 富文本（图片 base64 内联）保存，不保存 doc 原件；
-- --fill-new 采集后优先为新卷调用 AI 补全答案，再按 --answer-cap 继续全局空缺补全；
-- 本地新采集的题库如需同步到线上，请用 tools/qb_release.py generate 生成更新脚本。
+- 暂存模式下本地新采集的题库如需同步到线上，请用 tools/qb_release.py generate
+  抽取成脚本，传到线上执行 apply；非暂存模式同理（generate 读主库、apply 写线上）。
 """
 import argparse
 import sys
@@ -25,19 +26,21 @@ sys.path.insert(0, str(ROOT))
 
 from app.services.paper_crawler import run_collection, print_stats  # noqa: E402
 from app.services.answer_generator import fill_missing_answers, count_missing_answers  # noqa: E402
-from app.database import init_db  # noqa: E402
+from app.database import init_collection_db  # noqa: E402
 
 
 def main():
     """试卷采集命令行入口：封装采集/统计/答案补全等子命令。
 
     参数：见 argparse（--once / --stats / --fill-answers / --grade / --subject 等）。
-    副作用：向主库 papers / paper_questions 表写入采集结果；--fill-answers 会调用 AI 回填答案；
-            运行前先 init_db 确保表结构与冗余列（grade/subject）到位。
+    副作用：向目标库（STAGING_DB_URL 配置时落本地 SQLite 暂存，否则主库 MySQL）的
+            papers / paper_questions 表写入采集结果；--fill-answers 会调用 AI 回填答案；
+            运行前先 init_collection_db 确保表结构到位（暂存模式不连主库）。
     注意：采集按 source_url 去重；--fill-answers 可能产生 AI 调用成本，建议用 --limit/--dry-run 控量。
     """
-    # 任何子命令前先确保表结构/冗余列（grade/subject）到位，避免 MySQL 旧表缺列入库失败
-    init_db()
+    # 任何子命令前先确保表结构到位：暂存模式建本地 SQLite，否则建主库 MySQL
+    # （主库不可用时，配置 STAGING_DB_URL 即可让采集全程不连主库）
+    init_collection_db()
 
     parser = argparse.ArgumentParser(description="试卷采集与入库（第一试卷网）")
     parser.add_argument("--once", action="store_true", help="只跑一轮采集即退出")

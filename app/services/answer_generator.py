@@ -61,7 +61,7 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
     limit：最多处理多少题（控成本/控时长）；None 表示全部。
     paper_ids：仅补全这些试卷下的题目（用于优先补全新采集卷）；None 表示全部试卷。
     """
-    from ..database import SessionLocal
+    from ..database import collection_session
     from ..models.paper import PaperQuestion
 
     if not ai_enabled():
@@ -72,7 +72,7 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
     # 持续限流/超时保护：连续失败达到阈值即判定 AI 暂不可用，放弃本次补全，
     # 剩余题目留待后续运行（避免对 5671 道缺失题死循环刷接口、卡住数十小时）。
     MAX_CONSECUTIVE_FAILS = 10
-    with SessionLocal() as s:
+    with collection_session() as s:
         q = s.query(PaperQuestion).filter(
             (PaperQuestion.correct_answer == None) | (PaperQuestion.correct_answer == "")
         )
@@ -124,9 +124,9 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
 
 def count_missing_answers(grade: str | None = None, subject: str | None = None) -> int:
     """统计仍有缺失答案的题目数（供采集后核对 / 刷题前确保全覆盖）。"""
-    from ..database import SessionLocal
+    from ..database import collection_session
     from ..models.paper import PaperQuestion
-    with SessionLocal() as s:
+    with collection_session() as s:
         q = s.query(PaperQuestion).filter(
             (PaperQuestion.correct_answer == None) | (PaperQuestion.correct_answer == "")
         )

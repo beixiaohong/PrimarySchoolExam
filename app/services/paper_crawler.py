@@ -27,7 +27,7 @@ from urllib.parse import urljoin
 from sqlalchemy import select, func
 
 from app.config import BASE_DIR
-from app.database import SessionLocal
+from app.database import collection_session, init_collection_db
 from app.models.paper import Paper, PaperQuestion
 from app.services.question_parser import parse_paper
 
@@ -533,7 +533,7 @@ def store_paper_full(subject, grade, title, source_url, download_url, html_conte
         print(f"    ⚠️ HTML 过大（约 {len(html_content)//1024//1024}MB），超出上限 "
               f"{MAX_HTML_CHARS//1024//1024}MB，仅记录元信息以规避 MySQL 包大小限制")
         html_content = ""
-    with SessionLocal() as session:
+    with collection_session() as session:
         paper_id, is_new = _upsert_paper(
             session, subject, grade, title, source_url, download_url, html_content, None, year=year)
         q_count = _store_questions(session, paper_id, html_content) if html_content else 0
@@ -576,8 +576,8 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
       answer_cap: 全局答案补全每日上限（0 表示仅补新卷，不补历史空缺）。
     返回：本次新增的试卷 id 列表（供后续优先补全答案）。
     """
-    from app.database import init_db
-    init_db()
+    from app.database import init_collection_db
+    init_collection_db()
 
     ensure_dir(DOWNLOAD_DIR)
     ensure_dir(EXTRACT_DIR)
@@ -609,7 +609,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                 # 否则某分类一旦累计达 PER_CATEGORY_CAP 就永久不再采集，既违背「每天约200份新卷」，
                 # 也会让已采满的初中段被整体跳过、破坏「优先初中」的学段优先级。
                 today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                with SessionLocal() as s:
+                with collection_session() as s:
                     have = s.execute(
                         select(func.count(Paper.id)).where(
                             Paper.subject == subject_name, Paper.grade == grade_name,
@@ -633,7 +633,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                     source_url = paper['detail_url']
                     # 去重：已采集过的不再采集
                     try:
-                        with SessionLocal() as session:
+                        with collection_session() as session:
                             if session.execute(
                                 select(Paper.id).where(Paper.source_url == source_url)
                             ).first():
@@ -729,7 +729,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
 
 
 def print_stats():
-    with SessionLocal() as session:
+    with collection_session() as session:
         papers = session.execute(select(func.count(Paper.id))).scalar() or 0
         questions = session.execute(select(func.count(PaperQuestion.id))).scalar() or 0
         with_img = session.execute(
