@@ -62,7 +62,7 @@ const appOptions = {
       // 错题本
       wrongAnalysis: { total: 0, pending: 0, mastered: 0, mastery_rate: 0, by_cause: [], by_subject: [] },
       wrongScreen: 'list', wrongKind: 'all', wrongStatus: 'pending',
-      wrongItems: [], curWrong: null,
+      wrongItems: [], curWrong: null, showAllWrong: false,
       // AI 错题讲解（Sprint 2）：内联展示，状态挂在 quiz 题目项 / curWrong 上
       // 心情打卡（Sprint 2）
       moodTrend: null, moodNote: '', moodPicking: false,
@@ -84,6 +84,7 @@ const appOptions = {
       rewardTimeline: [],
       // 申诉（AI 判题复核 + 孩子「我做对了」家长二次确认）
       pendingAppeals: [],
+      showAllPending: false,    // 待处理申诉是否展开全部（避免一次渲染过多卡顿）
       decidedAppeals: [],       // 已裁决（判对/判错），首页「家长反馈」区展示
       decidedAppealsTotal: 0,   // 已裁决历史总条数
       appealExpanded: {},       // {id: true} 点击展开查看完整题目
