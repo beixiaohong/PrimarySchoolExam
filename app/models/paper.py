@@ -9,14 +9,21 @@
 from datetime import datetime
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
-
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
+from sqlalchemy.ext.compiler import compiles
 
 from ..database import Base
 
+# MySQL 用 MEDIUMTEXT（>64KB，承载 base64 图片）；SQLite 暂存退化为 TEXT。
+# 通过 @compiles 让同一 MEDIUMTEXT 类型在两种 dialect 下都正确编译，
+# 模型定义无需感知当前数据库（create_all 时按目标引擎方言自动降级）。
+@compiles(MEDIUMTEXT, "sqlite")
+def _compile_mediumtext_sqlite(element, compiler, **kw):
+    return "TEXT"
+
 
 def _longtext():
-    """大文本：统一用 MySQL 的 MEDIUMTEXT（>64KB，承载 base64 图片）。"""
+    """大文本：MySQL→MEDIUMTEXT，SQLite→TEXT（由 @compiles 按方言自动降级）。"""
     return MEDIUMTEXT()
 
 

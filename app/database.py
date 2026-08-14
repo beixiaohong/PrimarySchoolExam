@@ -5,10 +5,12 @@
 
 说明：本项目已移除 SQLite 支持，数据库统一为 MySQL（生产 / 本地一致）。
 """
+import os
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-from .config import DATABASE_URL
+from .config import BASE_DIR, DATABASE_URL
 
 # 统一 MySQL 引擎：pool_pre_ping 探活 + pool_recycle 防连接超时（跨长时间空闲连接被服务端断开）
 # 池容量：默认 5+10=15 在 AI 类长请求并发下会耗尽（QueuePool TimeoutError 全站卡死），
@@ -20,6 +22,60 @@ engine = create_engine(
 
 # 创建数据库会话工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# ── 采集暂存库（可选）──
+# SQLPub 等主库达到上限/不可用时，采集子系统可先把试卷落本地 SQLite 暂存，
+# 再用 tools/qb_release.py generate 抽取成脚本、传到线上 apply。
+# 不配置 STAGING_DB_URL 时，采集照旧直接写主库 MySQL（向后兼容）。
+STAGING_DB_URL = os.environ.get("STAGING_DB_URL")
+if STAGING_DB_URL and STAGING_DB_URL.startswith("sqlite:///"):
+    # 相对路径解析到项目根目录，避免依赖运行 cwd
+    _rel = STAGING_DB_URL[len("sqlite:///"):]
+    if not os.path.isabs(_rel):
+        STAGING_DB_URL = "sqlite:///" + str(BASE_DIR / _rel)
+_staging_engine = None
+StagingSessionLocal = None
+if STAGING_DB_URL:
+    # 确保 SQLite 文件所在目录存在（相对路径已解析到 BASE_DIR 下）
+    if STAGING_DB_URL.startswith("sqlite:///"):
+        _db_path = STAGING_DB_URL[len("sqlite:///"):]
+        _db_dir = os.path.dirname(_db_path)
+        if _db_dir:
+            os.makedirs(_db_dir, exist_ok=True)
+    _staging_engine = create_engine(
+        STAGING_DB_URL, connect_args={"check_same_thread": False})
+    StagingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_staging_engine)
+
+
+def collection_session():
+    """采集子系统会话：配置了 STAGING_DB_URL 走本地 SQLite 暂存，否则走主库 MySQL。
+
+    让 collect_papers / qb_release generate 在不依赖主库可用性的前提下运行。
+    """
+    return StagingSessionLocal() if StagingSessionLocal is not None else SessionLocal()
+
+
+def init_staging_db():
+    """采集暂存库建表：仅建 papers / paper_questions 两张采集表（不触碰主库）。
+
+    MySQL 专属的 _ensure_columns 补列逻辑此处不需要——模型本身已含全部列定义。
+    """
+    if _staging_engine is None:
+        return
+    from .models.paper import Paper, PaperQuestion
+    Base.metadata.create_all(
+        bind=_staging_engine, tables=[Paper.__table__, PaperQuestion.__table__])
+
+
+def init_collection_db():
+    """采集子系统建表入口：暂存模式只建本地 SQLite，否则建主库 MySQL。
+
+    暂存模式下完全不连主库，避免主库不可用（如 SQLPub 达上限）时采集中断。
+    """
+    if _staging_engine is not None:
+        init_staging_db()
+    else:
+        init_db()
 
 
 class Base(DeclarativeBase):
