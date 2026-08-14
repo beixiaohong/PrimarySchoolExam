@@ -627,7 +627,7 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
     ai_approved: list = []
     if ai_items:
         from ..services.judge import judge_wrong_items
-        approved = judge_wrong_items(db, user_id, ai_items)
+        approved = judge_wrong_items(user_id, ai_items)
         for r in results:
             qid = r["question_id"]
             if r["is_correct"] or qid not in approved:

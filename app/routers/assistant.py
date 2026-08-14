@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..services import ai as ai_svc
 
 logger = logging.getLogger(__name__)
@@ -160,7 +160,7 @@ def assistant_profile(user_id: str = Query(...), db: Session = Depends(get_db)):
 
 
 @router.post("/chat", summary="AI 学习助手多轮对话（结合学习画像）")
-def assistant_chat(req: ChatReq, db: Session = Depends(get_db)):
+def assistant_chat(req: ChatReq):
     """AI 学习助手多轮对话（结合学习画像）。
 
     请求：{user_id, message, history(最近几轮)}；无需家长密码。
@@ -178,10 +178,15 @@ def assistant_chat(req: ChatReq, db: Session = Depends(get_db)):
     if not ai_svc.rate_limit(f"assistant:{req.user_id}", ASSIST_RATE, 60):
         raise HTTPException(400, "提问太快啦，休息一下再来吧")
 
-    u = db.query(User).filter(User.user_id == req.user_id).first()
-    grade = u.grade if u else 6
-    subject = u.subject if u else "数学"
-    profile = _build_profile(db, req.user_id, grade, subject)
+    # 读阶段短会话：画像组装完即释放，等待 AI 期间不占连接池
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.user_id == req.user_id).first()
+        grade = u.grade if u else 6
+        subject = u.subject if u else "数学"
+        profile = _build_profile(db, req.user_id, grade, subject)
+    finally:
+        db.close()
     system = SYSTEM_PROMPT.format(grade=grade, profile=profile)
 
     # 组装历史（最近 N 轮，role 转 ai/assistant 兼容）
@@ -193,19 +198,26 @@ def assistant_chat(req: ChatReq, db: Session = Depends(get_db)):
             history.append({"role": role, "content": content})
 
     user_prompt = f"孩子的问题是：{message}\n（孩子当前默认学科：{subject}）"
+    # AI 调用在会话外执行，不占数据库连接
     resp = ai_svc.chat_with(req.user_id, system, user_prompt, max_tokens=700)
-    if not resp or not resp.get("text"):
-        _log_usage(db, req.user_id, "assistant", False, resp, "AI 无有效回复")
-        raise HTTPException(502, "AI 老师正在打盹，稍后再试试吧")
-    _log_usage(db, req.user_id, "assistant", True, resp)
-    # 钻石扣费
+
+    # 日志 / 扣费：短会话
+    db = SessionLocal()
     try:
-        from ..services import diamond as diamond_svc
-        diamond_svc.check_and_deduct(db, req.user_id,
-                                      resp.get("prompt_tokens", 0),
-                                      resp.get("completion_tokens", 0),
-                                      reason="ai_assistant")
-    except Exception:
-        pass
+        if not resp or not resp.get("text"):
+            _log_usage(db, req.user_id, "assistant", False, resp, "AI 无有效回复")
+            raise HTTPException(502, "AI 老师正在打盹，稍后再试试吧")
+        _log_usage(db, req.user_id, "assistant", True, resp)
+        # 钻石扣费
+        try:
+            from ..services import diamond as diamond_svc
+            diamond_svc.check_and_deduct(db, req.user_id,
+                                          resp.get("prompt_tokens", 0),
+                                          resp.get("completion_tokens", 0),
+                                          reason="ai_assistant")
+        except Exception:
+            pass
+    finally:
+        db.close()
     return {"text": resp["text"].strip(), "model": resp.get("model", ""),
             "provider": resp.get("provider", "")}

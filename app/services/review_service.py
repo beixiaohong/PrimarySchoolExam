@@ -84,36 +84,61 @@ def _review_prompt() -> str:
 
 def run_reviews(db: Session, content_types: list = None, limit: int = 50,
                 user_id: str = "admin") -> dict:
-    """批量触发多 AI 校对；返回 {reviewed, approved, conflict}"""
+    """批量触发多 AI 校对；返回 {reviewed, approved, conflict}。
+
+    db 参数仅供调用方自身使用（如审计）；校对过程内部用短会话，
+    长时间等待 AI 期间不持有数据库连接（防连接池耗尽）。
+    """
+    from ..database import SessionLocal
     types = content_types or list(CONTENT_MODELS.keys())
     reviewed = approved = conflict = 0
     for ctype in types:
         model = CONTENT_MODELS.get(ctype)
         if not model:
             continue
-        rows = db.query(model).filter(model.review_status == "pending").limit(limit).all()
-        for obj in rows:
-            ok = _review_one(db, ctype, obj.id, user_id)
+        # 收集 pending 列表：短会话，取 id 后即释放
+        s = SessionLocal()
+        try:
+            ids = [r[0] for r in s.query(model.id).filter(
+                model.review_status == "pending").limit(limit).all()]
+        finally:
+            s.close()
+        for obj_id in ids:
+            ok = _review_one(ctype, obj_id, user_id)
             if ok:
                 reviewed += 1
-                if (model == MiddleQuestion and db.query(MiddleQuestion).filter(MiddleQuestion.id == obj.id).first().review_status == "approved") or \
-                   (model == ReadingPassage and db.query(ReadingPassage).filter(ReadingPassage.id == obj.id).first().review_status == "approved"):
+                s = SessionLocal()
+                try:
+                    obj = s.query(model).filter(model.id == obj_id).first()
+                    status = obj.review_status if obj else ""
+                finally:
+                    s.close()
+                if status == "approved":
                     approved += 1
                 else:
                     conflict += 1
     return {"reviewed": reviewed, "approved": approved, "conflict": conflict}
 
 
-def _review_one(db: Session, content_type: str, content_id: int, user_id: str) -> bool:
+def _review_one(content_type: str, content_id: int, user_id: str) -> bool:
+    """单条校对：读内容（短会话）→ AI 审阅（会话外）→ 写回结果（短会话）"""
+    from ..database import SessionLocal
     model = CONTENT_MODELS[content_type]
-    obj = db.query(model).filter(model.id == content_id).first()
-    if not obj:
-        return False
-    text = _content_text(content_type, obj)
+
+    # 读待审内容：短会话
+    db = SessionLocal()
+    try:
+        obj = db.query(model).filter(model.id == content_id).first()
+        if not obj:
+            return False
+        text = _content_text(content_type, obj)
+    finally:
+        db.close()
     prompt = _review_prompt()
 
+    # AI 审阅（会话外执行，多供应商依次调用，不占连接）
     verdicts = []
-    comments = []
+    review_rows = []
     for p in REVIEW_PROVIDERS:
         result = ai_svc.chat_with(user_id, prompt, "待审内容：\n" + text, provider=p, max_tokens=400)
         if not result or not result.get("text"):
@@ -123,24 +148,31 @@ def _review_one(db: Session, content_type: str, content_id: int, user_id: str) -
             continue
         v = "pass" if str(data.get("verdict")).lower().startswith("pass") else "fail"
         verdicts.append(v)
-        comments.append(f"[{p}] {data.get('comment', '')}")
-        db.add(ContentReview(
-            content_type=content_type, content_id=content_id,
-            provider=p, model=result.get("model", ""),
-            verdict=v, comment=data.get("comment", ""),
-        ))
+        review_rows.append((p, result.get("model", ""), v, data.get("comment", "")))
 
-    # 汇总规则
-    if not verdicts:
-        # 无供应商响应，保留 pending 待重试
+    # 写回：短会话
+    db = SessionLocal()
+    try:
+        for (p, m, v, comment) in review_rows:
+            db.add(ContentReview(
+                content_type=content_type, content_id=content_id,
+                provider=p, model=m, verdict=v, comment=comment,
+            ))
+        # 汇总规则
+        if not verdicts:
+            # 无供应商响应，保留 pending 待重试
+            db.commit()
+            return False
+        obj = db.query(model).filter(model.id == content_id).first()
+        if obj:
+            if "fail" in verdicts or len(set(verdicts)) > 1:
+                obj.review_status = "conflict"
+            else:
+                obj.review_status = "approved"
         db.commit()
-        return False
-    if "fail" in verdicts or len(set(verdicts)) > 1:
-        obj.review_status = "conflict"
-    else:
-        obj.review_status = "approved"
-    db.commit()
-    return True
+        return True
+    finally:
+        db.close()
 
 
 def list_reviews(db: Session, status: str = "conflict", page: int = 1,

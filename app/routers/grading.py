@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal
 from ..models.essay import EssayGrade
 from ..services import ai as ai_svc
 from ..services.diamond import check_and_deduct
@@ -79,7 +79,7 @@ def _essay_user(topic: str, content: str) -> str:
 
 
 @router.post("/grade-essay", summary="作文批改评分卡（分学段，落库可回看）")
-def grade_essay(req: EssayGradeRequest, db: Session = Depends(get_db)):
+def grade_essay(req: EssayGradeRequest):
     if req.subject not in ("语文", "英语"):
         raise HTTPException(400, "subject 仅支持 语文/英语")
     if len(req.content) > 800:
@@ -91,6 +91,7 @@ def grade_essay(req: EssayGradeRequest, db: Session = Depends(get_db)):
     max_score = MAX_SCORE[(req.subject, stage)]
     card = None
     degraded = False
+    # AI 调用在会话外执行，不占数据库连接
     result = ai_svc.chat_for(req.user_id, _essay_system(req.subject, stage, max_score),
                              _essay_user(req.topic, req.content), max_tokens=800)
     if result and result.get("text"):
@@ -111,26 +112,31 @@ def grade_essay(req: EssayGradeRequest, db: Session = Depends(get_db)):
     card.setdefault("improvements", [])
     card.setdefault("upgraded", "")
 
-    rec = EssayGrade(user_id=req.user_id, subject=req.subject, grade=req.grade,
-                     topic=req.topic, content=req.content, score_json=json.dumps(card, ensure_ascii=False))
-    db.add(rec)
-    db.commit()
-    db.refresh(rec)
+    # 落库 / 计费：短会话
+    db = SessionLocal()
+    try:
+        rec = EssayGrade(user_id=req.user_id, subject=req.subject, grade=req.grade,
+                         topic=req.topic, content=req.content, score_json=json.dumps(card, ensure_ascii=False))
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
 
-    # 钻石计费（按 AI 实际用量；失败不阻断）
-    if result and result.get("prompt_tokens") is not None:
-        try:
-            check_and_deduct(db, req.user_id, result["prompt_tokens"],
-                             result.get("completion_tokens", 0), reason="作文批改")
-        except Exception:
-            pass
+        # 钻石计费（按 AI 实际用量；失败不阻断）
+        if result and result.get("prompt_tokens") is not None:
+            try:
+                check_and_deduct(db, req.user_id, result["prompt_tokens"],
+                                 result.get("completion_tokens", 0), reason="作文批改")
+            except Exception:
+                pass
+    finally:
+        db.close()
 
     return {"id": rec.id, "subject": req.subject, "stage": stage,
             "max_score": max_score, "card": card, "degraded": degraded}
 
 
 @router.post("/grade-short-answer", summary="阅读/简答要点判分（0/1/2 分档 + 评语）")
-def grade_short_answer(req: ShortAnswerGradeRequest, db: Session = Depends(get_db)):
+def grade_short_answer(req: ShortAnswerGradeRequest):
     if not ai_svc.rate_limit(f"short:{req.user_id}", 5, 60):
         raise HTTPException(429, "简答判分过于频繁，请稍后再试（限 5 次/分）")
     points = req.reference_points or []
@@ -150,6 +156,7 @@ def grade_short_answer(req: ShortAnswerGradeRequest, db: Session = Depends(get_d
 
     data = None
     degraded = False
+    # AI 调用在会话外执行，不占数据库连接
     result = ai_svc.chat_for(req.user_id, system, user, max_tokens=600)
     if result and result.get("text"):
         data = _extract_json(result["text"])
@@ -162,12 +169,17 @@ def grade_short_answer(req: ShortAnswerGradeRequest, db: Session = Depends(get_d
     data.setdefault("total", sum(p.get("score", 0) for p in data.get("points", [])))
     data.setdefault("comment", "")
 
+    # 钻石计费：短会话（失败不阻断）
     if result and result.get("prompt_tokens") is not None:
+        db = SessionLocal()
         try:
-            check_and_deduct(db, req.user_id, result["prompt_tokens"],
-                             result.get("completion_tokens", 0), reason="简答判分")
-        except Exception:
-            pass
+            try:
+                check_and_deduct(db, req.user_id, result["prompt_tokens"],
+                                 result.get("completion_tokens", 0), reason="简答判分")
+            except Exception:
+                pass
+        finally:
+            db.close()
 
     return {"max_score": max_score, "total": data["total"],
             "points": data["points"], "comment": data["comment"], "degraded": degraded}

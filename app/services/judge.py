@@ -31,13 +31,14 @@ JUDGE_SYSTEM = (
 JUDGE_RATE_LIMIT = 30  # 次/小时/用户
 
 
-def judge_wrong_items(db, user_id: str, items: list) -> dict:
+def judge_wrong_items(user_id: str, items: list) -> dict:
     """批量 AI 复核本地判错的作答。
 
     items: [{"key": 任意可哈希标识, "question_id": 可选, "question": 题干,
              "answer": 参考答案, "user_answer": 孩子作答, "subject": 学科}]
 
     返回 {key: True}：仅包含 AI 判定为正确的项；任何失败返回 {}（维持本地判定）。
+    内部用短会话：等待 AI 期间不持有数据库连接（防连接池耗尽，交卷高频路径）。
     """
     if not items:
         return {}
@@ -61,27 +62,32 @@ def judge_wrong_items(db, user_id: str, items: list) -> dict:
         logger.warning("AI 判题复核限频（user=%s），维持本地判定", user_id)
         return {}
 
-    # 1) 全局缓存命中：同题+同作答已被判对 → 直接采纳（不请求 AI）
+    # 1) 全局缓存命中：同题+同作答已被判对 → 直接采纳（不请求 AI）；短会话读后即释放
+    from ..database import SessionLocal
     from ..models.ai_usage import AiQa
     todo = []
-    for it in items:
-        qid = it.get("question_id")
-        if qid:
-            cached = db.query(AiQa).filter(
-                AiQa.q_type == "judge",
-                AiQa.ref_id == qid,
-                AiQa.question == it.get("user_answer", ""),
-                AiQa.answer == "correct",
-                AiQa.degraded == 0,
-            ).first()
-            if cached:
-                approved[it["key"]] = True
-                continue
-        todo.append(it)
+    db = SessionLocal()
+    try:
+        for it in items:
+            qid = it.get("question_id")
+            if qid:
+                cached = db.query(AiQa).filter(
+                    AiQa.q_type == "judge",
+                    AiQa.ref_id == qid,
+                    AiQa.question == it.get("user_answer", ""),
+                    AiQa.answer == "correct",
+                    AiQa.degraded == 0,
+                ).first()
+                if cached:
+                    approved[it["key"]] = True
+                    continue
+            todo.append(it)
+    finally:
+        db.close()
     if not todo:
         return approved
 
-    # 2) 一次批量调用，AI 输出 JSON 数组（idx → correct）
+    # 2) 一次批量调用，AI 输出 JSON 数组（idx → correct）；会话外执行，不占连接
     lines = []
     for it in todo:
         q_text = it.get("question", "")
@@ -100,39 +106,44 @@ def judge_wrong_items(db, user_id: str, items: list) -> dict:
         max_tokens=900,
     )
 
-    if not result or not result.get("text", "").strip():
-        _log_judge_usage(db, user_id, ok=False, error="AI 不可用或无输出，维持本地判定")
-        return approved  # 保留缓存命中的判对结果；未命中的维持本地判定
+    # 3) 写回缓存 / 用量日志：短会话
+    db = SessionLocal()
+    try:
+        if not result or not result.get("text", "").strip():
+            _log_judge_usage(db, user_id, ok=False, error="AI 不可用或无输出，维持本地判定")
+            return approved  # 保留缓存命中的判对结果；未命中的维持本地判定
 
-    verdicts = _parse_verdicts(result["text"])
-    if not verdicts:
-        _log_judge_usage(db, user_id, ok=False, error="AI 输出无法解析，维持本地判定")
+        verdicts = _parse_verdicts(result["text"])
+        if not verdicts:
+            _log_judge_usage(db, user_id, ok=False, error="AI 输出无法解析，维持本地判定")
+            return approved
+
+        hit = 0
+        key_to_item = {it["key"]: it for it in todo}
+        for v in verdicts:
+            key = v.get("idx")
+            if key not in key_to_item or v.get("correct") is not True:
+                continue
+            approved[key] = True
+            hit += 1
+            # 判对结果写缓存（同题+同作答复用）；写失败不影响主流程
+            qid = key_to_item[key].get("question_id")
+            if qid:
+                try:
+                    db.add(AiQa(user_id=user_id,
+                                question=key_to_item[key].get("user_answer", ""),
+                                answer="correct",
+                                provider=result.get("provider", ""),
+                                model=result.get("model", ""),
+                                q_type="judge", ref_id=qid, degraded=0))
+                    db.commit()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("写 AI 判题缓存失败: %s", e)
+                    db.rollback()
+        _log_judge_usage(db, user_id, ok=True, result=result, detail=f"复核 {len(todo)} 题，判对 {hit} 题")
         return approved
-
-    hit = 0
-    key_to_item = {it["key"]: it for it in todo}
-    for v in verdicts:
-        key = v.get("idx")
-        if key not in key_to_item or v.get("correct") is not True:
-            continue
-        approved[key] = True
-        hit += 1
-        # 判对结果写缓存（同题+同作答复用）；写失败不影响主流程
-        qid = key_to_item[key].get("question_id")
-        if qid:
-            try:
-                db.add(AiQa(user_id=user_id,
-                            question=key_to_item[key].get("user_answer", ""),
-                            answer="correct",
-                            provider=result.get("provider", ""),
-                            model=result.get("model", ""),
-                            q_type="judge", ref_id=qid, degraded=0))
-                db.commit()
-            except Exception as e:  # noqa: BLE001
-                logger.warning("写 AI 判题缓存失败: %s", e)
-                db.rollback()
-    _log_judge_usage(db, user_id, ok=True, result=result, detail=f"复核 {len(todo)} 题，判对 {hit} 题")
-    return approved
+    finally:
+        db.close()
 
 
 def _parse_verdicts(text: str) -> list:

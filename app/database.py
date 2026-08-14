@@ -11,7 +11,12 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from .config import DATABASE_URL
 
 # 统一 MySQL 引擎：pool_pre_ping 探活 + pool_recycle 防连接超时（跨长时间空闲连接被服务端断开）
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, pool_recycle=3600)
+# 池容量：默认 5+10=15 在 AI 类长请求并发下会耗尽（QueuePool TimeoutError 全站卡死），
+# 扩至 10+30=40/worker；pool_timeout 15 快速失败避免雪崩排队（需与 MySQL max_connections 匹配）
+engine = create_engine(
+    DATABASE_URL, echo=False, pool_pre_ping=True, pool_recycle=3600,
+    pool_size=10, max_overflow=30, pool_timeout=15,
+)
 
 # 创建数据库会话工厂
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

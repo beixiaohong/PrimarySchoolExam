@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..models.ai_usage import AiQa
 from ..models.study_error import StudyError
 from ..services import ai as ai_svc
@@ -102,7 +102,7 @@ def _empty_payload(text: str, user_id: str, subject: str, db: Session) -> dict:
 
 
 @router.post("/ask", summary="文字搜题：题库命中 或 AI 讲解（缓存/计费/错题本联动）")
-def search_ask(req: SearchAskReq, db: Session = Depends(get_db)):
+def search_ask(req: SearchAskReq):
     """文字搜题：优先命中本地题库，其次命中全局缓存，最后走 AI 实时讲解。
 
     参数（Body）：user_id、question_text（<=500 字）、subject、grade、force_ai（跳过题库命中）。
@@ -121,60 +121,70 @@ def search_ask(req: SearchAskReq, db: Session = Depends(get_db)):
 
     norm = normalize_question(text)
 
-    # 1) 题库命中（除非强制 AI 讲解）
-    if not req.force_ai:
-        hit = match_library(db, norm, req.subject or "")
-        if hit:
+    # 1) 题库 / 缓存命中：短会话，取完即释放，等待 AI 期间不占连接池
+    db = SessionLocal()
+    try:
+        if not req.force_ai:
+            hit = match_library(db, norm, req.subject or "")
+            if hit:
+                return {
+                    "hit": True, "cached": False,
+                    "question": hit["question"], "question_id": hit["question_id"],
+                    "source": hit["source"], "subject": hit["subject"],
+                    "answer": hit["answer"], "analysis": hit["analysis"],
+                    "options": hit["options"], "score": hit["score"],
+                    "ai_text": None,
+                    "diamond_cost": 0, "diamond_balance": _balance(db, req.user_id),
+                }
+
+        # 2) 缓存命中（之前 AI 解答过相同规范化题干，任意用户）
+        cached = cached_search(db, norm)
+        if cached:
             return {
-                "hit": True, "cached": False,
-                "question": hit["question"], "question_id": hit["question_id"],
-                "source": hit["source"], "subject": hit["subject"],
-                "answer": hit["answer"], "analysis": hit["analysis"],
-                "options": hit["options"], "score": hit["score"],
-                "ai_text": None,
+                "hit": False, "cached": True,
+                "question": text, "question_id": None, "source": None,
+                "subject": req.subject or "", "answer": "", "analysis": "", "options": [],
+                "score": 0,
+                "ai_text": cached["ai_text"],
                 "diamond_cost": 0, "diamond_balance": _balance(db, req.user_id),
             }
+    finally:
+        db.close()
 
-    # 2) 缓存命中（之前 AI 解答过相同规范化题干，任意用户）
-    cached = cached_search(db, norm)
-    if cached:
-        return {
-            "hit": False, "cached": True,
-            "question": text, "question_id": None, "source": None,
-            "subject": req.subject or "", "answer": "", "analysis": "", "options": [],
-            "score": 0,
-            "ai_text": cached["ai_text"],
-            "diamond_cost": 0, "diamond_balance": _balance(db, req.user_id),
-        }
-
-    # 3) AI 实时解答（未命中题库 + 未命中缓存）
+    # 3) AI 实时解答（会话外执行，不占数据库连接）
     result = ai_explain(req.user_id, norm, text, req.grade or 0)
-    if result and result["text"].strip():
-        db.add(AiQa(
-            user_id=req.user_id, question=norm, answer=result["text"],
-            provider=result.get("provider") or "", model=result.get("model") or "",
-            q_type="search", degraded=0,
-        ))
-        try:
-            db.commit()
-        except Exception as e:
-            logger.warning("写 ai_qa(search) 失败: %s", e)
-            db.rollback()
-        _log_usage(db, req.user_id, "search_ask", True, result)
-        diamond_info = _deduct_diamonds(db, req.user_id, result, "search")
-        return {
-            "hit": False, "cached": False,
-            "question": text, "question_id": None, "source": None,
-            "subject": req.subject or "", "answer": "", "analysis": "", "options": [],
-            "score": 0,
-            "ai_text": result["text"],
-            "diamond_cost": diamond_info.get("cost", 0),
-            "diamond_balance": diamond_info.get("balance", 0),
-        }
 
-    # 降级：AI 不可用（不写库，避免缓存劣质答案）
-    _log_usage(db, req.user_id, "search_ask", False, error="AI 不可用，降级模板")
-    return _empty_payload(text, req.user_id, req.subject or "", db)
+    # 4) 写回 / 计费：短会话
+    db = SessionLocal()
+    try:
+        if result and result["text"].strip():
+            db.add(AiQa(
+                user_id=req.user_id, question=norm, answer=result["text"],
+                provider=result.get("provider") or "", model=result.get("model") or "",
+                q_type="search", degraded=0,
+            ))
+            try:
+                db.commit()
+            except Exception as e:
+                logger.warning("写 ai_qa(search) 失败: %s", e)
+                db.rollback()
+            _log_usage(db, req.user_id, "search_ask", True, result)
+            diamond_info = _deduct_diamonds(db, req.user_id, result, "search")
+            return {
+                "hit": False, "cached": False,
+                "question": text, "question_id": None, "source": None,
+                "subject": req.subject or "", "answer": "", "analysis": "", "options": [],
+                "score": 0,
+                "ai_text": result["text"],
+                "diamond_cost": diamond_info.get("cost", 0),
+                "diamond_balance": diamond_info.get("balance", 0),
+            }
+
+        # 降级：AI 不可用（不写库，避免缓存劣质答案）
+        _log_usage(db, req.user_id, "search_ask", False, error="AI 不可用，降级模板")
+        return _empty_payload(text, req.user_id, req.subject or "", db)
+    finally:
+        db.close()
 
 
 @router.post("/to-wrong", summary="把搜到的题加入错题本（去重：同题干不重复入库）")

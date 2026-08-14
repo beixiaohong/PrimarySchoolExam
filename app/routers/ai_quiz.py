@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from .pet import _grant_coins
 
 router = APIRouter(tags=["AI 趣味出题"])
@@ -60,7 +60,7 @@ class QuizRewardReq(BaseModel):
 
 
 @router.post("/generate", summary="AI 生成趣味题（主题包装）")
-def generate_quiz(req: QuizGenReq, db: Session = Depends(get_db)):
+def generate_quiz(req: QuizGenReq):
     """AI 生成趣味题（主题包装）。
 
     请求：{user_id, subject=数学/语文/英语, grade, theme, count}；无需家长密码。
@@ -80,18 +80,23 @@ def generate_quiz(req: QuizGenReq, db: Session = Depends(get_db)):
         f"主题是「{theme}」。题目要生动有趣，贴近孩子生活。"
     )
     text = ""
+    # AI 调用在会话外执行（可能重试 2 次），不占数据库连接
     for attempt in range(2):
         resp = chat_with(req.user_id, SYSTEM_PROMPT, user_prompt, max_tokens=1600)
         text = (resp or {}).get("text", "") or ""
         questions = _parse_questions(text)
         if questions:
-            # 钻石扣费
+            # 钻石扣费：短会话
             try:
                 from ..services import diamond as diamond_svc
-                diamond_svc.check_and_deduct(db, req.user_id,
-                                              (resp or {}).get("prompt_tokens", 0),
-                                              (resp or {}).get("completion_tokens", 0),
-                                              reason="ai_quiz")
+                db = SessionLocal()
+                try:
+                    diamond_svc.check_and_deduct(db, req.user_id,
+                                                  (resp or {}).get("prompt_tokens", 0),
+                                                  (resp or {}).get("completion_tokens", 0),
+                                                  reason="ai_quiz")
+                finally:
+                    db.close()
             except Exception:
                 pass
             return {"theme": theme, "count": len(questions), "questions": questions,

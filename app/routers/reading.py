@@ -46,17 +46,17 @@ def reading_passages(
 
 
 @router.post("/submit", summary="阅读理解交卷判分（客观即时判 + 主观 AI 判分）")
-def reading_submit(req: ReadingSubmitRequest, db: Session = Depends(get_db)):
+def reading_submit(req: ReadingSubmitRequest):
     """阅读理解交卷判分：客观题即时判分，主观题走 AI 判分。
 
     参数（Body）：user_id、passage_id、answers[{qid, user_answer}]。
     返回：判分结果（由 reading_service.submit_reading_quiz 决定结构，含得分/明细）。
     副作用：可能写答题/判分记录；业务异常（如篇不存在）返回 400。
-    无需家长密码。
+    无需家长密码。服务内部短会话，等待 AI 期间不占连接池。
     """
     try:
         result = submit_reading_quiz(
-            db, req.user_id, req.passage_id, [a.model_dump() for a in req.answers],
+            req.user_id, req.passage_id, [a.model_dump() for a in req.answers],
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

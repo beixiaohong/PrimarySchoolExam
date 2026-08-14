@@ -52,19 +52,26 @@ def get_passages(db: Session, subject: str, grade: int, limit: int = 5) -> list:
     return out
 
 
-def submit_reading_quiz(db: Session, user_id: str, passage_id: int,
+def submit_reading_quiz(user_id: str, passage_id: int,
                         answers: list) -> dict:
     """交卷判分：客观即时判、主观走 AI；返回逐题结果、总分、解析。
 
     answers: [{qid, user_answer}]；主观题 user_answer 为自由文本。
+    内部用短会话：等待 AI 判分期间不持有数据库连接（防连接池耗尽）。
     """
-    passage = db.query(ReadingPassage).filter(ReadingPassage.id == passage_id).first()
-    if not passage:
-        raise ValueError("阅读篇目不存在")
+    from ..database import SessionLocal
+    db = SessionLocal()
     try:
-        questions = json.loads(passage.questions_json or "[]")
-    except Exception:
-        questions = []
+        passage = db.query(ReadingPassage).filter(ReadingPassage.id == passage_id).first()
+        if not passage:
+            raise ValueError("阅读篇目不存在")
+        title = passage.title
+        try:
+            questions = json.loads(passage.questions_json or "[]")
+        except Exception:
+            questions = []
+    finally:
+        db.close()
 
     ans_map = {a.get("qid"): (a.get("user_answer") or "") for a in answers}
     total_score = 0.0
@@ -87,7 +94,7 @@ def submit_reading_quiz(db: Session, user_id: str, passage_id: int,
             total_score += earned
         else:
             # 主观简答 → AI 判分（要点 ratio）
-            res = _grade_short(db, user_id, q, ua)
+            res = _grade_short(user_id, q, ua)
             ai_calls += 1
             detail.append({
                 "qid": i, "type": "short", "correct": res["ratio"] >= 0.6,
@@ -101,7 +108,7 @@ def submit_reading_quiz(db: Session, user_id: str, passage_id: int,
 
     return {
         "passage_id": passage_id,
-        "title": passage.title,
+        "title": title,
         "total_score": round(total_score, 1),
         "max_score": round(max_score, 1),
         "detail": detail,
@@ -121,8 +128,8 @@ def _judge_choice(user_answer: str, correct_answer: str, options: list) -> (bool
     return ua.lower() == ca.lower(), ca
 
 
-def _grade_short(db: Session, user_id: str, q: dict, user_answer: str) -> dict:
-    """主观简答 AI 判分：返回 {ratio:0~1, comment, degraded}"""
+def _grade_short(user_id: str, q: dict, user_answer: str) -> dict:
+    """主观简答 AI 判分：返回 {ratio:0~1, comment, degraded}（计费用内部短会话）"""
     if not ai_svc.rate_limit(f"reading:{user_id}", 5, 60):
         return {"ratio": 0.0, "comment": "（判分过于频繁，请稍后再试）", "degraded": True}
     points = q.get("points", []) or []
@@ -156,11 +163,17 @@ def _grade_short(db: Session, user_id: str, q: dict, user_answer: str) -> dict:
         comment = "（AI 暂不可用，请对照参考答案）"
 
     if result and result.get("prompt_tokens") is not None:
+        # 计费：短会话（失败不阻断）
+        from ..database import SessionLocal
+        db = SessionLocal()
         try:
-            check_and_deduct(db, user_id, result["prompt_tokens"],
-                             result.get("completion_tokens", 0), reason="阅读简答判分")
-        except Exception:
-            pass
+            try:
+                check_and_deduct(db, user_id, result["prompt_tokens"],
+                                 result.get("completion_tokens", 0), reason="阅读简答判分")
+            except Exception:
+                pass
+        finally:
+            db.close()
     return {"ratio": ratio, "comment": comment, "degraded": degraded}
 
 

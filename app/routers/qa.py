@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..models.ai_usage import AiQa
 from ..services import ai as ai_svc
 
@@ -101,7 +101,7 @@ def qa_models(user_id: str = Query(..., min_length=1)):
 
 
 @router.post("/ask", summary="十万个为什么提问（单轮命中全局缓存；带 session_id 走多轮对话）")
-def qa_ask(req: AskReq, db: Session = Depends(get_db)):
+def qa_ask(req: AskReq):
     """十万个为什么提问。
 
     参数（Body）：user_id、question（<=300 字）、provider（zhipu/relay/deepseek，默认 zhipu）、
@@ -130,96 +130,106 @@ def qa_ask(req: AskReq, db: Session = Depends(get_db)):
     session_id = (req.session_id or "").strip()
     history: list = []
 
-    # 1) 多轮模式：读同会话最近 N 轮问答作为上下文（不命中全局缓存）
-    if session_id:
-        rows = db.query(AiQa).filter(
-            AiQa.user_id == req.user_id,
-            AiQa.session_id == session_id,
-            AiQa.q_type == "qa",
-            AiQa.degraded == 0,
-        ).order_by(AiQa.id.desc()).limit(SESSION_ROUNDS * 2).all()
-        rows.reverse()
-        for r in rows:
-            history.append({"role": "user", "content": r.question})
-            history.append({"role": "assistant", "content": r.answer})
-        # 会话第一轮：同样享受全局缓存秒回（命中后写回本会话）
-        if not history:
+    # 1) 多轮历史 / 缓存：短会话读后即释放，等待 AI 期间不占连接池
+    db = SessionLocal()
+    try:
+        if session_id:
+            rows = db.query(AiQa).filter(
+                AiQa.user_id == req.user_id,
+                AiQa.session_id == session_id,
+                AiQa.q_type == "qa",
+                AiQa.degraded == 0,
+            ).order_by(AiQa.id.desc()).limit(SESSION_ROUNDS * 2).all()
+            rows.reverse()
+            for r in rows:
+                history.append({"role": "user", "content": r.question})
+                history.append({"role": "assistant", "content": r.answer})
+            # 会话第一轮：同样享受全局缓存秒回（命中后写回本会话）
+            if not history:
+                norm = _norm_question(question)
+                cached = db.query(AiQa).filter(
+                    AiQa.q_type == "qa", AiQa.degraded == 0,
+                    AiQa.question == norm,
+                ).order_by(AiQa.id.desc()).first()
+                if cached:
+                    try:
+                        db.add(AiQa(user_id=req.user_id, question=question,
+                                    answer=cached.answer, provider=cached.provider,
+                                    model=cached.model, q_type="qa", degraded=0,
+                                    session_id=session_id))
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                    return {
+                        "cached": True,
+                        "answer": cached.answer,
+                        "provider": cached.provider,
+                        "model": cached.model,
+                        "question": question,
+                        "session_id": session_id,
+                    }
+        else:
+            # 单轮：全局缓存命中 → 秒回
             norm = _norm_question(question)
             cached = db.query(AiQa).filter(
                 AiQa.q_type == "qa", AiQa.degraded == 0,
                 AiQa.question == norm,
             ).order_by(AiQa.id.desc()).first()
             if cached:
-                try:
-                    db.add(AiQa(user_id=req.user_id, question=question,
-                                answer=cached.answer, provider=cached.provider,
-                                model=cached.model, q_type="qa", degraded=0,
-                                session_id=session_id))
-                    db.commit()
-                except Exception:
-                    db.rollback()
                 return {
                     "cached": True,
                     "answer": cached.answer,
                     "provider": cached.provider,
                     "model": cached.model,
                     "question": question,
-                    "session_id": session_id,
                 }
-    else:
-        # 单轮：全局缓存命中 → 秒回
-        norm = _norm_question(question)
-        cached = db.query(AiQa).filter(
-            AiQa.q_type == "qa", AiQa.degraded == 0,
-            AiQa.question == norm,
-        ).order_by(AiQa.id.desc()).first()
-        if cached:
-            return {
-                "cached": True,
-                "answer": cached.answer,
-                "provider": cached.provider,
-                "model": cached.model,
-                "question": question,
-            }
+    finally:
+        db.close()
 
-    # 2) 指定模型 AI 调用（多轮带 history）
+    # 2) 指定模型 AI 调用（多轮带 history；会话外执行，不占数据库连接）
     result = ai_svc.chat_with(req.user_id, SYSTEM_PROMPT, question,
                               max_tokens=500, provider=provider,
                               history=history if history else None)
-    if result and result["text"].strip():
-        db.add(AiQa(user_id=req.user_id,
-                    question=_norm_question(question) if not session_id else question,
-                    answer=result["text"],
-                    provider=result.get("provider") or provider,
-                    model=result.get("model") or "",
-                    q_type="qa", degraded=0,
-                    session_id=session_id or None))
-        try:
-            db.commit()
-        except Exception as e:
-            logger.warning("写 ai_qa 失败: %s", e)
-            db.rollback()
-        _log_usage(db, req.user_id, "qa_ask", True, result)
-        # 钻石扣费
-        try:
-            from ..services import diamond as diamond_svc
-            diamond_svc.check_and_deduct(db, req.user_id,
-                                          result.get("prompt_tokens", 0),
-                                          result.get("completion_tokens", 0),
-                                          reason="ai_qa")
-        except Exception as e:
-            logger.warning("QA 钻石扣费失败: %s", e)
-        return {
-            "cached": False,
-            "answer": result["text"],
-            "provider": result.get("provider") or provider,
-            "model": result.get("model") or "",
-            "question": question,
-            "session_id": session_id,
-        }
 
-    # 3) AI 不可用 → 降级（不写库，避免缓存劣质答案）
-    _log_usage(db, req.user_id, "qa_ask", False, error=f"AI 不可用（{provider}）")
+    # 3) 写回 / 计费 / 日志：短会话
+    db = SessionLocal()
+    try:
+        if result and result["text"].strip():
+            db.add(AiQa(user_id=req.user_id,
+                        question=_norm_question(question) if not session_id else question,
+                        answer=result["text"],
+                        provider=result.get("provider") or provider,
+                        model=result.get("model") or "",
+                        q_type="qa", degraded=0,
+                        session_id=session_id or None))
+            try:
+                db.commit()
+            except Exception as e:
+                logger.warning("写 ai_qa 失败: %s", e)
+                db.rollback()
+            _log_usage(db, req.user_id, "qa_ask", True, result)
+            # 钻石扣费
+            try:
+                from ..services import diamond as diamond_svc
+                diamond_svc.check_and_deduct(db, req.user_id,
+                                              result.get("prompt_tokens", 0),
+                                              result.get("completion_tokens", 0),
+                                              reason="ai_qa")
+            except Exception as e:
+                logger.warning("QA 钻石扣费失败: %s", e)
+            return {
+                "cached": False,
+                "answer": result["text"],
+                "provider": result.get("provider") or provider,
+                "model": result.get("model") or "",
+                "question": question,
+                "session_id": session_id,
+            }
+
+        # 3) AI 不可用 → 降级（不写库，避免缓存劣质答案）
+        _log_usage(db, req.user_id, "qa_ask", False, error=f"AI 不可用（{provider}）")
+    finally:
+        db.close()
     return {
         "cached": False, "degraded": True,
         "answer": "AI 老师暂时有点忙，换个问题或稍后再试一下吧！",
