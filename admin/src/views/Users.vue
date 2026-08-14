@@ -65,7 +65,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
-import { ElMessage } from 'element-plus'
+// ElMessage 由 vite.config.js 的 unplugin-auto-import 按需自动注入，无需手动 import
 
 const router = useRouter()
 const rows = ref([])

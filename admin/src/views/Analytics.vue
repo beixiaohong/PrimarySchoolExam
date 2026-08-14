@@ -30,7 +30,12 @@
 
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
-import * as echarts from 'echarts'
+// echarts 按需引入：本页只用 折线图 + 柱状图 + 基础坐标轴/提示框 + Canvas 渲染器。
+import * as echarts from 'echarts/core'
+import { LineChart, BarChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 import api from '../api'
 
 const regChart = ref(null)

@@ -97,7 +97,10 @@ fi
 if [ ! -f "$APP_DIR/admin/package.json" ]; then
     error "缺少 $APP_DIR/admin/package.json"
 fi
-(cd "$APP_DIR/admin" && npm ci --no-audit --no-fund && npm run build) \
+# 管理后台使用了 element-plus / echarts，编译期内存占用较高；
+# 先改造成按需引入（见 admin/vite.config.js、admin/src/main.js），
+# 再加内存上限兜底，避免小内存服务器编译时 OOM / CPU 跑满。
+(cd "$APP_DIR/admin" && export NODE_OPTIONS=--max-old-space-size=1536 && npm ci --no-audit --no-fund && npm run build) \
     && info "管理后台构建完成" \
     || error "管理后台构建失败"
 if [ ! -f "$APP_DIR/admin/dist/index.html" ]; then
