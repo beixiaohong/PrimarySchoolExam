@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import SessionLocal
+from ..database import SessionLocal, get_db
 from ..models.essay import EssayGrade
 from ..services import ai as ai_svc
 from ..services.diamond import check_and_deduct
