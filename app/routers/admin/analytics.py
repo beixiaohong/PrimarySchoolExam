@@ -24,6 +24,14 @@ from .common import _require_admin
 
 @router.get("/analytics", summary="运营数据分析（注册/活跃/留存/资产/AI/功能活跃）")
 def analytics(db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    """运营数据分析总接口：返回用户规模、注册/活跃趋势、留存、资产总量与流向、AI 用量、各功能活跃度及 Top 用户。
+
+    参数：
+        db：数据库会话。
+        admin：当前登录管理员（依赖 _require_admin 鉴权）。
+    返回：含 overview / registration_trend / active_trend / retention / asset_flow / ai_usage / feature_activity / top_users 的字典。
+    副作用：只读查询，不写库。
+    """
     today = date.today()
     start7 = datetime.combine(today - timedelta(days=6), datetime.min.time())
     start30 = datetime.combine(today - timedelta(days=29), datetime.min.time())
@@ -75,6 +83,15 @@ def analytics(db: Session = Depends(get_db), admin: Admin = Depends(_require_adm
 
     # 资产流向
     def _flow(model, col, positive, since):
+        """计算某资产流水在指定时间窗口内的正向或负向总额。
+
+        参数：
+            model：资产流水模型类（含 user_id 与 created_at）。
+            col：金额列（如 DiamondLedger.amount）。
+            positive：True 统计正向（收入），False 统计负向（支出）的绝对值。
+            since：时间下界（created_at >= since）。
+        返回：四舍五入为 2 位小数的金额；仅统计 user_id 非空的记录。
+        """
         q = db.query(func.sum(col)).filter(model.user_id.isnot(None))
         if positive:
             q = q.filter(col > 0)
@@ -107,6 +124,14 @@ def analytics(db: Session = Depends(get_db), admin: Admin = Depends(_require_adm
 
     # 各功能活跃（近 30 天）
     def _cnt(model, col, since):
+        """统计某模型在指定时间窗口内的记录数（用于功能活跃计数）。
+
+        参数：
+            model：模型类。
+            col：用作计数主键的列名（如 "id"）。
+            since：时间下界（created_at >= since）。
+        返回：满足条件的记录数（int）。
+        """
         return db.query(func.count(getattr(model, col))).filter(
             getattr(model, "created_at") >= since).scalar() or 0
 

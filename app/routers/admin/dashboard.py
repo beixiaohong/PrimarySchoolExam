@@ -17,6 +17,12 @@ from .common import _require_admin
 
 @router.get("/dashboard", summary="仪表盘（注册趋势/日活/AI 用量/钻石消耗）")
 def dashboard(db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    """仪表盘汇总：总用户数、VIP 数、近 30 天注册趋势、近 7 天日活、近 7 天 AI 用量与钻石消耗/发放。
+
+    参数：db / admin：依赖注入。
+    返回：含 total_users / vip_count / registration_trend / active_trend / ai_usage_7d / diamond_spend_7d / diamond_grant_7d 的字典。
+    副作用：只读查询。
+    """
     today = date.today()
     total_users = db.query(func.count(User.id)).scalar() or 0
 

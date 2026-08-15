@@ -12,6 +12,7 @@ from .common import CONFIG_GROUPS, SECRET_HINTS, _audit, _require_admin
 
 
 class ConfigSaveReq(BaseModel):
+    """三方配置保存请求：配置键与值。"""
     key: str
     value: str
 
@@ -27,6 +28,12 @@ def _mask(key: str, value: str) -> str:
 
 @router.get("/config", summary="三方配置列表（分组 + 脱敏）")
 def list_config(db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    """列出全部可管理三方配置（按分组），值做脱敏处理并标注来源（database/env/unset）。
+
+    参数：db / admin：依赖注入。
+    返回：{"groups": [{"group", "items": [{"key","value","source","updated_by","updated_at"}]}]}。
+    副作用：只读，不写库。
+    """
     rows = {r.key: r for r in db.query(SystemConfig).all()}
     groups = []
     for group, keys in CONFIG_GROUPS.items():
@@ -48,6 +55,13 @@ def list_config(db: Session = Depends(get_db), admin: Admin = Depends(_require_a
 @router.post("/config", summary="保存三方配置（写入 system_config，60s 内生效）")
 def save_config(req: ConfigSaveReq, db: Session = Depends(get_db),
                 admin: Admin = Depends(_require_admin)):
+    """保存三方配置到 system_config（优先级高于 .env，保存后立即失效缓存），并落审计日志。
+
+    参数：req：key、value。
+    业务约束：key 必须在可管理清单 CONFIG_GROUPS 内，否则 400。
+    副作用：写入/更新 SystemConfig、sysconfig.invalidate(key) 使缓存失效、记审计日志。
+    返回：{"ok": true}。
+    """
     key = req.key.strip()
     all_keys = {k for keys in CONFIG_GROUPS.values() for k in keys}
     if key not in all_keys:

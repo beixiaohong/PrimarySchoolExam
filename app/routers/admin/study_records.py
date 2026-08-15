@@ -38,6 +38,16 @@ STUDY_CATS = {
             summary="查询用户学习记录（做题/错题/背诵/背单词/刷题/AI对话/家长记录）")
 def user_study_records(user_id: str, category: str = "all", page: int = 1, page_size: int = 30,
                        db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    """查询指定用户的学习记录（做题/错题/背诵/背单词/刷题/AI对话/家长记录），按类别过滤分页，并给出各类计数。
+
+    参数：
+        user_id：目标用户 id。
+        category：类别（exam/wrong/classical/vocab/challenge/ai/parent 或 all）。
+        page / page_size：分页参数。
+    业务约束：用户不存在返回 404。
+    返回：{"total","page","page_size","counts","items"}；按时间倒序。
+    副作用：只读。
+    """
     uid = user_id.strip()
     if not db.query(User).filter(User.user_id == uid).first():
         raise HTTPException(404, "用户不存在")

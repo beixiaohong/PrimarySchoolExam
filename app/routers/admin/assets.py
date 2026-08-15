@@ -17,6 +17,7 @@ from .common import _audit, _require_admin
 
 
 class AssetAdjustReq(BaseModel):
+    """资产调整请求：指定用户、资产类型、数量与理由。"""
     user_id: str
     asset: str  # diamond / coin / makeup
     amount: float
@@ -26,6 +27,15 @@ class AssetAdjustReq(BaseModel):
 @router.post("/assets/adjust", summary="资产调整（钻石/金币/补签卡，必填理由）")
 def adjust_assets(req: AssetAdjustReq, db: Session = Depends(get_db),
                   admin: Admin = Depends(_require_admin)):
+    """管理员调整指定用户的资产（钻石 / 金币 / 补签卡），需填写理由并落审计日志。
+
+    参数：
+        req：含 user_id、asset(diamond/coin/makeup)、amount、reason。
+        db / admin：依赖注入。
+    业务约束：理由必填；目标用户须存在；扣减后余额不能为负；金币/补签卡数量不能为 0。
+    副作用：写 DiamondAccount/CoinLedger/MakeupCard 等并 db.commit，记审计日志。
+    返回：{"ok": true, "detail": 调整摘要}。
+    """
     reason = req.reason.strip()
     if not reason:
         raise HTTPException(400, "调整理由必填")

@@ -19,6 +19,7 @@ from .common import _audit, _require_admin
 
 
 class AccountReq(BaseModel):
+    """账号处理请求：目标用户、操作类型与值。"""
     user_id: str
     action: str  # reset_password / set_email / set_phone / reset_nickname
     value: str = ""
@@ -37,6 +38,12 @@ class UserProfileUpdate(BaseModel):
 @router.get("/users", summary="用户列表（搜索 + 资产 + VIP）")
 def list_users(keyword: str = "", page: int = 1, page_size: int = 20,
                db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    """分页查询用户列表，支持按 user_id/昵称/邮箱/手机号搜索，并附带资产与 VIP 状态。
+
+    参数：keyword：模糊搜索关键字；page / page_size：分页参数。
+    返回：{"total","page","page_size","items": [含 diamonds/coins/makeup_cards/is_vip 的用户信息]}。
+    副作用：只读。
+    """
     q = db.query(User)
     kw = keyword.strip()
     if kw:
@@ -77,6 +84,13 @@ def list_users(keyword: str = "", page: int = 1, page_size: int = 20,
 @router.post("/users/account", summary="账号处理（重置密码/改绑解绑邮箱手机/重置为昵称态）")
 def handle_account(req: AccountReq, db: Session = Depends(get_db),
                    admin: Admin = Depends(_require_admin)):
+    """账号处理：重置登录密码、改绑/解绑邮箱手机、重置为纯昵称态，并记审计日志。
+
+    参数：req：user_id、action(reset_password/set_email/set_phone/reset_nickname)、value。
+    业务约束：用户不存在返回 404；邮箱/手机改绑需做排除自身的唯一冲突校验；密码需通过 _validate_pwd。
+    副作用：更新 User 并 db.commit、记审计日志。
+    返回：{"ok": true, "detail": 操作摘要}。
+    """
     user = db.query(User).filter(User.user_id == req.user_id.strip()).first()
     if not user:
         raise HTTPException(404, "用户不存在")

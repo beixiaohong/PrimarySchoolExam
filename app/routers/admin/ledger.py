@@ -29,6 +29,16 @@ LEDGER_KINDS = {"coin": "金币", "diamond": "钻石", "makeup": "补签卡", "c
             summary="用户资产流水（金币/钻石/补签卡/卡券）")
 def user_ledger(user_id: str, kind: str = "all", page: int = 1, page_size: int = 30,
                 db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    """查询指定用户的资产流水（金币/钻石/补签卡/卡券），支持类型过滤与分页，并汇总当前持有量。
+
+    参数：
+        user_id：目标用户 id。
+        kind：资产类型（coin/diamond/makeup/coupon 或 all）。
+        page / page_size：分页参数。
+    业务约束：用户不存在返回 404。
+    返回：{"total","page","page_size","items","balance"}；金币按逐笔累计推算余额，钻石取快照，补签卡回推余额。
+    副作用：只读。
+    """
     uid = user_id.strip()
     if not db.query(User).filter(User.user_id == uid).first():
         raise HTTPException(404, "用户不存在")

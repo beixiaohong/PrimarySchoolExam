@@ -25,6 +25,12 @@ SECRET_HINTS = ("KEY", "PASSWORD", "TOKEN")
 
 def _require_admin(authorization: str = Header(default=""),
                    db: Session = Depends(get_db)) -> Admin:
+    """鉴权依赖：从 Bearer token 解析并校验管理员会话。
+
+    参数：authorization：Authorization 请求头（"Bearer <token>"）。
+    业务约束：非 Bearer、token 缺失、登录已失效或过期（12h）均返回 401。
+    返回：已认证的管理员 Admin 对象。
+    """
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(401, "未登录")
@@ -37,6 +43,16 @@ def _require_admin(authorization: str = Header(default=""),
 
 
 def _audit(db: Session, admin: Admin, action: str, target: str, detail: str):
+    """记录一条管理员操作审计日志并落库。
+
+    参数：
+        db：数据库会话。
+        admin：当前管理员（取 username）。
+        action：操作类型标识（如 "assets:diamond"）。
+        target：操作目标（用户 id / 配置键等）。
+        detail：操作摘要。
+    副作用：新增 AdminOperationLog 并 db.commit。
+    """
     db.add(AdminOperationLog(admin=admin.username, action=action,
                              target=target, detail=detail))
     db.commit()

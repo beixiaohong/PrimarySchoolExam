@@ -95,6 +95,7 @@ def dashboard_stats(admin: "Admin" = Depends(_require_admin), db: Session = Depe
 # ═══════════════════════ 账本(ledger)管理 ═══════════════════════
 
 def _bill_to_dict(b: Bill) -> dict:
+    """将 Bill 模型对象转为前端展示字典（时间格式化、枚举转值）。"""
     return {
         "id": b.id, "user_id": b.user_id,
         "transaction_type": b.transaction_type.value if b.transaction_type else None,
@@ -109,6 +110,7 @@ def list_bills(
     skip: int = 0, limit: int = 50,
     admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
+    """跨用户分页查询账本账单列表，可按 user_id 筛选。"""
     q = db.query(Bill)
     if user_id:
         q = q.filter(Bill.user_id == user_id)
@@ -119,6 +121,7 @@ def list_bills(
 
 @router.delete("/ledger/bills/{bill_id}", summary="删除账单")
 def delete_bill(bill_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """删除指定账单（运营兜底），并记审计日志。"""
     b = db.query(Bill).filter(Bill.id == bill_id).first()
     if not b:
         raise HTTPException(404, "账单不存在")
@@ -130,6 +133,7 @@ def delete_bill(bill_id: int, admin: "Admin" = Depends(_require_admin), db: Sess
 
 @router.get("/ledger/accounts", summary="账本账户列表(跨用户)")
 def list_accounts(user_id: str = None, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """跨用户查询账本账户列表，可按 user_id 筛选。"""
     q = db.query(Account)
     if user_id:
         q = q.filter(Account.user_id == user_id)
@@ -142,6 +146,7 @@ def list_accounts(user_id: str = None, admin: "Admin" = Depends(_require_admin),
 
 @router.delete("/ledger/accounts/{account_id}", summary="删除账户")
 def delete_account(account_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """删除指定账本账户，并记审计日志。"""
     a = db.query(Account).filter(Account.id == account_id).first()
     if not a:
         raise HTTPException(404, "账户不存在")
@@ -153,6 +158,7 @@ def delete_account(account_id: int, admin: "Admin" = Depends(_require_admin), db
 
 @router.get("/ledger/categories", summary="账本分类列表(跨用户)")
 def list_categories(user_id: str = None, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """跨用户查询账本分类列表（含三级分类），可按 user_id 筛选。"""
     q = db.query(Category)
     if user_id:
         q = q.filter(Category.user_id == user_id)
@@ -165,6 +171,7 @@ def list_categories(user_id: str = None, admin: "Admin" = Depends(_require_admin
 
 @router.delete("/ledger/categories/{category_id}", summary="删除分类")
 def delete_category(category_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """删除指定账本分类，并记审计日志。"""
     c = db.query(Category).filter(Category.id == category_id).first()
     if not c:
         raise HTTPException(404, "分类不存在")
@@ -182,6 +189,7 @@ def list_chats(
     skip: int = 0, limit: int = 50,
     admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
+    """跨用户分页查询 IM 聊天列表，可按 chat_type 筛选，附带成员数与消息数。"""
     q = db.query(Chat)
     if chat_type:
         q = q.filter(Chat.chat_type == chat_type)
@@ -196,6 +204,7 @@ def list_chats(
 
 @router.delete("/im/chats/{chat_id}", summary="删除聊天(含消息/成员)")
 def delete_chat(chat_id: str, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """删除指定聊天及其全部消息/成员/已读回执，并记审计日志。"""
     c = db.query(Chat).filter(Chat.id == chat_id).first()
     if not c:
         raise HTTPException(404, "聊天不存在")
@@ -213,6 +222,7 @@ def list_friendships(
     status: str = Query(None), skip: int = 0, limit: int = 50,
     admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
+    """跨用户分页查询 IM 好友关系列表，可按 status 筛选。"""
     q = db.query(Friendship)
     if status:
         q = q.filter(Friendship.status == status)
@@ -225,6 +235,7 @@ def list_friendships(
 
 @router.delete("/im/friendships/{friendship_id}", summary="删除好友关系")
 def delete_friendship(friendship_id: str, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """删除指定好友关系，并记审计日志。"""
     f = db.query(Friendship).filter(Friendship.id == friendship_id).first()
     if not f:
         raise HTTPException(404, "好友关系不存在")
@@ -236,6 +247,7 @@ def delete_friendship(friendship_id: str, admin: "Admin" = Depends(_require_admi
 
 @router.get("/im/red-packets", summary="IM 红包列表(跨用户)")
 def list_red_packets(skip: int = 0, limit: int = 50, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """跨用户分页查询 IM 红包列表（含金额与领取状态）。"""
     total = db.query(RedPacket).count()
     rows = db.query(RedPacket).order_by(RedPacket.created_at.desc()).offset(skip).limit(limit).all()
     return {"total": total, "items": [
@@ -247,6 +259,7 @@ def list_red_packets(skip: int = 0, limit: int = 50, admin: "Admin" = Depends(_r
 
 @router.delete("/im/red-packets/{red_packet_id}", summary="删除红包")
 def delete_red_packet(red_packet_id: str, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """删除指定红包及其领取记录，并记审计日志。"""
     r = db.query(RedPacket).filter(RedPacket.id == red_packet_id).first()
     if not r:
         raise HTTPException(404, "红包不存在")
@@ -260,6 +273,7 @@ def delete_red_packet(red_packet_id: str, admin: "Admin" = Depends(_require_admi
 # ═══════════════════════ 系统公告 ═══════════════════════
 
 class AnnouncementCreate(BaseModel):
+    """发布系统公告请求：标题、内容、投放范围与目标、是否置顶。"""
     title: str
     content: str
     target_type: str = "all"   # all / grade / user
@@ -269,6 +283,7 @@ class AnnouncementCreate(BaseModel):
 
 @router.post("/announcements", summary="发布系统公告")
 def create_announcement(req: AnnouncementCreate, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """发布系统公告并记审计日志。"""
     ann = Announcement(
         title=req.title, content=req.content, target_type=req.target_type,
         target_value=req.target_value, is_pinned=req.is_pinned,
@@ -283,6 +298,7 @@ def create_announcement(req: AnnouncementCreate, admin: "Admin" = Depends(_requi
 
 @router.get("/announcements", summary="公告列表(后台)")
 def list_announcements(admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """后台公告列表（按置顶优先、创建时间倒序）。"""
     rows = db.query(Announcement).order_by(
         Announcement.is_pinned.desc(), Announcement.created_at.desc()).all()
     return {"total": len(rows), "items": [
@@ -295,6 +311,7 @@ def list_announcements(admin: "Admin" = Depends(_require_admin), db: Session = D
 
 @router.delete("/announcements/{ann_id}", summary="删除公告")
 def delete_announcement(ann_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
+    """删除指定公告，并记审计日志。"""
     a = db.query(Announcement).filter(Announcement.id == ann_id).first()
     if not a:
         raise HTTPException(404, "公告不存在")

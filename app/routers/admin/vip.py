@@ -12,6 +12,7 @@ from .common import _audit, _require_admin
 
 
 class VipReq(BaseModel):
+    """VIP 设置请求：目标用户、操作与备注。"""
     user_id: str
     action: str  # add / remove
     note: str = ""
@@ -20,6 +21,13 @@ class VipReq(BaseModel):
 @router.post("/vip", summary="VIP 设置（增删 + 备注）")
 def manage_vip(req: VipReq, db: Session = Depends(get_db),
                admin: Admin = Depends(_require_admin)):
+    """开通或取消指定用户的 VIP，并记审计日志。
+
+    参数：req：user_id、action(add/remove)、note。
+    业务约束：用户不存在返回 404；action 非 add/remove 返回 400。
+    副作用：新增/删除 VipUser、db.commit、记审计日志。
+    返回：{"ok": true, "detail": 操作摘要}。
+    """
     uid = req.user_id.strip()
     user = db.query(User).filter(User.user_id == uid).first()
     if not user:
