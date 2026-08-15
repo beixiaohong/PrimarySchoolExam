@@ -14,12 +14,14 @@ from app.models.daily_task import DailyTask
 
 
 class ClaimRequest(BaseModel):
+    """家长手动确认完成任务请求体：用户 ID，优先按 task_id 确认，兼容按 subject 确认强制任务。"""
     user_id: str
     subject: str = None
     task_id: int = None
 
 
 class ChildSubmitRequest(BaseModel):
+    """孩子提交任务完成申请请求体：用户 ID 与任务 ID（置为待家长确认）。"""
     user_id: str
     task_id: int
 
@@ -57,6 +59,7 @@ def child_submit_task(req: ChildSubmitRequest, db: Session = Depends(get_db)):
 
 
 class MakeupCompleteRequest(BaseModel):
+    """孩子用补签卡完成某任务请求体：用户 ID 与任务 ID（扣卡后生成待确认记录）。"""
     user_id: str
     task_id: int
 

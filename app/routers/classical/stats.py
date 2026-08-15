@@ -17,6 +17,11 @@ def get_stats(
     grade: int = Query(6),
     db: Session = Depends(get_db),
 ):
+    """获取古诗文学习统计：总篇数、已学数、已掌握数、待复习数、今日新学/复习数、连续天数。
+
+    参数（Query）：user_id、grade（统计该年级及以下）。返回：统计字典。
+    副作用：只读。无需家长密码。
+    """
     today = date.today()
     total = db.query(ClassicalText).filter(ClassicalText.grade <= grade).count()
     all_progress = db.query(ClassicalProgress).filter(

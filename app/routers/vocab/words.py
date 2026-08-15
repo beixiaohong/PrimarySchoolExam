@@ -246,11 +246,13 @@ def submit_review(
 
 
 class DictateItem(BaseModel):
+    """单词听写单条结果：单词 ID 与用户作答（忽略大小写判分）。"""
     word_id: int
     answer: str = ""
 
 
 class DictateRequest(BaseModel):
+    """单词听写提交请求体：用户 ID、模式、逐词的判分结果列表。"""
     user_id: str
     mode: str = "new"  # new=新学 / review=复习
     results: List[DictateItem]

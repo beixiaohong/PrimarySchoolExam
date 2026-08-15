@@ -46,6 +46,11 @@ def list_texts(
     text_type: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
+    """查看古诗文列表（可按年级上限 / 类型过滤），按年级与标题排序返回全部篇目。
+
+    参数（Query）：grade（仅返回该年级及以下篇目）、text_type（poem/prose 过滤，可空）。
+    返回：ClassicalTextOut 列表（含逐行内容、拼音、标签）。无副作用（只读）。无需家长密码。
+    """
     query = db.query(ClassicalText)
     if grade:
         query = query.filter(ClassicalText.grade <= grade)
@@ -66,6 +71,11 @@ def list_texts(
 
 @router.get("/texts/{text_id}", summary="查看单篇详情")
 def get_text(text_id: int, db: Session = Depends(get_db)):
+    """查看单篇古诗文详情（含逐行内容、拼音、标签）。
+
+    参数（Path）：text_id。返回：ClassicalTextOut；篇目不存在 404。
+    无副作用（只读）。无需家长密码。
+    """
     text = db.query(ClassicalText).filter(ClassicalText.id == text_id).first()
     if not text:
         raise HTTPException(404, "篇目不存在")

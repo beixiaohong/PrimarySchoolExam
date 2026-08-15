@@ -275,6 +275,13 @@ def classical_session_quiz(
     mix_errors: bool = Query(False, description="是否混入未掌握的古诗文错题（每篇3题，打 error_id 标记）"),
     db: Session = Depends(get_db),
 ):
+    """背诵会话检测：为新学/复习的每篇古诗文生成 3 道混合题（基础+理解型，理解题占比随复习阶段递增）。
+
+    参数（Query）：user_id、text_ids（逗号分隔的篇目 ID）、mode（new=新学 / review=复习）、
+                  mix_errors（是否混入未掌握的古诗文错题，每篇 3 题并打 error_id 标记）。
+    返回：{items[每篇 3 题]}；text_ids 为空 400、篇目不存在 404。
+    副作用：只读（仅生成题目，不落库）。无需家长密码。
+    """
     ids = []
     for s in (text_ids or "").split(","):
         s = s.strip()

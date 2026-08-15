@@ -15,6 +15,7 @@ from app.models.daily_task import DailyTask
 
 
 class SettingsRequest(BaseModel):
+    """保存每日任务配置请求体：用户 ID 与配置字典（目标/启用/强制/可选/额度/学习开关）。"""
     user_id: str
     settings: dict = Field(default_factory=dict)
 

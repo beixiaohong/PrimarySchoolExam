@@ -14,6 +14,7 @@ from app.models.daily_task import DailyTask
 
 
 class MakeupConfirmRequest(BaseModel):
+    """家长确认/拒绝补签卡使用请求体：用户 ID、补签记录 ID 与 action（confirm/reject）。"""
     user_id: str
     log_id: int
     action: str  # confirm / reject

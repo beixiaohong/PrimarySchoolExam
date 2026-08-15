@@ -17,6 +17,7 @@ WISH_MIN_TARGET = 1
 
 
 class CouponReq(BaseModel):
+    """家长创建兑换券请求体：用户 ID、券名、类型、每月上限、理由及全勤获取条件。"""
     user_id: str
     title: str
     kind: str = "custom"
@@ -27,6 +28,7 @@ class CouponReq(BaseModel):
 
 
 class WishReq(BaseModel):
+    """孩子创建心愿请求体：用户 ID、标题、目标值、类型、每日目标与截止日期。"""
     user_id: str
     title: str
     target: int = 10
@@ -36,20 +38,24 @@ class WishReq(BaseModel):
 
 
 class ToggleReq(BaseModel):
+    """通用切换/操作请求体：仅需用户 ID（确认、启用停用、移除等）。"""
     user_id: str
 
 
 class RedeemReq(BaseModel):
+    """家长兑现心愿请求体：用户 ID 与兑现理由（进入成长记录）。"""
     user_id: str
     reason: str = ""  # 兑现理由（成长奖励记录）
 
 
 class ParentNoteReq(BaseModel):
+    """家长寄语请求体：用户 ID 与寄语内容（<=200 字）。"""
     user_id: str
     note: str = ""
 
 
 def _coupon_out(c):
+    """将 RewardCoupon 模型序列化为前端展示字典：含类型标签、限额、进度、已发/已核销数与限期剩余天数。"""
     # 计算限期窗口剩余天数（仅当设置了 required_within_days 且 required_days>0）
     days_left = None
     cycle_deadline = None
@@ -80,6 +86,7 @@ def _coupon_out(c):
 
 
 def _wish_out(w):
+    """将 WishItem 模型序列化为前端展示字典：含标题、进度、目标、状态、类型、每日目标与截止日期。"""
     return {
         "id": w.id, "title": w.title, "progress": w.progress, "target": w.target,
         "status": w.status, "redeem_reason": w.redeem_reason or "",

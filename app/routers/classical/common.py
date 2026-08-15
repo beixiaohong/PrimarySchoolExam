@@ -36,6 +36,7 @@ NEW_TEXTS_PER_DAY = 5
 # ═══════════════════════════════════════════════════════════
 
 class ClassicalTextCreate(BaseModel):
+    """古诗文录入请求体：标题（必填）、作者、朝代、类型、年级、全文内容与标签。"""
     title: str
     author: str = ""
     dynasty: str = ""
@@ -46,6 +47,7 @@ class ClassicalTextCreate(BaseModel):
 
 
 class ClassicalTextOut(BaseModel):
+    """古诗文输出模型：篇目元数据 + 逐行内容、逐行拼音、标签等展示字段。"""
     id: int
     title: str
     author: str
@@ -59,6 +61,7 @@ class ClassicalTextOut(BaseModel):
 
 
 class QuizQuestionOut(BaseModel):
+    """古诗文填空题输出模型：篇目信息、题干、答案与上下文提示。"""
     text_id: int
     title: str
     author: str
@@ -68,16 +71,19 @@ class QuizQuestionOut(BaseModel):
 
 
 class LearnRequest(BaseModel):
+    """标记篇目已学习请求体：用户 ID 与待标记的篇目 ID 列表。"""
     user_id: str
     text_ids: List[int]
 
 
 class ReviewRequest(BaseModel):
+    """提交背诵复习结果请求体：用户 ID 与每篇正确与否的结果列表。"""
     user_id: str
     results: List[dict]  # [{text_id, correct}]
 
 
 class DictateRequest(BaseModel):
+    """古诗文默写提交请求体：用户 ID、模式及（兼容/新）正确篇目 ID 列表。"""
     user_id: str
     mode: str = "new"  # new=新学 / review=复习
     text_ids: List[int] = []      # 向后兼容：旧前端传「全部正确」的篇目
@@ -105,12 +111,14 @@ def _pinyin_lines(content: str) -> list:
 
 
 def _calc_next_review(stage: int, from_date: date) -> date:
+    """根据复习阶段计算下次复习日期：按艾宾浩斯间隔表取对应天数；已超最高阶段则固定 30 天后复查。"""
     if stage >= len(EBBINGHAUS_INTERVALS):
         return from_date + timedelta(days=30)
     return from_date + timedelta(days=EBBINGHAUS_INTERVALS[stage])
 
 
 def _get_today_log(db: Session, user_id: str, today: date) -> ClassicalDailyLog:
+    """获取或创建用户当日古诗文学习日志：不存在则新建并落库，返回 DailyLog 对象。"""
     log = db.query(ClassicalDailyLog).filter(
         ClassicalDailyLog.user_id == user_id,
         ClassicalDailyLog.learn_date == today
@@ -124,6 +132,7 @@ def _get_today_log(db: Session, user_id: str, today: date) -> ClassicalDailyLog:
 
 
 def _get_streak(db: Session, user_id: str) -> int:
+    """计算用户古诗文连续学习天数：从今天（或最近学习日）向前逐日回溯含学习记录的连续天数。"""
     logs = db.query(ClassicalDailyLog).filter(
         ClassicalDailyLog.user_id == user_id,
         ClassicalDailyLog.texts_learned > 0
