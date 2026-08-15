@@ -1625,7 +1625,7 @@
                   <span class="more">{{a.created_at}} 提交</span>
                   <input class="fill-input appeal-note" v-model="appealNotes[a.id]" placeholder="判题备注（可选）：可填写判对/判错的理由" />
                 </div>
-                <button class="btn btn-primary btn-sm" :disabled="recheckingId===a.id" @click="aiRecheckAppeal(a)" title="让 AI 重判该题，参考答案有误会自动修正并直接通过申诉">🤖 AI 复核</button>
+                <button class="btn btn-primary btn-sm" :disabled="recheckingId===a.id" @click="aiRecheckAppeal(a)" title="让 AI 重判该题，参考答案有误会自动修正并直接通过申诉">{{ recheckingId===a.id ? '复核中…' : '🤖 AI 复核' }}</button>
                 <button class="btn btn-success btn-sm" :disabled="a._deciding" @click="decideAppeal(a, true)" title="确认后该题改判正确、本卷得分重算">{{ a._deciding ? '处理中…' : '确认做对了 ✓' }}</button>
                 <button class="btn btn-ghost btn-sm" :disabled="a._deciding" @click="decideAppeal(a, false)">{{ a._deciding ? '处理中…' : '维持判错' }}</button>
               </div>
@@ -2148,7 +2148,7 @@
               <!-- 孩子申诉：判错 → 「我做对了」→ 家长二次确认 -->
               <div class="appeal-row" v-if="!quiz.items[quiz.i].correct && quiz.source && (quiz.source.mode==='exam' || quiz.source.mode==='retry')">
                 <button v-if="!quiz.items[quiz.i].appealed" class="btn btn-ghost btn-sm" @click="appealThis()" title="觉得这道题批错了？点这里，家长会来确认">🙋 我做对了</button>
-                <button v-if="!quiz.items[quiz.i].appealed" class="btn btn-ghost btn-sm" :disabled="rejudging" @click="aiRejudgeCurrent()" title="让 AI 重新判断，尤其当参考答案本身算错时">🤖 用 AI 重判</button>
+                <button v-if="!quiz.items[quiz.i].appealed" class="btn btn-ghost btn-sm" :disabled="rejudging" @click="aiRejudgeCurrent()" title="让 AI 重新判断，尤其当参考答案本身算错时">{{ rejudging ? '复核中…' : '🤖 用 AI 重判' }}</button>
                 <span v-else class="fb-gentle">✋ 申诉已提交，等家长在「家长管理」里确认</span>
               </div>
               <p v-if="!quiz.items[quiz.i].correct && quiz.items[quiz.i].cause" class="fb-gentle">已记录错因：{{causeLabel(quiz.items[quiz.i].cause)}} · 进步 +1 ✨</p>
