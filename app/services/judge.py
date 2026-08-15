@@ -1,13 +1,22 @@
-"""AI 判题复核服务：本地判错的题送 AI 批量复核，AI 判对 → 改判正确
+"""AI 判题复核服务：本地判错的题送 AI 批量复核（只升不降）
 
-约定（只升不降）：
-- 仅对「本地判定为错误」的作答复核；AI 判定正确 → 采纳（改判正确）
-- AI 不可用 / 超时 / 返回无法解析 / 未判对 → 全部维持本地判定（降级，不影响主流程）
-- 全局缓存：同一题目 + 同一孩子作答被判对过 → 直接复用（ai_qa 表 q_type='judge'），不再请求 AI
-- 每次调用记录 ai_usage_log（feature='judge'）
+提供两种能力：
+1. 等价作答复核：孩子作答与参考答案写法不同但实质正确（等价表达式、单位换算、
+   分数/小数/百分数互换、全角半角/标点差异等）→ 判对，改判正确。
+2. 错误参考答案检测：AI 忽略题面参考答案、独立计算正确答案；若发现「参考答案本身
+   算错了」（如 202 打八折应为 161.6，库里却存 161）且孩子作答恰为正确值 → 除改判
+   正确外，还返回 stored_wrong=True 与 correct_answer，由调用方（交卷/手动复核）把该
+   题目的存储答案修正为正确值，避免以后同题反复误判。仅在高置信（孩子确实答对且参考
+   答案确实算错）时才修正，杜绝 AI 臆造答案污染题库。
 
-测试钩子：环境变量 ZX_JUDGE_MOCK=all 时，所有送复核项直接判定正确
-（供 UI/API 集成测试确定性验证「AI 判对 → 改判正确」链路，生产环境不要设置）。
+约定：
+- 仅对本地判定为错误的作答复核；AI 判对 → 采纳（改判正确）。
+- AI 不可用 / 超时 / 返回无法解析 / 未判对 → 全部维持本地判定（降级，不影响主流程）。
+- 全局缓存：同题 + 同作答被判对过 → 直接复用（ai_qa 表 q_type='judge'），不再请求 AI。
+- 每次调用记录 ai_usage_log（feature='judge'）。
+
+测试钩子：环境变量 ZX_JUDGE_MOCK=all 时，所有送复核项直接判对（验证「AI 判对 → 改判正确」
+链路）；ZX_JUDGE_MOCK=none 时全部维持本地判定（验证降级链路）。生产环境不要设置。
 """
 import json
 import logging
@@ -18,14 +27,19 @@ logger = logging.getLogger(__name__)
 
 # 批改判定：温度写死在 0.7，靠 prompt 强调严格，只认「确实答对」才标 true
 JUDGE_SYSTEM = (
-    "你是小学（数学/语文/英语）试卷批改老师，正在复核一道被判为错误的题。"
-    "孩子的作答可能与参考答案写法不同但实质正确，例如：算式过程正确、"
-    "等价的数学表达式、单位换算正确但表述不同、全角半角/标点/空格差异、"
-    "同义词或语序不同、数值相同写法不同（分数/小数/百分数）。"
-    "请严格判断孩子的作答在数学/语义上是否等价于正确答案。"
-    "只有孩子确实答对才判正确；结果不对或过程有实质性错误必须判不正确。"
-    '只输出一个 JSON 数组，不要输出任何其他文字，格式：'
-    '[{"idx": 0, "correct": true, "reason": "不超过20字的理由"}, ...]'
+    "你是严谨的小学（数学/语文/英语）试卷批改老师，正在复核一道被判为错误的题。"
+    "请按以下步骤处理每一题：\n"
+    "1. 先忽略题面给出的「参考答案」，独立计算/推理出这道题的正确答案"
+    "（数值题请直接计算并保留合理小数，例如 202 打八折 = 202×0.8 = 161.6，"
+    "不要截断为整数；百分数、单位换算同理）。\n"
+    "2. 判断孩子的作答在数学/语义上是否等价于你算出的正确答案"
+    "（等价表达式、单位换算正确、同义词/语序不同、分数/小数/百分数等价写法、"
+    "全角半角/标点/空格差异都算对）。\n"
+    "3. 判断题面「参考答案」是否与你算出的正确答案明显不同"
+    "（仅书写格式不同不算错；只有确实算错，如 161.6 被写成 161，才算 stored_wrong=true）。\n"
+    "只输出一个 JSON 数组，不要输出任何其他文字，格式：\n"
+    '[{"idx": 0, "child_correct": true, "stored_wrong": false, '
+    '"correct_answer": "161.6", "reason": "不超过20字的理由"}, ...]'
 )
 
 JUDGE_RATE_LIMIT = 30  # 次/小时/用户
@@ -35,22 +49,26 @@ def judge_wrong_items(user_id: str, items: list) -> dict:
     """批量 AI 复核本地判错的作答。
 
     items: [{"key": 任意可哈希标识, "question_id": 可选, "question": 题干,
-             "answer": 参考答案, "user_answer": 孩子作答, "subject": 学科}]
+             "answer": 参考答案, "user_answer": 孩子作答, "subject": 学科,
+             "options": 可选}]
 
-    返回 {key: True}：仅包含 AI 判定为正确的项；任何失败返回 {}（维持本地判定）。
+    返回 {key: {"correct": bool, "stored_wrong": bool,
+                "correct_answer": str, "reason": str}}。
+    - correct=True 表示孩子作答经 AI 复核为正确（调用方据此改判正确）。
+    - stored_wrong=True 且 correct_answer 非空表示参考答案本身算错，且 correct=true，
+      调用方可将题目存储答案修正为该 correct_answer（高置信才会出现）。
+    任何失败返回 {}（维持本地判定）。
     内部用短会话：等待 AI 期间不持有数据库连接（防连接池耗尽，交卷高频路径）。
     """
     if not items:
         return {}
-    approved: dict = {}
 
-    # 测试钩子：ZX_JUDGE_MOCK=all → 全部判定正确（验证「AI 判对即改判」链路）；
+    # 测试钩子：ZX_JUDGE_MOCK=all → 全部判对（验证「AI 判对即改判」链路）；
     # ZX_JUDGE_MOCK=none → 全部维持本地判定（验证降级链路）。生产环境不要设置。
     mock = os.environ.get("ZX_JUDGE_MOCK", "").strip().lower()
     if mock == "all":
-        for it in items:
-            approved[it["key"]] = True
-        return approved
+        return {it["key"]: {"correct": True, "stored_wrong": False,
+                            "correct_answer": "", "reason": "mock:all"} for it in items}
     if mock == "none":
         return {}
 
@@ -79,15 +97,15 @@ def judge_wrong_items(user_id: str, items: list) -> dict:
                     AiQa.degraded == 0,
                 ).first()
                 if cached:
-                    approved[it["key"]] = True
+                    # 缓存命中只表示「判对」，不重放 stored_wrong 修正（题目已在首次修正）
                     continue
             todo.append(it)
     finally:
         db.close()
     if not todo:
-        return approved
+        return {}
 
-    # 2) 一次批量调用，AI 输出 JSON 数组（idx → correct）；会话外执行，不占连接
+    # 2) 一次批量调用，AI 输出 JSON 数组（idx → child_correct / stored_wrong）；会话外执行
     lines = []
     for it in todo:
         q_text = it.get("question", "")
@@ -106,26 +124,36 @@ def judge_wrong_items(user_id: str, items: list) -> dict:
         max_tokens=900,
     )
 
-    # 3) 写回缓存 / 用量日志：短会话
+    # 3) 解析并落缓存 / 用量日志：短会话
     db = SessionLocal()
     try:
         if not result or not result.get("text", "").strip():
             _log_judge_usage(db, user_id, ok=False, error="AI 不可用或无输出，维持本地判定")
-            return approved  # 保留缓存命中的判对结果；未命中的维持本地判定
+            return {}
 
         verdicts = _parse_verdicts(result["text"])
         if not verdicts:
             _log_judge_usage(db, user_id, ok=False, error="AI 输出无法解析，维持本地判定")
-            return approved
+            return {}
 
-        hit = 0
+        approved: dict = {}
         key_to_item = {it["key"]: it for it in todo}
         for v in verdicts:
             key = v.get("idx")
-            if key not in key_to_item or v.get("correct") is not True:
+            if key not in key_to_item:
                 continue
-            approved[key] = True
-            hit += 1
+            child_correct = bool(v.get("child_correct") or v.get("correct") or False)
+            if not child_correct:
+                continue
+            stored_wrong = bool(v.get("stored_wrong") or False)
+            correct_answer = str(v.get("correct_answer") or "").strip()
+            approved[key] = {
+                "correct": True,
+                "stored_wrong": stored_wrong,
+                "correct_answer": correct_answer,
+                "reason": str(v.get("reason") or "")[:60],
+            }
+
             # 判对结果写缓存（同题+同作答复用）；写失败不影响主流程
             qid = key_to_item[key].get("question_id")
             if qid:
@@ -140,14 +168,16 @@ def judge_wrong_items(user_id: str, items: list) -> dict:
                 except Exception as e:  # noqa: BLE001
                     logger.warning("写 AI 判题缓存失败: %s", e)
                     db.rollback()
-        _log_judge_usage(db, user_id, ok=True, result=result, detail=f"复核 {len(todo)} 题，判对 {hit} 题")
+        _log_judge_usage(db, user_id, ok=True, result=result,
+                         detail=f"复核 {len(todo)} 题，判对 {len(approved)} 题")
         return approved
     finally:
         db.close()
 
 
 def _parse_verdicts(text: str) -> list:
-    """从 AI 输出解析 [{idx, correct, reason}]；容忍代码围栏/前后杂文"""
+    """从 AI 输出解析 [{idx, child_correct, stored_wrong, correct_answer, reason}]；
+    容忍代码围栏/前后杂文"""
     try:
         m = re.search(r"\[[\s\S]*\]", text)
         if not m:

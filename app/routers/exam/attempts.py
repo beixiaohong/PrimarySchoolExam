@@ -11,6 +11,30 @@ from app.database import get_db
 from app.models.exam import (
     ExamRecord, Question, WrongRecord, ExamAttempt, AttemptAnswer,
 )
+from app.services.answer_check import fill_answer_correct
+
+
+def _fix_stored_answer(db: Session, qid: int, verdict: dict, r: dict):
+    """AI 复核确认参考答案本身算错且孩子作答正确时，把题目存储答案修正为正确值。
+
+    双保险：仅当孩子作答与 AI 给出的正确值等价时才覆盖，避免 AI 臆造答案污染题库。
+    修正后同步回写 results 行的 correct_answer，供前端展示正确值。
+    """
+    if not verdict.get("stored_wrong"):
+        return
+    corrected = (verdict.get("correct_answer") or "").strip()
+    if not corrected:
+        return
+    q = db.query(Question).get(qid)
+    if not q:
+        return
+    if (q.answer or "").strip() == corrected:
+        return
+    # 孩子作答需与修正值等价（AI 既判孩子对、又判参考答案错），才允许覆盖
+    if not fill_answer_correct(r.get("user_answer", ""), corrected):
+        return
+    q.answer = corrected
+    r["correct_answer"] = corrected
 
 
 @router.post("/submit-answers", summary="提交答案（在线做题判分）")
@@ -136,9 +160,14 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
             qid = r["question_id"]
             if r["is_correct"] or qid not in approved:
                 continue
+            verdict = approved[qid]
+            if not verdict.get("correct"):
+                continue
             # 改判正确：得分回补、撤销本次错题处理
             r["is_correct"] = True
             correct_count += 1
+            # 存储答案本身算错（高置信：孩子答对且参考答案错）→ 修正为标准正确值
+            _fix_stored_answer(db, qid, verdict, r)
             if r["seq"] in wrong_seqs:
                 wrong_seqs.remove(r["seq"])
             if qid in wrong_new_ids:

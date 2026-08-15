@@ -70,7 +70,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
         from app.services.judge import judge_wrong_items
         approved = judge_wrong_items(req.user_id, ai_items)
         for i, it in enumerate(req.results):
-            if i in approved:
+            if i in approved and approved[i].get("correct"):
                 it.correct = True
                 ai_approved.append(i)
 
