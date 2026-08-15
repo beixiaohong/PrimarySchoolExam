@@ -43,10 +43,11 @@ export const NAV_GROUPS = [
   },
 ]
 
-// 移动端底部 TabBar（5 项）
+// 移动端底部 TabBar（6 项；含「背诵」入口，与桌面端侧边栏一致）
 export const TABBAR = [
   { tab: 'home', label: '首页', ico: '🏠' },
   { tab: 'practice', label: '刷题', ico: '✏️' },
+  { tab: 'recite', label: '背诵', ico: '📖' },
   { tab: 'assistant', label: 'AI', ico: '🧑‍🏫' },
   { tab: 'wallet', label: '钱包', ico: '💰' },
   { tab: 'settings', label: '我的', ico: '⚙️' },

@@ -227,6 +227,7 @@
             <b class="dtask-title">{{t.title}}</b>
             <div class="dtask-desc">{{t.desc}}</div>
             <div class="dtask-actions">
+              <button v-if="t.status!=='done'" class="btn btn-primary btn-sm" @click="gotoTaskCode(t)">去做 →</button>
               <button v-if="t.manual && t.status==='pending'" class="btn btn-primary btn-sm" @click="childSubmitTask(t.id)">我完成了 ✓</button>
               <span v-else-if="t.manual && t.status==='pending_confirm'" class="tag tag-orange">已提交，待家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">全勤 +1</span>
@@ -252,6 +253,7 @@
             <b class="dtask-title">{{t.title}}</b>
             <div class="dtask-desc">{{t.desc}}</div>
             <div class="dtask-actions">
+              <button v-if="t.status!=='done'" class="btn btn-primary btn-sm" @click="gotoTaskCode(t)">去做 →</button>
               <button v-if="t.manual && t.status==='pending'" class="btn btn-primary btn-sm" @click="childSubmitTask(t.id)">我完成了 ✓</button>
               <span v-else-if="t.manual && t.status==='pending_confirm'" class="tag tag-orange">已提交，待家长确认</span>
               <span v-else-if="t.status==='done'" class="tag tag-green">已完成</span>
@@ -778,6 +780,7 @@
               <button class="btn btn-primary" :disabled="!curWrong.cause" @click="openTeach(curWrong)">🎓 出题给家长</button>
               <button class="btn btn-primary" :disabled="!curWrong.cause" @click="startWrongRetry(curWrong)">🎯 变式重练</button>
               <button class="btn btn-success" v-if="!curWrong.mastered" :disabled="!curWrong.cause" @click="markWrongMastered(curWrong)" title="先做 3 道同类型题，全部答对才标记已掌握">✅ 检测掌握（3 题全对）</button>
+              <button class="btn btn-ghost" v-if="curWrong.kind==='exam' && curWrong.question_id && !curWrong.is_unanswered" :disabled="rejudging" @click="aiRejudgeWrong(curWrong)" title="让 AI 重新判断，参考答案本身算错会自动修正并加分">🤖 用 AI 重判</button>
               <button class="btn btn-ghost" @click="wrongScreen='list'">返回列表</button>
             </div>
             <p v-if="!curWrong.cause && !curWrong.is_unanswered" style="text-align:center;color:var(--text-3);font-size:13px;margin-top:8px">💡 请先选择错因，才能进行讲解、重练等操作</p>
@@ -1622,6 +1625,7 @@
                   <span class="more">{{a.created_at}} 提交</span>
                   <input class="fill-input appeal-note" v-model="appealNotes[a.id]" placeholder="判题备注（可选）：可填写判对/判错的理由" />
                 </div>
+                <button class="btn btn-primary btn-sm" :disabled="recheckingId===a.id" @click="aiRecheckAppeal(a)" title="让 AI 重判该题，参考答案有误会自动修正并直接通过申诉">🤖 AI 复核</button>
                 <button class="btn btn-success btn-sm" :disabled="a._deciding" @click="decideAppeal(a, true)" title="确认后该题改判正确、本卷得分重算">{{ a._deciding ? '处理中…' : '确认做对了 ✓' }}</button>
                 <button class="btn btn-ghost btn-sm" :disabled="a._deciding" @click="decideAppeal(a, false)">{{ a._deciding ? '处理中…' : '维持判错' }}</button>
               </div>
@@ -2144,6 +2148,7 @@
               <!-- 孩子申诉：判错 → 「我做对了」→ 家长二次确认 -->
               <div class="appeal-row" v-if="!quiz.items[quiz.i].correct && quiz.source && (quiz.source.mode==='exam' || quiz.source.mode==='retry')">
                 <button v-if="!quiz.items[quiz.i].appealed" class="btn btn-ghost btn-sm" @click="appealThis()" title="觉得这道题批错了？点这里，家长会来确认">🙋 我做对了</button>
+                <button v-if="!quiz.items[quiz.i].appealed" class="btn btn-ghost btn-sm" :disabled="rejudging" @click="aiRejudgeCurrent()" title="让 AI 重新判断，尤其当参考答案本身算错时">🤖 用 AI 重判</button>
                 <span v-else class="fb-gentle">✋ 申诉已提交，等家长在「家长管理」里确认</span>
               </div>
               <p v-if="!quiz.items[quiz.i].correct && quiz.items[quiz.i].cause" class="fb-gentle">已记录错因：{{causeLabel(quiz.items[quiz.i].cause)}} · 进步 +1 ✨</p>

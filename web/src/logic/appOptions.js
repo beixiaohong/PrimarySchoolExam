@@ -27,6 +27,8 @@ const appOptions = {
       rechargeOpen: false, rechargeCfg: null, rechargePkg: 0, rechargeCopied: false, rechargeQrOpen: false,
       // 首页
       dashboard: null, todayTasks: [],
+      rejudging: false,          // AI 重判进行中（当前做题题）
+      recheckingId: null,        // 家长申诉列表中正在 AI 复核的申诉 id
       dailyTasks: null, dailyTaskStats: { done_count: 0, total: 3, streak_days: 0 }, makeupCards: 0,
       reviewQueue: { items: [] },
       queueToday: 0, queueTodayNames: '', queueTomorrow: 0, queueDayAfter: 0, queueLater: 0,
@@ -1221,13 +1223,36 @@ const appOptions = {
     },
     startTask(t) {
       if (t.done) { this.showToast('该任务今天已完成，明天再来吧'); return; }
-      if (t.key === 'word_new') this.startWordSession('new');
-      else if (t.key === 'word_review') this.startWordSession('review');
-      else if (t.key === 'text_new') this.startTextSession('new');
-      else if (t.key === 'text_review') this.startTextSession('review');
+      // 背诵类任务先跳转到「背诵中心」对应子页，再启动背诵/听写会话（点击任务即跳转对应界面）
+      if (t.key === 'word_new') { this.goTab('recite'); this.reciteSub = 'words'; this.startWordSession('new'); }
+      else if (t.key === 'word_review') { this.goTab('recite'); this.reciteSub = 'words'; this.startWordSession('review'); }
+      else if (t.key === 'text_new') { this.goTab('recite'); this.reciteSub = 'classical'; this.startTextSession('new'); }
+      else if (t.key === 'text_review') { this.goTab('recite'); this.reciteSub = 'classical'; this.startTextSession('review'); }
       else if (t.key === 'grammar') { this.goTab('practice'); this.practiceSub = 'grammar'; this.loadGrammarPoints(); }
       else if (t.key === 'wrong') this.goTab('wrong');
       else { this.goTab('practice'); this.practiceSub = 'generate'; }
+    },
+
+    /* 首页每日任务卡片「去做 →」：按 task_code 跳转到对应界面 */
+    gotoTaskCode(t) {
+      const code = (t && t.task_code) || '';
+      // code → [一级tab, 二级sub]；无映射的（如讲题/自定义）提示手动完成
+      const map = {
+        math_exam: ['practice', 'generate'], chi_exam: ['practice', 'generate'], eng_exam: ['practice', 'generate'],
+        chi_classical: ['recite', 'classical'], eng_vocab: ['recite', 'words'],
+        math_fix: ['wrong'], chi_dictation: ['dict'], eng_dictation: ['dict'],
+        chi_read: ['reading'], math_challenge: ['practice'],
+        math_sync: ['sync'], chi_sync: ['sync'], eng_sync: ['sync'],
+      };
+      const m = map[code];
+      if (!m) { this.showToast('完成本题后点「我完成了 ✓」即可'); return; }
+      const [tab, sub] = m;
+      this.goTab(tab);
+      if (sub) {
+        if (tab === 'recite') this.reciteSub = sub;
+        else if (tab === 'practice') this.practiceSub = sub;
+        else if (tab === 'dict') this.dictSub = sub;
+      }
     },
 
     /* ─────────── 刷题中心 ─────────── */
@@ -1953,6 +1978,91 @@ const appOptions = {
         it.appealed = true;
         this.showToast('已提交申诉，等家长在「家长管理」里确认 ✋');
       }).catch(e => this.showToast(e.message));
+    },
+    /* ─────────── AI 重判（题目判错后用 AI 复核，可纠正错误参考答案）─────────── */
+    aiRejudge(payload) {
+      // 通用：调用 /api/ai/rejudge，返回 {correct, stored_wrong, correct_answer, reason, fixed, credited}
+      return this.api('/api/ai/rejudge', {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({ user_id: this.user }, payload)),
+      });
+    },
+    async aiRejudgeCurrent() {
+      const it = this.quiz.items[this.quiz.i];
+      if (!it || !it.answered || it.correct) return;
+      this.rejudging = true;
+      let d = null;
+      try {
+        d = await this.aiRejudge({
+          question_id: it.qid || null,
+          question: it.question,
+          answer: it.answer || '',
+          user_answer: it.userAnswer || '',
+          subject: this.subject,
+        });
+      } catch (e) { this.showToast(e.message); }
+      this.rejudging = false;
+      if (!d) return;
+      if (d.correct) {
+        it.correct = true;
+        it.appealed = true;
+        let msg = '🤖 AI 复核：你的答案正确，已加分 ✅';
+        if (d.fixed) msg += '（参考答案有误，已自动修正为 ' + d.correct_answer + '）';
+        else if (d.correct_answer) msg += '（正确答案：' + d.correct_answer + '）';
+        this.showToast(msg);
+        this.loadAnalysis(); this.loadDailyTasks(); this.loadWrongItems();
+      } else {
+        this.showToast('🤖 AI 复核：' + (d.reason || '认为作答不正确，维持原判'));
+      }
+    },
+    async aiRecheckAppeal(a) {
+      if (!a) return;
+      this.recheckingId = a.id;
+      let d = null;
+      try {
+        d = await this.aiRejudge({
+          question_id: a.question_id || null,
+          question: a.question,
+          answer: a.correct_answer || '',
+          user_answer: a.user_answer || '',
+          subject: a.subject || '',
+        });
+      } catch (e) { this.showToast(e.message); }
+      this.recheckingId = null;
+      if (!d) return;
+      if (d.correct) {
+        let msg = '🤖 AI 复核：孩子答案正确';
+        if (d.fixed) msg += '，参考答案已修正为 ' + d.correct_answer;
+        this.showToast(msg);
+        this.decideAppeal(a, true); // 同步通过申诉（家长免手动确认）
+      } else {
+        this.showToast('🤖 AI 复核：' + (d.reason || '认为作答不正确'));
+      }
+    },
+    async aiRejudgeWrong(w) {
+      if (!w || w.is_unanswered) return;
+      this.rejudging = true;
+      let d = null;
+      try {
+        d = await this.aiRejudge({
+          question_id: w.question_id || null,
+          question: w.question,
+          answer: w.correct_answer || '',
+          user_answer: w.user_answer || '',
+          subject: w.subject || this.subject,
+        });
+      } catch (e) { this.showToast(e.message); }
+      this.rejudging = false;
+      if (!d) return;
+      if (d.correct) {
+        let msg = '🤖 AI 复核：你的答案正确，已加分 ✅';
+        if (d.fixed) msg += '（参考答案有误，已自动修正为 ' + d.correct_answer + '）';
+        else if (d.correct_answer) msg += '（正确答案：' + d.correct_answer + '）';
+        this.showToast(msg);
+        this.loadWrongItems(); this.loadDailyTasks(); this.loadAnalysis();
+      } else {
+        this.showToast('🤖 AI 复核：' + (d.reason || '认为作答不正确，维持原判'));
+      }
     },
     /* ─────────── 家长功能（Sprint 6）：密码 + 留言 + 数据 + 题数 ─────────── */
     exitParentMode() {
