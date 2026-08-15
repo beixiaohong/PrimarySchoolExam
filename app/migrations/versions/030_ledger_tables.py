@@ -11,6 +11,7 @@ from app.models.ledger import (
 
 
 def upgrade(db):
+    """建表迁移：幂等创建 10 张账本表（导入模型注册到 Base.metadata 后用 create_all）。"""
     Base.metadata.create_all(
         bind=engine,
         tables=[

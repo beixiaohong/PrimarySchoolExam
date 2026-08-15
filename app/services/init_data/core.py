@@ -1,3 +1,7 @@
+"""init_data 子包入口：聚合各种子模块
+
+对外暴露 ensure_initial_data()，首次启动时按顺序填充题型、词库、词组、句子、语法与默认管理员。
+"""
 import csv
 import os
 from pathlib import Path

@@ -1,3 +1,7 @@
+"""数学题型与分类种子数据
+
+初始化各年级数学题型分类（含小学与中学），并为已有库补充新增题型。
+"""
 import csv
 import os
 from pathlib import Path

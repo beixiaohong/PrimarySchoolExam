@@ -1,3 +1,7 @@
+"""英语词组种子数据
+
+从 phrases_primary_school.csv 导入小学英语词组，库内已有则跳过。
+"""
 import csv
 import os
 from pathlib import Path

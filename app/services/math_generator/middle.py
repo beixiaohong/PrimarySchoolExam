@@ -1,3 +1,8 @@
+"""中学数学题库生成器
+
+提供一元二次方程(mid_quadratic_eq)、一次函数(mid_linear_func)、勾股定理(mid_pythagorean)、
+一元一次不等式(mid_inequality)、概率(mid_probability) 等题型的随机生成，每个题型含多个变体。
+"""
 import random
 import math
 from fractions import Fraction
@@ -144,6 +149,7 @@ def mid_pythagorean(difficulty: int, grade: int):
 def mid_inequality(difficulty: int, grade: int):
     """一元一次不等式"""
     def variant_basic():
+        """一元一次不等式基础求解（系数为整数时求整数解，否则求小数近似）。"""
         a = random.randint(2, 8)
         b = random.randint(1, 20)
         c = random.randint(1, 30)
@@ -159,6 +165,7 @@ def mid_inequality(difficulty: int, grade: int):
             return q, f"x<{x_val2:.2f}"
 
     def variant_system():
+        """一元一次不等式组（x>a 且 x<b），求其中整数解的个数。"""
         # x > a 且 x < b
         a = random.randint(-5, 3)
         b = a + random.randint(2, 8)

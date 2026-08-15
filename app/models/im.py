@@ -22,6 +22,7 @@ from app.models.user import User  # 确保 "User" 在映射注册表中可被关
 
 # ───────────────── 枚举类型 ─────────────────
 class MessageType(PyEnum):
+    """消息类型枚举：文本/图片/文件/语音/视频/红包/系统消息。"""
     TEXT = "text"
     IMAGE = "image"
     FILE = "file"
@@ -32,17 +33,20 @@ class MessageType(PyEnum):
 
 
 class ChatType(PyEnum):
+    """聊天室类型枚举：私聊 / 群聊。"""
     PRIVATE = "private"
     GROUP = "group"
 
 
 class FriendStatus(PyEnum):
+    """好友关系状态枚举：待确认 / 已通过 / 已拉黑。"""
     PENDING = "pending"
     ACCEPTED = "accepted"
     BLOCKED = "blocked"
 
 
 class RedPacketStatus(PyEnum):
+    """红包状态枚举：可领取 / 已过期 / 已领完。"""
     ACTIVE = "active"
     EXPIRED = "expired"
     FINISHED = "finished"

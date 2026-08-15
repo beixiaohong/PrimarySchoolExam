@@ -1,3 +1,9 @@
+"""小学几何题生成器
+
+提供平面图形面积(geo_area_plane)、立体图形体积(geo_volume)、周长(geo_perimeter)、
+图形变换(geo_transform)、图形认识(geo_recognition)、位置方向(geo_position)、
+图形运动(geo_motion) 等题型的随机生成，多数含配图渲染与反推凑整逻辑。
+"""
 import random
 import math
 from fractions import Fraction
@@ -55,6 +61,7 @@ def _area_rect_both():
     return f"长方形长{l}cm、宽{w}cm，面积和周长各是多少？", f"面积{l*w}cm\u00b2，周长{2*(l+w)}cm", img
 
 def _area_reverse_base():
+    """已知三角形面积与高反求底（底=面积×2÷高，凑整除保证底为整数）。"""
     h = random.randint(3, 12)
     area = random.randint(20, 120)
     while (2 * area) % h != 0:

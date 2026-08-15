@@ -1,3 +1,7 @@
+"""init_data 子包公共工具：常量与共享导入
+
+定义 GRADE_CN 年级中文映射等公共常量，供各种子数据模块复用。
+"""
 import csv
 import os
 from pathlib import Path

@@ -1,3 +1,8 @@
+"""数学题生成器公共模块
+
+提供生成器注册表(GENERATORS)与 @register 装饰器，难度映射(DIFFICULTY_MAP)，
+作为各年级题型的统一接入与分发入口。
+"""
 import random
 import math
 from fractions import Fraction

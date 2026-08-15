@@ -1,3 +1,7 @@
+"""英语词库种子数据
+
+从 CSV 导入小学与初中英语词库及单词，库内已有则跳过，并维护词库计数与同库去重。
+"""
 import csv
 import os
 from pathlib import Path

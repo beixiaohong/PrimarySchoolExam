@@ -235,6 +235,7 @@ def get_accounts(user_id: str, db: Session = Depends(get_db),
 @router.put("/users/{user_id}/accounts/{account_id}", response_model=ledger_schemas.AccountResponse, summary="更新账户", tags=["账户管理"])
 def update_account(user_id: str, account_id: int, account: ledger_schemas.AccountUpdate, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """更新指定用户的支付账户信息（仅提交的非空字段生效，需本人权限）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_account = db.query(model_ledger.Account).filter(model_ledger.Account.id == account_id, model_ledger.Account.user_id == current_user.user_id).first()
@@ -250,6 +251,7 @@ def update_account(user_id: str, account_id: int, account: ledger_schemas.Accoun
 @router.delete("/users/{user_id}/accounts/{account_id}", summary="删除账户", tags=["账户管理"])
 def delete_account(user_id: str, account_id: int, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """删除指定用户的支付账户（仅本人权限，需账户存在）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_account = db.query(model_ledger.Account).filter(model_ledger.Account.id == account_id, model_ledger.Account.user_id == current_user.user_id).first()
@@ -284,6 +286,7 @@ def get_categories(user_id: str, db: Session = Depends(get_db),
 @router.put("/users/{user_id}/categories/{category_id}", response_model=ledger_schemas.CategoryResponse, summary="更新分类", tags=["分类管理"])
 def update_category(user_id: str, category_id: int, category: ledger_schemas.CategoryUpdate, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """更新指定用户的收支分类（仅提交的非空字段生效，需本人权限）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_category = db.query(model_ledger.Category).filter(model_ledger.Category.id == category_id, model_ledger.Category.user_id == current_user.user_id).first()
@@ -299,6 +302,7 @@ def update_category(user_id: str, category_id: int, category: ledger_schemas.Cat
 @router.delete("/users/{user_id}/categories/{category_id}", summary="删除分类", tags=["分类管理"])
 def delete_category(user_id: str, category_id: int, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """删除指定用户的收支分类（仅本人权限，需分类存在）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_category = db.query(model_ledger.Category).filter(model_ledger.Category.id == category_id, model_ledger.Category.user_id == current_user.user_id).first()
@@ -332,6 +336,7 @@ def get_locations(user_id: str, db: Session = Depends(get_db),
 @router.put("/users/{user_id}/locations/{location_id}", response_model=ledger_schemas.LocationResponse, summary="更新地点", tags=["地点管理"])
 def update_location(user_id: str, location_id: int, location: ledger_schemas.LocationUpdate, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """更新指定用户的支付地点（仅提交的非空字段生效，需本人权限）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_location = db.query(model_ledger.Location).filter(model_ledger.Location.id == location_id, model_ledger.Location.user_id == current_user.user_id).first()
@@ -347,6 +352,7 @@ def update_location(user_id: str, location_id: int, location: ledger_schemas.Loc
 @router.delete("/users/{user_id}/locations/{location_id}", summary="删除地点", tags=["地点管理"])
 def delete_location(user_id: str, location_id: int, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """删除指定用户的支付地点（仅本人权限，需地点存在）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_location = db.query(model_ledger.Location).filter(model_ledger.Location.id == location_id, model_ledger.Location.user_id == current_user.user_id).first()
@@ -380,6 +386,7 @@ def get_merchants(user_id: str, db: Session = Depends(get_db),
 @router.put("/users/{user_id}/merchants/{merchant_id}", response_model=ledger_schemas.MerchantResponse, summary="更新商户", tags=["商户管理"])
 def update_merchant(user_id: str, merchant_id: int, merchant: ledger_schemas.MerchantUpdate, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """更新指定用户的支付商户（仅提交的非空字段生效，需本人权限）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_merchant = db.query(model_ledger.Merchant).filter(model_ledger.Merchant.id == merchant_id, model_ledger.Merchant.user_id == current_user.user_id).first()
@@ -395,6 +402,7 @@ def update_merchant(user_id: str, merchant_id: int, merchant: ledger_schemas.Mer
 @router.delete("/users/{user_id}/merchants/{merchant_id}", summary="删除商户", tags=["商户管理"])
 def delete_merchant(user_id: str, merchant_id: int, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """删除指定用户的支付商户（仅本人权限，需商户存在）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_merchant = db.query(model_ledger.Merchant).filter(model_ledger.Merchant.id == merchant_id, model_ledger.Merchant.user_id == current_user.user_id).first()
@@ -428,6 +436,7 @@ def get_persons(user_id: str, db: Session = Depends(get_db),
 @router.put("/users/{user_id}/persons/{person_id}", response_model=ledger_schemas.PersonResponse, summary="更新人员", tags=["人员管理"])
 def update_person(user_id: str, person_id: int, person: ledger_schemas.PersonUpdate, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """更新指定用户的相关人员（仅提交的非空字段生效，需本人权限）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_person = db.query(model_ledger.Person).filter(model_ledger.Person.id == person_id, model_ledger.Person.user_id == current_user.user_id).first()
@@ -443,6 +452,7 @@ def update_person(user_id: str, person_id: int, person: ledger_schemas.PersonUpd
 @router.delete("/users/{user_id}/persons/{person_id}", summary="删除人员", tags=["人员管理"])
 def delete_person(user_id: str, person_id: int, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """删除指定用户的相关人员（仅本人权限，需人员存在）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_person = db.query(model_ledger.Person).filter(model_ledger.Person.id == person_id, model_ledger.Person.user_id == current_user.user_id).first()
@@ -476,6 +486,7 @@ def get_projects(user_id: str, db: Session = Depends(get_db),
 @router.put("/users/{user_id}/projects/{project_id}", response_model=ledger_schemas.ProjectResponse, summary="更新项目", tags=["项目管理"])
 def update_project(user_id: str, project_id: int, project: ledger_schemas.ProjectUpdate, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """更新指定用户的关联项目（仅提交的非空字段生效，需本人权限）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_project = db.query(model_ledger.Project).filter(model_ledger.Project.id == project_id, model_ledger.Project.user_id == current_user.user_id).first()
@@ -491,6 +502,7 @@ def update_project(user_id: str, project_id: int, project: ledger_schemas.Projec
 @router.delete("/users/{user_id}/projects/{project_id}", summary="删除项目", tags=["项目管理"])
 def delete_project(user_id: str, project_id: int, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
+    """删除指定用户的关联项目（仅本人权限，需项目存在）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     db_project = db.query(model_ledger.Project).filter(model_ledger.Project.id == project_id, model_ledger.Project.user_id == current_user.user_id).first()

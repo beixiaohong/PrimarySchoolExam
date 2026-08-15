@@ -1,3 +1,7 @@
+"""默认管理员种子数据
+
+库内无管理员时创建默认管理员账号，凭证来自环境变量，缺省 admin/Admin@123。
+"""
 import csv
 import os
 from pathlib import Path

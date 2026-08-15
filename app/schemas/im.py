@@ -21,6 +21,7 @@ FriendshipCreate = FriendAddRequest
 
 # ───────────────── 用户资料响应 ─────────────────
 class UserResponse(BaseModel):
+    """用户资料响应模型：返回用户公开资料（含积分与在线状态）。"""
     id: str
     username: Optional[str] = None
     email: Optional[str] = None
@@ -33,6 +34,7 @@ class UserResponse(BaseModel):
 
 # ───────────────── 聊天室 ─────────────────
 class ChatCreate(BaseModel):
+    """创建聊天室请求模型：群聊需提供名称，私聊需提供目标用户ID。"""
     name: Optional[str] = None
     chat_type: str = Field(..., description="private / group")
     description: Optional[str] = None
@@ -40,6 +42,7 @@ class ChatCreate(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    """聊天室响应模型：含聊天ID、名称、类型、成员数等概览信息。"""
     id: str
     name: Optional[str] = None
     chat_type: str
@@ -51,6 +54,7 @@ class ChatResponse(BaseModel):
 
 # ───────────────── 消息 ─────────────────
 class MessageResponse(BaseModel):
+    """消息响应模型：含发送者、内容、消息类型与文件附件信息。"""
     id: str
     chat_id: str
     sender_id: str
@@ -65,6 +69,7 @@ class MessageResponse(BaseModel):
 
 # ───────────────── 红包 ─────────────────
 class RedPacketCreate(BaseModel):
+    """创建红包请求模型：含红包金额、个数与祝福语。"""
     chat_id: str
     total_amount: int = Field(..., description="总金额（单位：分/积分）")
     total_count: int = Field(..., description="红包个数")
@@ -72,6 +77,7 @@ class RedPacketCreate(BaseModel):
 
 
 class RedPacketResponse(BaseModel):
+    """红包响应模型：含剩余金额/个数与当前状态。"""
     id: str
     total_amount: int
     total_count: int

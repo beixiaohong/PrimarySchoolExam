@@ -35,6 +35,7 @@ USER_IM_COLUMNS = [
 
 
 def upgrade(db):
+    """建表迁移：幂等创建 7 张 IM 表，并为 users 表补充 IM 依赖的 4 个字段（含 NULL 回填）。"""
     # 1) 创建 7 张 IM 表（已存在则跳过）
     Base.metadata.create_all(
         bind=engine,
@@ -68,6 +69,7 @@ def upgrade(db):
 
 
 def downgrade(db):
+    """回滚迁移：仅删除 users 表本次新增的 4 个 IM 依赖列（IM 表保留）。"""
     # 仅删除本次新增的 users 列（IM 表保留由各自负责人处理）
     for col_name, _ in USER_IM_COLUMNS:
         result = db.execute(text(

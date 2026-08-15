@@ -58,10 +58,12 @@ UPLOAD_ROOT = os.path.join(str(BASE_DIR), "output", "im_uploads")
 class ConnectionManager:
     """WebSocket 连接管理器：用户级连接追踪 + 消息推送。"""
     def __init__(self):
+        """初始化连接管理器：维护连接ID->WebSocket 与 user_id->连接ID列表两张索引。"""
         self.active_connections: Dict[str, WebSocket] = {}
         self.user_connections: Dict[str, list] = {}  # user_id -> [connection_id, ...]
 
     async def connect(self, websocket: WebSocket, user_id: str):
+        """接受并登记一个 WebSocket 连接，返回本次连接的 connection_id。"""
         await websocket.accept()
         connection_id = str(uuid.uuid4())
         self.active_connections[connection_id] = websocket
@@ -71,6 +73,7 @@ class ConnectionManager:
         return connection_id
 
     def disconnect(self, connection_id: str, user_id: str):
+        """移除指定连接，并清理该用户的连接索引（索引为空时删除 user_id 条目）。"""
         if connection_id in self.active_connections:
             del self.active_connections[connection_id]
         if user_id in self.user_connections:

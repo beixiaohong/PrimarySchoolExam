@@ -1,3 +1,10 @@
+"""账本模块 SQLAlchemy 模型
+
+定义个人账本系统的数据库表结构：交易账单(Bill)、支付账户(Account)、
+地点(Location)、商户(Merchant)、人员(Person)、项目(Project)、三级分类(Category)、
+通知记录(NotificationLog)、报告设置(UserReportSettings)、周期性交易(RecurringTransaction)，
+以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离。
+"""
 from sqlalchemy import Column, Boolean, Integer, String, Text, Enum, Float, ForeignKey, DateTime, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -38,6 +45,7 @@ class NotificationStatus(str, enum.Enum):
 # ================================ 数据库模型定义 ================================
 
 class Bill(Base):
+    """交易账单表 - 记录每一笔收支/转账明细，并关联账户、分类、地点等维度。"""
     __tablename__ = "db_ledger_bills"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -68,6 +76,7 @@ class Bill(Base):
 
 
 class Account(Base):
+    """支付账户表 - 用户的一类资金账户（储蓄卡/信用卡/虚拟账户），保存实时余额。"""
     __tablename__ = "db_ledger_accounts"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -83,6 +92,7 @@ class Account(Base):
 
 
 class Location(Base):
+    """支付地点表 - 用户常用的消费地点（如家附近超市、公司楼下）。"""
     __tablename__ = "db_ledger_locations"
 
     id = Column(Integer, primary_key=True, index=True, comment="地点唯一标识")
@@ -93,6 +103,7 @@ class Location(Base):
 
 
 class Merchant(Base):
+    """支付商户表 - 用户常用的收款/消费商户（如沃尔玛、星巴克）。"""
     __tablename__ = "db_ledger_merchants"
 
     id = Column(Integer, primary_key=True, index=True, comment="商户唯一标识")
@@ -103,6 +114,7 @@ class Merchant(Base):
 
 
 class Person(Base):
+    """相关人员表 - 交易中涉及的自然人（如朋友、同事、家人）。"""
     __tablename__ = "db_ledger_persons"
 
     id = Column(Integer, primary_key=True, index=True, comment="人员唯一标识")
@@ -114,6 +126,7 @@ class Person(Base):
 
 
 class Project(Base):
+    """关联项目表 - 可绑定预算的专项（如装修、旅游、学习），用于预算统计。"""
     __tablename__ = "db_ledger_projects"
 
     id = Column(Integer, primary_key=True, index=True, comment="项目唯一标识")
