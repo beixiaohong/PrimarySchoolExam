@@ -357,15 +357,11 @@ const appOptions = {
           if (r.status === 401) {
             const hadSession = !!localStorage.getItem('zx_user');
             try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd'); } catch (e) {}
-            if (path.indexOf('/api/auth/') === -1) {
-              // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
-              // 返回永不 resolve 的 Promise，阻止各业务 .catch 弹出重复的"登录已过期" toast——
-              // 并发请求中第一个 401 已清了 localStorage，后续 401 hadSession=false 不再跳转，
-              // 但如果继续 throw 会被 loadGrammarPoints 等 catch 捕获并 showToast，造成"点刷题中心提示没登录"
-              if (hadSession) location.href = '/';
-              return new Promise(() => {});
-            }
-            // auth 接口 401（如 /api/auth/me）：抛错让调用方处理
+            // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
+            // 必须 throw 而非返回永不 resolve 的 Promise——否则调用方的 .then/.catch/.finally
+            // 永不执行，会导致按钮卡在「处理中…」且无法恢复（家长申诉裁决按钮即此坑）。
+            // 重复 toast 由 showToast 自身覆盖逻辑兜底（同一时刻只显示最后一条）。
+            if (path.indexOf('/api/auth/') === -1 && hadSession) location.href = '/';
             throw new Error('登录已过期，请重新登录');
           }
           const t = await r.text();
@@ -1935,6 +1931,8 @@ const appOptions = {
       if (a._deciding) return;            // 防重复提交（连点）
       this.$set(a, '_deciding', true);
       const note = (this.appealNotes[a.id] || '').trim();
+      // 兜底：15s 内请求未返回（网络挂起/401 等异常），强制解除禁用，避免按钮永久卡在「处理中…」
+      const guard = setTimeout(() => { this.$set(a, '_deciding', false); }, 15000);
       this.api('/api/appeal/decide', {
         method: 'POST',
         body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject', note }),
@@ -1947,6 +1945,7 @@ const appOptions = {
         this.loadDecidedAppeals();
         this.loadChildStats();
       }).catch(e => this.showToast(e.message)).finally(() => {
+        clearTimeout(guard);
         this.$set(a, '_deciding', false);
       });
     },
@@ -1991,6 +1990,8 @@ const appOptions = {
       const it = this.quiz.items[this.quiz.i];
       if (!it || !it.answered || it.correct) return;
       this.rejudging = true;
+      // 兜底：15s 内 AI 调用未返回，强制解除禁用
+      const guard = setTimeout(() => { this.rejudging = false; }, 15000);
       let d = null;
       try {
         d = await this.aiRejudge({
@@ -2018,6 +2019,8 @@ const appOptions = {
     async aiRecheckAppeal(a) {
       if (!a) return;
       this.recheckingId = a.id;
+      // 兜底：15s 内 AI 调用未返回（模型慢/异常），强制解除禁用，避免按钮卡死
+      const guard = setTimeout(() => { this.recheckingId = null; }, 15000);
       let d = null;
       try {
         d = await this.aiRejudge({
@@ -2028,6 +2031,7 @@ const appOptions = {
           subject: a.subject || '',
         });
       } catch (e) { this.showToast(e.message); }
+      clearTimeout(guard);
       this.recheckingId = null;
       if (!d) return;
       if (d.correct) {
@@ -2042,6 +2046,8 @@ const appOptions = {
     async aiRejudgeWrong(w) {
       if (!w || w.is_unanswered) return;
       this.rejudging = true;
+      // 兜底：15s 内 AI 调用未返回（模型慢/异常），强制解除禁用，避免按钮卡死
+      const guard = setTimeout(() => { this.rejudging = false; }, 15000);
       let d = null;
       try {
         d = await this.aiRejudge({
@@ -2052,6 +2058,7 @@ const appOptions = {
           subject: w.subject || this.subject,
         });
       } catch (e) { this.showToast(e.message); }
+      clearTimeout(guard);
       this.rejudging = false;
       if (!d) return;
       if (d.correct) {
