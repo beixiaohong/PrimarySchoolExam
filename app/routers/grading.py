@@ -183,3 +183,105 @@ def grade_short_answer(req: ShortAnswerGradeRequest):
 
     return {"max_score": max_score, "total": data["total"],
             "points": data["points"], "comment": data["comment"], "degraded": degraded}
+
+
+class RejudgeRequest(BaseModel):
+    user_id: str
+    question_id: int | None = None   # 在线做题题号（用于修正存储答案/翻转作答）
+    question: str = ""               # 题干
+    answer: str = ""                 # 题面存储的标准答案
+    user_answer: str = ""            # 孩子作答
+    subject: str = ""
+    options: list = []
+
+
+@router.post("/rejudge", summary="用 AI 重判单题（孩子/家长手动触发）")
+def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
+    """手动触发 AI 复核一道被判错的题（错题本/申诉里的「用 AI 重判」按钮调用）。
+
+    与交卷自动复核共用 judge_wrong_items：
+    - AI 判孩子对 → 翻转该题最新判错作答、重算本卷得分、清除错题本记录（给孩子加分）；
+      若同时发现存储参考答案本身算错 → 修正 Question.answer 为标准正确值。
+    - AI 判孩子错 / AI 不可用 → 返回 correct=False，不改分、不改答案（降级不阻断）。
+
+    不消耗钻石（与交卷自动复核一致，属纠错能力）。
+    """
+    ua = (req.user_answer or "").strip()
+    if not ua:
+        raise HTTPException(400, "缺少孩子作答内容")
+
+    from ..services.judge import judge_wrong_items
+    items = [{
+        "key": "x",
+        "question_id": req.question_id,
+        "question": req.question,
+        "answer": (req.answer or "").strip(),
+        "user_answer": ua,
+        "subject": req.subject,
+        "options": req.options or [],
+    }]
+    approved = judge_wrong_items(req.user_id, items)
+    verdict = approved.get("x")
+
+    if not verdict or not verdict.get("correct"):
+        return {
+            "correct": False,
+            "stored_wrong": bool(verdict.get("stored_wrong")) if verdict else False,
+            "correct_answer": (verdict or {}).get("correct_answer", ""),
+            "reason": (verdict or {}).get("reason") or "AI 认为作答不正确，维持原判",
+            "fixed": False, "credited": False,
+        }
+
+    fixed = False
+    credited = False
+    qid = req.question_id
+    if qid:
+        from ..models.exam import Question, AttemptAnswer, ExamAttempt, WrongRecord
+        from ..services.answer_check import fill_answer_correct
+
+        q = db.query(Question).get(qid)
+        # 1) 参考答案本身算错 → 修正为标准正确值（双保险：孩子作答须与修正值等价）
+        if q and verdict.get("stored_wrong") and verdict.get("correct_answer"):
+            corrected = verdict["correct_answer"].strip()
+            if (q.answer or "").strip() != corrected and fill_answer_correct(ua, corrected):
+                q.answer = corrected
+                fixed = True
+
+        # 2) 翻转最新判错作答并重算本卷得分（幂等：全量重算，不增量）
+        ans = (db.query(AttemptAnswer)
+               .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
+               .filter(ExamAttempt.user_id == req.user_id,
+                       AttemptAnswer.question_id == qid,
+                       AttemptAnswer.is_correct == False,  # noqa: E712
+                       AttemptAnswer.user_answer == ua)
+               .order_by(AttemptAnswer.id.desc()).first())
+        if ans:
+            ans.is_correct = True
+            db.flush()
+            attempt = db.query(ExamAttempt).get(ans.attempt_id)
+            if attempt and attempt.total:
+                correct = db.query(AttemptAnswer).filter(
+                    AttemptAnswer.attempt_id == attempt.id,
+                    AttemptAnswer.is_correct == True,  # noqa: E712
+                ).count()
+                attempt.correct = correct
+                attempt.wrong = attempt.total - correct
+                attempt.score = int(round(correct / attempt.total * 100, 1))
+            # 3) 清除该题在错题本中的未掌握记录（孩子现已答对，错题闭环）
+            rec = (db.query(WrongRecord)
+                   .filter(WrongRecord.user_id == req.user_id,
+                           WrongRecord.question_id == qid,
+                           WrongRecord.is_mastered == False)  # noqa: E712
+                   .order_by(WrongRecord.id.desc()).first())
+            if rec:
+                db.delete(rec)
+            credited = True
+
+    db.commit()
+    return {
+        "correct": True,
+        "stored_wrong": bool(verdict.get("stored_wrong")),
+        "correct_answer": verdict.get("correct_answer", ""),
+        "reason": verdict.get("reason") or "AI 复核：作答正确",
+        "fixed": fixed, "credited": credited,
+    }
