@@ -10,6 +10,7 @@ from app.schemas.problem import ProblemItem
 
 
 from .common import register
+from .util import fmt_num
 
 @register("app_travel")
 def app_travel(difficulty: int, grade: int):
@@ -140,8 +141,8 @@ def app_concentration(difficulty: int, grade: int):
         sol = random.randint(100, 500)
         rate = random.randint(5, 30)
         variants = [
-            (f"{sol}克盐水浓度{rate}%，含盐多少？", f"{sol*rate//100} 克"),
-            (f"盐{sol*rate//100}克配成{rate}%盐水，盐水多少克？", f"{sol} 克"),
+            (f"{sol}克盐水浓度{rate}%，含盐多少？", f"{fmt_num(sol*rate/100)} 克"),
+            (f"盐{fmt_num(sol*rate/100)}克配成{rate}%盐水，盐水多少克？", f"{sol} 克"),
         ]
         return random.choice(variants)
     elif difficulty <= 4:
@@ -184,21 +185,21 @@ def app_profit(difficulty: int, grade: int):
         cost = random.randint(50, 200)
         rate = random.randint(20, 50)
         variants = [
-            (f"进价{cost}元，利润率{rate}%，售价多少？", f"{cost*(100+rate)//100} 元"),
-            (f"售价{cost*(100+rate)//100}元，进价{cost}元，利润率多少？", f"{rate}%"),
+            (f"进价{cost}元，利润率{rate}%，售价多少？", f"{fmt_num(cost*(100+rate)/100)} 元"),
+            (f"售价{fmt_num(cost*(100+rate)/100)}元，进价{cost}元，利润率多少？", f"{rate}%"),
         ]
         return random.choice(variants)
     elif difficulty <= 4:
         cost = random.randint(100, 500)
         markup = random.randint(30, 60)
         discount = random.choice([80, 85, 90])
-        marked = cost * (100 + markup) // 100
-        sell = marked * discount // 100
+        marked = cost * (100 + markup) / 100
+        sell = marked * discount / 100
         real_rate = round((sell - cost) / cost * 100, 1)
         d_name = {80:"八",85:"八五",90:"九"}[discount]
         variants = [
             (f"进价{cost}元加价{markup}%标价，打{d_name}折卖，实际利润率？", f"{real_rate}%"),
-            (f"打{d_name}折后卖{sell}元，标价是多少？", f"{marked} 元"),
+            (f"打{d_name}折后卖{fmt_num(sell)}元，标价是多少？", f"{fmt_num(marked)} 元"),
         ]
         return random.choice(variants)
     else:
@@ -208,19 +209,19 @@ def app_profit(difficulty: int, grade: int):
         sell1 = int(total * 0.6)
         sell2 = total - sell1
         discount = random.choice([70, 75, 80])
-        price1 = cost * (100 + pr) // 100
-        price2 = price1 * discount // 100
+        price1 = cost * (100 + pr) / 100
+        price2 = price1 * discount / 100
         revenue = sell1 * price1 + sell2 * price2
         profit = revenue - total * cost
         d_name = {70:"七",75:"七五",80:"八"}[discount]
         variants = [
-            (f"进{total}件每件{cost}元，{pr}%利润率定价售{sell1}件，余下{d_name}折售完，总利润？", f"{profit} 元"),
+            (f"进{total}件每件{cost}元，{pr}%利润率定价售{sell1}件，余下{d_name}折售完，总利润？", f"{fmt_num(profit)} 元"),
             (f"两种方案：A全部{pr}%利润出售；B先售60%再{d_name}折清仓。哪种利润高？", None),
         ]
         q, a = random.choice(variants)
         if a is None:
-            plan_a = total * cost * pr // 100
-            return f"进{total}件每件{cost}元。方案A全部加{pr}%出售；方案B售60%后{d_name}折清仓。哪种利润高？", f"A利润{plan_a}元，B利润{profit}元，{'A' if plan_a > profit else 'B'}高"
+            plan_a = total * cost * pr / 100
+            return f"进{total}件每件{cost}元。方案A全部加{pr}%出售；方案B售60%后{d_name}折清仓。哪种利润高？", f"A利润{fmt_num(plan_a)}元，B利润{fmt_num(profit)}元，{'A' if plan_a > profit else 'B'}高"
         return q, a
 
 @register("app_fraction")

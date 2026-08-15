@@ -10,6 +10,7 @@ from app.schemas.problem import ProblemItem
 
 
 from .common import register
+from .util import fmt_num
 
 @register("stat_average")
 def stat_average(difficulty: int, grade: int):
@@ -91,8 +92,8 @@ def stat_chart(difficulty: int, grade: int):
         pct_a = random.randint(30, 50)
         pct_b = random.randint(20, 35)
         pct_c = 100 - pct_a - pct_b
-        num_a = total_p * pct_a // 100
-        num_b = total_p * pct_b // 100
+        num_a = round(total_p * pct_a / 100)
+        num_b = round(total_p * pct_b / 100)
         num_c = total_p - num_a - num_b
         if num_b >= num_c:
             q2 = f"音乐比美术多多少人？"

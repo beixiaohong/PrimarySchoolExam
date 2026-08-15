@@ -10,6 +10,7 @@ from app.schemas.problem import ProblemItem
 
 
 from .common import register
+from .util import fmt_num
 
 @register("ratio_basic")
 def ratio_basic(difficulty: int, grade: int):
@@ -97,7 +98,7 @@ def ratio_percent(difficulty: int, grade: int):
         part = random.randint(20, 80)
         whole = random.randint(100, 400)
         variants = [
-            (f"原价{price}元，打{d_name}折，现价多少？", f"{price*discount//100} 元"),
+            (f"原价{price}元，打{d_name}折，现价多少？", f"{fmt_num(price*discount/100)} 元"),
             (f"{part}是{whole}的百分之几？", f"{part/whole*100:.1f}%"),
         ]
         return random.choice(variants)
@@ -111,8 +112,8 @@ def ratio_percent(difficulty: int, grade: int):
         growth = random.randint(10, 30)
         variants = [
             (f"存{p}元，年利率{r}%，{y}年后利息多少？", f"{p*r/100*y:.2f} 元"),
-            (f"营业额{income}元，税率{tax_rate}%，缴税多少？", f"{income*tax_rate//100} 元"),
-            (f"去年产量{last}吨，今年增产{growth}%，今年多少？", f"{last*(100+growth)//100} 吨"),
+            (f"营业额{income}元，税率{tax_rate}%，缴税多少？", f"{fmt_num(income*tax_rate/100)} 元"),
+            (f"去年产量{last}吨，今年增产{growth}%，今年多少？", f"{fmt_num(last*(100+growth)/100)} 吨"),
         ]
         return random.choice(variants)
     else:
@@ -123,13 +124,13 @@ def ratio_percent(difficulty: int, grade: int):
         change = (final - price) / price * 100
         rate2 = random.choice([10, 20, 25, 50])
         orig = random.randint(100, 500)
-        final2 = orig * (100 - rate2) // 100
+        final2 = orig * (100 - rate2) / 100
         a_val = random.randint(50, 150)
         b_val = random.randint(50, 150)
         pct_more = round(abs(a_val-b_val) / min(a_val,b_val) * 100, 1)
         variants = [
             (f"原价{price}元，先涨{up}%再降{down}%，现价多少？涨了还是跌了？", f"现价{final:.2f}元，{'涨' if change>0 else '跌'}了{abs(change):.2f}%"),
-            (f"降价{rate2}%后是{final2}元，原价多少？", f"{orig} 元"),
+            (f"降价{rate2}%后是{fmt_num(final2)}元，原价多少？", f"{orig} 元"),
             (f"甲{a_val}乙{b_val}，多的比少的多百分之几？", f"{pct_more}%"),
         ]
         return random.choice(variants)
