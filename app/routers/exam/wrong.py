@@ -102,6 +102,12 @@ def list_wrong_questions(
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
+    """分页查询指定用户的错题本列表，按标记错题时间倒序。
+
+    参数：user_id 用户标识（必填）；subject 可选学科筛选；
+    type_code 可选题型代码筛选；include_mastered 是否包含已掌握题；
+    page/page_size 分页。返回错题明细（展开题目信息 + 用户最近一次实际作答）。
+    """
     q = db.query(WrongRecord).filter(WrongRecord.user_id == user_id)
     if not include_mastered:
         q = q.filter(WrongRecord.is_mastered == False)
@@ -329,6 +335,7 @@ def answer_unanswered(req, db: Session = Depends(get_db)):
 
 
 class AnswerUnansweredRequest(BaseModel):
+    """未答错题作答请求体：用户补全错题本中「未作答」题目的答案。"""
     user_id: str
     record_id: int
     user_answer: str

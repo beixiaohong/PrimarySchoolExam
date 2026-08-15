@@ -15,6 +15,7 @@ from app.models.word import Word, WordBook
 
 
 class ProgressUpdateRequest(BaseModel):
+    """教学进度（课堂同步）更新请求体：记录某科当前词书/单元。"""
     user_id: str
     subject: str = "英语"
     book_id: int = 0

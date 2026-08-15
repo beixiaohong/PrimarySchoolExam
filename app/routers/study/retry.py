@@ -13,6 +13,7 @@ from app.models.exam import WrongRecord, Question
 
 
 class RetryRequest(BaseModel):
+    """错题变式重练请求体：错题类型/记录 ID/生成相似题数量。"""
     user_id: str
     kind: str  # exam / study
     record_id: int
@@ -156,6 +157,7 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
 
 
 class CheckAnswerRequest(BaseModel):
+    """变式重练逐题判分请求体：题目类型/题目 ID/用户答案（后端判分，不下发答案）。"""
     user_id: str
     kind: str  # exam / grammar
     qid: int

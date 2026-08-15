@@ -17,6 +17,7 @@ MASTER_STREAK = 3  # 单题累计答对 3 次（或修正模式整组全对）�
 
 
 class PracticeSubmitItem(BaseModel):
+    """错题练习单条提交项：错题类型/记录 ID/是否答对/题目 ID，及 AI 复核与整组判定所需字段。"""
     kind: str  # exam / study
     record_id: int
     correct: bool
@@ -30,6 +31,7 @@ class PracticeSubmitItem(BaseModel):
 
 
 class PracticeSubmitRequest(BaseModel):
+    """错题练习批量提交请求体：含用户标识与一组练习结果条目。"""
     user_id: str
     results: List[PracticeSubmitItem]
 
@@ -218,6 +220,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
 
 
 class CauseRequest(BaseModel):
+    """错因自评请求体：针对一条错题记录（exam 试卷错题 / study 学习错题）标注错因。"""
     user_id: str
     kind: str  # exam / study
     record_id: int
@@ -252,6 +255,7 @@ def submit_cause(req: CauseRequest, db: Session = Depends(get_db)):
 
 
 class CauseByQuestionRequest(BaseModel):
+    """按题目提交错因自评请求体：针对试卷错题按 question_id 标注错因（答题中自评）。"""
     user_id: str
     question_id: int
     cause: str

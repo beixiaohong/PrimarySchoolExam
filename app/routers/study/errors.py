@@ -12,6 +12,7 @@ from app.models.study_error import StudyError
 
 
 class StudyErrorItem(BaseModel):
+    """学习错题单条记录（批量上报用）：来源类型、题源 ID、题目与正误答案、错因自评等。"""
     source_type: str  # grammar / classical
     source_id: int = 0
     module_name: str = ""
@@ -23,11 +24,13 @@ class StudyErrorItem(BaseModel):
 
 
 class StudyErrorRecordRequest(BaseModel):
+    """学习错题批量上报请求体：含用户标识与一组错题条目。"""
     user_id: str
     items: List[StudyErrorItem]
 
 
 class StudyErrorMasterRequest(BaseModel):
+    """标记学习错题已掌握请求体：含用户标识与目标错题 ID。"""
     user_id: str
     error_id: int
 

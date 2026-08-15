@@ -233,6 +233,12 @@ def list_attempts(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
+    """分页查询用户的做题（交卷）记录列表。
+
+    参数：user_id 用户标识（必填）；subject 可选，按试卷学科筛选；
+    page/page_size 分页。返回按提交时间倒序的做题记录数组，每条含分数、
+    题数、错题数、试卷标题与学科（批量联表避免 N+1）。
+    """
     q = db.query(ExamAttempt).filter(ExamAttempt.user_id == user_id)
     if subject:
         q = q.join(ExamRecord).filter(ExamRecord.subject == subject)
@@ -262,6 +268,11 @@ def list_attempts(
 
 @router.get("/attempts/{attempt_id}", summary="单次做题详情")
 def get_attempt_detail(attempt_id: int, db: Session = Depends(get_db)):
+    """查询单次做题（交卷）的详情，含每题用户作答、对错与正确答案。
+
+    参数：attempt_id 做题记录 ID（路径参数）。记录不存在返回 404。
+    返回含得分、题数及逐题明细（题干/用户答案/正确答案/题型）。
+    """
     attempt = db.query(ExamAttempt).get(attempt_id)
     if not attempt:
         raise HTTPException(404, "记录不存在")

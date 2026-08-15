@@ -19,6 +19,11 @@ def list_records(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
+    """分页查询已生成试卷（公共资源）的记录列表，按生成时间倒序。
+
+    参数：subject 可选学科筛选；page/page_size 分页。
+    返回试卷概要数组（id/学科/标题/年级/难度/题数/文件路径/生成时间）。
+    """
     q = db.query(ExamRecord)
     if subject:
         q = q.filter(ExamRecord.subject == subject)
@@ -36,6 +41,11 @@ def list_records(
 
 @router.get("/download/{record_id}", summary="下载已生成的试卷")
 def download_exam(record_id: int, db: Session = Depends(get_db)):
+    """下载已生成试卷的 Word 文档。
+
+    参数：record_id 试卷记录 ID（路径参数）。记录不存在或文件缺失返回 404。
+    返回 word 文档文件响应（.docx）。
+    """
     record = db.query(ExamRecord).get(record_id)
     if not record:
         raise HTTPException(404, "记录不存在")
@@ -50,6 +60,11 @@ def download_exam(record_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{exam_id}/questions", response_model=List[QuestionOut], summary="查看试卷所有题目")
 def list_questions(exam_id: int, db: Session = Depends(get_db)):
+    """查询某份试卷包含的全部题目，按题号（seq）顺序返回。
+
+    参数：exam_id 试卷记录 ID（路径参数）。试卷不存在返回 404。
+    返回题目对象数组（含题干/答案/选项/题型等）。
+    """
     record = db.query(ExamRecord).get(exam_id)
     if not record:
         raise HTTPException(404, "试卷不存在")
