@@ -3363,6 +3363,10 @@ const appOptions = {
           .replace(/×/g, '*').replace(/＊/g, '*').replace(/·/g, '*')
           .replace(/÷/g, '/').replace(/＋/g, '+').replace(/－/g, '-')
           .replace(/、/g, ',')   // 顿号当分隔符（与后端 answer_check 一致）
+          // 去除填空占位符与间隔符号（非答案内容）：全角/半角下划线（题干空白）、
+          // 省略号/两点leader、各类间隔点。古诗文/单词填空题若孩子把题干里的「＿」一并
+          // 写进答案（或混入下划线/间隔点），会出现「内容一模一样却判错」。
+          .replace(/[＿_…‥•・˙‧]/g, '')
           .replace(/[。！？；：、,.!?;:…]+$/g, '');
         x = stripAnnot(x);
         if (!keepSep) x = x.replace(/,/g, '');
