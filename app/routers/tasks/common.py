@@ -27,10 +27,10 @@ SUBJECTS = ["数学", "语文", "英语"]
 MANDATORY_TASKS = {
     "数学": {"code": "math_exam", "title": "完成数学练习", "target": 2, "manual": False,
              "ico": "🧮", "desc": "刷题中心完成数学试卷（套数由家长配置，每套正确率需 ≥70%；须做不同的新卷，重复刷同一张不计入）"},
-    "语文": {"code": "chi_classical", "title": "背诵古诗文（新背+复习全部完成）", "target": 1, "manual": False,
-             "ico": "📜", "desc": "背诵中心完成今日新背内容与全部到期复习"},
-    "英语": {"code": "eng_vocab", "title": "学单词（新学+复习全部完成）", "target": 5, "manual": False,
-             "ico": "🔤", "desc": "背单词模块完成今日新学单词与全部到期复习"},
+    "语文": {"code": "chi_classical", "title": "背诵古诗文（新背+复习）", "target": 1, "manual": False,
+             "ico": "📜", "desc": "背诵中心完成今日新背内容，并完成当日到期复习额度（或全部到期复习亦可）"},
+    "英语": {"code": "eng_vocab", "title": "学单词（新学+复习）", "target": 5, "manual": False,
+             "ico": "🔤", "desc": "背单词模块完成今日新学单词，并完成当日到期复习额度（或全部到期复习亦可）"},
 }
 
 # ═══════════════ 可选任务池（系统每日随机抽 3 条） ═══════════════
@@ -83,6 +83,8 @@ CODE_MIN_TARGET = {}
 QUOTA_KEYS = {
     "daily_new_words": (1, 100, 20),   # 每轮新学单词数
     "daily_new_texts": (1, 50, 5),     # 每轮新背古诗文数
+    "daily_review_words": (1, 100, 10),  # 每天需复习的单词数（到期复习的每日额度，积压可逐日消化）
+    "daily_review_texts": (1, 50, 5),   # 每天需复习的古诗文数
 }
 
 # 练习类任务的完成门槛（分数≥70才算完成）
@@ -354,11 +356,12 @@ def _user_grade(db: Session, user_id: str) -> int:
 
 
 def _vocab_all_done(db: Session, user_id: str) -> tuple:
-    """英语单词「全量完成」判定：今日新学全部完成 且 到期复习全部完成。
+    """英语单词「全量完成」判定：今日新学全部完成 且 当日复习达标（或清空积压）。
 
     返回 (done, new_done, review_done, learned_today, reviewed_today)。
     - 新学完成：新学额度用完（今日新学数达标或词库已无可学新词）
-    - 复习完成：无剩余到期复习词（复习提交后 next_review_date 均推进到明天及以后）
+    - 复习完成：当天已复习数达到每日复习额度，或已无剩余到期复习词（积压清空）。
+      用「每日复习额度」替代「清空全部积压」，避免初期积压单词导致任务永远无法完成。
     """
     from app.models.word import Word, WordBook
     from app.models.vocab import VocabProgress
@@ -392,14 +395,17 @@ def _vocab_all_done(db: Session, user_id: str) -> tuple:
             Word.book_id.in_(book_ids), ~Word.id.in_(db.query(learned_ids))).count()
         new_done = unlearned == 0
 
-    review_done = review_left == 0
+    review_quota = get_daily_quota(db, user_id, "daily_review_words")
+    # 复习完成：无固定门槛（清空积压）或当天已复习达到每日额度
+    review_done = (review_left == 0) or (reviewed_today >= review_quota)
     return (new_done and review_done), new_done, review_done, learned_today, reviewed_today
 
 
 def _classical_all_done(db: Session, user_id: str) -> tuple:
-    """古诗文「全量完成」判定：今日新背全部完成 且 到期复习全部完成。
+    """古诗文「全量完成」判定：今日新背全部完成 且 当日复习达标（或清空积压）。
 
     返回 (done, new_done, review_done, learned_today, reviewed_today)。
+    复习完成用「每日复习额度」替代「清空全部积压」，避免初期积压篇目导致任务永远无法完成。
     """
     from app.models.classical import ClassicalText, ClassicalProgress
     today = date.today()
@@ -426,7 +432,9 @@ def _classical_all_done(db: Session, user_id: str) -> tuple:
             ~ClassicalText.id.in_(db.query(learned_ids))).count()
         new_done = unlearned == 0
 
-    review_done = review_left == 0
+    review_quota = get_daily_quota(db, user_id, "daily_review_texts")
+    # 复习完成：无固定门槛（清空积压）或当天已复习达到每日额度
+    review_done = (review_left == 0) or (reviewed_today >= review_quota)
     return (new_done and review_done), new_done, review_done, learned_today, reviewed_today
 
 
