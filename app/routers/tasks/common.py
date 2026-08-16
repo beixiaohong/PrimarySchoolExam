@@ -472,6 +472,37 @@ def _task_progress(db: Session, user_id: str, subj: str, code: str, target: int)
     return 0
 
 
+def _available_new_exams(db: Session, user_id: str, subject: str) -> int:
+    """今天仍可「首次达标」的该科试卷数 = 该科总卷数 − 今天之前已做过的卷数。
+
+    用于判定「刷题类任务」是否因题库内容不足而铁定无法达到 target。
+    """
+    total_ids = [r[0] for r in db.query(ExamRecord.id).filter(
+        ExamRecord.subject == subject).all()]
+    if not total_ids:
+        return 0
+    done_before = db.query(func.distinct(ExamAttempt.exam_id)).join(
+        ExamRecord, ExamAttempt.exam_id == ExamRecord.id).filter(
+        ExamAttempt.user_id == user_id, ExamRecord.subject == subject,
+        ExamAttempt.created_at < _today_start(),
+        ExamAttempt.exam_id.in_(total_ids),
+    ).all()
+    return len(total_ids) - len({r[0] for r in done_before})
+
+
+def _daily_task_feasible(db: Session, user_id: str, code: str, subject: str, target: int) -> bool:
+    """判定某非手动每日任务今天是否「内容可达」（铁定达不到则判 impossible）。
+
+    仅刷题类任务(math_exam/chi_exam/eng_exam)受题库容量约束：
+      若「今天仍可首次达标的卷数」< target，则无论怎么刷都完不成 → 不可达。
+    其余任务（听写/挑战/订正/背诵/单词 等）无内容稀缺，默认可达。
+    """
+    if code in ("math_exam", "chi_exam", "eng_exam"):
+        subj = {"math_exam": "数学", "chi_exam": "语文", "eng_exam": "英语"}[code]
+        return _available_new_exams(db, user_id, subj) >= target
+    return True
+
+
 # ═══════════════ 任务行生成 ═══════════════
 
 def _ensure_today_rows(db: Session, user_id: str) -> dict:
@@ -623,6 +654,12 @@ def _grant_makeup_card(db: Session, user_id: str) -> bool:
 
 def _build_payload(db: Session, user_id: str) -> dict:
     """刷新今日任务：计算进度、自动完成、汇总全勤"""
+    # 惰性执行心愿「有效期+清零重发」规则（孩子打开面板即触发，无需定时任务）
+    try:
+        from app.routers.rewards.common import _expire_wishes
+        _expire_wishes(db, user_id)
+    except Exception:
+        pass
     all_rows = _ensure_today_rows(db, user_id)
     settings = _load_settings(db, user_id)
 
@@ -649,6 +686,19 @@ def _build_payload(db: Session, user_id: str) -> dict:
         if row.status == "done":
             continue
         if not row.manual:
+            # 内容可行性兜底：若题库内容不足铁定达不到 target（如数学练习 target=2 但仅 1 套卷），
+            # 自动判完成，避免「永远无法完成」阻塞全勤（系统/内容原因，非孩子不努力）。
+            if not _daily_task_feasible(db, user_id, row.task_code, row.subject, row.target):
+                row.progress = row.target
+                row.status = "done"
+                # 可选任务自动完成仍计入心愿进度
+                if (getattr(row, 'task_type', 'mandatory') or 'mandatory') == "optional":
+                    try:
+                        from app.routers.rewards import inc_active_wish_progress
+                        inc_active_wish_progress(db, user_id, 1)
+                    except Exception:
+                        pass
+                continue
             prog = _task_progress(db, user_id, row.subject, row.task_code, row.target)
             row.progress = prog
             if prog >= row.target:

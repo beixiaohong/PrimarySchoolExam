@@ -2,11 +2,13 @@
 
 本文件只承载跨子模块共享的定义，不含任何路由。router 定义在包 __init__.py。
 """
-from datetime import datetime
+import math
+from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.models.daily_task import DailyTask
 from app.models.reward import WishItem
 
 COUPON_KINDS = {"cartoon": "动画时间", "snack": "零食券", "sticker": "贴纸券",
@@ -94,11 +96,76 @@ def _wish_out(w):
         "wish_type": getattr(w, 'wish_type', 'task_count') or 'task_count',
         "daily_target": getattr(w, 'daily_target', 0) or 0,
         "deadline": str(w.deadline)[:10] if getattr(w, 'deadline', None) else "",
+        "validity_days": getattr(w, 'validity_days', None),
     }
 
 
+def _wish_window_days(w: WishItem) -> int:
+    """取心愿有效期天数：优先用存储的 validity_days，缺失时按 旧deadline-创建日 回算（至少 1 天）。"""
+    vd = getattr(w, 'validity_days', None)
+    if vd and vd > 0:
+        return vd
+    dl = getattr(w, 'deadline', None)
+    ca = getattr(w, 'created_at', None)
+    if dl and ca:
+        span = (dl - ca.date()).days
+        if span > 0:
+            return span
+    return 1
+
+
+def _today_optional_count(db: Session, user_id: str) -> int:
+    """今天可选任务条数（用于估算 task_count 心愿每天最多可推进的进度）。"""
+    n = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.task_date == date.today(),
+        DailyTask.task_type == "optional").count()
+    return max(1, n)
+
+
+def _reset_impossible_wishes(db: Session, user_id: str):
+    """「有效期 + 清零重发」规则（心愿）：
+
+    若心愿带 deadline 且当前状态为 active/pending，计算：
+      days_remaining = deadline - 今天
+      days_needed    = 完成还需的最少天数（按每天可达进度保守估算）
+    当 days_remaining < days_needed（铁定无法在有效期内完成）→ 清零重发：
+      progress=0、连续天数标记清空、deadline 顺延为 今天 + 原有效期天数（validity_days）。
+    状态保持 active，不抹掉任务本身，给孩子一个干净的完整有效期。
+    """
+    today = date.today()
+    rows = db.query(WishItem).filter(
+        WishItem.user_id == user_id,
+        WishItem.status.in_(("active", "pending")),
+        WishItem.deadline != None, WishItem.deadline >= today,
+    ).all()
+    changed = False
+    for w in rows:
+        days_remaining = (w.deadline - today).days
+        if w.wish_type == "optional_streak":
+            # 连续天数：若昨天/今天还在连续中，已进度有效；否则视为断档从 0 起算
+            last = getattr(w, 'last_progress_date', None)
+            eff = w.progress or 0
+            if last is None or (today - last).days > 1:
+                eff = 0
+            days_needed = max(0, (w.target or 0) - eff)
+        else:  # task_count：每完成 1 个可选任务 +1，每天最多 = 当天可选任务数
+            max_opt = _today_optional_count(db, user_id)
+            remain = max(0, (w.target or 0) - (w.progress or 0))
+            days_needed = math.ceil(remain / max_opt)
+        if days_remaining < days_needed:
+            w.progress = 0
+            w.last_progress_date = None
+            window = _wish_window_days(w)
+            w.validity_days = window
+            w.deadline = today + timedelta(days=window)
+            w.updated_at = datetime.now()
+            changed = True
+    if changed:
+        db.commit()
+
+
 def _expire_wishes(db: Session, user_id: str):
-    """将超过截止日期仍未完成的心愿置为 expired（幂等）"""
+    """将超过截止日期仍未完成的心愿置为 expired（幂等）；并顺带执行「必然完成不了→清零重发」。"""
     from datetime import date
     today = date.today()
     expired = db.query(WishItem).filter(
@@ -111,6 +178,8 @@ def _expire_wishes(db: Session, user_id: str):
         w.updated_at = datetime.now()
     if expired:
         db.commit()
+    # 有效期规则：判「必然完成不了」并清零重发（幂等，仅对 active/pending 生效）
+    _reset_impossible_wishes(db, user_id)
 
 
 __all__ = [
