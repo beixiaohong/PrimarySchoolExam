@@ -153,7 +153,7 @@ def build_english_docx(
     section_num = 0
 
     # 有选项的题型
-    choice_types = {"choice", "phonetics", "grammar_choice", "situational", "cloze"}
+    choice_types = {"choice", "grammar_choice", "situational", "cloze"}
 
     for key, items in exercises.items():
         if not items:

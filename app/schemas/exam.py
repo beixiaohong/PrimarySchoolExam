@@ -21,7 +21,7 @@ class ExamCreateRequest(BaseModel):
     english_count_per_type: int = Field(10, ge=1, le=30, description="每种英语题型数量(兼容旧接口)")
     english_book_ids: Optional[List[int]] = Field(None, description="词库ID筛选")
     english_types: Optional[List[str]] = Field(
-        None, description="英语题型：word_translation/phrase_translation/sentence_translation/phonetics/grammar_choice/situational/unscramble_sentence/cloze/dictation/choice"
+        None, description="英语题型：word_translation/phrase_translation/sentence_translation/grammar_choice/situational/unscramble_sentence/cloze/dictation/choice"
     )
 
 

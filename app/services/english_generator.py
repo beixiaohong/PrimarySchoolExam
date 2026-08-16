@@ -4,7 +4,6 @@
   - word_translation   单词翻译（英译中/中译英）
   - phrase_translation 词组翻译
   - sentence_translation 句子翻译
-  - phonetics          语音辨析（找不同发音）
   - grammar_choice     语法选择
   - situational        情景交际（补全对话）
   - unscramble_sentence 连词成句
@@ -57,7 +56,7 @@ def _get_sentences(db, grade: int) -> List[dict]:
 # 所有支持的题型
 ALL_EXERCISE_TYPES = [
     "word_translation", "phrase_translation", "sentence_translation",
-    "phonetics", "grammar_choice", "situational",
+    "grammar_choice", "situational",
     "unscramble_sentence", "cloze", "dictation", "choice",
 ]
 
@@ -66,7 +65,6 @@ TYPE_NAMES = {
     "word_translation": "单词翻译",
     "phrase_translation": "词组翻译",
     "sentence_translation": "句子翻译",
-    "phonetics": "语音辨析",
     "grammar_choice": "语法选择",
     "situational": "情景交际",
     "unscramble_sentence": "连词成句",
@@ -104,7 +102,6 @@ def generate_english_exam(
         "word_translation": lambda: _gen_word_translation(words, count_per_type),
         "phrase_translation": lambda: _gen_phrase_translation(phrases, count_per_type),
         "sentence_translation": lambda: _gen_sentence_translation(sentences, count_per_type),
-        "phonetics": lambda: _gen_phonetics(words, count_per_type),
         "grammar_choice": lambda: _gen_grammar_choice(sentences, count_per_type),
         "situational": lambda: _gen_situational(grade, count_per_type),
         "unscramble_sentence": lambda: _gen_unscramble_sentence(sentences, count_per_type),
@@ -273,44 +270,6 @@ def _gen_sentence_translation(sentences: List[dict], count: int) -> List[dict]:
                 "answer": s["en"],
                 "options": None,
             })
-    return items
-
-
-def _gen_phonetics(words: List[dict], count: int) -> List[dict]:
-    """语音辨析：找出划线部分发音不同的词"""
-    # 按元音字母分组构造题目
-    vowel_groups = {
-        "a": [("cake", "make", "name", "cat"), ("bag", "map", "hat", "face"),
-              ("day", "play", "say", "cat"), ("apple", "hand", "bag", "cake")],
-        "e": [("he", "me", "she", "bed"), ("pen", "ten", "red", "these"),
-              ("desk", "get", "let", "be"), ("egg", "leg", "bed", "he")],
-        "i": [("like", "bike", "kite", "sit"), ("big", "pig", "six", "five"),
-              ("fish", "this", "his", "ice"), ("milk", "hill", "him", "time")],
-        "o": [("nose", "home", "go", "dog"), ("hot", "not", "lot", "no"),
-              ("box", "fox", "dog", "rose"), ("come", "some", "love", "go")],
-        "u": [("use", "cute", "mule", "bus"), ("cup", "bus", "sun", "ruler"),
-              ("fun", "run", "duck", "music"), ("put", "but", "cut", "use")],
-    }
-    items = []
-    all_questions = []
-    for vowel, groups in vowel_groups.items():
-        for group in groups:
-            # 最后一个通常是不同的
-            words_list = list(group)
-            answer_idx = len(words_list) - 1  # 默认最后一个不同
-            # 打乱位置
-            answer_word = words_list[answer_idx]
-            random.shuffle(words_list)
-            new_idx = words_list.index(answer_word)
-            options = [f"{'ABCD'[j]}. {w}" for j, w in enumerate(words_list)]
-            all_questions.append({
-                "question": f"找出划线字母\"{vowel}\"发音不同的一项：",
-                "options": options,
-                "answer": "ABCD"[new_idx],
-            })
-    random.shuffle(all_questions)
-    for i, q in enumerate(all_questions[:count], 1):
-        items.append({"id": i, **q})
     return items
 
 
