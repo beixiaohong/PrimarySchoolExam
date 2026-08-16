@@ -88,6 +88,7 @@ class DictateRequest(BaseModel):
     mode: str = "new"  # new=新学 / review=复习
     text_ids: List[int] = []      # 向后兼容：旧前端传「全部正确」的篇目
     passed_ids: List[int] = []    # 新：默写正确的篇目（前端判分后仅传正确的，错的已剔除）
+    wrong_items: List[dict] = []  # AI 复审：[{text_id, question, user_answer, answer, subject}]
 
 
 # ═══════════════════════════════════════════════════════════

@@ -220,7 +220,7 @@ def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
         "subject": req.subject,
         "options": req.options or [],
     }]
-    approved = judge_wrong_items(req.user_id, items)
+    approved = judge_wrong_items(req.user_id, items, force=True)
     verdict = approved.get("x")
 
     if not verdict or not verdict.get("correct"):

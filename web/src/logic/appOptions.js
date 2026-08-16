@@ -357,12 +357,15 @@ const appOptions = {
           if (r.status === 401) {
             const hadSession = !!localStorage.getItem('zx_user');
             try { localStorage.removeItem('zx_user'); localStorage.removeItem('zx_token'); sessionStorage.removeItem('zx_parent_pwd'); } catch (e) {}
-            // 业务接口 401：清会话 + 跳登录页（仅首次有 session 时跳）。
-            // 必须 throw 而非返回永不 resolve 的 Promise——否则调用方的 .then/.catch/.finally
-            // 永不执行，会导致按钮卡在「处理中…」且无法恢复（家长申诉裁决按钮即此坑）。
-            // 重复 toast 由 showToast 自身覆盖逻辑兜底（同一时刻只显示最后一条）。
-            if (path.indexOf('/api/auth/') === -1 && hadSession) location.href = '/';
-            throw new Error('登录已过期，请重新登录');
+            // 业务接口 401：清会话 + 延迟跳登录页（仅首次有 session 时跳）。
+            // 先 throw 让调用方 .catch() 有机会弹 toast 告知用户；
+            // 延迟 1.8s 再跳转，保证用户能看到提示（而非按钮突然无反应、页面莫名刷新）。
+            const msg = '登录已过期，请重新登录';
+            if (path.indexOf('/api/auth/') === -1 && hadSession) {
+              this.showToast(msg);
+              setTimeout(() => { location.href = '/'; }, 1800);
+            }
+            throw new Error(msg);
           }
           const t = await r.text();
           let d = t;
@@ -1937,29 +1940,36 @@ const appOptions = {
         .catch(() => { this.decidedAppeals = []; this.decidedAppealsTotal = 0; });
     },
     toggleAppeal(id) {
-      this.$set(this.appealExpanded, id, !this.appealExpanded[id]);
+      this.appealExpanded[id] = !this.appealExpanded[id];
     },
     decideAppeal(a, ok) {
       if (a._deciding) return;            // 防重复提交（连点）
-      this.$set(a, '_deciding', true);
-      const note = (this.appealNotes[a.id] || '').trim();
-      // 兜底：15s 内请求未返回（网络挂起/401 等异常），强制解除禁用，避免按钮永久卡在「处理中…」
-      const guard = setTimeout(() => { this.$set(a, '_deciding', false); }, 15000);
-      this.api('/api/appeal/decide', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject', note }),
-      }).then(() => {
-        // 立即本地移除该条，避免列表刷新前二次点击「已处理过」报错
-        const idx = this.pendingAppeals.findIndex(x => x.id === a.id);
-        if (idx >= 0) this.pendingAppeals.splice(idx, 1);
-        this.$delete(this.appealNotes, a.id);
-        this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
-        this.loadDecidedAppeals();
-        this.loadChildStats();
-      }).catch(e => this.showToast(e.message)).finally(() => {
-        clearTimeout(guard);
-        this.$set(a, '_deciding', false);
-      });
+      try {
+        a._deciding = true;
+        this.showToast('正在处理申诉，请稍候…');   // 即时反馈：让用户知道按钮已响应
+        const note = (this.appealNotes[a.id] || '').trim();
+        // 兜底：15s 内请求未返回（网络挂起/401 等异常），强制解除禁用，避免按钮永久卡在「处理中…」
+        const guard = setTimeout(() => { a._deciding = false; }, 15000);
+        this.api('/api/appeal/decide', {
+          method: 'POST',
+          body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject', note }),
+        }).then(() => {
+          // 立即本地移除该条，避免列表刷新前二次点击「已处理过」报错
+          const idx = this.pendingAppeals.findIndex(x => x.id === a.id);
+          if (idx >= 0) this.pendingAppeals.splice(idx, 1);
+          delete this.appealNotes[a.id];
+          this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
+          this.loadDecidedAppeals();
+          this.loadChildStats();
+        }).catch(e => this.showToast('申诉处理失败：' + (e.message || e))).finally(() => {
+          clearTimeout(guard);
+          a._deciding = false;
+        });
+      } catch (e) {
+        console.error('[decideAppeal] sync error:', e);
+        this.showToast('申诉操作异常：' + (e.message || e));
+        a._deciding = false;
+      }
     },
     appealThis() {
       const it = this.quiz.items[this.quiz.i];

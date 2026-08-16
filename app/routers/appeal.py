@@ -166,11 +166,8 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
         # 已裁决：允许家长补填/修改备注，但不改变裁决结果（避免重复处理、也不翻转判对/判错）。
         note = (req.note or "").strip()
         if note:
-            try:
-                a.note = note[:500]
-                db.commit()
-            except Exception:
-                db.rollback()
+            a.note = note[:500]
+            db.commit()
         return {"id": a.id, "status": a.status, "already_decided": True}
 
     if req.action == "approve":
@@ -183,11 +180,7 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
 
     a.status = "approved" if req.action == "approve" else "rejected"
     a.decided_at = datetime.now()
-    try:
-        a.note = (req.note or "").strip()[:500]
-    except Exception:
-        # answer_appeals.note 列缺失（迁移未执行）时跳过备注，不影响裁决主流程
-        pass
+    a.note = (req.note or "").strip()[:500]
     db.commit()
     return {"id": a.id, "status": a.status}
 
