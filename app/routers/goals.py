@@ -6,7 +6,7 @@ current 自动计算：
 - recite：累计背诵古诗文篇数
 目标到期自动归档；最多同时 2 个进行中（PRD P1：同时 ≤2 个）。
 """
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -69,10 +69,56 @@ def _goal_out(db: Session, g) -> dict:
         "target": g.target, "current": min(current, g.target),
         "raw_current": current, "pct": round(min(current / g.target, 1) * 100) if g.target else 0,
         "deadline": str(g.deadline) if g.deadline else None,
+        "validity_days": getattr(g, 'validity_days', None),
         "days_left": days_left, "status": g.status,
         "daily_step": daily_step,
         "achieved": current >= g.target,
     }
+
+
+def _goal_window_days(g) -> int:
+    """取目标有效期天数：优先存储的 validity_days，缺失时按 旧deadline-创建日 回算（至少 1 天）。"""
+    vd = getattr(g, 'validity_days', None)
+    if vd and vd > 0:
+        return vd
+    dl = getattr(g, 'deadline', None)
+    ca = getattr(g, 'created_at', None)
+    if dl and ca:
+        span = (dl - ca.date()).days
+        if span > 0:
+            return span
+    return 1
+
+
+def _reset_impossible_goals(db: Session, user_id: str):
+    """「有效期 + 重置」规则（学期目标）：
+
+    保守判定（避免误判可完成的任务）：假设每天最多推进 1 个单位，
+      days_needed = target - current
+    若 days_remaining(=deadline-今天) < days_needed → 铁定无法按期完成：
+      仅顺延 deadline = 今天 + 原有效期天数，保留已累积的真实进度
+      （目标进度是真实成就，如已消灭的错题数，故不清零；如需强制清零可再调整）。
+    """
+    from ..models.reward import GoalItem
+    today = date.today()
+    rows = db.query(GoalItem).filter(
+        GoalItem.user_id == user_id, GoalItem.status == "active",
+        GoalItem.deadline != None, GoalItem.deadline >= today,
+    ).all()
+    changed = False
+    for g in rows:
+        current = _current(db, g.user_id, g.kind, g.subject)
+        if current >= g.target:
+            continue
+        days_remaining = (g.deadline - today).days
+        days_needed = max(0, (g.target or 0) - current)  # 保守：≤1 单位/天
+        if days_remaining < days_needed:
+            window = _goal_window_days(g)
+            g.validity_days = window
+            g.deadline = today + timedelta(days=window)
+            changed = True
+    if changed:
+        db.commit()
 
 
 @router.get("", summary="进行中目标列表（含自动计算进度与倒计时）")
@@ -84,6 +130,7 @@ def list_goals(user_id: str = Query(...), db: Session = Depends(get_db)):
     副作用：只读，无写库。current 按 kind 实时聚合（score 取最近 10 次均分 / wrong 累计掌握错题 / recite 累计新背篇数）。
     """
     from ..models.reward import GoalItem
+    _reset_impossible_goals(db, user_id)  # 惰性执行「必然完成不了→顺延 deadline」
     rows = db.query(GoalItem).filter(
         GoalItem.user_id == user_id, GoalItem.status.in_(("active", "done")),
     ).order_by(GoalItem.id.desc()).all()
@@ -122,7 +169,9 @@ def create_goal(req: GoalReq, db: Session = Depends(get_db)):
     }
     g = GoalItem(user_id=req.user_id, kind=req.kind,
                  title=titles[req.kind], subject=req.subject,
-                 target=target, deadline=deadline, status="active")
+                 target=target, deadline=deadline,
+                 validity_days=(deadline - date.today()).days if deadline else None,
+                 status="active")
     db.add(g)
     db.commit()
     return _goal_out(db, g)

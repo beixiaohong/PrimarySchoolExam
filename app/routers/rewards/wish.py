@@ -55,7 +55,8 @@ def create_wish(req: WishReq, db: Session = Depends(get_db)):
     w = WishItem(user_id=req.user_id, title=title[:100], target=target,
                  progress=0, status="pending",
                  wish_type=wish_type, daily_target=daily_target,
-                 deadline=deadline_val)
+                 deadline=deadline_val,
+                 validity_days=(deadline_val - date.today()).days if deadline_val else None)
     db.add(w)
     db.commit()
     return _wish_out(w)

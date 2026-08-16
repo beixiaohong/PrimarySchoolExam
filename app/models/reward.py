@@ -46,6 +46,7 @@ class WishItem(Base):
     daily_target = Column(Integer, default=0, comment="每天需完成的可选任务数（仅 optional_streak 类型）")
     last_progress_date = Column(Date, nullable=True, comment="上次进度递增日期（用于连续天数判断）")
     deadline = Column(Date, nullable=True, comment="截止日期（超过后未完成自动过期）")
+    validity_days = Column(Integer, nullable=True, comment="有效期天数：创建时按 deadline-创建日 计算；重置时据此顺延 deadline")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
 
@@ -63,5 +64,6 @@ class GoalItem(Base):
     target = Column(Integer, default=90, comment="目标值")
     current = Column(Integer, default=0, comment="当前值")
     deadline = Column(Date, nullable=True, comment="截止日期")
+    validity_days = Column(Integer, nullable=True, comment="有效期天数：创建时按 deadline-创建日 计算；重置时据此顺延 deadline")
     status = Column(String(20), default="active", comment="active/done/archived")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
