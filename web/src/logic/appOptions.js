@@ -3214,15 +3214,22 @@ const appOptions = {
           const pErr = studyErrors.length
             ? this.api('/api/study/errors', { method: 'POST', body: JSON.stringify({ user_id: this.user, items: studyErrors }) })
             : Promise.resolve();
+          // AI 复审：将判错的篇目送给 AI 二次确认（繁体/通假字/语序差异等边界情况）
+          const wrongItems = studyErrors.map(se => ({
+            text_id: se.source_id, question: se.question,
+            user_answer: se.user_answer, answer: se.correct_answer, subject: '语文',
+          }));
           pErr.then(() => this.api('/api/classical/dictate', {
             method: 'POST',
-            body: JSON.stringify({ user_id: this.user, mode: src.mode2, passed_ids: passedIds }),
+            body: JSON.stringify({ user_id: this.user, mode: src.mode2, passed_ids: passedIds, wrong_items: wrongItems }),
           })).then(r => {
             const saved = (r && r.saved) || [];
+            const flipped = (r && r.ai_flipped) || [];
             return this._submitErrorBatch(errorQuizItems, '语文').then(() => {
               this.loadAnalysis();
-              const okN = saved.length, badN = studyErrors.length;
-              this.showToast(okN ? `已背诵 ${okN} 篇` + (badN ? `，${badN} 篇待巩固（已加入错题本）` : '，太棒了！') : '本次需巩固，已加入错题本');
+              const okN = saved.length, badN = studyErrors.length - flipped.length;
+              if (flipped.length) this.showToast(`🤖 AI 复核：${flipped.length} 篇判定为正确 ✓`);
+              this.showToast(okN ? `已背诵 ${okN} 篇` + (badN > 0 ? `，${badN} 篇待巩固（已加入错题本）` : '，太棒了！') : '本次需巩固，已加入错题本');
               afterRecite();
             });
           }).catch(e => { this.quiz.active = false; ts.active = false; this.showToast(e.message); });

@@ -163,14 +163,47 @@ def mark_texts_learned(req: LearnRequest, db: Session = Depends(get_db)):
 
 @router.post("/review", summary="提交背诵复习结果")
 def submit_review(req: ReviewRequest, db: Session = Depends(get_db)):
-    """提交复习结果，更新艾宾浩斯进度"""
+    """提交复习结果，更新艾宾浩斯进度。
+
+    wrong_items 非空时触发 AI 复审：AI 判对的篇目自动从 wrong 翻转为 correct。
+    """
     today = date.today()
     log = _get_today_log(db, req.user_id, today)
     results = []
+    ai_flipped: list = []
+
+    # AI 复审：对前端判错的篇目做二次确认
+    ai_approved_tids: set = set()
+    if req.wrong_items:
+        from app.services.judge import judge_wrong_items
+        judge_items = []
+        for wi in req.wrong_items:
+            judge_items.append({
+                "key": wi.get("text_id"),
+                "question_id": None,
+                "question": wi.get("question", ""),
+                "answer": wi.get("answer", ""),
+                "user_answer": wi.get("user_answer", ""),
+                "subject": wi.get("subject", "语文"),
+            })
+        if judge_items:
+            approved = judge_wrong_items(req.user_id, judge_items)
+            for wi in req.wrong_items:
+                tid = wi.get("text_id")
+                verdict = approved.get(tid)
+                if verdict and verdict.get("correct"):
+                    ai_approved_tids.add(tid)
+                    ai_flipped.append({
+                        "text_id": tid,
+                        "reason": verdict.get("reason", "AI 复审：答案正确"),
+                    })
 
     for item in req.results:
         tid = item.get("text_id")
         correct = item.get("correct", False)
+        # AI 复审翻转：前端判错但 AI 判对
+        if not correct and tid in ai_approved_tids:
+            correct = True
 
         progress = db.query(ClassicalProgress).filter(
             ClassicalProgress.user_id == req.user_id,
@@ -201,7 +234,7 @@ def submit_review(req: ReviewRequest, db: Session = Depends(get_db)):
             results.append({"text_id": tid, "status": "wrong", "next_review": str(progress.next_review_date)})
 
     db.commit()
-    return {"updated": len(results), "details": results}
+    return {"updated": len(results), "details": results, "ai_flipped": ai_flipped}
 
 
 @router.post("/dictate", summary="古诗文默写提交：分项存储（passed_ids 记录，错的剔除）")
@@ -211,11 +244,40 @@ def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
     - 仅对 passed_ids（默写正确的篇目）记录进度；错的已剔除交前端进错题本
     - 向后兼容：未传 passed_ids 时回退使用 text_ids（旧前端整轮全对才调用）
     - text_ids / passed_ids 均为空 → 不落库，视为未通过
-    返回 saved(已记录篇目 id)、updated(记录数)、passed(是否通过)。
+    - wrong_items 非空时触发 AI 复审：AI 判对的篇目自动翻转为 correct 并记入进度
+    返回 saved(已记录篇目 id)、updated(记录数)、passed(是否通过)、ai_flipped(AI 翻转的篇目)。
     """
     record_ids = req.passed_ids if req.passed_ids else req.text_ids
+    ai_flipped: list = []  # AI 复审翻转的篇目
+
+    # AI 复审：对前端判错的篇目做二次确认（古诗文主要处理繁体/通假字/语序差异）
+    if req.wrong_items:
+        from app.services.judge import judge_wrong_items
+        judge_items = []
+        for wi in req.wrong_items:
+            judge_items.append({
+                "key": wi.get("text_id"),
+                "question_id": None,
+                "question": wi.get("question", ""),
+                "answer": wi.get("answer", ""),
+                "user_answer": wi.get("user_answer", ""),
+                "subject": wi.get("subject", "语文"),
+            })
+        if judge_items:
+            approved = judge_wrong_items(req.user_id, judge_items)
+            for wi in req.wrong_items:
+                tid = wi.get("text_id")
+                verdict = approved.get(tid)
+                if verdict and verdict.get("correct"):
+                    ai_flipped.append({
+                        "text_id": tid,
+                        "reason": verdict.get("reason", "AI 复审：答案正确"),
+                    })
+                    if tid not in record_ids:
+                        record_ids = list(record_ids) + [tid]
+
     if not record_ids:
-        return {"passed": False, "saved": [], "updated": 0}
+        return {"passed": False, "saved": [], "updated": 0, "ai_flipped": ai_flipped}
 
     today = date.today()
     log = _get_today_log(db, req.user_id, today)
@@ -246,7 +308,8 @@ def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
             results.append({"text_id": tid, "status": "learned"})
             saved.append(tid)
         db.commit()
-        return {"passed": True, "saved": saved, "updated": len(saved), "details": results}
+        return {"passed": True, "saved": saved, "updated": len(saved), "details": results,
+                "ai_flipped": ai_flipped}
 
     # mode=review：对 passed_ids 全部按 correct 提交复习
     for tid in record_ids:
@@ -270,7 +333,8 @@ def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
                         "next_review": str(progress.next_review_date)})
         saved.append(tid)
     db.commit()
-    return {"passed": True, "saved": saved, "updated": len(saved), "details": results}
+    return {"passed": True, "saved": saved, "updated": len(saved), "details": results,
+            "ai_flipped": ai_flipped}
 
 
 __all__ = [

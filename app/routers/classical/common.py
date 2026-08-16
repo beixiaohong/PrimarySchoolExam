@@ -80,6 +80,7 @@ class ReviewRequest(BaseModel):
     """提交背诵复习结果请求体：用户 ID 与每篇正确与否的结果列表。"""
     user_id: str
     results: List[dict]  # [{text_id, correct}]
+    wrong_items: List[dict] = []  # AI 复审：[{text_id, question, user_answer, answer, subject}]
 
 
 class DictateRequest(BaseModel):
