@@ -1482,6 +1482,12 @@ const appOptions = {
       const words = mode === 'new' ? (this.vocabToday.new_words || []) : (this.vocabToday.review_words || []);
       if (!words.length) { this.showToast(mode === 'new' ? '词库已全部学完，太棒了！' : '今日没有到期复习的单词'); return; }
       this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [], comprehensiveIds: null };
+      if (mode === 'review') {
+        // 复习模式：跳过「逐词卡片(词面)+逐词测一测」，直接进合并检测（直接出题，不展示原文/词面）
+        this.wordSession.phase = 'dictate';
+        this.$nextTick(() => this.startWordDictate());
+        return;
+      }
       this.$nextTick(() => setTimeout(() => this.wordSpeak(), 350));
     },
     wordNext(ok) {
@@ -1571,6 +1577,12 @@ const appOptions = {
         texts: raw.map(x => ({ ...x, dynasty: x.dynasty || '' })),
         i: 0, okCount: 0, failCount: 0, results: [], comprehensiveIds: null,
       };
+      if (mode === 'review') {
+        // 复习模式：跳过「逐篇卡片(原文)+逐篇测一测」，直接进合并检测（每首3题，N首共3N题，不展示原文）
+        this.textSession.phase = 'dictate';
+        this.$nextTick(() => this.startTextDictate());
+        return;
+      }
       this.$nextTick(() => setTimeout(() => this.textSpeak(), 350));
     },
     textNext(ok) {
