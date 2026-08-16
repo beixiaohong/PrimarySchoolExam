@@ -1260,7 +1260,7 @@ const appOptions = {
     loadEngTypes() {
       this._engTypes = [
         { code: 'word_translation', name: '单词翻译' }, { code: 'phrase_translation', name: '词组翻译' },
-        { code: 'sentence_translation', name: '句子翻译' }, { code: 'phonetics', name: '语音辨析' },
+        { code: 'sentence_translation', name: '句子翻译' },
         { code: 'grammar_choice', name: '语法选择' }, { code: 'situational', name: '情景交际' },
         { code: 'unscramble_sentence', name: '连词成句' }, { code: 'cloze', name: '选词填空' },
         { code: 'dictation', name: '单词听写' }, { code: 'choice', name: '单词选择' },
@@ -1374,7 +1374,7 @@ const appOptions = {
       return ({
         choice: '选择题', fill: '填空题', transform: '句型转换', correct: '改错题',
         word_translation: '单词翻译', phrase_translation: '词组翻译', sentence_translation: '句子翻译',
-        phonetics: '语音辨析', grammar_choice: '语法选择', situational: '情景交际',
+        grammar_choice: '语法选择', situational: '情景交际',
         unscramble_sentence: '连词成句', cloze: '选词填空', dictation: '单词听写',
         pinyin_write: '看拼音写词语', idiom_fill: '成语填空', poetry_fill: '古诗默写',
         typo_correct: '改错字', sentence_rewrite: '句式变换', word_classify: '词语归类',
@@ -1741,7 +1741,7 @@ const appOptions = {
     },
     startTextQuiz(t) {
       this.textDetail.show = false;
-      this.api(`/api/classical/quiz?grade=${this.grade}&text_id=${t.id}&count=4`)
+      this.api(`/api/classical/quiz?grade=${this.grade}&text_id=${t.id}&count=3`)
         .then(qs => {
           const items = (qs || []).map(q => ({
             qid: 0, text_id: q.text_id, question: q.question, sub: q.context || '',
