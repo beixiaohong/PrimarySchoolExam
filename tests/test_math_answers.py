@@ -199,6 +199,28 @@ def test_bug10_logic_reasoning_no_deadloop():
 
 
 # ---------------------------------------------------------------------------
+# number_operation_law 分配律展开题：题干与答案系数必须一致
+# （回归 number.py:211 两次独立 random 导致答案系数与题千不一致的 bug）
+# ---------------------------------------------------------------------------
+def test_number_distributive_coeff_consistent():
+    hit = 0
+    for _ in range(3000):
+        q, a = number_mod.number_operation_law(4, 6)
+        m = re.search(r"\((\d+)\+(\d+)\)×(\d+)怎样用分配律展开\？", q)
+        if not m:
+            continue
+        hit += 1
+        x_q = int(m.group(2))  # 题千括号内的加数
+        ma = re.search(r"(\d+)×(\d+)\+(\d+)×(\d+)", a)
+        assert ma, "分配律展开答案格式异常 -> %r" % a
+        assert int(ma.group(3)) == x_q, (
+            "题干系数(%d)与答案系数(%d)不一致 -> q=%r a=%r"
+            % (x_q, int(ma.group(3)), q, a)
+        )
+    assert hit > 0, "未命中分配律展开题型，测试无效"
+
+
+# ---------------------------------------------------------------------------
 # 修复生成器随机扫描：无 HANG / 无 EXCEPTION / 无 None / 无畸形
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("code", [

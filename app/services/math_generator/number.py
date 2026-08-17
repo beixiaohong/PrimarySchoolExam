@@ -205,11 +205,16 @@ def number_operation_law(difficulty: int, grade: int):
         a = random.choice([25, 125, 4, 8])
         b = random.choice([4, 8, 25, 125])
         c = random.randint(2, 20)
+        x = random.randint(1, 9)        # 分配律展开：题干与答案必须复用同一系数 x
+        k = random.randint(11, 99)      # 99×k 简便计算
         variants = [
-            (f"{a}×{b}×{c}怎样简便计算？运用了什么律？", f"{a}×{b}={a*b}，再×{c}={a*b*c}，乘法结合律"),
-            (f"{a}×{c}+{b}×{c}怎样简便计算？", f"({a}+{b})×{c}={a+b}×{c}={ (a+b)*c }，乘法分配律"),
-            (f"({a}+{random.randint(1,9)})×{b}怎样用分配律展开？", f"{a}×{b}+{random.randint(1,9)}×{b}"),
-            (f"99×{random.randint(11,99)}怎样简便计算？", "99=100-1，用乘法分配律：100×n-n"),
+            (f"{a}×{b}×{c}怎样简便计算？运用了什么律？",
+             f"{a}×{b}={a*b}，再×{c}={a*b*c}，乘法结合律"),
+            (f"{a}×{c}+{b}×{c}怎样简便计算？",
+             f"({a}+{b})×{c}={a+b}×{c}={ (a+b)*c }，乘法分配律"),
+            (f"({a}+{x})×{b}怎样用分配律展开？", f"{a}×{b}+{x}×{b}"),
+            (f"99×{k}怎样简便计算？",
+             f"99×{k}=(100-1)×{k}=100×{k}-{k}={100*k-k}，乘法分配律"),
         ]
         return random.choice(variants)
     else:

@@ -27,14 +27,21 @@ logger = logging.getLogger(__name__)
 
 # ── Step 1: 独立解题（输入不含参考答案，迫使 AI 真正独立思考） ──
 JUDGE_STEP1_SYSTEM = (
-    "你是一位严谨的小学/初中（数学/语文/英语）批改老师。\n"
-    "以下题目被系统判为孩子答错，但系统判定可能有误。请你完成以下任务：\n"
-    "1. **独立解答**：不看任何参考答案，自己完整解答题目，给出你认为的正确答案。"
-    "（数值题请直接计算并保留合理小数，例如 202 打八折 = 202×0.8 = 161.6，"
-    "不要截断为整数；百分数、单位换算同理。）\n"
-    "2. **判断孩子作答**：比较你算出的答案和孩子的作答，判断孩子的作答是否正确。"
-    "以下情况均视为正确：等价表达式、单位换算正确、同义词/语序不同、"
-    "分数/小数/百分数等价写法、全角半角/标点/空格差异、繁体字与简体字等价。\n"
+    "你是一位严谨的小学/初中（数学/语文/英语/科学）批改老师。\n"
+    "以下题目被系统判为孩子答错，但系统判定可能有误。请独立、客观地复核。\n\n"
+    "任务：\n"
+    "1. **独立解答**：先看题目，自己得出正确答案（本题不提供参考答案，不要被题目措辞锚定）。"
+    "数值题请完整计算并保留合理精度（如 202×0.8=161.6，不要截断为整数；百分数、单位换算同理）。\n"
+    "2. **判断孩子作答是否正确**：以「知识点/核心结论是否一致」为准，不要做字面逐字比较。"
+    "以下情形都应判为正确（child_correct=true）：\n"
+    "   - 等价表达：分数/小数/百分数互化、单位换算正确、同义表述、语序不同；\n"
+    "   - 中文数字与阿拉伯数字等价（\"三条\"=\"3条\"、\"六十\"=\"60\"）；\n"
+    "   - 错别字/音近字/形近字但意思相同（如\"对轴相直\"=\"对边平行\"、\"礼拜天/星期天\"=\"星期日\"）；\n"
+    "   - 繁简/全半角/标点/空格差异；\n"
+    "   - 概念/定义/常识题：孩子用不同措辞表达了相同知识点"
+    "（如\"每个角60度，三条对称轴\"等价于\"60°，3条\"；\"两组对边平行\"与\"一组对边平行\"的区别表述正确）；\n"
+    "   - 孩子给出关键结论正确，仅多了合理的说明或过程、或个别非关键笔误。\n"
+    "   仅当孩子确实答错（关键知识点错误、结论相反或数值明显算错）时才判 child_correct=false。\n"
     "3. **给出理由**：用不超过 20 字简要说明判断依据。\n\n"
     "只输出一个 JSON 数组，不要输出任何其他文字：\n"
     '[{"idx": 0, "my_answer": "你算出的正确答案", '
@@ -112,9 +119,27 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
     if not todo:
         return {}
 
+    # 准备：题字典 + 已批准结果（本地预判与 AI 复核共用）
+    key_to_item = {it["key"]: it for it in todo}
+    approved: dict = {}
+
+    # 1.5) 本地语义预判：对确定性概念/常识题（纯文字参考答案）先容错判对，
+    #      不依赖 AI（AI 降级/限频时也能判对）。保守：仅当本地可确认正确才采纳。
+    for it in todo:
+        if _local_semantic_correct(it.get("user_answer", ""), it.get("answer", "") or ""):
+            approved[it["key"]] = {
+                "correct": True,
+                "stored_wrong": False,
+                "correct_answer": (it.get("answer") or "").strip(),
+                "reason": "本地语义预判：知识点正确",
+            }
+
     # 2) Step 1: 独立解题 + 判断孩子作答（输入不含参考答案！）
+    #    已本地判对的题跳过，节省 AI 调用。
     step1_lines = []
     for it in todo:
+        if it["key"] in approved:
+            continue
         q_text = it.get("question", "")
         opts = it.get("options")
         if opts:
@@ -124,33 +149,34 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
             f"题目：{q_text}\n"
             f"孩子作答：{it.get('user_answer', '')}\n"
         )
-    result1 = ai_svc.chat_for(
-        user_id,
-        JUDGE_STEP1_SYSTEM,
-        "以下是需要复核的题目（请独立解答后判断孩子作答）：\n" + "\n".join(step1_lines),
-        max_tokens=1200,
-    )
+    if step1_lines:
+        result1 = ai_svc.chat_for(
+            user_id,
+            JUDGE_STEP1_SYSTEM,
+            "以下是需要复核的题目（请独立解答后判断孩子作答）：\n" + "\n".join(step1_lines),
+            max_tokens=1200,
+        )
+    else:
+        result1 = None  # 全部已本地判对，无需调 AI
 
-    if not result1 or not result1.get("text", "").strip():
+    if step1_lines and (not result1 or not result1.get("text", "").strip()):
         db = SessionLocal()
         try:
             _log_judge_usage(db, user_id, ok=False, error="Step1 AI 不可用，维持本地判定")
         finally:
             db.close()
-        return {}
+        return approved  # 已本地判对的题仍生效（只升不降）
 
-    verdicts1 = _parse_verdicts(result1["text"])
-    if not verdicts1:
+    verdicts1 = _parse_verdicts((result1 or {}).get("text", "")) if result1 else []
+    if step1_lines and not verdicts1:
         db = SessionLocal()
         try:
             _log_judge_usage(db, user_id, ok=False, error="Step1 AI 输出无法解析，维持本地判定")
         finally:
             db.close()
-        return {}
+        return approved  # 已本地判对的题仍生效（只升不降）
 
     # 3) 收集 Step1 结果
-    key_to_item = {it["key"]: it for it in todo}
-    approved: dict = {}
     wrong_in_step1: list = []  # Step1 判错的题，送 Step2 检查参考答案
     my_answers: dict = {}       # key -> AI 独立算出的答案
 
@@ -245,10 +271,82 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
 
 
 def _fuzzy_match(user_answer: str, correct_answer: str) -> bool:
-    """简单模糊匹配：去空格/全角半角后比较，用于 Step2 二次确认孩子作答。"""
+    """语义级模糊匹配：用于 Step2 二次确认孩子作答是否等于正确值。
+
+    放宽到「中文数字归一 + 核心关键词包含 + 冗余说明裁剪」：
+    - 中文数字（三条/六十）与阿拉伯数字（3/60）等价；
+    - 角度/温度单位「度」与「°」等价；
+    - 不要求逐字相等，只要求较短一方是较长一方的子串（容忍冗余说明/过程）。
+    """
+    def _cn_num(s: str) -> str:
+        table = {"零": "0", "〇": "0", "一": "1", "二": "2", "两": "2", "三": "3",
+                 "四": "4", "五": "5", "六": "6", "七": "7", "八": "8", "九": "9",
+                 "十": "10"}
+        return "".join(table.get(ch, ch) for ch in s)
+
     def _norm(s: str) -> str:
-        return s.replace(" ", "").replace("\u3000", "").replace("，", ",").replace("。", ".").lower()
-    return _norm(user_answer) == _norm(correct_answer)
+        s = s.replace(" ", "").replace("\u3000", "")
+        s = s.replace("度", "°").replace("，", ",").replace("。", ".")
+        s = s.replace("、", ",")
+        s = _cn_num(s)
+        return s.lower()
+    u, a = _norm(user_answer), _norm(correct_answer)
+    if not u or not a:
+        return False
+    if u == a:
+        return True
+    short, long = (a, u) if len(a) <= len(u) else (u, a)
+    if short in long and len(short) >= 2:
+        return True
+    return False
+
+
+_CN_NUM_MAP = {"零": "0", "〇": "0", "一": "1", "二": "2", "两": "2", "三": "3",
+               "四": "4", "五": "5", "六": "6", "七": "7", "八": "8", "九": "9",
+               "十": "10"}
+_SIM_TYPO = {  # 常见音近/形近错别字 → 标准词（小学数学概念题高频）
+    "对轴相直": "对边平行", "对轴相直线": "对边平行线", "对轴": "对边", "相直": "平行",
+    "礼拜天": "星期日", "星期天": "星期日", "周日": "星期日", "周天": "星期日",
+}
+_VOID_CHARS = ("有", "而", "的", "则", "与", "和", "及", "且", "也", "都", "就")
+
+
+def _local_semantic_correct(user_answer: str, correct_answer: str) -> bool | None:
+    """本地语义预判（不调 AI）：对确定性概念/常识题做容错判分。
+
+    返回 True=可判对、False=可判错、None=无法本地判定（交由 AI）。
+    规则保守：仅当参考答案为「非算式」的概念/常识表述，且孩子作答经归一
+    （中文数字→阿拉伯、错别字、度/°、去标点虚字）后包含参考核心内容时判对，
+    避免误判算式/数值题。含等号或运算符号的算式题一律交 AI。
+    """
+    if not user_answer or not correct_answer:
+        return None
+    import re as _re
+    ua = user_answer.strip().lower()
+    ca = correct_answer.strip().lower()
+    # 含等号/运算符号的算式题（如 "25×125+4×125"、"59÷7=8余3"）交给 AI，本地不插手
+    if _re.search(r"[=+\-*/×÷]", ca) and _re.search(r"\d", ca):
+        return None
+
+    def _norm(s: str) -> str:
+        for k, v in _CN_NUM_MAP.items():
+            s = s.replace(k, v)
+        for bad, good in _SIM_TYPO.items():
+            s = s.replace(bad, good)
+        s = s.replace("度", "°")
+        s = _re.sub(r"[\s，。、；：,.!?;:…（）()]", "", s)
+        for vc in _VOID_CHARS:
+            s = s.replace(vc, "")
+        s = s.replace("线", "")  # 几何概念中冗余量词（平行线↔平行），不丢关键信息
+        return s
+    u, a = _norm(ua), _norm(ca)
+    if not a or len(a) < 2:
+        return None
+    # 仅当孩子作答包含参考核心内容（参考为孩子子串）才判对；
+    # 反向（孩子过短且为参考子串）不判，避免只答片段被误判为正确。
+    if a in u:
+        return True
+    return None
 
 
 def _parse_verdicts(text: str) -> list:
