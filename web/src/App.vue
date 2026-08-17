@@ -1571,7 +1571,7 @@
           </div>
 
           <!-- ③ 已解锁：家长管理全部功能 -->
-          <template v-else>
+          <template v-else-if="parentPhase==='open'">
           <div class="pc-row" style="justify-content:space-between;margin-bottom:8px">
             <span class="more" style="font-size:13px">🔓 家长模式已解锁</span>
             <button class="btn btn-ghost btn-sm" @click="exitParentMode()">退出家长模式 →</button>
@@ -1777,6 +1777,14 @@
               <button class="btn btn-primary btn-sm" @click="changeParentPwd()">修改</button>
             </div>
           </div>
+          </template>
+
+          <!-- ④ 加载/校验中：避免首屏 parentPhase='' 误落入「已解锁」面板造成闪烁 -->
+          <template v-else>
+            <div class="pc-sec">
+              <div class="pc-title">🔄 正在校验家长密码…</div>
+              <p class="pc-hint">请稍候，正在确认家长管理模式</p>
+            </div>
           </template>
         </div>
       </div>

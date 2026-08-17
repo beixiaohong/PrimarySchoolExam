@@ -76,7 +76,7 @@ const appOptions = {
       weeklyOverlay: { show: false }, weeklyLoading: false, weekly: null,
       shareImg: '', parentNote: '',
       // 家长功能（Sprint 6）：密码解锁 + 留言 + 学习数据 + 题数设置 + 成长记录
-      parentPhase: '',           // unset / locked / reset / open（sessionStorage 记忆解锁）
+      parentPhase: '',           // '' / loading / unset / locked / reset / open（加载态用 loading 避免误显已解锁面板）
       pwdForm: { pwd: '', pwd2: '', hintQ: '', hintA: '', unlock: '', resetA: '', resetPwd: '', old: '', new1: '', new2: '' },
       parentMsg: '', sentMsgs: [],
       parentMsgs: { unread: 0, messages: [] },
@@ -1068,9 +1068,19 @@ const appOptions = {
       if (box) box.scrollTop = box.scrollHeight;
     },
 
-    /* ─────────── 全局刷新 ─────────── */
+    /* ─────────── 全局刷新（#183 削峰：合并短时连发 + 分波错峰，降低瞬时并发） ─────────── */
     refreshAll() {
       if (!this.user) return;
+      // 登录/切 tab/完成动作常连发 refreshAll，120ms 内只跑一次，避免重复打满并发
+      if (this._refreshTimer) { clearTimeout(this._refreshTimer); this._refreshTimer = null; }
+      this._refreshTimer = setTimeout(() => {
+        this._refreshTimer = null;
+        this._doRefreshAll();
+      }, 120);
+    },
+    _doRefreshAll() {
+      if (!this.user) return;
+      // 第一波：首屏关键数据（任务/看板/错题/复习/背词/古诗/分析）
       this.loadDailyTasks();
       this.loadDashboard();
       this.loadReviewQueue();
@@ -1079,28 +1089,32 @@ const appOptions = {
       this.loadClassicalToday();
       this.loadClassicalStats();
       this.loadGrammarStats();
-      this.loadClassicalTexts();
       this.loadAnalysis();
       this.loadAttempts();
       this.loadPapers();
-      this.loadMood();
-      this.loadRewards();
-      this.loadTitles();
-      this.loadGoals();
-      this.loadChalBest();
-      this.loadTeachDue();
-      this.loadParentMsgs();
-      this.loadNotices();
-      this.loadRewardTimeline();
-      this.loadTomorrowQueue();
-      this.loadPet();
-      this.loadDiamonds();
-      this.loadTree();
-      this.loadBadges(false);
-      this.loadCards();
-      this.loadFocus();
-      this.loadTaskConfirms();
-      this.loadDecidedAppeals();
+      // 第二波：次要数据（设置/弹层/其他 tab），延后一拍错峰，进一步削平并发峰
+      setTimeout(() => {
+        if (!this.user) return;
+        this.loadClassicalTexts();
+        this.loadMood();
+        this.loadRewards();
+        this.loadTitles();
+        this.loadGoals();
+        this.loadChalBest();
+        this.loadTeachDue();
+        this.loadParentMsgs();
+        this.loadNotices();
+        this.loadRewardTimeline();
+        this.loadTomorrowQueue();
+        this.loadPet();
+        this.loadDiamonds();
+        this.loadTree();
+        this.loadBadges(false);
+        this.loadCards();
+        this.loadFocus();
+        this.loadTaskConfirms();
+        this.loadDecidedAppeals();
+      }, 180);
     },
 
     /* ─────────── 首页 ─────────── */
@@ -2104,6 +2118,7 @@ const appOptions = {
     initParentPanel() {
       // 每次进入家长管理都重新校验密码状态：已设密码则必须输密码解锁，不再依赖会话记忆免密进入
       // （sessionStorage 在同标签页刷新时不清除，会导致「解锁一次→刷新仍是家长模式」的安全隐患）
+      this.parentPhase = 'loading'; // 进入即置加载态，避免首屏 '' 误落已解锁面板（#181 闪烁修复）
       this.api(`/api/parent/status?user_id=${encodeURIComponent(this.user)}`)
         .then(d => {
           this.parentPhase = (d && d.has_password) ? 'locked' : 'unset';
