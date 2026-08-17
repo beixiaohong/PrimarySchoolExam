@@ -27,6 +27,12 @@ export function api(path, opts = {}) {
     const t = await r.text()
     let d = t
     try { d = JSON.parse(t) } catch (e) { /* 非 JSON（如纯文本响应）原样返回 */ }
+    // 403：时段/权限限制。夜间静默时段后端返回 403（detail 含"夜间休息"），
+    // 不跳登录，直接抛出明确文案由前端 toast 提示（见 appOptions 的 catch）。
+    if (r.status === 403) {
+      const msg = (typeof d === 'object' && d && d.detail) ? d.detail : '当前时段不可操作'
+      throw new Error(msg)
+    }
     // 统一错误封装：优先取后端 detail 字段作为错误信息
     if (!r.ok) throw new Error(typeof d === 'object' && d ? (d.detail || '请求失败') : String(d))
     return d
