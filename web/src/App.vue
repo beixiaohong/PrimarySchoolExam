@@ -561,7 +561,7 @@
                         :class="optClass(opt, grammarQuiz[grammarQuizIndex])" :disabled="grammarSubmitted"
                         @click="grammarAnswer(opt)">{{opt}}</button>
               </template>
-              <input v-else class="fill-input" v-model="grammarInput" placeholder="输入答案后回车" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && grammarSubmit()" :disabled="grammarSubmitted">
+              <input v-else class="fill-input" v-model="grammarInput" placeholder="输入答案后回车" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && grammarSubmit()" :disabled="grammarSubmitted">
               <div class="feedback" :class="{on: grammarSubmitted, ok: grammarFeedbackOk, no: !grammarFeedbackOk}">
                 <h4>{{grammarFeedbackOk ? '✓ 回答正确！' : '✗ 答错了，看看解析'}}</h4>
                 <p v-if="!grammarFeedbackOk">正确答案：{{grammarCurrentAnswer}}</p>
@@ -736,7 +736,7 @@
             <div v-if="curWrong.is_unanswered" class="unanswered-box" style="margin:12px 0">
               <p style="color:#8B7CF6;font-weight:600;margin-bottom:8px">这道题当时未作答，请先作答：</p>
               <div style="display:flex;gap:8px;align-items:center">
-                <input v-model="curWrong._answerInput" class="quiz-fill-input" placeholder="输入你的答案" style="flex:1" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && answerUnanswered()">
+                <input v-model="curWrong._answerInput" class="quiz-fill-input" placeholder="输入你的答案" style="flex:1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && answerUnanswered()">
                 <button class="btn btn-primary" @click="answerUnanswered">提交</button>
               </div>
             </div>
@@ -1223,6 +1223,7 @@
               <button class="dict-play-btn" @click="dictSpeak(dictSession.current)">🔊 播放</button>
               <div class="dict-hint">{{dictMode==='word' ? '听到单词了吗？写出它！' : '听句子，默写出来'}}</div>
               <input v-model="dictSession.answer" class="dict-input" :placeholder="dictMode==='word' ? '输入单词拼写' : '输入句子'"
+                     autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                      @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && dictCheck()" autofocus>
               <button class="btn btn-primary" @click="dictCheck()" :disabled="!dictSession.answer.trim()">✓ 提交</button>
             </div>
@@ -1361,7 +1362,7 @@
                         :class="{on: aiQuiz.answers[i] === o[0]}"
                         @click="aiQuizPick(i, o[0])">{{o}}</button>
               </div>
-              <input v-else class="quiz-fill" v-model="aiQuiz.inputs[i]" placeholder="想一想，把答案打在这里" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && aiQuizGrade()">
+              <input v-else class="quiz-fill" v-model="aiQuiz.inputs[i]" placeholder="想一想，把答案打在这里" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && aiQuizGrade()">
             </div>
             <div style="margin-top:18px;text-align:center">
               <button class="btn btn-primary" :disabled="aiQuizAnswered < aiQuiz.quiz.length" @click="aiQuizGrade()">✅ 交卷判分</button>
@@ -2140,7 +2141,7 @@
             </button>
           </div>
           <div v-else class="fill-wrap">
-            <input v-model="quiz.fillText" class="fill-input" :placeholder="quiz.items[quiz.i].placeholder||'请输入答案'" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && submitFill()" :disabled="quiz.items[quiz.i].answered" style="margin-top:0">
+            <input v-model="quiz.fillText" class="fill-input" :placeholder="quiz.items[quiz.i].placeholder||'请输入答案'" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && submitFill()" :disabled="quiz.items[quiz.i].answered" style="margin-top:0">
             <button class="btn btn-primary" @click="submitFill()" :disabled="quiz.items[quiz.i].answered">提交</button>
           </div>
           <div class="feedback" :class="{on: quiz.items[quiz.i].answered, ok: quiz.items[quiz.i].answered && quiz.items[quiz.i].correct, no: quiz.items[quiz.i].answered && !quiz.items[quiz.i].correct}">

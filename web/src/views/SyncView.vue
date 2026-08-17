@@ -48,7 +48,7 @@
                         @click="pick(i, j, it)">{{ o }}</button>
               </div>
               <div v-else class="fill">
-                <input v-model="fillAns[i]" class="fi" placeholder="输入答案" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && judgeFill(i, it)">
+                <input v-model="fillAns[i]" class="fi" placeholder="输入答案" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && judgeFill(i, it)">
                 <button class="btn btn-mini" @click="judgeFill(i, it)">判分</button>
                 <span v-if="fillBack[i]!==undefined" class="fb" :class="fillBack[i]?'ok':'bad'">
                   {{ fillBack[i] ? '✓' : '✗ 正确答案：'+it.answer }}

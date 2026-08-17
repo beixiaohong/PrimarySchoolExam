@@ -2958,6 +2958,7 @@ const appOptions = {
         it.correct = this._matchAnswer(ua, it.answer);
       }
       this._afterAnswer(it);
+      this.quiz.fillText = '';  // 提交后立即清空，防止浏览器/输入法记住历史用于自动补全
     },
     _afterAnswer(it) {
       it.answered = true;
