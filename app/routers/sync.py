@@ -13,8 +13,11 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..services.sync_service import (
     build_overview, build_unit_points, build_unit_practice,
-    generate_unit_quiz, judge_unit_quiz,
+    generate_unit_quiz, judge_unit_quiz, MIDDLE_SUBJECTS,
 )
+
+# 同步学支持的全部学科：小学语数英 + 初中六科
+VALID_SUBJECTS = ["语文", "数学", "英语"] + MIDDLE_SUBJECTS
 
 router = APIRouter()
 
@@ -47,8 +50,8 @@ def sync_overview(
     返回：{subject, grade, units[]}；subject 非法返回 400。
     副作用：无（只读）。无需家长密码。
     """
-    if subject not in ("语文", "数学", "英语"):
-        raise HTTPException(400, "subject 仅支持 语文/数学/英语")
+    if subject not in VALID_SUBJECTS:
+        raise HTTPException(400, f"subject 仅支持 {('/'.join(VALID_SUBJECTS))}")
     units = build_overview(db, user_id, subject, grade, include_next)
     return {"subject": subject, "grade": grade, "units": units}
 
@@ -66,8 +69,8 @@ def unit_points(
     返回：单元要点结构（由 build_unit_points 决定）。
     副作用：无（只读）。无需家长密码。
     """
-    if subject not in ("语文", "数学", "英语"):
-        raise HTTPException(400, "subject 仅支持 语文/数学/英语")
+    if subject not in VALID_SUBJECTS:
+        raise HTTPException(400, f"subject 仅支持 {('/'.join(VALID_SUBJECTS))}")
     return build_unit_points(db, subject, grade, unit)
 
 
@@ -85,8 +88,8 @@ def unit_practice(
     返回：练习题目结构（含答案，由 build_unit_practice 决定）。
     副作用：无（只读）。无需家长密码。
     """
-    if subject not in ("语文", "数学", "英语"):
-        raise HTTPException(400, "subject 仅支持 语文/数学/英语")
+    if subject not in VALID_SUBJECTS:
+        raise HTTPException(400, f"subject 仅支持 {('/'.join(VALID_SUBJECTS))}")
     return build_unit_practice(db, subject, grade, unit, count)
 
 
@@ -104,8 +107,8 @@ def unit_quiz_generate(
     返回：{questions(无答案), token}；subject 非法返回 400。
     副作用：无（只读）。无需家长密码。
     """
-    if subject not in ("语文", "数学", "英语"):
-        raise HTTPException(400, "subject 仅支持 语文/数学/英语")
+    if subject not in VALID_SUBJECTS:
+        raise HTTPException(400, f"subject 仅支持 {('/'.join(VALID_SUBJECTS))}")
     return generate_unit_quiz(db, subject, grade, unit, count)
 
 
@@ -118,8 +121,8 @@ def unit_quiz(req: UnitQuizRequest, db: Session = Depends(get_db)):
     副作用：写 sync_quiz_log、可能写错题本、联动每日 sync 任务；subject 非法/校验失败返回 400。
     无需家长密码。
     """
-    if req.subject not in ("语文", "数学", "英语"):
-        raise HTTPException(400, "subject 仅支持 语文/数学/英语")
+    if req.subject not in VALID_SUBJECTS:
+        raise HTTPException(400, f"subject 仅支持 {('/'.join(VALID_SUBJECTS))}")
     try:
         result = judge_unit_quiz(
             db, req.user_id, req.subject, req.grade, req.unit,

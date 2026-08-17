@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal, get_db
+from ..services.sync_service import MIDDLE_SUBJECTS
 from .pet import _grant_coins
 
 router = APIRouter(tags=["AI 趣味出题"])
@@ -24,10 +25,20 @@ THEMES = {
     "magic": "魔法学院",
 }
 
+# 支持的学科：小学语数英 + 初中六科（初中学科用 middle 题库同款趣味包装生成）
+QUIZ_SUBJECTS = ["数学", "语文", "英语"] + MIDDLE_SUBJECTS
+
 QUIZ_PAID = 5  # 全对奖励金币
 
-SYSTEM_PROMPT = """你是一位小学 AI 出题老师。根据要求生成趣味题目，要求：
-1. 题目必须符合对应年级和学科的难度，是真实可解的题；
+# 学科→难度锚点（用于年级感知的 prompt 措辞，避免初中题出成小学难度）
+_SUBJECT_STAGE = {
+    "数学": "小学", "语文": "小学", "英语": "小学",
+    "物理": "初中", "化学": "初中", "生物": "初中",
+    "道德与法治": "初中", "历史": "初中", "地理": "初中",
+}
+
+SYSTEM_PROMPT = """你是一位{stage} AI 出题老师。根据要求生成趣味题目，要求：
+1. 题目必须符合对应年级和学科（{stage}）的难度，是真实可解的题，不要超纲；
 2. 把题目包装成 {theme} 主题的趣味场景，让孩子觉得好玩；
 3. 每题给出 4 个选项（A/B/C/D）方便孩子选择，也可以出填空题（options 为 null）；
 4. 每道题附一段「趣味小知识」（fun），与主题相关，让孩子涨知识；
@@ -39,7 +50,7 @@ SYSTEM_PROMPT = """你是一位小学 AI 出题老师。根据要求生成趣味
 
 class QuizGenReq(BaseModel):
     user_id: str
-    subject: str = "数学"  # 数学/语文/英语
+    subject: str = "数学"  # 数学/语文/英语 + 初中六科（物理/化学/生物/道德与法治/历史/地理）
     grade: int = 6
     theme: str = "adventure"
     count: int = 5
@@ -69,20 +80,22 @@ def generate_quiz(req: QuizGenReq):
     """
     from ..services.ai import chat_with
 
-    if req.subject not in ("数学", "语文", "英语"):
-        raise HTTPException(400, "学科只能是 数学/语文/英语")
+    if req.subject not in QUIZ_SUBJECTS:
+        raise HTTPException(400, f"学科只能是 {('/'.join(QUIZ_SUBJECTS))}")
     theme = THEMES.get(req.theme)
     if not theme:
         raise HTTPException(400, f"主题可选：{', '.join(THEMES.keys())}")
 
+    stage = _SUBJECT_STAGE.get(req.subject, "小学")
+    system_prompt = SYSTEM_PROMPT.format(stage=stage, theme=theme)
     user_prompt = (
-        f"请为{req.grade}年级孩子生成 {req.count} 道{req.subject}趣味题，"
-        f"主题是「{theme}」。题目要生动有趣，贴近孩子生活。"
+        f"请为{req.grade}年级（{stage}）孩子生成 {req.count} 道{req.subject}趣味题，"
+        f"主题是「{theme}」。题目要生动有趣，贴近该年级孩子的生活与认知水平。"
     )
     text = ""
     # AI 调用在会话外执行（可能重试 2 次），不占数据库连接
     for attempt in range(2):
-        resp = chat_with(req.user_id, SYSTEM_PROMPT, user_prompt, max_tokens=1600)
+        resp = chat_with(req.user_id, system_prompt, user_prompt, max_tokens=1600)
         text = (resp or {}).get("text", "") or ""
         questions = _parse_questions(text)
         if questions:

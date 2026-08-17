@@ -4,6 +4,8 @@
 - 英语：eng::{book_id}::{unit}
 - 语文：chi::{semester}        （classical_texts 按年级+学期分组为一单元）
 - 数学：math::{textbook_chapter}（problem_types.textbook_chapter，034 种子驱动）
+- 初中六科（物理/化学/生物/道德与法治/历史/地理）：mid::{subject}::{unit}
+  （middle_questions 已按章节标注 unit，037 种子驱动；语文/数学/英语沿用既有小学路径）
 
 单元小测采用无状态签名 token：服务端生成题目时不下发答案，仅下发 HMAC 签名的
 答案令牌；客户端提交答案后服务端验签并判分，避免答案泄露与篡改。
@@ -22,10 +24,18 @@ from sqlalchemy.orm import Session
 from ..models.word import Word, WordBook
 from ..models.classical import ClassicalText
 from ..models.problem_type import ProblemType
-from ..models.middle import TeachingProgress
+from ..models.middle import TeachingProgress, MiddleQuestion
 from ..models.sync import SyncQuizLog
 from ..services.semester import current_semester, next_semester
 from ..config import QUIZ_SECRET
+
+# 初中六科（middle_questions 题库支撑的同步学学科）
+MIDDLE_SUBJECTS = ["物理", "化学", "生物", "道德与法治", "历史", "地理"]
+
+
+def _is_middle(subject: str) -> bool:
+    """是否由 middle_questions 题库支撑的初中学科（物理/化学/生物/道德与法治/历史/地理）"""
+    return subject in MIDDLE_SUBJECTS
 
 # ── 小测答案令牌（无状态签名）──
 # 签名密钥来自 app/config.QUIZ_SECRET（由 .env 的 QUIZ_SECRET 配置，便于轮换），
@@ -64,6 +74,16 @@ def _math_unit(chapter: str) -> str:
     return f"math::{chapter}"
 
 
+def _mid_unit(subject: str, unit: str) -> str:
+    return f"mid::{subject}::{unit}"
+
+
+def _mid_subject_unit(unit: str):
+    """解析 mid::{subject}::{unit} 返回 (subject, unit)"""
+    _, subject, u = unit.split("::", 2)
+    return subject, u
+
+
 # ═══════════════════════════════════════════════════════════
 # Overview
 # ═══════════════════════════════════════════════════════════
@@ -81,6 +101,8 @@ def build_overview(db: Session, user_id: str, subject: str, grade: int,
         units = _chinese_units(db, grade, semesters)
     elif subject == "数学":
         units = _math_units(db, grade)
+    elif _is_middle(subject):
+        units = _middle_units(db, subject, grade)
     else:
         units = []
 
@@ -169,6 +191,21 @@ def _unit_key(u: str):
     return (0, int(m.group())) if m else (1, u or "")
 
 
+def _middle_units(db: Session, subject: str, grade: int) -> list:
+    """初中六科单元：按 middle_questions 已标注的 unit 分组（037 种子驱动），
+    仅取该学科在年级范围内的章节（年级范围 7<=题年级<=用户年级）。"""
+    rows = db.query(MiddleQuestion.unit).filter(
+        MiddleQuestion.subject == subject,
+        MiddleQuestion.grade >= 7,
+        MiddleQuestion.grade <= grade,
+        MiddleQuestion.unit != "",
+        MiddleQuestion.unit.isnot(None),
+    ).distinct().order_by(MiddleQuestion.unit).all()
+    units = [r[0] for r in rows]
+    return [{"unit": _mid_unit(subject, u), "unit_label": u, "preview": False}
+            for u in units]
+
+
 # ═══════════════════════════════════════════════════════════
 # 单元要点
 # ═══════════════════════════════════════════════════════════
@@ -206,6 +243,18 @@ def build_unit_points(db: Session, subject: str, grade: int, unit: str) -> dict:
             "points": [{"code": p.code, "name": p.name,
                         "description": p.description or ""} for p in pts],
         }
+    if _is_middle(subject):
+        _, _, u = unit.split("::", 2)
+        qs = db.query(MiddleQuestion).filter(
+            MiddleQuestion.subject == subject,
+            MiddleQuestion.unit == u,
+        ).order_by(MiddleQuestion.id).limit(80).all()
+        return {
+            "subject": subject, "unit": unit, "kind": "question_list",
+            "points": [{"id": q.id, "question": q.question,
+                        "answer": q.answer, "analysis": q.analysis or ""}
+                       for q in qs],
+        }
     return {"subject": subject, "unit": unit, "points": []}
 
 
@@ -221,6 +270,8 @@ def build_unit_practice(db: Session, subject: str, grade: int, unit: str,
         return _chinese_practice(db, grade, unit, count)
     if subject == "数学":
         return _math_practice(db, grade, unit, count)
+    if _is_middle(subject):
+        return _middle_practice(db, subject, grade, unit, count)
     return {"subject": subject, "unit": unit, "items": []}
 
 
@@ -304,6 +355,42 @@ def _math_practice(db: Session, grade: int, unit: str, count: int) -> dict:
     return {"subject": "数学", "unit": unit, "items": items}
 
 
+def _middle_practice(db: Session, subject: str, grade: int, unit: str, count: int) -> dict:
+    """初中六科同步练习：从 middle_questions 抽选择题（年级范围 7<=题年级<=用户年级）"""
+    _, _, u = unit.split("::", 2)
+    qs = db.query(MiddleQuestion).filter(
+        MiddleQuestion.subject == subject,
+        MiddleQuestion.unit == u,
+        MiddleQuestion.grade >= 7,
+        MiddleQuestion.grade <= grade,
+    ).order_by(MiddleQuestion.id).all()
+    if not qs:
+        # 该章节未标注 unit 时退化为按学科抽题，保证有题可练
+        qs = db.query(MiddleQuestion).filter(
+            MiddleQuestion.subject == subject,
+            MiddleQuestion.grade >= 7,
+            MiddleQuestion.grade <= grade,
+        ).order_by(MiddleQuestion.id).all()
+    if not qs:
+        return {"subject": subject, "unit": unit, "items": []}
+    sample = qs if len(qs) <= count else random.sample(qs, count)
+    items = []
+    for q in sample:
+        try:
+            options = json.loads(q.options_json or "[]")
+        except (json.JSONDecodeError, TypeError):
+            options = []
+        items.append({
+            "qid": q.id,
+            "kind": "choice",
+            "question": q.question,
+            "options": options,
+            "answer": q.answer,
+            "context": q.analysis or "",
+        })
+    return {"subject": subject, "unit": unit, "items": items}
+
+
 # ═══════════════════════════════════════════════════════════
 # 单元小测（无状态签名 token，服务端判分）
 # ═══════════════════════════════════════════════════════════
@@ -368,13 +455,14 @@ def judge_unit_quiz(db: Session, user_id: str, subject: str, grade: int, unit: s
 
 
 def _judge_one(subject: str, user_answer: str, correct_answer: str, options: list) -> bool:
-    """判分：英语选择题按选项字母/文本；语文/数学填空用容错匹配"""
+    """判分：选择题（英语 + 初中六科，选项非空）按选项字母/文本匹配；
+    填空（语文默写/数学计算）用容错匹配。"""
     ua = (user_answer or "").strip()
     ca = (correct_answer or "").strip()
     if not ua:
         return False
-    if subject == "英语":
-        # 支持字母 A-D 或选项文本
+    # 选择题：选项非空时优先按字母 A-D 或选项文本匹配（兼容前端选项下标回传）
+    if options:
         if len(ua) == 1 and ua.lower() in "abcd":
             idx = "abcd".index(ua.lower())
             if idx < len(options):

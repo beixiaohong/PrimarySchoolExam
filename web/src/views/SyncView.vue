@@ -6,7 +6,13 @@
       <div class="tabs">
         <button v-for="s in subjects" :key="s" class="tab" :class="{on: subject===s}" @click="switchSubject(s)">{{ s }}</button>
       </div>
-      <label class="next"><input type="checkbox" v-model="includeNext" @change="loadOverview"> 包含下学期预习单元</label>
+      <div class="grade-row">
+        <label>年级：</label>
+        <select v-model="grade" @change="onGradeChange">
+          <option v-for="g in gradeOptions" :key="g" :value="g">{{ g }}年级</option>
+        </select>
+        <label class="next"><input type="checkbox" v-model="includeNext" @change="loadOverview"> 包含下学期预习单元</label>
+      </div>
     </div>
 
     <div v-if="loading" class="card empty">加载中…</div>
@@ -26,7 +32,7 @@
           <div class="sub-title">📌 本单元要点（{{ points.length }}）</div>
           <div class="points">
             <span v-for="(p, i) in points" :key="i" class="pt">
-              {{ subject==='英语' ? (p.word+' '+p.meaning) : subject==='语文' ? p.title : p.name }}
+              {{ subject==='英语' ? (p.word+' '+p.meaning) : subject==='语文' ? p.title : subject==='数学' ? p.name : (p.question || p.name) }}
             </span>
           </div>
 
@@ -87,15 +93,31 @@ export default {
     try { const z = JSON.parse(localStorage.getItem('zx_user') || '{}'); user = z.user || ''; grade = z.grade || 6 } catch (e) {}
     return {
       user, grade,
-      subjects: ['语文', '数学', '英语'], subject: '英语', // 默认英语
+      // subjects 复用全局 subjectOptions：初中(grade>=7) 显示九科，小学显示语数英
+      subjects: [], subject: '英语', // 默认英语
+      gradeOptions: [1, 2, 3, 4, 5, 6, 7, 8, 9],
       includeNext: false, // 是否纳入下学期预习单元
       units: [], loading: false, active: null, points: [], // units=单元总览；active=当前展开单元；points=要点
       practice: [], picked: {}, fillAns: {}, fillBack: {}, // 同步练习：选项选中态/填空答案/判分结果
       quiz: { questions: [], token: '' }, quizPicked: {}, quizFill: {}, quizResult: null, // 单元小测：token 防重复提交
     }
   },
-  mounted() { this.loadOverview() },
+  computed: {
+    // 学科 tab：复用全局九科分类（初中六科仅在 grade>=7 时出现）
+    subjectTabs() { return (this.$root.subjectOptions && this.$root.subjectOptions()) || ['语文', '数学', '英语'] },
+  },
+  mounted() {
+    this.subjects = this.subjectTabs
+    this.loadOverview()
+  },
   methods: {
+    // 年级变化：刷新学科 tab（初中才显示六科）并重新拉取总览
+    onGradeChange() {
+      this.subjects = this.subjectTabs
+      if (this.subjects.indexOf(this.subject) < 0) this.subject = '英语'
+      this.active = null
+      this.loadOverview()
+    },
     // 切换学科：收起当前单元并重新拉取总览
     switchSubject(s) { this.subject = s; this.active = null; this.loadOverview() },
     // 单元状态 → 标签配色（已过关/进行中/其它）
@@ -173,6 +195,8 @@ export default {
 .tab { flex: 1; padding: 8px; border: 1px solid #e0e0e0; background: #fff; border-radius: 8px; cursor: pointer; }
 .tab.on { background: #4c8bf5; color: #fff; border-color: #4c8bf5; }
 .next { display: block; margin-top: 10px; color: #666; font-size: 13px; }
+.grade-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: #666; font-size: 13px; }
+.grade-row select { padding: 4px 8px; border: 1px solid #e0e0e0; border-radius: 8px; }
 .unit { cursor: pointer; }
 .u-head { display: flex; justify-content: space-between; align-items: center; }
 .u-name { font-weight: 600; }
