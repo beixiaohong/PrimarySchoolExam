@@ -29,6 +29,7 @@ const appOptions = {
       dashboard: null, todayTasks: [],
       rejudging: false,          // AI 重判进行中（当前做题题）
       recheckingId: null,        // 家长申诉列表中正在 AI 复核的申诉 id
+      composing: false,          // IME 输入法正在组词（防 Enter 确认候选词时误触发提交）
       dailyTasks: null, dailyTaskStats: { done_count: 0, total: 3, streak_days: 0 }, makeupCards: 0,
       reviewQueue: { items: [] },
       queueToday: 0, queueTodayNames: '', queueTomorrow: 0, queueDayAfter: 0, queueLater: 0,

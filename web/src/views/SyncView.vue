@@ -48,7 +48,7 @@
                         @click="pick(i, j, it)">{{ o }}</button>
               </div>
               <div v-else class="fill">
-                <input v-model="fillAns[i]" class="fi" placeholder="输入答案" @keyup.enter="judgeFill(i, it)">
+                <input v-model="fillAns[i]" class="fi" placeholder="输入答案" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && judgeFill(i, it)">
                 <button class="btn btn-mini" @click="judgeFill(i, it)">判分</button>
                 <span v-if="fillBack[i]!==undefined" class="fb" :class="fillBack[i]?'ok':'bad'">
                   {{ fillBack[i] ? '✓' : '✗ 正确答案：'+it.answer }}
@@ -93,6 +93,7 @@ export default {
     try { const z = JSON.parse(localStorage.getItem('zx_user') || '{}'); user = z.user || ''; grade = z.grade || 6 } catch (e) {}
     return {
       user, grade,
+      composing: false, // IME 输入法组词状态（防 Enter 确认候选词时误触发提交）
       // subjects 复用全局 subjectOptions：初中(grade>=7) 显示九科，小学显示语数英
       subjects: [], subject: '英语', // 默认英语
       gradeOptions: [1, 2, 3, 4, 5, 6, 7, 8, 9],
