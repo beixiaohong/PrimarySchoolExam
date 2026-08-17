@@ -235,8 +235,8 @@ def number_large(difficulty: int, grade: int):
         return random.choice(variants)
     elif difficulty <= 4:
         n = random.randint(100000, 999999999)
-        wan = round(n / 10000)
-        yi = round(n / 100000000)
+        wan = (n + 5000) // 10000
+        yi = (n + 50000000) // 100000000
         variants = [
             (f"把{n}四舍五入到万位", f"≈{wan}万"),
             (f"把{n}改写成用\"万\"作单位的数", f"{n/10000:.1f}万" if n % 10000 != 0 else f"{n//10000}万"),

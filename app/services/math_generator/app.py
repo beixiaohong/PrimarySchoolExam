@@ -24,16 +24,17 @@ def app_travel(difficulty: int, grade: int):
         ]
         return random.choice(variants)
     elif difficulty <= 4:
-        v1, v2 = random.randint(40, 80), random.randint(40, 80)
+        v1 = random.randint(45, 80)
+        v2 = random.randint(40, v1 - 1)  # 保证 v1>v2，追及场景甲更快，且不会除零
         t = random.randint(2, 6)
         dist = (v1 + v2) * t
         variants = [
             (f"甲乙相向而行，甲速{v1}乙速{v2}，{t}小时相遇，两地相距多少？", f"{dist} 千米"),
             (f"相距{dist}千米，甲速{v1}乙速{v2}相向而行，几小时相遇？", f"{t} 小时"),
-            (f"甲速{v1}乙速{v2}同向而行，甲在乙后{dist//t*(v1-v2)//(v1-v2)}千米，几小时追上？", None),
+            (None, None),  # 占位：追及题下方专门构造，避免 v1==v2 除零
         ]
         q, a = random.choice(variants)
-        if a is None:
+        if q is None:
             gap = (v1 - v2) * random.randint(2, 5)
             catch = gap // (v1 - v2)
             return f"甲速{v1}乙速{v2}同向，甲在乙后{gap}千米，几小时追上？", f"{catch} 小时"
@@ -58,11 +59,11 @@ def _travel_round_trip(v1, v2):
     return f"去时时速{v1}千米，回时时速{v2}千米，往返平均速度是多少？", f"{avg:.1f} 千米/时（不是简单平均！）"
 
 def _travel_circular(v1, v2):
-    """环形跑道反向相遇：周长÷速度和（凑整除保整数分钟）"""
-    circumference = random.randint(200, 600)
-    while circumference % (v1 + v2) != 0:
-        circumference += 10
-    t = circumference // (v1 + v2)
+    """环形跑道反向相遇：周长取速度和的整数倍，保证整除且整数分钟，避免死循环"""
+    s = v1 + v2
+    n = random.randint(3, 8)  # 相遇所需分钟数（整数），周长 = n * 速度和
+    circumference = n * s
+    t = circumference // s
     return f"环形跑道周长{circumference}米，甲速{v1}米/分乙速{v2}米/分同时同地反向跑，几分钟首次相遇？", f"{t} 分钟"
 
 def _travel_bridge(v1):
@@ -561,6 +562,32 @@ def app_boat_stream(difficulty: int, grade: int):
         return (f"一艘船在静水中速度为每小时{boat}千米，水流速度每小时{stream}千米。该船在相距{dist}千米的两个码头间往返一次，共需多少小时？",
                 f"{total_str}小时")
 
+def _cow_grazing_build(min_pairs):
+    """构造自洽的牛吃草题参数。
+
+    模型：c 头牛吃 d 天 → c*d = G + r*d（G 为初始草量，r 为每日生长量），
+    等价于 d*(c - r) = G。给定 G、r，枚举天数 d∈[4,15] 使其整除 G，
+    得到净日耗 k=G//d 与牛数 c=k+r。挑选 min_pairs 组互异 (d, c)，
+    保证所有场景可由同一 (G, r) 解释，且天数为整数、牛数在合理范围。
+    """
+    for _ in range(300):
+        G = random.randint(150, 360)
+        r = random.randint(1, 4)
+        pairs = []
+        for d in range(4, 16):
+            if G % d != 0:
+                continue
+            cows = G // d + r
+            if 8 <= cows <= 30:
+                pairs.append((d, cows))
+        if len(pairs) >= min_pairs:
+            random.shuffle(pairs)
+            return G, r, pairs[:min_pairs]
+    # 兜底（极少触发）：确定性自洽参数
+    G, r = 240, 2
+    return G, r, [(10, 26), (12, 22), (15, 18)]
+
+
 @register("app_cow_grazing")
 def app_cow_grazing(difficulty: int, grade: int):
     """牛吃草问题（牛顿问题）"""
@@ -574,40 +601,20 @@ def app_cow_grazing(difficulty: int, grade: int):
         return (f"一片草地有{grass}份草，{cows1}头牛{days1}天吃完。如果放{cows2}头牛，几天可以吃完？（假设草不生长）",
                 f"{days2}天")
     elif difficulty <= 4:
-        # 经典简化：已知两组条件求第三组
-        # 设定：原有草量G，每天生长r
-        r = random.randint(1, 3)
-        G = random.randint(80, 150)
-        cows1 = random.randint(10, 20)
-        days1 = random.randint(5, 10)
-        # 验证：cows1 * days1 = G + r * days1
-        actual_G = cows1 * days1 - r * days1
-        cows2 = random.randint(15, 25)
-        # days2 = actual_G / (cows2 - r)
-        denom = cows2 - r
-        if denom <= 0:
-            denom = 1
-        days2 = actual_G // denom if actual_G % denom == 0 else actual_G // denom
-        return (f"牧场上有一片草地，草每天匀速生长。{cows1}头牛{days1}天可以吃完，{cows2}头牛几天可以吃完？",
-                f"{days2}天")
+        # 经典牛吃草：由统一 (G, r) 反解两组 (牛数, 天数)，题设自洽、天数为整数
+        _, r, pairs = _cow_grazing_build(min_pairs=2)
+        d1, c1 = pairs[0]
+        d2, c2 = pairs[1]
+        return (f"牧场上有一片草地，草每天匀速生长。{c1}头牛{d1}天可以吃完，{c2}头牛几天可以吃完？",
+                f"{d2}天")
     else:
-        r = random.randint(2, 5)
-        G = random.randint(100, 200)
-        cows1 = random.randint(20, 30)
-        days1 = random.randint(8, 15)
-        actual_G = cows1 * days1 - r * days1
-        cows2 = random.randint(25, 40)
-        denom = cows2 - r
-        if denom <= 0:
-            denom = 1
-        days2 = actual_G // denom
-        cows3 = random.randint(10, 20)
-        denom3 = cows3 - r
-        if denom3 <= 0:
-            denom3 = 1
-        days3 = actual_G // denom3
-        return (f"牧场草地草每天匀速生长。{cows1}头牛{days1}天吃完，{cows2}头牛{days2}天吃完。如果放{cows3}头牛，几天可以吃完？",
-                f"{days3}天")
+        # 三组条件，均由同一 (G, r) 解释，求第三组天数
+        _, r, pairs = _cow_grazing_build(min_pairs=3)
+        d1, c1 = pairs[0]
+        d2, c2 = pairs[1]
+        d3, c3 = pairs[2]
+        return (f"牧场草地草每天匀速生长。{c1}头牛{d1}天吃完，{c2}头牛{d2}天吃完。如果放{c3}头牛，几天可以吃完？",
+                f"{d3}天")
 
 __all__ = [
     "_travel_avg_speed",

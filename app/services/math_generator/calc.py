@@ -580,12 +580,6 @@ def _eq_word_hard():
     speed = random.randint(40, 80)
     time = random.randint(2, 5)
     dist = speed * time
-    return (
-        f"一辆车从A到B，去时每小时{speed}千米，用了{time}小时。"
-        f"回来时每小时快{random.randint(10,20)}千米，回来用几小时？（列方程）",
-        None
-    )
-    # 重新计算
     extra = random.randint(10, 20)
     back_speed = speed + extra
     back_time = dist / back_speed

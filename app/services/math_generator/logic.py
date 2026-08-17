@@ -28,9 +28,10 @@ def logic_reasoning(difficulty: int, grade: int):
         return q, a
     elif difficulty <= 4:
         heads = random.randint(15, 40)
-        legs = heads * 2 + random.randint(4, 40)
-        while (legs - 2 * heads) % 2 != 0 or legs > heads * 4:
-            legs += 1
+        # 鸡兔同笼：腿数落在 [2*heads+2, 4*heads-2] 的偶数内，
+        # 保证至少1鸡1兔且方程可解，避免原 while 在 legs>4*heads 时死循环
+        extra_max = (4 * heads - 2) - (2 * heads)  # = 2*heads-2 ≥ 28
+        legs = 2 * heads + random.randrange(2, extra_max + 1, 2)
         rabbits = (legs - 2 * heads) // 2
         chickens = heads - rabbits
         if chickens <= 0:

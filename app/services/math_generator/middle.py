@@ -29,9 +29,20 @@ def mid_quadratic_eq(difficulty: int, grade: int):
             r2 = random.randint(-8, 8)
         b = -(r1 + r2)
         c = r1 * r2
-        b_str = f"+{b}" if b > 0 else str(b)
-        c_str = f"+{c}" if c > 0 else str(c)
-        q = f"解方程: x\u00b2{b_str}x{c_str}=0"
+        # 构造 x 项与常数项，避免 b==0 时 x\u00b2+bx0、c==0 时 x\u00b2+bx0 等畸形式
+        if b == 0:
+            b_part = ""
+        elif b > 0:
+            b_part = f"+{b}x"
+        else:
+            b_part = f"{b}x"
+        if c == 0:
+            c_part = ""
+        elif c > 0:
+            c_part = f"+{c}"
+        else:
+            c_part = str(c)
+        q = f"解方程: x\u00b2{b_part}{c_part}=0"
         roots = sorted([r1, r2])
         a = f"x\u2081={roots[0]}, x\u2082={roots[1]}"
         return q, a
@@ -78,8 +89,13 @@ def mid_linear_func(difficulty: int, grade: int):
         y2 = k * x2 + b
         q = f"一次函数过点({x1},{y1})和({x2},{y2})，求解析式"
         k_str = f"+{k}" if k > 0 else str(k)
-        b_str = f"+{b}" if b > 0 else str(b)
-        return q, f"y={k}x{b_str}"
+        if b == 0:
+            b_part = ""
+        elif b > 0:
+            b_part = f"+{b}"
+        else:
+            b_part = str(b)
+        return q, f"y={k}x{b_part}"
 
     def variant_quadrant():
         """判断图象经过的象限（按 k、b 符号组合）"""
