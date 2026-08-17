@@ -1,7 +1,7 @@
 """试卷生成（公共，不绑定用户）相关端点与辅助函数"""
 import json
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -9,7 +9,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from . import router
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models.exam import (
     ExamRecord, Question, WrongRecord, ExamAttempt, AttemptAnswer,
 )
@@ -116,8 +116,13 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
     生成完整试卷并返回Word文档下载。
     所有题目自动保存到 questions 表。
     试卷为公共资源，不绑定用户。
+
+    连接池铁律：分段短会话——DB 读写（家长下限/难度/题型）用注入会话，
+    读完立即关闭；试卷生成+Word 构建（CPU/IO，可能耗时数秒）在会话外进行，
+    期间不占用任何数据库连接；最后用新短会话落库。避免在持有连接期间做
+    长时间工作导致连接池耗尽、全站卡死。
     """
-    # 家长设置的每科最少题数 → 强制下限（孩子无法把题数设太少）
+    # ── 阶段一：短会话读取（家长每科最少题数下限 + 自动难度档）──
     if req.user_id:
         from app.models.parent import ExamMinCount
         m = db.query(ExamMinCount).filter_by(user_id=req.user_id).first()
@@ -132,53 +137,59 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
         req.difficulty = _auto_difficulty(db, req.user_id, req.subject)
     req.math_categories = None
     req.english_types = None
+    # 读取完毕，立即释放连接（生成/构建期间不持连）
+    db.close()
 
+    # ── 阶段二：生成 + Word 构建（会话外，各自按需开短会话）──
     if req.subject == "数学":
-        filepath, questions_data = _generate_math_exam(req, db)
+        filepath, questions_data = _generate_math_exam(req)
     elif req.subject == "英语":
-        filepath, questions_data = _generate_english_exam(req, db)
+        filepath, questions_data = _generate_english_exam(req)
     elif req.subject == "语文":
-        filepath, questions_data = _generate_chinese_exam(req, db)
+        filepath, questions_data = _generate_chinese_exam(req)
     elif req.subject in MIDDLE_SUBJECTS:
         # 初中六科：仅 7-9 年级可出
         if req.grade < 7:
             raise HTTPException(400, f"{req.subject}为初中科目，需 7 年级及以上")
-        filepath, questions_data = _generate_middle_exam(req, db)
+        filepath, questions_data = _generate_middle_exam(req)
     else:
         raise HTTPException(400, "学科仅支持：数学 / 英语 / 语文 / 物理 / 化学 / 生物 / 道德与法治 / 历史 / 地理")
 
     from datetime import datetime as _dt
     title = req.title or f"{_dt.now().strftime('%y%m%d%H%M%S')}{req.subject}{len(questions_data)}题{req.difficulty}卷"
-    record = ExamRecord(
-        subject=req.subject,
-        title=title,
-        grade=req.grade,
-        difficulty=req.difficulty,
-        config_json=json.dumps(req.model_dump(), ensure_ascii=False),
-        file_path=filepath,
-        question_count=len(questions_data),
-    )
-    db.add(record)
-    db.flush()
 
-    # 逐题入库
-    for qd in questions_data:
-        db.add(Question(
-            exam_id=record.id,
-            seq=qd["seq"],
+    # ── 阶段三：新短会话落库（试卷记录 + 逐题入库）──
+    with SessionLocal() as db:
+        record = ExamRecord(
             subject=req.subject,
-            category=qd.get("category", ""),
-            type_code=qd.get("type_code", ""),
-            type_name=qd.get("type_name", ""),
-            question=qd["question"],
-            answer=qd.get("answer", ""),
-            options_json=json.dumps(qd["options"], ensure_ascii=False) if qd.get("options") else "",
-            image_path=qd.get("image_path", ""),
-            audio_path=qd.get("audio_path", ""),
-            difficulty=qd.get("difficulty", 1),
-        ))
+            title=title,
+            grade=req.grade,
+            difficulty=req.difficulty,
+            config_json=json.dumps(req.model_dump(), ensure_ascii=False),
+            file_path=filepath,
+            question_count=len(questions_data),
+        )
+        db.add(record)
+        db.flush()
 
-    db.commit()
+        # 逐题入库
+        for qd in questions_data:
+            db.add(Question(
+                exam_id=record.id,
+                seq=qd["seq"],
+                subject=req.subject,
+                category=qd.get("category", ""),
+                type_code=qd.get("type_code", ""),
+                type_name=qd.get("type_name", ""),
+                question=qd["question"],
+                answer=qd.get("answer", ""),
+                options_json=json.dumps(qd["options"], ensure_ascii=False) if qd.get("options") else "",
+                image_path=qd.get("image_path", ""),
+                audio_path=qd.get("audio_path", ""),
+                difficulty=qd.get("difficulty", 1),
+            ))
+
+        db.commit()
 
     return FileResponse(
         filepath,
@@ -188,20 +199,29 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
     )
 
 
-def _generate_math_exam(req: ExamCreateRequest, db: Session):
+def _generate_math_exam(req: ExamCreateRequest) -> tuple:
     """生成数学试卷，返回 (文件路径, 题目数据列表)
 
     70/30 分布：30% 题量按未掌握错题题型生成，其余随机。
+    连接策略：题型可用性 + 错题分布所需 DB 查询包在短会话内；
+    查询结束后关闭连接，后续 CPU 生成与 Word 构建完全不持连。
     """
     from app.services.math_generator import generate_math_problems, _get_available_types
     from app.services.docx_service import build_math_docx
 
+    wrong_counts: Dict[str, int] = {}
+    valid_types: List[str] = []
+    # 短会话：仅取「可用题型」与「错题题型分布」，取完即关
+    with SessionLocal() as db:
+        avail = _get_available_types(db, req.grade, None, None) or []
+        valid_types = [t["code"] for t in avail] or []
+        if req.user_id and req.math_count >= 3:
+            wrong_counts = _wrong_type_counts(db, req.user_id, req.subject)
+
+    # ── 会话已关闭：以下纯 CPU，不占用连接 ──
     problems = []
     remaining = req.math_count
-    if req.user_id and remaining >= 3:
-        wrong_counts = _wrong_type_counts(db, req.user_id, req.subject)
-        avail = _get_available_types(db, req.grade, None, None) or []
-        valid_types = [t["code"] for t in avail] or list(wrong_counts.keys())
+    if valid_types and wrong_counts and remaining >= 3:
         wq = _wrong_type_quotas(round(remaining * 0.3), wrong_counts, valid_types)
         if wq:
             problems = generate_math_problems(
@@ -211,7 +231,7 @@ def _generate_math_exam(req: ExamCreateRequest, db: Session):
                 problem_types=list(wq.keys()),
                 count=sum(wq.values()),
                 include_answer=True,
-                db=db,
+                db=None,
             )
             remaining -= len(problems)
     if remaining > 0:
@@ -219,10 +239,10 @@ def _generate_math_exam(req: ExamCreateRequest, db: Session):
             grade=req.grade,
             difficulty=req.difficulty,
             categories=req.math_categories,
-            problem_types=None,
+            problem_types=valid_types or None,
             count=remaining,
             include_answer=True,
-            db=db,
+            db=None,
         )
     filepath = build_math_docx(problems, req.grade, req.difficulty, title=req.title)
 
@@ -346,8 +366,15 @@ def _paper_type_quotas(req: ExamCreateRequest, db: Session, all_types: List[str]
     return merged
 
 
-def _generate_english_exam(req: ExamCreateRequest, db: Session):
-    """生成英语试卷，返回 (文件路径, 题目数据列表)"""
+def _generate_english_exam(req: ExamCreateRequest, db: Optional[Session] = None) -> tuple:
+    """生成英语试卷，返回 (文件路径, 题目数据列表)
+
+    连接策略：db 为 None 时自行开短会话（生成完即关，不泄漏到落库阶段）；
+    db 由调用方提供时沿用（仍应在调用方作用域内）。
+    """
+    if db is None:
+        with SessionLocal() as s:
+            return _generate_english_exam(req, s)
     from app.services.english_generator import generate_english_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
     from app.services.docx_service import build_english_docx
 
@@ -388,8 +415,11 @@ def _generate_english_exam(req: ExamCreateRequest, db: Session):
     return filepath, questions_data
 
 
-def _generate_chinese_exam(req: ExamCreateRequest, db: Session):
+def _generate_chinese_exam(req: ExamCreateRequest, db: Optional[Session] = None) -> tuple:
     """生成语文试卷，返回 (文件路径, 题目数据列表)"""
+    if db is None:
+        with SessionLocal() as s:
+            return _generate_chinese_exam(req, s)
     from app.services.chinese_generator import generate_chinese_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
     from app.services.docx_service import build_english_docx
 
@@ -430,8 +460,11 @@ def _generate_chinese_exam(req: ExamCreateRequest, db: Session):
     return filepath, questions_data
 
 
-def _generate_middle_exam(req: ExamCreateRequest, db: Session):
+def _generate_middle_exam(req: ExamCreateRequest, db: Optional[Session] = None) -> tuple:
     """生成初中六科（物理/化学/生物/道德与法治/历史/地理）试卷，返回 (文件路径, 题目数据列表)"""
+    if db is None:
+        with SessionLocal() as s:
+            return _generate_middle_exam(req, s)
     from app.services.middle_generator import generate_middle_exam, TYPE_NAMES, MIDDLE_SUBJECTS
     from app.services.docx_service import build_english_docx
     from app.services.semester import stage_label
