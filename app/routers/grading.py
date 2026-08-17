@@ -220,6 +220,9 @@ def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
         "subject": req.subject,
         "options": req.options or [],
     }]
+    # 铁律：AI 外部调用前必须释放持有的 DB 会话，避免连接池被长时间占用导致全站卡死
+    # （rejudge 原先在持 Session 期间调 judge_wrong_items，AI 调用数秒会抽干连接池）
+    db.close()
     approved = judge_wrong_items(req.user_id, items, force=True)
     verdict = approved.get("x")
 
@@ -232,52 +235,56 @@ def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
             "fixed": False, "credited": False,
         }
 
+    # —— 写回阶段：AI 调用已结束，重新开短会话（不再占用连接）——
+    from ..models.exam import Question, AttemptAnswer, ExamAttempt, WrongRecord
+    from ..services.answer_check import fill_answer_correct
     fixed = False
     credited = False
     qid = req.question_id
     if qid:
-        from ..models.exam import Question, AttemptAnswer, ExamAttempt, WrongRecord
-        from ..services.answer_check import fill_answer_correct
+        db = SessionLocal()
+        try:
+            q = db.query(Question).get(qid)
+            # 1) 参考答案本身算错 → 修正为标准正确值（双保险：孩子作答须与修正值等价）
+            if q and verdict.get("stored_wrong") and verdict.get("correct_answer"):
+                corrected = verdict["correct_answer"].strip()
+                if (q.answer or "").strip() != corrected and fill_answer_correct(ua, corrected):
+                    q.answer = corrected
+                    fixed = True
 
-        q = db.query(Question).get(qid)
-        # 1) 参考答案本身算错 → 修正为标准正确值（双保险：孩子作答须与修正值等价）
-        if q and verdict.get("stored_wrong") and verdict.get("correct_answer"):
-            corrected = verdict["correct_answer"].strip()
-            if (q.answer or "").strip() != corrected and fill_answer_correct(ua, corrected):
-                q.answer = corrected
-                fixed = True
+            # 2) 翻转最新判错作答并重算本卷得分（幂等：全量重算，不增量）
+            ans = (db.query(AttemptAnswer)
+                   .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
+                   .filter(ExamAttempt.user_id == req.user_id,
+                           AttemptAnswer.question_id == qid,
+                           AttemptAnswer.is_correct == False,  # noqa: E712
+                           AttemptAnswer.user_answer == ua)
+                   .order_by(AttemptAnswer.id.desc()).first())
+            if ans:
+                ans.is_correct = True
+                db.flush()
+                attempt = db.query(ExamAttempt).get(ans.attempt_id)
+                if attempt and attempt.total:
+                    correct = db.query(AttemptAnswer).filter(
+                        AttemptAnswer.attempt_id == attempt.id,
+                        AttemptAnswer.is_correct == True,  # noqa: E712
+                    ).count()
+                    attempt.correct = correct
+                    attempt.wrong = attempt.total - correct
+                    attempt.score = int(round(correct / attempt.total * 100, 1))
+                # 3) 清除该题在错题本中的未掌握记录（孩子现已答对，错题闭环）
+                rec = (db.query(WrongRecord)
+                       .filter(WrongRecord.user_id == req.user_id,
+                               WrongRecord.question_id == qid,
+                               WrongRecord.is_mastered == False)  # noqa: E712
+                       .order_by(WrongRecord.id.desc()).first())
+                if rec:
+                    db.delete(rec)
+                credited = True
+            db.commit()
+        finally:
+            db.close()
 
-        # 2) 翻转最新判错作答并重算本卷得分（幂等：全量重算，不增量）
-        ans = (db.query(AttemptAnswer)
-               .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
-               .filter(ExamAttempt.user_id == req.user_id,
-                       AttemptAnswer.question_id == qid,
-                       AttemptAnswer.is_correct == False,  # noqa: E712
-                       AttemptAnswer.user_answer == ua)
-               .order_by(AttemptAnswer.id.desc()).first())
-        if ans:
-            ans.is_correct = True
-            db.flush()
-            attempt = db.query(ExamAttempt).get(ans.attempt_id)
-            if attempt and attempt.total:
-                correct = db.query(AttemptAnswer).filter(
-                    AttemptAnswer.attempt_id == attempt.id,
-                    AttemptAnswer.is_correct == True,  # noqa: E712
-                ).count()
-                attempt.correct = correct
-                attempt.wrong = attempt.total - correct
-                attempt.score = int(round(correct / attempt.total * 100, 1))
-            # 3) 清除该题在错题本中的未掌握记录（孩子现已答对，错题闭环）
-            rec = (db.query(WrongRecord)
-                   .filter(WrongRecord.user_id == req.user_id,
-                           WrongRecord.question_id == qid,
-                           WrongRecord.is_mastered == False)  # noqa: E712
-                   .order_by(WrongRecord.id.desc()).first())
-            if rec:
-                db.delete(rec)
-            credited = True
-
-    db.commit()
     return {
         "correct": True,
         "stored_wrong": bool(verdict.get("stored_wrong")),
