@@ -159,18 +159,20 @@ def _build_subject_task(db: Session, user_id: str, grade: int, subject: str, tod
 
 
 def _vocab_streak(db: Session, user_id: str) -> int:
-    """连续学习天数（与 vocab 模块口径一致）"""
-    logs = db.query(VocabDailyLog).filter(
+    """连续学习天数（与 vocab 模块口径一致）
+
+    优化：仅取去重后的 learn_date 一列（避免把每日日志全行拉回 Python），
+    再在日期集合上计算连续天数。配合 ix_vocab_daily_log_user_date 索引。
+    """
+    rows = db.query(VocabDailyLog.learn_date).filter(
         VocabDailyLog.user_id == user_id,
         VocabDailyLog.new_words_learned > 0,
-    ).order_by(VocabDailyLog.learn_date.desc()).all()
-    if not logs:
+    ).distinct().all()
+    if not rows:
         return 0
+    log_dates = {d for (d,) in rows}
     streak = 0
     check_date = date.today()
-    if logs[0].learn_date < check_date:
-        check_date = logs[0].learn_date
-    log_dates = {log.learn_date for log in logs}
     while check_date in log_dates:
         streak += 1
         check_date -= timedelta(days=1)
@@ -178,18 +180,20 @@ def _vocab_streak(db: Session, user_id: str) -> int:
 
 
 def _classical_streak(db: Session, user_id: str) -> int:
-    """古诗文连续学习天数"""
-    logs = db.query(ClassicalDailyLog).filter(
+    """古诗文连续学习天数
+
+    优化：同 _vocab_streak，仅取去重 learn_date；配合
+    ix_classical_daily_log_user_date 索引。
+    """
+    rows = db.query(ClassicalDailyLog.learn_date).filter(
         ClassicalDailyLog.user_id == user_id,
         ClassicalDailyLog.texts_learned > 0,
-    ).order_by(ClassicalDailyLog.learn_date.desc()).all()
-    if not logs:
+    ).distinct().all()
+    if not rows:
         return 0
+    log_dates = {d for (d,) in rows}
     streak = 0
     check_date = date.today()
-    if logs[0].learn_date < check_date:
-        check_date = logs[0].learn_date
-    log_dates = {log.learn_date for log in logs}
     while check_date in log_dates:
         streak += 1
         check_date -= timedelta(days=1)
