@@ -125,11 +125,20 @@ STAGE_PRIORITY = ["初中", "小学", "高中"]
 
 
 def build_ordered_category_map():
-    """按学段优先级重排分类（初中→小学→高中），保证优先采集初中、各学科均衡覆盖。"""
+    """按学段优先级重排分类（初中→小学→高中），保证优先采集初中。
+
+    关键修复（2026-08-17）：改为「年级外层、学科内层」轮转，
+    即每个年级内九科依次轮转（语文,数学,...,生物），保证每日配额切片
+    （前 N 个分类）一定能覆盖全部九大学科，而不是被靠前的学科（语文/数学…）
+    把 200 份额度吃光、导致历史/地理/生物永远采不到。
+    """
     by_stage = {s: [] for s in STAGE_PRIORITY}
-    for subj, prefix in SUBJECT_PREFIX:
-        for grade, suffix in GRADE_SUFFIX:
-            by_stage[GRADE_STAGE[grade]].append((subj, grade, f"/a/{prefix}{suffix}/"))
+    for stage in STAGE_PRIORITY:
+        grades = [(g, suf) for (g, suf) in GRADE_SUFFIX
+                  if GRADE_STAGE.get(g, "初中") == stage]
+        for grade, suffix in grades:
+            for subj, prefix in SUBJECT_PREFIX:
+                by_stage[stage].append((subj, grade, f"/a/{prefix}{suffix}/"))
     ordered = []
     for s in STAGE_PRIORITY:
         ordered.extend(by_stage[s])
