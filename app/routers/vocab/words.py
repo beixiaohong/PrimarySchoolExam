@@ -53,6 +53,14 @@ def get_today_words(
         )
     ).all()
 
+    due_today_total = len(review_progress)  # 实际到期总数（用于前端展示积压量）
+    # 每轮复习额度由家长配置（默认 daily_review_words=10），避免一次推送几百词
+    review_quota = get_daily_quota(db, user_id, "daily_review_words")
+    if len(review_progress) > review_quota:
+        # 优先复习 overdue 最久的（next_review_date 升序），取前 review_quota 个
+        review_progress = sorted(review_progress,
+                                 key=lambda p: p.next_review_date or today)[:review_quota]
+
     review_word_ids = [p.word_id for p in review_progress]
     review_words = []
     if review_word_ids:
@@ -135,7 +143,9 @@ def get_today_words(
             "total_words": total_words,
             "learned": learned_count,
             "mastered": mastered_count,
-            "due_today": len(review_words),
+            "due_today": due_today_total,
+            "due_this_batch": len(review_words),
+            "review_quota": review_quota,
             "new_remaining": remaining_new,
         }
     )

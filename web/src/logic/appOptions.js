@@ -1461,7 +1461,7 @@ const appOptions = {
 
     /* ─────────── 背诵中心 ─────────── */
     loadVocabToday() {
-      this.api(`/api/vocab/today?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
+      return this.api(`/api/vocab/today?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
         .then(r => {
           const stats = Object.assign({}, this.vocabToday.stats, r.stats || {});
           this.vocabToday = { new_words: r.new_words || [], review_words: r.review_words || [], stats };
@@ -1500,7 +1500,11 @@ const appOptions = {
       if (!words.length) { this.showToast(mode === 'new' ? '词库已全部学完，太棒了！' : '今日没有到期复习的单词'); return; }
       this.wordSession = { active: true, done: false, phase: 'card', mode, words, i: 0, revealed: false, okCount: 0, results: [], comprehensiveIds: null };
       if (mode === 'review') {
-        // 复习模式：跳过「逐词卡片(词面)+逐词测一测」，直接进合并检测（直接出题，不展示原文/词面）
+        // 复习模式：提示本批数量与积压总量，跳过卡片直接检测
+        const dueTotal = (this.vocabToday.stats || {}).due_today || words.length;
+        if (dueTotal > words.length) {
+          this.showToast(`本批 ${words.length} 个（共 ${dueTotal} 个到期），完成后可继续下一批`);
+        }
         this.wordSession.phase = 'dictate';
         this.$nextTick(() => this.startWordDictate());
         return;
@@ -1561,8 +1565,9 @@ const appOptions = {
         .then(r => {
           const items = this._quizItemsFromSession(r.items);
           if (!items.length) { ws.active = false; this.showToast('检测题生成失败，请重试'); return; }
+          const batchInfo = ws.mode === 'review' ? `（本批 ${ws.words.length} 个）` : '';
           this.startQuiz({
-            title: '✍️ 背诵检测 · ' + (ws.mode === 'new' ? '新词' : '复习'),
+            title: '✍️ 背诵检测 · ' + (ws.mode === 'new' ? '新词' : '复习') + batchInfo,
             items, source: { mode: 'dictate', kind: 'word', mode2: ws.mode },
           });
         }).catch(e => { ws.active = false; this.showToast(e.message); });
@@ -3200,6 +3205,17 @@ const appOptions = {
               this.loadAnalysis();
               const okN = saved.length, badN = studyErrors.length;
               this.showToast(okN ? `已掌握 ${okN} 个单词` + (badN ? `，${badN} 个待巩固（已加入错题本）` : '，太棒了！') : '本次需巩固，已加入错题本');
+              // 复习模式：检查是否还有积压的到期单词，有则提示可继续下一批
+              if (src.mode2 === 'review') {
+                this.loadVocabToday().then(() => {
+                  const more = (this.vocabToday.review_words || []).length;
+                  const dueTotal = (this.vocabToday.stats || {}).due_today || 0;
+                  if (more > 0) {
+                    this.showToast(`还有 ${dueTotal} 个到期单词待复习，可继续下一批 📖`);
+                    ws.done = true; // 标记本轮完成，允许开始新一轮
+                  }
+                });
+              }
               afterRecite();
             });
           }).catch(e => { this.quiz.active = false; ws.active = false; this.showToast(e.message); });
@@ -3256,10 +3272,42 @@ const appOptions = {
     closeQuiz() {
       const src = this.quiz.source;
       if (src && src.mode === 'dictate' && !this.quiz.done) {
-        // 默写中途退出：学习未完成默写，不记录任何进度
-        if (src.kind === 'word') this.wordSession.active = false;
-        else this.textSession.active = false;
-        this.showToast('未完成默写，本次学习不记录进度，加油再来！');
+        // 单词复习中途退出：保存已完成（全部答对）的词，其余不记
+        if (src.kind === 'word') {
+          const ws = this.wordSession;
+          const normalItems = this.quiz.items.filter(it => !(it.error_id && it.error_id > 0));
+          // 按词分组：所有子题已作答且全对 → 该词已掌握
+          const wordItems = {};
+          normalItems.forEach(it => {
+            if (!wordItems[it.qid]) wordItems[it.qid] = [];
+            wordItems[it.qid].push(it);
+          });
+          const correctWords = [];
+          Object.keys(wordItems).forEach(wid => {
+            const its = wordItems[wid];
+            if (its.every(it => it.answered && it.correct)) {
+              const w = (ws.words || []).find(x => x.word_id === Number(wid));
+              if (w) correctWords.push({ word_id: w.word_id, answer: w.word });
+            }
+          });
+          ws.active = false;
+          if (correctWords.length) {
+            this.api('/api/vocab/dictate', {
+              method: 'POST',
+              body: JSON.stringify({ user_id: this.user, mode: src.mode2, results: correctWords }),
+            }).then(() => {
+              this.loadAnalysis(); this.loadDailyTasks();
+              this.showToast(`已保存 ${correctWords.length} 个单词的复习进度 ✓，其余下次继续`);
+            }).catch(() => {
+              this.showToast(`已中断，${correctWords.length} 个单词保存进度失败`);
+            });
+          } else {
+            this.showToast('未完成任何词的检测，本次不记录进度，加油再来！');
+          }
+        } else {
+          this.textSession.active = false;
+          this.showToast('未完成默写，本次学习不记录进度，加油再来！');
+        }
       } else if (src && src.mode === 'retry' && !this.quiz.done) {
         const answered = this.quiz.items.filter(it => it.answered);
         if (answered.length) {
