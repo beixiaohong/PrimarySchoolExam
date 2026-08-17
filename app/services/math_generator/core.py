@@ -11,6 +11,110 @@ from app.schemas.problem import ProblemItem
 
 from .common import DIFFICULTY_MAP, GENERATORS
 
+import logging
+logger = logging.getLogger(__name__)
+
+# 题型默认适用年级范围（与 init_data/problem_types.py 种子一致）。
+# 用途：① DB 不可用/题型表为空时的「年级安全 fallback」；② 对 DB 返回结果做年级二次校正。
+# 即使题型表年级配置异常，也保证不把五六年级/中学题型下放到低年级
+# （修复用户反馈「三年级出现五六年级题」的根因：旧逻辑 fallback 回退到全部生成器，含中学代数）。
+# 中学题型(grade>=7)必须显式列出；未在此映射中的题型不参与 fallback，避免越级泄露。
+_TYPE_GRADE_RANGE: Dict[str, Tuple[int, int]] = {
+    # 计算题
+    "calc_int_basic": (1, 6),
+    "calc_decimal": (3, 6),
+    "calc_fraction": (5, 6),
+    "calc_mixed": (3, 6),
+    "calc_equation": (4, 6),
+    "unit_conversion": (2, 6),
+    "number_operation_law": (3, 6),
+    # 图形与几何
+    "geo_area_plane": (3, 6),
+    "geo_volume": (5, 6),
+    "geo_perimeter": (3, 6),
+    "geo_transform": (4, 6),
+    "geo_recognition": (2, 6),
+    "geo_position": (3, 6),
+    "geo_motion": (2, 6),
+    # 比与比例
+    "ratio_basic": (5, 6),
+    "ratio_proportion": (5, 6),
+    "ratio_percent": (5, 6),
+    # 应用题
+    "app_travel": (3, 6),
+    "app_work": (5, 6),
+    "app_concentration": (5, 6),
+    "app_profit": (5, 6),
+    "app_fraction": (4, 6),
+    "app_chicken_rabbit": (3, 6),
+    "app_tree_planting": (3, 6),
+    "app_sum_difference": (2, 6),
+    "app_proportional_dist": (4, 6),
+    "app_surplus_deficit": (4, 6),
+    # 统计与概率
+    "stat_average": (3, 6),
+    "stat_probability": (4, 6),
+    "stat_chart": (3, 6),
+    "stat_measure": (4, 6),
+    # 逻辑与思维
+    "logic_reasoning": (3, 6),
+    "logic_pattern": (2, 6),
+    "logic_combinatorics": (4, 6),
+    "logic_optimization": (3, 6),
+    "logic_pigeonhole": (4, 6),
+    "logic_period": (3, 6),
+    "logic_clock": (4, 6),
+    # 数与代数
+    "number_gcd_lcm": (4, 6),
+    "number_negative": (6, 6),
+    "number_divisibility": (4, 6),
+    "number_conversion": (4, 6),
+    "number_large": (3, 6),
+    # 新增应用题（migrate）
+    "app_unit_rate": (3, 6),
+    "app_total_rate": (3, 6),
+    "app_ratio_compare": (3, 6),
+    "app_boat_stream": (4, 6),
+    "app_cow_grazing": (4, 6),
+    # 中学（必须显式列出，fallback 不会越级包含）
+    "mid_quadratic_eq": (8, 9),
+    "mid_linear_func": (8, 9),
+    "mid_pythagorean": (8, 9),
+    "mid_inequality": (7, 9),
+    "mid_probability": (9, 9),
+}
+
+
+def _fallback_types_by_grade(grade: int) -> List[dict]:
+    """DB 查询不可用时的年级安全 fallback：按内置年级范围过滤注册生成器。
+
+    未在内置映射中的题型（如后台新增）不参与 fallback，避免误放高年级/中学题。
+    """
+    out = []
+    for code in GENERATORS:
+        rng = _TYPE_GRADE_RANGE.get(code)
+        if rng is None:
+            continue
+        lo, hi = rng
+        if lo <= grade <= hi:
+            out.append({"code": code, "name": code, "category": "综合", "weight": 10})
+    return out
+
+
+def _filter_by_grade(types: List[dict], grade: int) -> List[dict]:
+    """对 DB 返回的题型做年级二次防御：剔除内置映射中年级不匹配的题型；
+    内置映射未覆盖的题型（后台新增）予以保留，不误伤。"""
+    out = []
+    for t in types:
+        rng = _TYPE_GRADE_RANGE.get(t.get("code"))
+        if rng is None:
+            out.append(t)
+            continue
+        lo, hi = rng
+        if lo <= grade <= hi:
+            out.append(t)
+    return out
+
 def generate_math_problems(
     grade: int = 6,
     difficulty: str = "\u7efc\u5408",
@@ -29,11 +133,15 @@ def generate_math_problems(
     """
     diff_range = DIFFICULTY_MAP.get(difficulty, (1, 5))
     available_types = _get_available_types(db, grade, categories, problem_types)
+    if available_types:
+        # 二次防御：即使 DB 题型表年级范围配置有误，也按内置年级范围校正，
+        # 防止高年级/中学题型下放到低年级（用户反馈「三年级出现五六年级题」的根因之一）。
+        available_types = _filter_by_grade(available_types, grade)
     if not available_types:
-        available_types = [
-            {"code": code, "name": code, "category": "\u7efc\u5408", "weight": 10}
-            for code in GENERATORS.keys()
-        ]
+        # DB 不可用/题型为空时的年级安全兜底：只取该年级适配的题型，
+        # 绝不再回退到「全部生成器」（旧逻辑会让三年级抽到中学代数等越级题）。
+        logger.warning("数学题年级适配降级：DB 不可用或题型为空，按内置年级映射兜底 grade=%s", grade)
+        available_types = _fallback_types_by_grade(grade)
     allocation = _allocate_counts(available_types, count)
     problems = []
     pid = 1
@@ -96,6 +204,7 @@ def _get_available_types(db, grade, categories, problem_types):
             result.append({"code": t.code, "name": t.name, "category": cat_name, "weight": t.weight})
         return result
     except Exception:
+        logger.warning("查询可用数学题型失败，将按年级安全映射兜底", exc_info=True)
         return None
 
 def _allocate_counts(types: List[dict], total: int) -> List[Tuple[dict, int]]:
