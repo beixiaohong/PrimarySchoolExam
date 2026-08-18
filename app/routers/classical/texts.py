@@ -92,10 +92,10 @@ def get_text(text_id: int, db: Session = Depends(get_db)):
 
 
 class CandidateCharsReq(BaseModel):
-    """默写/背诵点选字请求：answer=本题正确文本，count=候选字数量（限幅 50-100）。"""
+    """默写/背诵点选字请求：answer=本题正确文本，count=候选字数量（限幅 40-60，默认 50）。"""
 
     answer: str
-    count: int = 80
+    count: int = 50
 
 
 _HAN_RE = re.compile(r"[一-鿿]")
@@ -107,10 +107,10 @@ def candidate_chars(req: CandidateCharsReq, db: Session = Depends(get_db)):
 
     - 池全集：所有古诗文正文去重汉字（天然含大量真实干扰字）。
     - 必含本题答案用到的汉字，保证孩子能拼出原句。
-    - 再随机混入其他诗词汉字，凑到 count（限幅 50-100）个，乱序返回。
+    - 再随机混入其他诗词汉字，凑到 count（限幅 40-60，默认 50）个，乱序返回。
     前端据此渲染可重复点选的字按钮，从输入端根除 IME 整句联想作弊。
     """
-    count = max(50, min(100, req.count or 80))
+    count = max(40, min(60, req.count or 50))
     rows = db.query(ClassicalText.content).all()
     pool = set()
     for (content,) in rows:

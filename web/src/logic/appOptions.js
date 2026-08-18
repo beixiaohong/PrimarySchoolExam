@@ -898,7 +898,7 @@ const appOptions = {
       if (!answer) return;
       this.api('/api/classical/candidate-chars', {
         method: 'POST',
-        body: JSON.stringify({ answer, count: 80 }),
+        body: JSON.stringify({ answer, count: 50 }),
       }).then(d => { if (d && d.chars) this.dictSession.candidateChars = d.chars; })
         .catch(() => {});
     },
@@ -907,7 +907,7 @@ const appOptions = {
       if (!answer) { this.quiz.candidateChars = []; return; }
       this.api('/api/classical/candidate-chars', {
         method: 'POST',
-        body: JSON.stringify({ answer, count: 80 }),
+        body: JSON.stringify({ answer, count: 50 }),
       }).then(d => { if (d && d.chars) this.quiz.candidateChars = d.chars; })
         .catch(() => {});
     },
