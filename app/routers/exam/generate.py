@@ -171,6 +171,9 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
         )
         db.add(record)
         db.flush()
+        # flush 后主键已生成，须在 with 会话内取出：commit() 默认会 expire 属性，
+        # with 块结束后 record 脱离会话，会话外再访问 .id 会触发刷新并抛 DetachedInstanceError
+        record_id = record.id
 
         # 逐题入库
         for qd in questions_data:
@@ -195,7 +198,7 @@ def generate_exam(req: ExamCreateRequest, db: Session = Depends(get_db)):
         filepath,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=f"{title}.docx",
-        headers={"X-Exam-Id": str(record.id)},
+        headers={"X-Exam-Id": str(record_id)},
     )
 
 
