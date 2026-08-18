@@ -81,16 +81,11 @@ def _spelling_variants(word: str, n: int = 3) -> list:
 
 
 def _dictate_item(w: Word, variant: int) -> dict:
-    """默写题：variant 变换题干措辞，避免同词多道默写题完全一样"""
-    if variant == 1 and w.phonetic:
-        q = f"根据音标与释义默写单词：{w.phonetic}（{w.meaning}）"
-    elif variant == 2:
-        q = f"把下面的释义翻译成英文单词：{w.meaning}"
-    elif variant == 3 and w.phonetic:
-        q = f"只听音标默写单词：{w.phonetic}"
+    """默写题：variant 变换题干措辞，避免同词多道默写题完全一样（不依赖音标提示）"""
+    if variant == 0:
+        q = f"根据释义默写单词：{w.meaning}"
     else:
-        q = f"根据释义默写单词：{w.meaning}" \
-            + (f"（音标：{w.phonetic}）" if w.phonetic else "")
+        q = f"把下面的释义翻译成英文单词：{w.meaning}"
     return {
         "word_id": w.id, "word": w.word,
         "kind": "fill", "q_type": "dictate",
@@ -107,14 +102,14 @@ def _vocab_session_items_for_word(db: Session, w: Word, stage: int,
     per_word=4：stage0 2默写+2理解 → stage1-3 1+3 → stage4+ 全理解。"""
     if per_word == 1:
         # 逐词「测一测」：只出 1 道默写填空题，直接检验拼写记忆（不依赖理解题，各阶段均可用）
-        return [_dictate_item(w, random.randint(0, 3))]
+        return [_dictate_item(w, random.choice([0, 2]))]
     if stage <= 0:
         n_dict = 2
     elif stage <= 3:
         n_dict = 1
     else:
         n_dict = 0
-    variants = [0, 1, 2, 3]
+    variants = [0, 2]
     random.shuffle(variants)
     items = [_dictate_item(w, v) for v in variants[:n_dict]]
     under_pool = _VOCAB_UNDERSTAND_TYPES[:]
