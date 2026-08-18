@@ -140,7 +140,7 @@ def generate_math_problems(
     if not available_types:
         # DB 不可用/题型为空时的年级安全兜底：只取该年级适配的题型，
         # 绝不再回退到「全部生成器」（旧逻辑会让三年级抽到中学代数等越级题）。
-        logger.warning("数学题年级适配降级：DB 不可用或题型为空，按内置年级映射兜底 grade=%s", grade)
+        logger.warning("数学题年级适配降级：未取到可用题型（DB 题型为空或未传入题型），按内置年级映射兜底 grade=%s", grade)
         available_types = _fallback_types_by_grade(grade)
     allocation = _allocate_counts(available_types, count)
     problems = []
@@ -184,6 +184,15 @@ def _get_available_types(db, grade, categories, problem_types):
     任意 DB 异常或无匹配都返回 None，让主入口回退到全部注册生成器，保证总能出题。
     """
     if db is None:
+        # 生成阶段刻意不持连接（db=None）：若调用方已在短会话中算好 problem_types，
+        # 用 GENERATORS 注册表还原为题型字典，避免误走年级兜底，也避免把「未持连接」
+        # 误报成「DB 不可用」（DB 实际可达，本环境 ProblemType 共 53 条且全部启用）。
+        if problem_types:
+            out = []
+            for code in problem_types:
+                if code in GENERATORS:
+                    out.append({"code": code, "name": code, "category": "综合", "weight": 10})
+            return out or None
         return None
     try:
         q = db.query(ProblemType).filter(
