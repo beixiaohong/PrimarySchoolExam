@@ -107,7 +107,7 @@ const appOptions = {
       teachOverlay: { show: false, cards: [], idx: 0, step: 1, card: null, answerText: '', result: '', hint: '' },
       teachDue: [], recheckOverlay: { show: false, card: null, answerText: '' },
       // 通用答题状态机
-      quiz: { active: false, done: false, title: '', items: [], i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source: null },
+      quiz: { active: false, done: false, title: '', items: [], i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source: null, candidateChars: [] },
       // 爽感反馈：连击 / 飘字 / 宝箱 / 极速模式 / 自我超越
       combo: 0, maxCombo: 0,
       floatFx: { show: false, text: '', ok: true },
@@ -137,7 +137,7 @@ const appOptions = {
       cardData: null, drawCards: [], drawAllCollected: false, cardDrawing: false,
       // 听写磨耳朵（P2-5 创意 25）
       dictMode: 'word',
-      dictSession: { active: false, done: false, items: [], i: 0, current: null, answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false },
+      dictSession: { active: false, done: false, items: [], i: 0, current: null, answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false, candidateChars: [] },
       // 番茄专注钟（P2-6 创意 22）
       focusTimer: { total: 25, left: 25 * 60, running: false, paused: false },
       focusDone: false, focusMsg: '', focusToday: null, focusStats: null, _focusTicker: null,
@@ -842,7 +842,8 @@ const appOptions = {
           ? { answer: it.word, meaning: `${it.pos || ''} ${it.meaning || ''}`.trim(), extra: it.word }
           : { answer: it.sentence, meaning: it.title, extra: it.full });
         if (!items.length) { this.showToast('题库是空的，先学一点再来听写吧'); return; }
-        this.dictSession = { active: true, done: false, items, i: 0, current: items[0], answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false };
+        this.dictSession = { active: true, done: false, items, i: 0, current: items[0], answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false, candidateChars: [] };
+        if (!isWord) this.loadDictCandidates(items[0].answer);
         this.$nextTick(() => setTimeout(() => this.dictSpeak(items[0]), 350));
       }).catch(e => this.showToast(e.message));
     },
@@ -891,6 +892,24 @@ const appOptions = {
       if (s.lastOk) s.correct += 1;
       s.revealed = true;
     },
+    loadDictCandidates(answer) {
+      // 中文听写/背诵：从后端拉「点选字池」（含本题字 + 其他诗词字，乱序），用于替代系统输入法，杜绝联想补全作弊
+      if (!answer) return;
+      this.api('/api/classical/candidate-chars', {
+        method: 'POST',
+        body: JSON.stringify({ answer, count: 80 }),
+      }).then(d => { if (d && d.chars) this.dictSession.candidateChars = d.chars; })
+        .catch(() => {});
+    },
+    loadQuizCandidates(answer) {
+      // 背诵/听写/默写练习（quiz 内中文填空题）拉点选字池，替代系统输入法防联想作弊
+      if (!answer) { this.quiz.candidateChars = []; return; }
+      this.api('/api/classical/candidate-chars', {
+        method: 'POST',
+        body: JSON.stringify({ answer, count: 80 }),
+      }).then(d => { if (d && d.chars) this.quiz.candidateChars = d.chars; })
+        .catch(() => {});
+    },
     dictReplay() { this.dictSpeak(this.dictSession.current); },
     dictNext() {
       const s = this.dictSession;
@@ -909,6 +928,7 @@ const appOptions = {
       s.current = s.items[s.i];
       s.answer = '';
       s.revealed = false;
+      if (this.dictMode !== 'word') this.loadDictCandidates(s.current.answer);
       this.$nextTick(() => setTimeout(() => this.dictSpeak(s.current), 250));
     },
 
@@ -2906,9 +2926,13 @@ const appOptions = {
       this.quiz = {
         active: true, done: false, title,
         items: items.map(it => ({ ...it, answered: false, correct: false, selected: -1, userAnswer: '', cause: '' })),
-        i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source,
+        i: 0, fillText: '', correct: 0, wrongCount: 0, score: 0, source, candidateChars: [],
       };
       this.combo = 0; this.maxCombo = 0; this.chestReward = '';
+      // 背诵/听写/默写练习（中文）拉点选字池，替代系统输入法防联想作弊
+      if (source && (source.mode === 'dictate' || source.mode === 'classical') && source.kind !== 'word' && items[0]) {
+        this.loadQuizCandidates(items[0].answer);
+      }
     },
     qOptClass(item, oi) {
       if (!item.answered) return '';
@@ -3005,8 +3029,13 @@ const appOptions = {
       // AI 讲解生成中禁止进入下一题（防止讲解被跳过/重复点击）
       const it = this.quiz.items[this.quiz.i];
       if (it && it.explaining) return;
-      if (this.quiz.i < this.quiz.items.length - 1) { this.quiz.i++; this.quiz.fillText = ''; }
-      else this.finishQuiz();
+      if (this.quiz.i < this.quiz.items.length - 1) {
+        this.quiz.i++;
+        this.quiz.fillText = '';
+        if (this.quiz.source && (this.quiz.source.mode === 'dictate' || this.quiz.source.mode === 'classical') && this.quiz.source.kind !== 'word') {
+          this.loadQuizCandidates(this.quiz.items[this.quiz.i].answer);
+        }
+      } else this.finishQuiz();
     },
     finishQuiz() {
       // 防重复提交：done 已为 true 说明本次已提交过（双击"查看结果"/重复点击），直接忽略

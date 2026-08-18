@@ -1,8 +1,11 @@
 """古诗文：文章管理（录入 / 列表 / 详情）"""
 import json
+import random
+import re
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -86,6 +89,42 @@ def get_text(text_id: int, db: Session = Depends(get_db)):
         pinyin=_pinyin_lines(text.content),
         tags=text.tags,
     )
+
+
+class CandidateCharsReq(BaseModel):
+    """默写/背诵点选字请求：answer=本题正确文本，count=候选字数量（限幅 50-100）。"""
+
+    answer: str
+    count: int = 80
+
+
+_HAN_RE = re.compile(r"[一-鿿]")
+
+
+@router.post("/candidate-chars", summary="古诗文默写候选字（防输入法联想）")
+def candidate_chars(req: CandidateCharsReq, db: Session = Depends(get_db)):
+    """为默写/背诵场景提供「不依赖系统输入法」的点选字池。
+
+    - 池全集：所有古诗文正文去重汉字（天然含大量真实干扰字）。
+    - 必含本题答案用到的汉字，保证孩子能拼出原句。
+    - 再随机混入其他诗词汉字，凑到 count（限幅 50-100）个，乱序返回。
+    前端据此渲染可重复点选的字按钮，从输入端根除 IME 整句联想作弊。
+    """
+    count = max(50, min(100, req.count or 80))
+    rows = db.query(ClassicalText.content).all()
+    pool = set()
+    for (content,) in rows:
+        pool.update(_HAN_RE.findall(content or ""))
+    # 本题必含字（去重保序）
+    must: list[str] = []
+    for ch in req.answer:
+        if _HAN_RE.match(ch) and ch not in must:
+            must.append(ch)
+    others = [c for c in pool if c not in set(must)]
+    random.shuffle(others)
+    picked = must + others[: max(0, count - len(must))]
+    random.shuffle(picked)
+    return {"chars": picked, "count": len(picked)}
 
 
 __all__ = [

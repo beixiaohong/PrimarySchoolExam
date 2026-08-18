@@ -1222,8 +1222,12 @@
             <div class="dict-question" v-if="!dictSession.revealed">
               <button class="dict-play-btn" @click="dictSpeak(dictSession.current)">🔊 播放</button>
               <div class="dict-hint">{{dictMode==='word' ? '听到单词了吗？写出它！' : '听句子，默写出来'}}</div>
-              <input v-model="dictSession.answer" class="dict-input" :placeholder="dictMode==='word' ? '输入单词拼写' : '输入句子'"
-                     @keyup.enter="dictCheck()" autofocus>
+              <anti-cheat-input
+                v-model="dictSession.answer"
+                :mode="dictMode==='word' ? 'alpha' : 'hanzi'"
+                :chars="dictMode==='word' ? [] : dictSession.candidateChars"
+                :placeholder="dictMode==='word' ? '点击字母拼出单词' : '点击下方汉字拼出句子'"
+              ></anti-cheat-input>
               <button class="btn btn-primary" @click="dictCheck()" :disabled="!dictSession.answer.trim()">✓ 提交</button>
             </div>
             <div v-else class="dict-result" :class="{ok: dictSession.lastOk}">
@@ -2140,7 +2144,14 @@
             </button>
           </div>
           <div v-else class="fill-wrap">
-            <input v-model="quiz.fillText" class="fill-input" :placeholder="quiz.items[quiz.i].placeholder||'请输入答案'" @keyup.enter="submitFill()" :disabled="quiz.items[quiz.i].answered" style="margin-top:0">
+            <anti-cheat-input
+              v-if="quiz.source && (quiz.source.mode === 'dictate' || quiz.source.mode === 'classical')"
+              v-model="quiz.fillText"
+              :mode="quiz.source.kind === 'word' ? 'alpha' : 'hanzi'"
+              :chars="quiz.source.kind === 'word' ? [] : quiz.candidateChars"
+              :placeholder="quiz.source.kind === 'word' ? '点击字母拼出单词' : '点击下方汉字拼出'"
+            ></anti-cheat-input>
+            <input v-else v-model="quiz.fillText" class="fill-input" :placeholder="quiz.items[quiz.i].placeholder||'请输入答案'" @keyup.enter="submitFill()" :disabled="quiz.items[quiz.i].answered" style="margin-top:0">
             <button class="btn btn-primary" @click="submitFill()" :disabled="quiz.items[quiz.i].answered">提交</button>
           </div>
           <div class="feedback" :class="{on: quiz.items[quiz.i].answered, ok: quiz.items[quiz.i].answered && quiz.items[quiz.i].correct, no: quiz.items[quiz.i].answered && !quiz.items[quiz.i].correct}">
