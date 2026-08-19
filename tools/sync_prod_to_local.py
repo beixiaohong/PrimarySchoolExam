@@ -49,17 +49,23 @@ from sqlalchemy.engine import Engine
 def _load_cfg(env_file: str, prefix: str) -> dict:
     """从指定 .env 文件读取数据库连接配置。
 
-    prefix 用于区分线上线下（prod / local），键名格式：{PREFIX}_DB_HOST 等。
+    prefix 用于区分线上线下：线上传 "PROD"（键 PROD_DB_HOST 等），
+    本地传空串 ""（键 DB_HOST 等，与 .env 应用配置完全一致）。
     """
     p = Path(env_file)
     if p.exists():
         load_dotenv(p, override=False)
+
+    def k(suffix: str) -> str:
+        # 空前缀时不加下划线，避免拼出 "_DB_HOST" 或 "PROD_DB_DB_HOST" 这类错键
+        return f"{prefix}_{suffix}" if prefix else suffix
+
     cfg = {
-        "host": os.environ.get(f"{prefix}_DB_HOST"),
-        "port": os.environ.get(f"{prefix}_DB_PORT", "3306"),
-        "user": os.environ.get(f"{prefix}_DB_USER"),
-        "password": os.environ.get(f"{prefix}_DB_PASSWORD", ""),
-        "name": os.environ.get(f"{prefix}_DB_NAME"),
+        "host": os.environ.get(k("DB_HOST")),
+        "port": os.environ.get(k("DB_PORT"), "3306"),
+        "user": os.environ.get(k("DB_USER")),
+        "password": os.environ.get(k("DB_PASSWORD"), ""),
+        "name": os.environ.get(k("DB_NAME")),
     }
     return cfg
 
@@ -69,8 +75,8 @@ def _engine(cfg: dict, label: str) -> Engine:
     if missing:
         raise SystemExit(
             f"[sync] {label} 连接信息缺失：{missing}。"
-            f"请检查对应的 .env 文件（如 .env.prod）是否填写了 "
-            f"{label}_DB_HOST / {label}_DB_USER / {label}_DB_NAME。"
+            f"请检查对应 .env 文件：本地用 DB_HOST/DB_USER/DB_NAME（.env），"
+            f"线上用 PROD_DB_HOST/PROD_DB_USER/PROD_DB_NAME（.env.prod）。"
         )
     from urllib.parse import quote_plus
     url = (
@@ -144,8 +150,9 @@ def main():
     args = ap.parse_args()
 
     # 本地配置必须先加载（决定 DB_NAME 等）；线上配置从独立文件读取，互不污染。
-    local_cfg = _load_cfg(args.local_env, "DB")
-    prod_cfg = _load_cfg(args.prod_env, "PROD_DB")
+    # 本地复用 .env 的 DB_* 键（空前缀）；线上读取 .env.prod 的 PROD_DB_* 键（前缀 PROD）。
+    local_cfg = _load_cfg(args.local_env, "")
+    prod_cfg = _load_cfg(args.prod_env, "PROD")
 
     local_engine = _engine(local_cfg, "本地")
     prod_engine = _engine(prod_cfg, "线上")
