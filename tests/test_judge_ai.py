@@ -217,3 +217,66 @@ def test_appeal_approve_fuzzy_match_finds_record(client):
         db.query(ExamRecord).filter_by(user_id=uid).delete()
         db.commit()
         db.close()
+
+
+# ─────────────────────────────────────────────────────────────
+# 4) 申诉带 attempt_id：按（做题记录 + 题号）精确定位，不改判其它次作答
+# ─────────────────────────────────────────────────────────────
+def test_appeal_approve_by_attempt_id_exact(client):
+    uid = "申诉精确定位生"
+    db = SessionLocal()
+    try:
+        rec = ExamRecord(user_id=uid, title="精确定位卷", subject="数学",
+                         grade=6, difficulty="综合")
+        db.add(rec)
+        db.flush()
+        q = Question(exam_id=rec.id, seq=1, subject="数学",
+                     type_name="填空", question="1+1=?", answer="2")
+        db.add(q)
+        db.flush()
+        # 同题两次不同的做题记录（att1 存 "3"、att2 存 "4"，都判错）
+        att1 = ExamAttempt(user_id=uid, exam_id=rec.id, score=0, total=1,
+                           correct=0, wrong=1)
+        db.add(att1)
+        db.flush()
+        att2 = ExamAttempt(user_id=uid, exam_id=rec.id, score=0, total=1,
+                           correct=0, wrong=1)
+        db.add(att2)
+        db.flush()
+        aa1 = AttemptAnswer(attempt_id=att1.id, question_id=q.id,
+                            user_answer="3", is_correct=False)
+        db.add(aa1)
+        db.flush()
+        aa2 = AttemptAnswer(attempt_id=att2.id, question_id=q.id,
+                            user_answer="4", is_correct=False)
+        db.add(aa2)
+        db.flush()
+        ap = AnswerAppeal(user_id=uid, source="exam", question_id=q.id,
+                          attempt_id=att1.id, question="1+1=?",
+                          user_answer="3", correct_answer="2",
+                          subject="数学", status="pending")
+        db.add(ap)
+        db.commit()
+        db.refresh(ap)
+
+        r = client.post("/api/appeal/decide", json={
+            "user_id": uid, "appeal_id": ap.id, "action": "approve"})
+        assert r.status_code == 200, r.text
+
+        vdb = SessionLocal()
+        try:
+            assert vdb.query(AttemptAnswer).get(aa1.id).is_correct is True, \
+                "应按 (attempt_id, question_id) 精确改判申诉对应那次作答"
+            assert vdb.query(AttemptAnswer).get(aa2.id).is_correct is False, \
+                "其它做题记录的作答不得被误改判"
+        finally:
+            vdb.close()
+    finally:
+        db.query(AnswerAppeal).filter_by(user_id=uid).delete()
+        db.query(AttemptAnswer).filter(
+            AttemptAnswer.attempt_id.in_([att1.id, att2.id])).delete()
+        db.query(ExamAttempt).filter_by(user_id=uid).delete()
+        db.query(Question).filter_by(exam_id=rec.id).delete()
+        db.query(ExamRecord).filter_by(user_id=uid).delete()
+        db.commit()
+        db.close()

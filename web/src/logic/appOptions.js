@@ -2020,6 +2020,7 @@ const appOptions = {
         user_id: this.user,
         source: mode,
         question_id: it.qid || null,
+        attempt_id: this.attemptId || null,  // 做题记录号：家长确认后按 (attempt_id, 题号) 精确改判
         question: it.question,
         user_answer: it.userAnswer || '',
         correct_answer: it.answer || '',
@@ -3070,6 +3071,7 @@ const appOptions = {
           }),
         }).then(r => {
           this.loadAttempts();
+          this.attemptId = (r && r.attempt_id) || null;  // 供申诉精确定位（做题记录号+题号）
           // 提交后按服务端结果（含 AI 复核改判）同步题目状态与得分
           this.submitWrongIds = (r && r.wrong_ids) || {};
           this.submitWrongNew = (r && r.wrong_new_ids) || {};
@@ -3358,6 +3360,7 @@ const appOptions = {
           }),
         }).then(r => {
           this.loadAttempts();
+          this.attemptId = (r && r.attempt_id) || null;  // 供申诉精确定位（做题记录号+题号）
           this.loadDailyTasks();
           // 中途退出也算"直接提交"：正确率不足 60% 时同样提示任务不会完成
           if (typeof r.score === 'number' && r.score < 60) {

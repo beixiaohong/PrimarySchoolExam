@@ -15,6 +15,7 @@ class AnswerAppeal(Base):
     user_id = Column(String(50), nullable=False, index=True, comment="用户名")
     source = Column(String(20), nullable=False, default="exam", comment="来源：exam=在线做题 / retry=错题重练")
     question_id = Column(Integer, nullable=True, comment="题目 ID（如有）")
+    attempt_id = Column(Integer, nullable=True, comment="exam：做题记录 id（attempt_id，精确改判定位；046 迁移）")
     record_id = Column(Integer, nullable=True, comment="retry：错题记录 id")
     record_kind = Column(String(20), nullable=True, comment="retry：错题来源 exam / study")
     question = Column(Text, nullable=False, comment="题目快照")

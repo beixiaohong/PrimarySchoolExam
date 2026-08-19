@@ -31,6 +31,7 @@ class AppealCreateReq(BaseModel):
     user_id: str
     source: str = "exam"          # exam=在线做题 / retry=错题重练
     question_id: int | None = None
+    attempt_id: int | None = None  # exam：做题记录 id（交卷返回的 attempt_id，精确改判定位）
     record_id: int | None = None   # retry：错题记录 id
     record_kind: str | None = None  # retry：exam / study
     question: str
@@ -94,6 +95,7 @@ def create_appeal(req: AppealCreateReq, db: Session = Depends(get_db)):
         user_id=req.user_id,
         source=req.source,
         question_id=req.question_id,
+        attempt_id=req.attempt_id,
         record_id=req.record_id,
         record_kind=req.record_kind,
         question=q_text[:1000],
@@ -130,6 +132,7 @@ def list_appeals(user_id: str, status: str = "pending",
         "id": a.id,
         "source": a.source,
         "question_id": a.question_id,
+        "attempt_id": a.attempt_id,
         "record_id": a.record_id,
         "record_kind": a.record_kind,
         "question": a.question,
@@ -197,27 +200,34 @@ def _approve_exam(db: Session, a: AnswerAppeal):
     """
     if not a.question_id:
         raise HTTPException(400, "申诉缺少题目信息，无法改判")
-    # 该题所有判错作答记录（按时间倒序，最新优先）
-    base = (db.query(AttemptAnswer)
-            .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
-            .filter(ExamAttempt.user_id == a.user_id,
-                    AttemptAnswer.question_id == a.question_id,
-                    AttemptAnswer.is_correct == False)  # noqa: E712
-            .order_by(AttemptAnswer.id.desc()))
-    answer = base.filter(AttemptAnswer.user_answer == a.user_answer).first()
+    answer = None
+    if a.attempt_id:
+        # 精确：该次做题记录（attempt_id）+ 题目 → 唯一定位该作答
+        # （交卷返回的 attempt_id，前端在申诉时一并上报；无视作答文本差异）
+        answer = (db.query(AttemptAnswer)
+                  .filter(AttemptAnswer.attempt_id == a.attempt_id,
+                          AttemptAnswer.question_id == a.question_id)
+                  .first())
     if not answer:
-        # 放宽：规范化后比对（容忍全角/半角、空格、标点差异），避免
-        # 交卷时作答与申诉时作答存在格式差异而「找不到对应的做题记录」。
-        from app.services.answer_check import normalize_answer
-        ua_norm = normalize_answer(a.user_answer or "")
-        for cand in base.limit(50).all():
-            if normalize_answer(cand.user_answer or "") == ua_norm:
-                answer = cand
-                break
-    if not answer:
-        # 兜底：家长已人工确认孩子做对，直接改判该题最新一条判错记录
-        # （作答可能因历史重做已变更，但「这道题判错了」的事实由家长背书）。
-        answer = base.first()
+        # 兼容旧申诉（未上报 attempt_id）：按 user_id+question_id 匹配判错记录
+        base = (db.query(AttemptAnswer)
+                .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
+                .filter(ExamAttempt.user_id == a.user_id,
+                        AttemptAnswer.question_id == a.question_id,
+                        AttemptAnswer.is_correct == False)  # noqa: E712
+                .order_by(AttemptAnswer.id.desc()))
+        answer = base.filter(AttemptAnswer.user_answer == a.user_answer).first()
+        if not answer:
+            # 放宽：规范化后比对（容忍全角/半角、空格、标点差异）
+            from app.services.answer_check import normalize_answer
+            ua_norm = normalize_answer(a.user_answer or "")
+            for cand in base.limit(50).all():
+                if normalize_answer(cand.user_answer or "") == ua_norm:
+                    answer = cand
+                    break
+        if not answer:
+            # 兜底：家长已人工确认孩子做对，直接改判该题最新一条判错记录
+            answer = base.first()
     if not answer:
         raise HTTPException(400, "找不到对应的做题记录，无法改判（可维持判错）")
     answer.is_correct = True
