@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.word import Word, WordBook
 from app.models.vocab import VocabProgress, VocabDailyLog
 from app.routers.tasks import _load_study_flags
-from app.services.semester import current_semester, next_semester
+from app.services import semester as _semester
 from app.schemas.vocab import (
     VocabWordOut,
     LearnRequest,
@@ -30,9 +30,9 @@ NEW_WORDS_PER_DAY = 20
 
 def _get_grade_books(db: Session, grade: int, user_id: Optional[str] = None) -> List[int]:
     """获取指定年级的词库ID：默认只开当前学期，include_next 开启时预支下学期"""
-    semesters = [current_semester()]
+    semesters = [_semester.current_semester()]
     if user_id and _load_study_flags(db, user_id).get("include_next"):
-        semesters.append(next_semester())
+        semesters.append(_semester.next_semester())
 
     books = db.query(WordBook).filter(
         WordBook.grade == grade,
@@ -49,7 +49,7 @@ def _career_book_ids(db: Session, grade: int, user_id: Optional[str] = None) -> 
     当前年级只取不超过当前学期的册（下学期含上下两册），低年级含上下两册。
     实现「每学期把当前阶段词库加进来」——累计学习量不随学期切换而丢失，
     与古诗文模块（ClassicalText.grade <= grade）口径保持一致。"""
-    cur = current_semester()
+    cur = _semester.current_semester()
     books = db.query(WordBook).filter(
         WordBook.grade <= grade,
         or_(WordBook.grade < grade, WordBook.semester <= cur),
@@ -57,7 +57,7 @@ def _career_book_ids(db: Session, grade: int, user_id: Optional[str] = None) -> 
     ids = [b.id for b in books]
     if user_id and _load_study_flags(db, user_id).get("include_next"):
         # 预支下学期：把当前年级的下一学期册也纳入累计池
-        nxt = next_semester()
+        nxt = _semester.next_semester()
         extra = db.query(WordBook.id).filter(
             WordBook.grade == grade, WordBook.semester == nxt
         ).all()

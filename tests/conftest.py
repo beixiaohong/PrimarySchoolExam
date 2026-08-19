@@ -15,12 +15,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from dotenv import load_dotenv
+
+# 关键修正：必须在读取 DB_NAME 之前加载 .env。
+# 原代码先读 os.environ["DB_NAME"] 再 import config（config 内才 load_dotenv，
+# 且 override=False），导致 .env 中的 DB_NAME 不生效，测试库名误回退到默认
+# primary_school_test，而账号无该库建库权限 → pytest 整套 1044 报错。
+load_dotenv(ROOT / ".env", override=False)
+
 # ── 测试环境：强制 MySQL + 独立测试库（不碰线上库）──
 os.environ["DB_DRIVER"] = "mysql"
-_test_db = os.environ.get("DB_NAME_TEST")
-if not _test_db:
-    _base = os.environ.get("DB_NAME") or "primary_school"
-    _test_db = f"{_base}_test"
+
+# 生产库名（来自 .env，已被上面的 load_dotenv 加载）：用于安全护栏。
+PROD_DB_NAME = os.environ.get("DB_NAME") or "primary_school"
+
+# 测试库名：优先 DB_NAME_TEST；否则取生产库名 + "_test"，与生产库隔离。
+_test_db = os.environ.get("DB_NAME_TEST") or f"{PROD_DB_NAME}_test"
+
+# 安全护栏：测试库绝不可等于生产库，否则 drop_all 会清空线上数据（灾难性）。
+if _test_db == PROD_DB_NAME:
+    raise RuntimeError(
+        f"[conftest] 安全拦截：测试库名 '{_test_db}' 与生产库名相同，"
+        f"drop_all 会清空线上数据！请在 .env 设置 DB_NAME_TEST 指向独立测试库"
+        f"（如 '{PROD_DB_NAME}_test'），且绝不将 DB_NAME_TEST 设为生产库。"
+    )
+
 os.environ["DB_NAME"] = _test_db
 os.environ["ALLOW_NICKNAME_LOGIN"] = "true"
 os.environ.pop("ADMIN_INIT_PASSWORD", None)  # 走默认 Admin@123
@@ -33,12 +52,18 @@ from app import config as _cfg  # noqa: E402
 
 _server_url = _cfg.DATABASE_URL.split("?", 1)[0].rsplit("/", 1)[0] + "/"
 _engine_srv = create_engine(_server_url, pool_pre_ping=True)
+# 尝试自动建库：本地 MySQL 账号通常有权限；SQLPub 等托管账号无权限时仅警告，
+# 不会因此中断——真正的可用性由下方 client fixture 在 setup 阶段探测并干净跳过。
 try:
     with _engine_srv.connect() as conn:
         conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{_test_db}` CHARACTER SET utf8mb4"))
     print(f"[conftest] 已确保测试库存在: {_test_db}")
-except Exception as e:  # 无建库权限或库已存在时降级，连接阶段会再报错
-    print(f"[conftest] 警告：无法自动建库 {_test_db}（需 CREATE 权限或库已存在）：{e}")
+except Exception as e:
+    print(
+        f"[conftest] 警告：无法自动建库 {_test_db}（需 CREATE 权限或库已存在）：{e}\n"
+        f"          → 若测试库已由 DBA/面板预先创建并授权可忽略；否则请创建独立测试库"
+        f" '{_test_db}' 并授予当前账号 ALL 权限，再运行 pytest。"
+    )
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -96,13 +121,17 @@ class AuthClient:
         return ""
 
     def _merge(self, args, kwargs):
-        if "headers" in kwargs:
-            return kwargs  # 显式 headers（如管理员）不覆盖
-        # 提取请求中的 user_id（业务接口主键）；缺省回退到 test_auth_uid，
-        # 使「不带 user_id 的业务请求」也能通过 require_self（无 user_id 可比对）。
-        uid = self._extract_user_id(args, kwargs) or "test_auth_uid"
-        token = self._mint_token(uid)
-        kwargs["headers"] = {"Authorization": f"Bearer {token}"}
+        # 显式携带 Authorization（如管理员 token）时不覆盖；
+        # 否则注入与请求 user_id 绑定的业务 token，使「仅传额外头（如 X-Parent-Pwd）」
+        # 的家长写接口请求仍带登录态（require_self 通过），而非落到 401。
+        headers = dict(kwargs.get("headers") or {})
+        if "Authorization" not in headers:
+            # 提取请求中的 user_id（业务接口主键）；缺省回退到 test_auth_uid，
+            # 使「不带 user_id 的业务请求」也能通过 require_self（无 user_id 可比对）。
+            uid = self._extract_user_id(args, kwargs) or "test_auth_uid"
+            token = self._mint_token(uid)
+            headers["Authorization"] = f"Bearer {token}"
+        kwargs["headers"] = headers
         return kwargs
 
     def get(self, *a, **k):
@@ -130,12 +159,30 @@ def client():
     from app.database import Base, engine, SessionLocal
     from app.models.user import User
     from app.config import USER_TOKEN_TTL_HOURS
+    from app.main import app
+    from sqlalchemy.exc import OperationalError, DatabaseError
     import secrets
     from datetime import datetime, timedelta
-    # 清空测试库，保证每次测试会话从干净状态开始（仅作用于 _test 库）
-    Base.metadata.drop_all(bind=engine)
-    from app.main import app
-    with TestClient(app) as c:
+    # 进入前 drop_all 重建测试库；若测试库不可用（无写权限/不存在），干净跳过而非报错。
+    # （SQLPub 等托管代理在连接不存在的库时可能自动建空库但无授权，会在此被捕获为跳过。）
+    try:
+        Base.metadata.drop_all(bind=engine)
+        # 写权限探测：SQLPub 等托管代理在连接不存在的库时可能自动建空库但无写授权，
+        # drop_all（DDL）会“成功”，但真实写入会被拒绝；这里用临时表 INSERT 验证写能力，
+        # 避免跑到用例里才 1044 报错（表现为用例失败，难以定位）。
+        with engine.connect() as _pc:
+            _pc.execute(text("CREATE TABLE IF NOT EXISTS `__pytest_wprobe` (`id` INT)"))
+            _pc.execute(text("INSERT INTO `__pytest_wprobe` (`id`) VALUES (1)"))
+            _pc.execute(text("DROP TABLE IF EXISTS `__pytest_wprobe`"))
+        app_cm = TestClient(app)
+        c = app_cm.__enter__()
+    except (OperationalError, DatabaseError) as e:
+        pytest.skip(
+            f"测试库 '{_test_db}' 不可用（{e}）。\n"
+            f"请确认已创建独立测试库 '{_test_db}' 并授予当前账号 ALL 权限，"
+            f"或本地启动 MySQL 并在 .env 设置 DB_NAME_TEST 指向可用库，再运行 pytest。"
+        )
+    try:
         db = SessionLocal()
         u = db.query(User).filter(User.user_id == "test_auth_uid").first()
         if not u:
@@ -149,7 +196,9 @@ def client():
         # 注：db 会话保持打开，供 AuthClient 在测试期间按需为新 user_id 签发绑定 token；
         # 测试会话结束后统一关闭。
         yield AuthClient(c, db, User, USER_TOKEN_TTL_HOURS)
+    finally:
         db.close()
+        app_cm.__exit__(None, None, None)
 
 
 @pytest.fixture(autouse=True)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
 from app.routers.tasks import get_daily_quota, _load_study_flags
-from app.services.semester import current_semester, next_semester
+from app.services import semester as _semester
 
 from . import router
 from .common import (
@@ -61,9 +61,9 @@ def get_today_task(
     new_items = []
     if remaining > 0:
         # 学期解锁：只开「全」+ 当前学期篇目，include_next 预支下学期
-        semesters = ["全", current_semester()]
+        semesters = ["全", _semester.current_semester()]
         if _load_study_flags(db, user_id).get("include_next"):
-            semesters.append(next_semester())
+            semesters.append(_semester.next_semester())
 
         learned_ids = db.query(ClassicalProgress.text_id).filter(
             ClassicalProgress.user_id == user_id

@@ -52,22 +52,46 @@ def test_classical_multi_round_no_daily_cap(client):
     uid = "多轮古诗生"
     _set_quota(client, uid, "daily_new_texts", 2)
 
-    r = client.get("/api/classical/today", params={"user_id": uid})
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["stats"]["new_remaining"] == 2
-    first = [t["text_id"] for t in body["new_texts"]]
-    assert len(first) == 2
+    # 预置足够的可背篇目：本地 classical_texts 种子年级多为 NULL/非 6，不满足 grade<=6，
+    # 会导致候选不足 2 篇；此处显式写入若干 grade=5、semester=全 的篇目，保证两轮各取 2 篇且不重复。
+    # 用 try/finally 收敛，避免污染其它古诗文测试。
+    import json as _json
+    from app.database import SessionLocal as _SL
+    from app.models.classical import ClassicalText as _CT
+    _db = _SL()
+    _titles = [f"多轮古诗种子{i}" for i in range(1, 6)]
+    try:
+        for _t in _titles:
+            if not _db.query(_CT).filter_by(title=_t).first():
+                _db.add(_CT(title=_t, author="测试", dynasty="唐", text_type="poem",
+                            grade=5, semester="全", content=f"句一{_t}\n句二{_t}",
+                            lines_json=_json.dumps([f"句一{_t}", f"句二{_t}"])))
+        _db.commit()
 
-    r = client.post("/api/classical/learn", json={"user_id": uid, "text_ids": first})
-    assert r.status_code == 200, r.text
+        r = client.get("/api/classical/today", params={"user_id": uid})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["stats"]["new_remaining"] == 2
+        first = [t["text_id"] for t in body["new_texts"]]
+        assert len(first) == 2
 
-    r = client.get("/api/classical/today", params={"user_id": uid})
-    body = r.json()
-    assert body["stats"]["new_remaining"] == 2
-    second = [t["text_id"] for t in body["new_texts"]]
-    assert len(second) == 2
-    assert set(second).isdisjoint(set(first)), "第二轮应是未背过的下一批篇目"
+        r = client.post("/api/classical/learn", json={"user_id": uid, "text_ids": first})
+        assert r.status_code == 200, r.text
+
+        r = client.get("/api/classical/today", params={"user_id": uid})
+        body = r.json()
+        assert body["stats"]["new_remaining"] == 2
+        second = [t["text_id"] for t in body["new_texts"]]
+        assert len(second) == 2
+        assert set(second).isdisjoint(set(first)), "第二轮应是未背过的下一批篇目"
+    finally:
+        _d2 = _SL()
+        try:
+            _d2.query(_CT).filter(_CT.title.in_(_titles)).delete()
+            _d2.commit()
+        finally:
+            _d2.close()
+        _db.close()
 
 
 def test_review_carries_over_when_not_reviewed(client):
@@ -151,24 +175,48 @@ def test_vocab_session_quiz_count(client):
 def test_classical_session_quiz_count(client):
     """古诗文 session-quiz：新学模式每篇至多 3 题，每题有答案"""
     uid = "古诗检测生"
-    r = client.get("/api/classical/today", params={"user_id": uid})
-    texts = r.json()["new_texts"]
-    assert texts, "种子数据应含古诗文篇目"
-    text_ids = [t["text_id"] for t in texts[:2]]
+    # 本地 classical_texts 种子年级多为 NULL/非 6，不满足 grade<=6 候选条件，
+    # 会导致 /today 无新篇目；此处显式写入若干 grade=5、semester=全 的篇目，
+    # 用 try/finally 收敛，避免污染其它古诗文测试。
+    import json as _json
+    from app.database import SessionLocal as _SL
+    from app.models.classical import ClassicalText as _CT
+    _db = _SL()
+    _titles = [f"古诗检测种子{i}" for i in range(1, 6)]
+    try:
+        for _t in _titles:
+            if not _db.query(_CT).filter_by(title=_t).first():
+                _db.add(_CT(title=_t, author="测试", dynasty="唐", text_type="poem",
+                            grade=5, semester="全", content=f"句一{_t}\n句二{_t}",
+                            lines_json=_json.dumps([f"句一{_t}", f"句二{_t}"])))
+        _db.commit()
 
-    r = client.get("/api/classical/session-quiz", params={
-        "user_id": uid, "text_ids": ",".join(map(str, text_ids)), "mode": "new",
-    })
-    assert r.status_code == 200, r.text
-    items = r.json()["items"]
-    assert items, "应能生成检测题"
-    # 每篇不超过 3 题，总数不超过 3 * 篇数
-    assert len(items) <= 3 * len(text_ids)
-    for it in items:
-        assert it.get("question")
-        assert it.get("answer") not in (None, "")
-        if it.get("options"):
-            assert it["answer"] in it["options"]
+        r = client.get("/api/classical/today", params={"user_id": uid})
+        texts = r.json()["new_texts"]
+        assert texts, "种子数据应含古诗文篇目"
+        text_ids = [t["text_id"] for t in texts[:2]]
+
+        r = client.get("/api/classical/session-quiz", params={
+            "user_id": uid, "text_ids": ",".join(map(str, text_ids)), "mode": "new",
+        })
+        assert r.status_code == 200, r.text
+        items = r.json()["items"]
+        assert items, "应能生成检测题"
+        # 每篇不超过 3 题，总数不超过 3 * 篇数
+        assert len(items) <= 3 * len(text_ids)
+        for it in items:
+            assert it.get("question")
+            assert it.get("answer") not in (None, "")
+            if it.get("options"):
+                assert it["answer"] in it["options"]
+    finally:
+        _d2 = _SL()
+        try:
+            _d2.query(_CT).filter(_CT.title.in_(_titles)).delete()
+            _d2.commit()
+        finally:
+            _d2.close()
+        _db.close()
 
 
 def test_vocab_session_quiz_empty_ids_rejected(client):

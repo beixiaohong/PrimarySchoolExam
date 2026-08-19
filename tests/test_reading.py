@@ -39,8 +39,13 @@ PASSAGE = {
 def passage_id():
     db = SessionLocal()
     try:
-        # 幂等：同标题先清后插，避免共享 DB 重复
-        db.query(ReadingPassage).filter(ReadingPassage.title == PASSAGE["title"]).delete()
+        # 幂等：先清空同 学科+年级 的所有篇目（含种子行与上次运行残留），
+        # 保证本次新建的篇目必然出现在抽篇结果内——接口按 id 升序取前 limit=5，
+        # 若共享测试库残留 5+ 篇同年级篇目，新篇会被截断导致断言失败。
+        db.query(ReadingPassage).filter(
+            ReadingPassage.subject == PASSAGE["subject"],
+            ReadingPassage.grade == PASSAGE["grade"],
+        ).delete()
         p = ReadingPassage(**PASSAGE)
         db.add(p)
         db.commit()

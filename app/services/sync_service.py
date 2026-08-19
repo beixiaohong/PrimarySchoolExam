@@ -26,7 +26,7 @@ from ..models.classical import ClassicalText
 from ..models.problem_type import ProblemType
 from ..models.middle import TeachingProgress, MiddleQuestion
 from ..models.sync import SyncQuizLog
-from ..services.semester import current_semester, next_semester
+from ..services import semester as _semester
 from ..config import QUIZ_SECRET
 
 # 初中六科（middle_questions 题库支撑的同步学学科）
@@ -91,9 +91,9 @@ def _mid_subject_unit(unit: str):
 def build_overview(db: Session, user_id: str, subject: str, grade: int,
                    include_next: bool = False) -> list:
     """返回某学科在当前年级下的单元列表（含状态/小测最佳/练习数）"""
-    semesters = [current_semester()]
+    semesters = [_semester.current_semester()]
     if include_next:
-        semesters.append(next_semester())
+        semesters.append(_semester.next_semester())
 
     if subject == "英语":
         units = _english_units(db, grade, semesters)
@@ -152,7 +152,7 @@ def _english_units(db: Session, grade: int, semesters) -> list:
             out.append({
                 "unit": _eng_unit(b.id, u),
                 "unit_label": f"{b.name} · {u}",
-                "preview": b.semester not in [current_semester()],
+                "preview": b.semester not in [_semester.current_semester()],
             })
     return out
 
@@ -170,7 +170,7 @@ def _chinese_units(db: Session, grade: int, semesters) -> list:
         out.append({
             "unit": _chi_unit(sem),
             "unit_label": f"语文 · {sem}学期（{cnt} 篇）",
-            "preview": sem != current_semester(),
+            "preview": sem != _semester.current_semester(),
         })
     return out
 

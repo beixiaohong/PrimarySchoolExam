@@ -125,6 +125,9 @@ def test_sync_quiz_english_closed_loop_and_task_link(client):
         res = _quiz_full_loop(client, "u1", "英语", 6, unit)
         assert res["score"] == 100.0
         assert res["passed"] is True
+        # 刷新事务快照：HTTP 交卷在独立会话中落库（sync_quiz_log / 任务状态），
+        # 本会话（MySQL REPEATABLE READ）需结束旧事务才能读到其它会话已提交的数据。
+        db.rollback()
         # 成绩落库
         assert db.query(SyncQuizLog).filter_by(user_id="u1", unit=unit).count() == 1
         # D3 联动：eng_sync 任务自动完成

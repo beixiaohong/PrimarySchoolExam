@@ -1,4 +1,4 @@
-"""用户认证：邮箱验证码注册全流程 + 昵称登录 + 异常路径"""
+"""用户认证：邮箱验证码注册全流程 + 昵称登录关闭回归 + 异常路径"""
 
 REG_EMAIL = "newkid@example.com"
 REG_PWD = "Pass@1234"
@@ -13,7 +13,7 @@ def _send_register_code(client, fake_mail, email=REG_EMAIL):
 
 
 def test_register_full_flow(client, fake_mail):
-    """发码 → 捕获验证码 → 注册 → 登录 → /me"""
+    """发码 → 捕获验证码 → 注册（生成字母数字 user_id）→ 登录 → /me"""
     code = _send_register_code(client, fake_mail)
 
     r = client.post("/api/auth/register", json={
@@ -22,14 +22,18 @@ def test_register_full_flow(client, fake_mail):
     })
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["user_id"] == "小新"
+    uid = body["user_id"]
+    # 新注册账号 user_id 由服务端生成随机「u 前缀 + 字母数字」，与昵称彻底解耦
+    assert uid.startswith("u") and uid.isalnum(), f"user_id 应为字母数字串: {uid!r}"
+    assert uid != "小新", "user_id 不应等于昵称"
+    assert body["nickname"] == "小新"
     assert body["is_new"] is True
 
     # 密码登录（邮箱账号），返回含登录 token
     r = client.post("/api/auth/login",
                     json={"account": REG_EMAIL, "password": REG_PWD})
     assert r.status_code == 200, r.text
-    assert r.json()["user_id"] == "小新"
+    assert r.json()["user_id"] == uid
     token = r.json()["token"]
     assert token
 
@@ -37,18 +41,18 @@ def test_register_full_flow(client, fake_mail):
     r = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
     body = r.json()
-    assert body["user_id"] == "小新"
+    assert body["user_id"] == uid
     assert body["auth_type"] == "email"
     assert body["has_password"] is True
     assert "***" in body["email"]
 
 
-def test_nickname_login(client, fake_mail):
-    """昵称账号可用昵称直接登录（ALLOW_NICKNAME_LOGIN=true）"""
+def test_nickname_login_rejected(client):
+    """昵称登录已关闭：仅邮箱+密码可登录，纯昵称账号直接 400"""
     r = client.post("/api/auth/login",
                     json={"account": "小新", "password": REG_PWD})
-    assert r.status_code == 200, r.text
-    assert r.json()["user_id"] == "小新"
+    assert r.status_code == 400
+    assert "邮箱" in r.json()["detail"]
 
 
 def test_register_wrong_code(client, fake_mail):

@@ -141,6 +141,7 @@ def test_vocab_semester_filter_and_include_next(client, monkeypatch):
 
         # 打开 include_next → 下学期册预支解锁
         _set_settings(client, uid, {"include_next": True})
+        db.rollback()  # 刷新事务快照，使刚提交的 include_next 设置对当前会话可见
         ids_pre = _get_grade_books(db, 6, uid)
         assert up_id in ids_pre and dn_id in ids_pre
     finally:

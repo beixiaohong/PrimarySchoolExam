@@ -307,7 +307,6 @@ def test_exam_task_requires_new_paper(client):
     from datetime import date, datetime, timedelta
 
     uid = "新卷子判定生"
-    client.get("/api/tasks/daily", params={"user_id": uid})  # 生成今日任务（含 math_exam 强制）
     db = SessionLocal()
 
     def prog():
@@ -317,12 +316,17 @@ def test_exam_task_requires_new_paper(client):
 
     try:
         now = datetime.now()
+        # 预先建好三套数学卷：math_exam 默认 target=2，需始终保持 ≥2 套「今日仍可首次达标的卷」
+        # 可达，否则 _build_payload 会判定「不可达」而提前把任务置为 done（进度锁死为 target）。
+        # exC 始终不被作答，专门用来维持「可达」，确保可行性判定不被提前触发。
         exA = ExamRecord(subject="数学", title="新卷判定A", grade=6)
-        db.add(exA)
+        exB = ExamRecord(subject="数学", title="新卷判定B", grade=6)
+        exC = ExamRecord(subject="数学", title="新卷判定C", grade=6)
+        db.add_all([exA, exB, exC])
         db.flush()
         db.add(ExamAttempt(user_id=uid, exam_id=exA.id, score=90, created_at=now))
         db.commit()
-        assert prog() == 1  # 今天 1 套新卷 → 进度 1
+        assert prog() == 1  # 今天 1 套新卷 → 进度 1（可达，不会提前 done）
 
         # 同一份卷今天反复刷 3 次 → 当天去重，仍只算 1
         for _ in range(3):
@@ -342,9 +346,6 @@ def test_exam_task_requires_new_paper(client):
         assert prog() == 0
 
         # 做一份真正的新卷B → 进度恢复为 1
-        exB = ExamRecord(subject="数学", title="新卷判定B", grade=6)
-        db.add(exB)
-        db.flush()
         db.add(ExamAttempt(user_id=uid, exam_id=exB.id, score=90,
                            created_at=datetime.now()))
         db.commit()
@@ -359,7 +360,7 @@ def test_exam_task_requires_new_paper(client):
             db.query(ExamAttempt).filter(
                 ExamAttempt.user_id == uid, ExamAttempt.exam_id.in_(ids)).delete()
         db.query(ExamRecord).filter(
-            ExamRecord.title.in_(["新卷判定A", "新卷判定B"])).delete()
+            ExamRecord.title.in_(["新卷判定A", "新卷判定B", "新卷判定C"])).delete()
         db.commit()
         db.close()
 
@@ -450,6 +451,15 @@ def test_makeup_complete_requires_parent_confirm(client):
     uid = "补签待确认生"
     _ensure_parent_pwd(client, uid)
 
+    # 显式配置 3 个「可达」的可选任务（非刷题类；本地无卷子数据也不会被判不可达而提前 done），
+    # 确保确认一条后，拒绝路径仍有未完成的任选任务可操作
+    # （避免未配置时随机抽 3 条恰好抽到不可达的刷题类任务，导致确认后无剩余可选任务）。
+    r = client.post("/api/tasks/settings", json={
+        "user_id": uid,
+        "settings": {"optional": ["math_fix", "chi_dictation", "eng_dictation"]},
+    }, headers={"X-Parent-Pwd": PARENT_PWD})
+    assert r.status_code == 200, r.text
+
     # 预先发放 2 张补签卡（直接落库，省去「可选全完成」链路）
     db = SessionLocal()
     try:
@@ -488,15 +498,23 @@ def test_makeup_complete_requires_parent_confirm(client):
     assert any(i["task_id"] == opt_id for i in items)
     log_id = next(i["log_id"] for i in items if i["task_id"] == opt_id)
 
-    # 家长确认 → 任务完成、补签卡维持已扣（不退回）
+    # 家长确认 → 任务完成、补签卡维持已扣（不退回）。
+    # 注意：此处不调用 GET /api/tasks/daily —— 该端点会在「全部可选任务完成」时发放奖励补签卡，
+    # 抵消本次扣减，从而干扰对「确认不退回」的断言。改用直接 DB 校验，避开奖励发放逻辑。
     r = client.post("/api/tasks/makeup/confirm",
                     json={"user_id": uid, "log_id": log_id, "action": "confirm"},
                     headers={"X-Parent-Pwd": PARENT_PWD})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "confirmed"
-    r = client.get("/api/tasks/daily", params={"user_id": uid})
-    assert next(t for t in r.json()["tasks"] if t["id"] == opt_id)["status"] == "done"
-    assert r.json()["makeup_cards"] == bal_before - 1
+    from app.database import SessionLocal as _SL
+    from app.models.daily_task import DailyTask as _DT
+    from app.models.makeup_card import MakeupCard as _MC
+    _db = _SL()
+    try:
+        assert _db.query(_DT).filter_by(id=opt_id).first().status == "done"
+        assert _db.query(_MC).filter_by(user_id=uid).first().balance == bal_before - 1
+    finally:
+        _db.close()
 
     # 拒绝路径：再用 1 张补签卡完成另一条任务，随后家长拒绝 → 退回
     r = client.get("/api/tasks/daily", params={"user_id": uid})

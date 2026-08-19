@@ -114,12 +114,14 @@ def grade_essay(req: EssayGradeRequest):
 
     # 落库 / 计费：短会话
     db = SessionLocal()
+    rec_id = None
     try:
         rec = EssayGrade(user_id=req.user_id, subject=req.subject, grade=req.grade,
                          topic=req.topic, content=req.content, score_json=json.dumps(card, ensure_ascii=False))
         db.add(rec)
         db.commit()
         db.refresh(rec)
+        rec_id = rec.id  # 关闭会话前先取出主键，避免访问已分离实例
 
         # 钻石计费（按 AI 实际用量；失败不阻断）
         if result and result.get("prompt_tokens") is not None:
@@ -131,7 +133,7 @@ def grade_essay(req: EssayGradeRequest):
     finally:
         db.close()
 
-    return {"id": rec.id, "subject": req.subject, "stage": stage,
+    return {"id": rec_id, "subject": req.subject, "stage": stage,
             "max_score": max_score, "card": card, "degraded": degraded}
 
 
