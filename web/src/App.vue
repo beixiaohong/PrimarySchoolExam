@@ -1224,9 +1224,9 @@
               <div class="dict-hint">{{dictMode==='word' ? '听到单词了吗？写出它！' : '听句子，默写出来'}}</div>
               <anti-cheat-input
                 v-model="dictSession.answer"
-                :mode="dictMode==='word' ? 'alpha' : 'hanzi'"
+                :mode="dictMode==='word' ? 'alpha' : 'text'"
                 :chars="dictMode==='word' ? [] : dictSession.candidateChars"
-                :placeholder="dictMode==='word' ? '点击字母拼出单词' : '点击下方汉字拼出句子'"
+                :placeholder="dictMode==='word' ? '点击字母拼出单词' : '用输入法输入句子'"
               ></anti-cheat-input>
               <button class="btn btn-primary" @click="dictCheck()" :disabled="!dictSession.answer.trim()">✓ 提交</button>
             </div>
@@ -2147,9 +2147,9 @@
             <anti-cheat-input
               v-if="quiz.source && (quiz.source.mode === 'dictate' || quiz.source.mode === 'classical')"
               v-model="quiz.fillText"
-              :mode="quiz.source.kind === 'word' ? 'alpha' : 'hanzi'"
+              :mode="quiz.source.kind === 'word' ? 'alpha' : 'text'"
               :chars="quiz.source.kind === 'word' ? [] : quiz.candidateChars"
-              :placeholder="quiz.source.kind === 'word' ? '点击字母拼出单词' : '点击下方汉字拼出'"
+              :placeholder="quiz.source.kind === 'word' ? '点击字母拼出单词' : '用输入法输入'"
             ></anti-cheat-input>
             <input v-else v-model="quiz.fillText" class="fill-input" :placeholder="quiz.items[quiz.i].placeholder||'请输入答案'" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" @compositionstart="composing = true" @compositionend="composing = false" @keydown.enter="!composing && submitFill()" :disabled="quiz.items[quiz.i].answered" style="margin-top:0">
             <button class="btn btn-primary" @click="submitFill()" :disabled="quiz.items[quiz.i].answered">提交</button>

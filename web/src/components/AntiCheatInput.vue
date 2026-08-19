@@ -1,19 +1,30 @@
 <template>
   <div class="anti-cheat-input" :class="mode">
-    <div class="aci-display">
-      <span class="aci-value" :class="{ empty: !modelValue }">{{ modelValue || placeholder }}</span>
-      <button class="aci-clear" type="button" @click="clear" v-if="modelValue">✕</button>
-    </div>
-    <div class="aci-pad">
-      <button
-        v-for="(k, i) in keys"
-        :key="mode + '-' + i + '-' + k"
-        class="aci-key"
-        type="button"
-        @click="press(k)"
-      >{{ k }}</button>
-      <button class="aci-key aci-back" type="button" @click="back">⌫</button>
-    </div>
+    <!-- text：真实文本框，支持输入法（背古诗/默写场景；原候选字点选太难找字） -->
+    <input
+      v-if="mode === 'text'"
+      class="aci-input"
+      :value="modelValue"
+      :placeholder="placeholder"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      @input="$emit('update:modelValue', $event.target.value)"
+    >
+    <template v-else>
+      <div class="aci-display">
+        <span class="aci-value" :class="{ empty: !modelValue }">{{ modelValue || placeholder }}</span>
+        <button class="aci-clear" type="button" @click="clear" v-if="modelValue">✕</button>
+      </div>
+      <div class="aci-pad">
+        <button
+          v-for="(k, i) in keys"
+          :key="mode + '-' + i + '-' + k"
+          class="aci-key"
+          type="button"
+          @click="press(k)"
+        >{{ k }}</button>
+        <button class="aci-key aci-back" type="button" @click="back">⌫</button>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -21,7 +32,8 @@
 export default {
   name: 'AntiCheatInput',
   props: {
-    // 'alpha' = 字母+数字软键盘（英文/拼音，无 IME）；'hanzi' = 点选字面板（防 IME 联想）
+    // 'text' = 真实文本框（输入法可用）；'alpha' = 字母+数字软键盘（英文/拼音，无 IME）；
+    // 'hanzi' = 点选字面板（防 IME 联想）
     mode: { type: String, default: 'alpha' },
     modelValue: { type: String, default: '' },
     placeholder: { type: String, default: '' },
@@ -82,6 +94,23 @@ export default {
   height: 24px;
   cursor: pointer;
   font-size: 12px;
+}
+.aci-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 46px;
+  padding: 8px 12px;
+  border: 1px solid #e5e1f5;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 18px;
+  letter-spacing: 1px;
+  color: #3a3450;
+  outline: none;
+}
+.aci-input:focus {
+  border-color: #8b7cf6;
+  box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.15);
 }
 .aci-pad {
   margin-top: 10px;

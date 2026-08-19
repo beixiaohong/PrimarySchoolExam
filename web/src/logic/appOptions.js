@@ -894,22 +894,13 @@ const appOptions = {
       s.revealed = true;
     },
     loadDictCandidates(answer) {
-      // 中文听写/背诵：从后端拉「点选字池」（含本题字 + 其他诗词字，乱序），用于替代系统输入法，杜绝联想补全作弊
-      if (!answer) return;
-      this.api('/api/classical/candidate-chars', {
-        method: 'POST',
-        body: JSON.stringify({ answer, count: 50 }),
-      }).then(d => { if (d && d.chars) this.dictSession.candidateChars = d.chars; })
-        .catch(() => {});
+      // 2026-08-19：背诵/默写已改为输入法输入（AntiCheatInput text 模式），
+      // 不再需要「点选字池」防作弊方案（用户反馈候选字太难找字）。
+      // 保留空实现以免调用点报错；candidateChars 不再填充。
     },
     loadQuizCandidates(answer) {
-      // 背诵/听写/默写练习（quiz 内中文填空题）拉点选字池，替代系统输入法防联想作弊
-      if (!answer) { this.quiz.candidateChars = []; return; }
-      this.api('/api/classical/candidate-chars', {
-        method: 'POST',
-        body: JSON.stringify({ answer, count: 50 }),
-      }).then(d => { if (d && d.chars) this.quiz.candidateChars = d.chars; })
-        .catch(() => {});
+      // 同上：quiz 内中文填空已用输入法输入，不再拉点选字池。
+      this.quiz.candidateChars = [];
     },
     dictReplay() { this.dictSpeak(this.dictSession.current); },
     dictNext() {
