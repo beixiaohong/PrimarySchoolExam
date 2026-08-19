@@ -29,6 +29,8 @@ import app.services.math_generator.number as number_mod  # noqa: E402
 import app.services.math_generator.middle as middle_mod  # noqa: E402
 import app.services.math_generator.app as app_mod  # noqa: E402
 import app.services.math_generator.logic as logic_mod  # noqa: E402
+import app.services.math_generator.stat as stat_mod  # noqa: E402
+import ast  # noqa: E402
 
 # 与 verify_math_answers.py 一致的畸形代数式判定
 MALFORMED_RE = [
@@ -218,6 +220,32 @@ def test_number_distributive_coeff_consistent():
             % (x_q, int(ma.group(3)), q, a)
         )
     assert hit > 0, "未命中分配律展开题型，测试无效"
+
+
+# ---------------------------------------------------------------------------
+# stat_measure 中位数：奇数个数必须取正中间那个，偶数取中间两数平均
+# （回归 stat.py:141：7 个数误按偶数算成 (s[3]+s[4])/2，如 [..,81,85,..] 错答 83.0）
+# ---------------------------------------------------------------------------
+def test_stat_measure_median_correct():
+    for diff in (2, 3, 4):  # diff<=2 为 5 个数分支，diff 3-4 为 7 个数分支
+        hit = 0
+        for _ in range(1500):
+            q, a = stat_mod.stat_measure(diff, 6)
+            m = re.search(r"数据(\[.*?\])的中位数是多少", q)
+            if not m:
+                continue
+            hit += 1
+            data = ast.literal_eval(m.group(1))
+            s = sorted(data)
+            n = len(s)
+            if n % 2 == 1:
+                expected = s[n // 2]
+            else:
+                expected = (s[n // 2 - 1] + s[n // 2]) / 2
+            assert float(a) == float(expected), (
+                "中位数回归失败(diff=%d): data=%r n=%d 参考答案=%r 应为=%s"
+                % (diff, data, n, a, expected))
+        assert hit > 0, "diff=%d 未命中中位数变体，测试无效" % diff
 
 
 # ---------------------------------------------------------------------------

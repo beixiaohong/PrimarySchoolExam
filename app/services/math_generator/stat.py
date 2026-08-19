@@ -138,7 +138,10 @@ def stat_measure(difficulty: int, grade: int):
         random.shuffle(data)
         mode = base
         s_data = sorted(data)
-        mid = (s_data[3] + s_data[4]) / 2
+        # 7 个数（奇数）：中位数 = 排序后第 4 个（index 3）。
+        # 原实现取 (s_data[3]+s_data[4])/2 是按偶数个数算的，7 个数时答案偏大
+        # （如 [.., 81, 85, ..] 会错答 83.0，实际应为 81）。
+        mid = s_data[3]
         avg = sum(data) / 7
         variants = [
             (f"数据{data}的众数是多少？", f"{mode}"),
