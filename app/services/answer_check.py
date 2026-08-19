@@ -175,6 +175,37 @@ def _same_num(a, b) -> bool:
     return a is not None and b is not None and abs(a - b) < 1e-9
 
 
+# 中文数字容差：孩子可能写「五」「二十五」而非阿拉伯数字（小学低年级常见）。
+# 仅当整个答案由中文数字字符构成时转换，避免误伤含数字义的普通文字答案。
+_CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+              "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_UNITS = {"十": 10, "百": 100, "千": 1000}
+
+
+def _cn_num_value(s: str):
+    """纯中文数字串 → 整数（支持 零/两、十百千万）；含其它字符返回 None。
+
+    例：五→5、十→10、二十五→25、一百零五→105、两万→20000。
+    """
+    if not s or any(ch not in "零〇一二三四五六七八九十百千万两" for ch in s):
+        return None
+    total = 0      # 已累计的大段（万）
+    section = 0    # 当前万以内小节
+    digit = 0
+    for ch in s:
+        if ch == "万":
+            section = (section + (digit or 0)) * 10000
+            total += section
+            section, digit = 0, 0
+        elif ch in _CN_DIGITS:
+            digit = _CN_DIGITS[ch]
+        else:  # 十百千
+            u = _CN_UNITS[ch]
+            section += (digit if digit else 1) * u
+            digit = 0
+    return total + section + digit
+
+
 def fill_answer_correct(user_ans, correct_ans) -> bool:
     """填空题容错判题（与前端 _matchAnswer 一致）"""
     u = normalize_answer(user_ans)
@@ -190,6 +221,10 @@ def fill_answer_correct(user_ans, correct_ans) -> bool:
     u_res = _result_value(u)
     a_res = _result_value(a)
     if _same_num(u_res, a_res):
+        return True
+    # a2) 中文数字容差：用户写「五」「二十五」等（纯中文数字），参考答案为数值 → 等价
+    u_cn = _cn_num_value(u)
+    if u_cn is not None and a_res is not None and _same_num(float(u_cn), a_res):
         return True
 
     # b) 数字 token 兜底：正确答案仅 1 个数字 → 用户答案最后一个数字须等于它；

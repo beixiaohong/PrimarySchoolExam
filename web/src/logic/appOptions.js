@@ -3463,6 +3463,27 @@ const appOptions = {
       for (const seg of segs) { const v = this._mathEval(seg); if (v !== null) return v; }
       return null;
     },
+    /* 中文数字容差：纯中文数字串（五/二十五/一百零五…）→ 整数；含其它字符返回 null。
+       与后端 answer_check._cn_num_value 保持一致。 */
+    _cnNumValue(s) {
+      if (!s || /[^零〇一二三四五六七八九十百千万两]/.test(s)) return null;
+      const digits = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+      const units = { 十: 10, 百: 100, 千: 1000 };
+      let total = 0, section = 0, digit = 0;
+      for (const ch of s) {
+        if (ch === '万') {
+          section = (section + (digit || 0)) * 10000;
+          total += section;
+          section = 0; digit = 0;
+        } else if (ch in digits) {
+          digit = digits[ch];
+        } else {
+          section += (digit || 1) * units[ch];
+          digit = 0;
+        }
+      }
+      return total + section + digit;
+    },
     _matchAnswer(ua, ans) {
       const stripAnnot = s => {   // 仅剥含非数学字符的末尾括号注释（共N个/原式=…），算式括号保留
         for (;;) {
@@ -3501,6 +3522,9 @@ const appOptions = {
       if (!/\d/.test(a)) return false;   // 无数字（单词/古诗文/句子）→ 严格
       const uRes = this._resultValue(u), aRes = this._resultValue(a);
       if (uRes !== null && aRes !== null && Math.abs(uRes - aRes) < 1e-9) return true;
+      // 中文数字容差：孩子写「五」「二十五」等 → 与参考答案数值等价（与后端 answer_check 一致）
+      const uCn = this._cnNumValue(u);
+      if (uCn !== null && aRes !== null && Math.abs(uCn - aRes) < 1e-9) return true;
       // token 从保留分隔符的规范化串提取："90、120、150" 与 "90,120,150" 均为 3 个 token
       const nums = s => (String(s).match(/-?\d+\.?\d*/g) || []);
       const un = nums(norm(ua, true)), an = nums(norm(ans, true));
