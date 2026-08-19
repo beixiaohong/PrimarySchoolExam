@@ -1,5 +1,6 @@
 import random
 import math
+from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
 from typing import List, Optional, Callable, Dict, Tuple
 
@@ -196,7 +197,13 @@ def app_profit(difficulty: int, grade: int):
         discount = random.choice([80, 85, 90])
         marked = cost * (100 + markup) / 100
         sell = marked * discount / 100
-        real_rate = round((sell - cost) / cost * 100, 1)
+        # 利润率用分数精确计算：真实值（如 33.4500...%）在浮点中会偏小成
+        # 33.4499...，round(...,1) 会错舍成 33.4（孩子答 33.45% 被误判）。
+        # 改为精确分数 + Decimal 四舍五入到 2 位小数（33.45%）。
+        real_rate_f = (Fraction(cost) * Fraction(100 + markup) / 100
+                       * Fraction(discount) / 100 - Fraction(cost)) / Fraction(cost) * 100
+        real_rate = (Decimal(real_rate_f.numerator) / Decimal(real_rate_f.denominator)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP)
         d_name = {80:"八",85:"八五",90:"九"}[discount]
         variants = [
             (f"进价{cost}元加价{markup}%标价，打{d_name}折卖，实际利润率？", f"{real_rate}%"),

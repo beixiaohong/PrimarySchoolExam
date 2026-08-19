@@ -31,6 +31,8 @@ import app.services.math_generator.app as app_mod  # noqa: E402
 import app.services.math_generator.logic as logic_mod  # noqa: E402
 import app.services.math_generator.stat as stat_mod  # noqa: E402
 import ast  # noqa: E402
+from fractions import Fraction  # noqa: E402
+from decimal import Decimal, ROUND_HALF_UP  # noqa: E402
 
 # 与 verify_math_answers.py 一致的畸形代数式判定
 MALFORMED_RE = [
@@ -246,6 +248,44 @@ def test_stat_measure_median_correct():
                 "中位数回归失败(diff=%d): data=%r n=%d 参考答案=%r 应为=%s"
                 % (diff, data, n, a, expected))
         assert hit > 0, "diff=%d 未命中中位数变体，测试无效" % diff
+
+
+# ---------------------------------------------------------------------------
+# app_profit 实际利润率：参考答案精确到 2 位小数，不被浮点误差舍小
+# （回归 app.py:199：33.4500...% 浮点偏小成 33.4499...，round(...,1) 错给 33.4，
+#   孩子答精确值 33.45% 被误判）
+# ---------------------------------------------------------------------------
+def test_app_profit_real_rate_precision():
+    # 固定：进价389 加价57% 打八五折 → 利润率精确值 33.45%
+    def _fake_choice(seq):
+        if len(seq) == 3 and seq[0] == 80:      # discount 候选项 [80,85,90] → 取 85（八五折）
+            return 85
+        return seq[0]                            # variants → 取利润率变体
+
+    with mock.patch.object(app_mod.random, "randint", side_effect=[389, 57]), \
+         mock.patch.object(app_mod.random, "choice", side_effect=_fake_choice):
+        q, a = app_mod.app_profit(3, 6)
+    assert "389" in q and "57" in q and "实际利润率" in q
+    assert a == "33.45%", "实际利润率参考答案应为 33.45% -> %r" % a
+
+
+def test_app_profit_real_rate_sweep():
+    hit = 0
+    for _ in range(800):
+        q, a = app_mod.app_profit(3, 6)
+        m = re.search(r"进价(\d+)元加价(\d+)%标价，打(.+?)折卖，实际利润率？", q)
+        if not m:
+            continue
+        hit += 1
+        cost, markup = int(m.group(1)), int(m.group(2))
+        disc_map = {"八": 80, "八五": 85, "九": 90}
+        discount = disc_map[m.group(3)]
+        exact = (Fraction(cost) * Fraction(100 + markup) / 100 * Fraction(discount) / 100
+                 - Fraction(cost)) / Fraction(cost) * 100
+        exp = (Decimal(exact.numerator) / Decimal(exact.denominator)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP)
+        assert a == f"{exp}%", "利润率参考答案 %r 应为 %s%% (q=%r)" % (a, exp, q)
+    assert hit > 0, "未命中实际利润率变体，测试无效"
 
 
 # ---------------------------------------------------------------------------
