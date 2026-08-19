@@ -219,6 +219,56 @@ def ai_enabled() -> bool:
     return any(_config_provider(n)["api_key"] for n in FREE_CHAIN)
 
 
+def ai_any_enabled() -> bool:
+    """任一提供商（免费链或付费链 deepseek）配置了 Key 即视为 AI 可用。
+
+    错题复核等场景若只配了 DEEPSEEK_API_KEY（没有免费链 Key），
+    也必须能工作（付费优先），不能因为 ai_enabled() 只看免费链而整体跳过。
+    """
+    _load_env_file()
+    return any(_config_provider(n)["api_key"] for n in FREE_CHAIN) or bool(
+        _config_provider("deepseek")["api_key"])
+
+
+def chat_paid_first(user_id: str, system: str, user: str, max_tokens: int = 800,
+                    history: Optional[list] = None,
+                    reason: str = "judge", ref_id: int = 0) -> Optional[dict]:
+    """付费优先调用：优先 DeepSeek 并消耗用户钻石，失败/钻石不足降级免费链。
+
+    - 配置了 DEEPSEEK_API_KEY 且用户钻石余额 > 0 → 调 deepseek，按实际 token 扣钻石
+      （1 万 token = 1 钻石，见 diamond.calc_cost；不足时不扣，结果照常返回）
+    - 未配置 deepseek / 余额不足 / 调用失败 → 走默认免费链（zhipu→relay，不扣钻石）
+    - AI 调用期间不持有数据库连接：余额预检与扣费均为短会话（防连接池耗尽）
+
+    成功返回 {"text", "prompt_tokens", "completion_tokens", "model", "provider"}；
+    全链失败返回 None（路由层降级模板）。
+    """
+    cfg = _config_provider("deepseek")
+    if cfg["api_key"]:
+        try:
+            from ..database import SessionLocal
+            from ..services.diamond import get_balance, calc_cost, deduct
+            # 余额预检（短会话，立即释放连接）
+            with SessionLocal() as s:
+                balance = get_balance(s, user_id)
+            if balance > 0:
+                result = _call_provider("deepseek", cfg, system, user, max_tokens, history)
+                if result and result["text"].strip():
+                    result["provider"] = "deepseek"
+                    cost = calc_cost(result.get("prompt_tokens", 0),
+                                     result.get("completion_tokens", 0))
+                    if cost > 0:
+                        with SessionLocal() as s:
+                            deduct(s, user_id, cost, reason=reason, ref_id=ref_id)
+                    return result
+                logger.info("AI 付费链 deepseek 无有效输出（user=%s），降级免费链", user_id)
+            else:
+                logger.info("AI 付费链跳过（钻石余额不足，user=%s），走免费链", user_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("AI 付费链异常（user=%s）：%s，降级免费链", user_id, e)
+    return chat_for(user_id, system, user, max_tokens, history)
+
+
 # ── 简单内存限频器 ──
 _rate_buckets: dict = {}
 

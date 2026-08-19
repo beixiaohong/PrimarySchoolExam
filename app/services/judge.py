@@ -87,8 +87,8 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
         return {}
 
     from ..services import ai as ai_svc
-    if not ai_svc.ai_enabled():
-        logger.info("AI 判题复核跳过（未配置 Key，user=%s）", user_id)
+    if not ai_svc.ai_any_enabled():
+        logger.info("AI 判题复核跳过（未配置任何 Key，含 deepseek，user=%s）", user_id)
         return {}
     if not ai_svc.rate_limit(f"judge:{user_id}", JUDGE_RATE_LIMIT, 3600):
         logger.warning("AI 判题复核限频（user=%s），维持本地判定", user_id)
@@ -150,11 +150,14 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
             f"孩子作答：{it.get('user_answer', '')}\n"
         )
     if step1_lines:
-        result1 = ai_svc.chat_for(
+        # 付费优先：配置了 DeepSeek 且孩子有钻石 → 用 deepseek 复核并扣钻石；
+        # 否则降级免费链（zhipu→relay，不扣钻石）。
+        result1 = ai_svc.chat_paid_first(
             user_id,
             JUDGE_STEP1_SYSTEM,
             "以下是需要复核的题目（请独立解答后判断孩子作答）：\n" + "\n".join(step1_lines),
             max_tokens=1200,
+            reason="judge",
         )
     else:
         result1 = None  # 全部已本地判对，无需调 AI
@@ -218,11 +221,12 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
                 f"存储的参考答案：{ref_answer}\n"
             )
         if step2_lines:
-            result2 = ai_svc.chat_for(
+            result2 = ai_svc.chat_paid_first(
                 user_id,
                 JUDGE_STEP2_SYSTEM,
                 "以下题目的参考答案可能算错，请校对：\n" + "\n".join(step2_lines),
                 max_tokens=600,
+                reason="judge",
             )
             if result2 and result2.get("text", "").strip():
                 verdicts2 = _parse_verdicts(result2["text"])
@@ -245,7 +249,7 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
                                 "reason": f"参考答案有误({it.get('answer','')})，孩子作答正确",
                             }
 
-    # 5) 落缓存 + 用量日志
+    # 5) 落缓存 + 系统错题沉淀 + 用量日志
     db = SessionLocal()
     try:
         for key, verdict in approved.items():
@@ -262,12 +266,59 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
                 except Exception as e:  # noqa: BLE001
                     logger.warning("写 AI 判题缓存失败: %s", e)
                     db.rollback()
+            _record_system_issue(db, user_id, key_to_item[key], verdict)
         _log_judge_usage(db, user_id, ok=True, result=result1,
                          detail=f"复核 {len(todo)} 题，判对 {len(approved)} 题"
                                 f"（force={force}）")
         return approved
     finally:
         db.close()
+
+
+def _record_system_issue(db, user_id: str, it: dict, verdict: dict):
+    """系统判题错误题目沉淀：AI 复核判定「参考答案有误/本地判题逻辑把对的说错」。
+
+    只记真正的系统问题，用于日后统一修复判题代码/题库：
+    - stored_wrong=True：存储的参考答案本身算错；
+    - correct=True 且非「本地语义预判」：本地判分逻辑把正确作答判错（AI 复核纠正）。
+    幂等：同题 + 同作答 + 未处理（open）已存在则跳过。
+    """
+    stored_wrong = bool(verdict.get("stored_wrong"))
+    reason = str(verdict.get("reason") or "")
+    if not stored_wrong and not verdict.get("correct"):
+        return
+    if reason.startswith("本地语义预判"):
+        return  # 已知容差场景（概念/常识题），非系统错误
+    qid = it.get("question_id")
+    if not qid:
+        return
+    from ..models.judge_review import JudgeReviewIssue
+    user_answer = it.get("user_answer", "") or ""
+    dup = db.query(JudgeReviewIssue).filter(
+        JudgeReviewIssue.question_id == qid,
+        JudgeReviewIssue.user_answer == user_answer,
+        JudgeReviewIssue.status == "open",
+    ).first()
+    if dup:
+        return
+    try:
+        db.add(JudgeReviewIssue(
+            user_id=user_id,
+            question_id=qid,
+            question=(it.get("question") or "")[:2000],
+            stored_answer=(it.get("answer") or ""),
+            correct_answer=(verdict.get("correct_answer") or ""),
+            user_answer=user_answer[:1000],
+            subject=(it.get("subject") or "")[:20],
+            reason=reason[:200],
+            source="judge",
+        ))
+        db.commit()
+        logger.info("系统判题错误题目已沉淀 question_id=%s user=%s reason=%s",
+                    qid, user_id, reason[:50])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("写系统错题沉淀失败: %s", e)
+        db.rollback()
 
 
 def _fuzzy_match(user_answer: str, correct_answer: str) -> bool:

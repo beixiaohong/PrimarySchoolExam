@@ -197,14 +197,27 @@ def _approve_exam(db: Session, a: AnswerAppeal):
     """
     if not a.question_id:
         raise HTTPException(400, "申诉缺少题目信息，无法改判")
-    # 找该题最新一条「判错且作答相同」的记录（孩子提交后作答内容一致）
-    answer = (db.query(AttemptAnswer)
-              .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
-              .filter(ExamAttempt.user_id == a.user_id,
-                      AttemptAnswer.question_id == a.question_id,
-                      AttemptAnswer.is_correct == False,  # noqa: E712
-                      AttemptAnswer.user_answer == a.user_answer)
-              .order_by(AttemptAnswer.id.desc()).first())
+    # 该题所有判错作答记录（按时间倒序，最新优先）
+    base = (db.query(AttemptAnswer)
+            .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
+            .filter(ExamAttempt.user_id == a.user_id,
+                    AttemptAnswer.question_id == a.question_id,
+                    AttemptAnswer.is_correct == False)  # noqa: E712
+            .order_by(AttemptAnswer.id.desc()))
+    answer = base.filter(AttemptAnswer.user_answer == a.user_answer).first()
+    if not answer:
+        # 放宽：规范化后比对（容忍全角/半角、空格、标点差异），避免
+        # 交卷时作答与申诉时作答存在格式差异而「找不到对应的做题记录」。
+        from app.services.answer_check import normalize_answer
+        ua_norm = normalize_answer(a.user_answer or "")
+        for cand in base.limit(50).all():
+            if normalize_answer(cand.user_answer or "") == ua_norm:
+                answer = cand
+                break
+    if not answer:
+        # 兜底：家长已人工确认孩子做对，直接改判该题最新一条判错记录
+        # （作答可能因历史重做已变更，但「这道题判错了」的事实由家长背书）。
+        answer = base.first()
     if not answer:
         raise HTTPException(400, "找不到对应的做题记录，无法改判（可维持判错）")
     answer.is_correct = True
