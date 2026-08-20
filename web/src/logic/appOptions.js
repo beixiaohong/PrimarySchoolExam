@@ -2048,12 +2048,17 @@ const appOptions = {
         this.api('/api/appeal/decide', {
           method: 'POST',
           body: JSON.stringify({ user_id: this.user, appeal_id: a.id, action: ok ? 'approve' : 'reject', note }),
-        }).then(() => {
+        }).then(d => {
           // 立即本地移除该条，避免列表刷新前二次点击「已处理过」报错
           const idx = this.pendingAppeals.findIndex(x => x.id === a.id);
           if (idx >= 0) this.pendingAppeals.splice(idx, 1);
           delete this.appealNotes[a.id];
-          this.showToast(ok ? '已确认孩子做对了，本题改判正确、得分已重算 ✅' : '已驳回申诉，维持原判');
+          if (ok) {
+            // 后端可能降级批准（无做题记录）：按返回 note 提示，避免误报「已改判得分」
+            this.showToast((d && d.note) || '已确认孩子做对了，本题改判正确、得分已重算 ✅');
+          } else {
+            this.showToast('已驳回申诉，维持原判');
+          }
           this.loadDecidedAppeals();
           this.loadChildStats();
         }).catch(e => this.showToast('申诉处理失败：' + (e.message || e))).finally(() => {

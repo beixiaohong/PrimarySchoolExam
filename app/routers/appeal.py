@@ -173,9 +173,10 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
             db.commit()
         return {"id": a.id, "status": a.status, "already_decided": True}
 
+    credited = True
     if req.action == "approve":
         if a.source == "exam":
-            _approve_exam(db, a)
+            credited = _approve_exam(db, a)
         elif a.source == "retry":
             _approve_retry(db, a)
         else:
@@ -185,10 +186,11 @@ def decide_appeal(req: AppealDecideReq, db: Session = Depends(get_db)):
     a.decided_at = datetime.now()
     a.note = (req.note or "").strip()[:500]
     db.commit()
-    return {"id": a.id, "status": a.status}
+    note = "" if credited else "未找到对应做题记录，已直接批准申诉（仅清理错题标记，无卷面可改判）"
+    return {"id": a.id, "status": a.status, "credited": credited, "note": note}
 
 
-def _approve_exam(db: Session, a: AnswerAppeal):
+def _approve_exam(db: Session, a: AnswerAppeal) -> bool:
     """在线做题改判：定位该题最新一条判错记录 → 改判正确 + 重算本卷得分。
 
     只撤销本次提交造成的错题痕迹：
@@ -197,64 +199,75 @@ def _approve_exam(db: Session, a: AnswerAppeal):
 
     幂等：本卷 correct/wrong/score 一律从作答记录「全量重算」，而非增量 ±1。
     因此同一条申诉被重复 approve（含并发）也只会改判同一道题一次，不会产生重复加分。
+
+    返回 True=找到做题记录并改判成功；False=未找到做题记录（AI 出题/每日练习等
+    路径未落 attempt_answers），此时降级处理：仍批准申诉（家长已人工确认），
+    仅清理本次错题痕迹，不报「找不到题目」卡死家长操作。
     """
-    if not a.question_id:
-        raise HTTPException(400, "申诉缺少题目信息，无法改判")
-    answer = None
-    if a.attempt_id:
-        # 精确：该次做题记录（attempt_id）+ 题目 → 唯一定位该作答
-        # （交卷返回的 attempt_id，前端在申诉时一并上报；无视作答文本差异）
-        answer = (db.query(AttemptAnswer)
-                  .filter(AttemptAnswer.attempt_id == a.attempt_id,
-                          AttemptAnswer.question_id == a.question_id)
-                  .first())
-    if not answer:
-        # 兼容旧申诉（未上报 attempt_id）：按 user_id+question_id 匹配判错记录
-        base = (db.query(AttemptAnswer)
-                .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
-                .filter(ExamAttempt.user_id == a.user_id,
-                        AttemptAnswer.question_id == a.question_id,
-                        AttemptAnswer.is_correct == False)  # noqa: E712
-                .order_by(AttemptAnswer.id.desc()))
-        answer = base.filter(AttemptAnswer.user_answer == a.user_answer).first()
+    if a.question_id:
+        answer = None
+        if a.attempt_id:
+            # 精确：该次做题记录（attempt_id）+ 题目 → 唯一定位该作答
+            # （交卷返回的 attempt_id，前端在申诉时一并上报；无视作答文本差异）
+            answer = (db.query(AttemptAnswer)
+                      .filter(AttemptAnswer.attempt_id == a.attempt_id,
+                              AttemptAnswer.question_id == a.question_id)
+                      .first())
         if not answer:
-            # 放宽：规范化后比对（容忍全角/半角、空格、标点差异）
-            from app.services.answer_check import normalize_answer
-            ua_norm = normalize_answer(a.user_answer or "")
-            for cand in base.limit(50).all():
-                if normalize_answer(cand.user_answer or "") == ua_norm:
-                    answer = cand
-                    break
-        if not answer:
-            # 兜底：家长已人工确认孩子做对，直接改判该题最新一条判错记录
-            answer = base.first()
-    if not answer:
-        raise HTTPException(400, "找不到对应的做题记录，无法改判（可维持判错）")
-    answer.is_correct = True
-    # 项目 sessionmaker 关闭了 autoflush，必须先 flush 让上面的改判落到当前事务，
-    # 否则下方「全量重算」的 count 看不到本事务内刚改判的 is_correct，导致分数算错。
-    db.flush()
+            # 兼容旧申诉（未上报 attempt_id）：按 user_id+question_id 匹配判错记录
+            base = (db.query(AttemptAnswer)
+                    .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
+                    .filter(ExamAttempt.user_id == a.user_id,
+                            AttemptAnswer.question_id == a.question_id,
+                            AttemptAnswer.is_correct == False)  # noqa: E712
+                    .order_by(AttemptAnswer.id.desc()))
+            answer = base.filter(AttemptAnswer.user_answer == a.user_answer).first()
+            if not answer:
+                # 放宽：规范化后比对（容忍全角/半角、空格、标点差异）
+                from app.services.answer_check import normalize_answer
+                ua_norm = normalize_answer(a.user_answer or "")
+                for cand in base.limit(50).all():
+                    if normalize_answer(cand.user_answer or "") == ua_norm:
+                        answer = cand
+                        break
+            if not answer:
+                # 兜底：家长已人工确认孩子做对，直接改判该题最新一条判错记录
+                answer = base.first()
+        if answer:
+            answer.is_correct = True
+            # 项目 sessionmaker 关闭了 autoflush，必须先 flush 让上面的改判落到当前事务，
+            # 否则下方「全量重算」的 count 看不到本事务内刚改判的 is_correct，导致分数算错。
+            db.flush()
 
-    attempt = db.query(ExamAttempt).get(answer.attempt_id)
-    if attempt and attempt.total:
-        # 关键点：从本卷所有作答重新统计，幂等（重复改判同一题不再 +1）
-        correct = db.query(AttemptAnswer).filter(
-            AttemptAnswer.attempt_id == attempt.id,
-            AttemptAnswer.is_correct == True,  # noqa: E712
-        ).count()
-        wrong = db.query(AttemptAnswer).filter(
-            AttemptAnswer.attempt_id == attempt.id,
-            AttemptAnswer.is_correct == False,  # noqa: E712
-        ).count()
-        attempt.correct = correct
-        attempt.wrong = wrong
-        attempt.score = int(round(attempt.correct / attempt.total * 100, 1))
+            attempt = db.query(ExamAttempt).get(answer.attempt_id)
+            if attempt and attempt.total:
+                # 关键点：从本卷所有作答重新统计，幂等（重复改判同一题不再 +1）
+                correct = db.query(AttemptAnswer).filter(
+                    AttemptAnswer.attempt_id == attempt.id,
+                    AttemptAnswer.is_correct == True,  # noqa: E712
+                ).count()
+                wrong = db.query(AttemptAnswer).filter(
+                    AttemptAnswer.attempt_id == attempt.id,
+                    AttemptAnswer.is_correct == False,  # noqa: E712
+                ).count()
+                attempt.correct = correct
+                attempt.wrong = wrong
+                attempt.score = int(round(attempt.correct / attempt.total * 100, 1))
 
-    # 撤销本次新建的错题记录（本就不是错题，删除）；重复执行时记录已删，自动跳过
-    if a.wrong_record_id and a.wrong_new:
+            # 撤销本次新建的错题记录（本就不是错题，删除）；重复执行时记录已删，自动跳过
+            if a.wrong_record_id and a.wrong_new:
+                rec = db.query(WrongRecord).get(a.wrong_record_id)
+                if rec:
+                    db.delete(rec)
+            return True
+
+    # 未找到做题记录（如 AI 出题/每日练习路径的作答不落 attempt_answers）：
+    # 家长已人工确认孩子做对 → 降级批准：仍清理本次错题痕迹，不报错卡死。
+    if a.wrong_record_id:
         rec = db.query(WrongRecord).get(a.wrong_record_id)
         if rec:
             db.delete(rec)
+    return False
 
 
 def _approve_retry(db: Session, a: AnswerAppeal):

@@ -220,6 +220,41 @@ def test_appeal_approve_fuzzy_match_finds_record(client):
 
 
 # ─────────────────────────────────────────────────────────────
+# 5) 申诉无做题记录：降级批准（家长确认有效，不再报「找不到题目」）
+# ─────────────────────────────────────────────────────────────
+def test_appeal_approve_without_attempt_record(client):
+    """AI 出题/每日练习等路径的题无 attempt_answers 记录时，
+    家长 approve 应降级批准（credited=False + note），不报 400 卡死。"""
+    uid = "申诉无记录生"
+    db = SessionLocal()
+    try:
+        ap = AnswerAppeal(user_id=uid, source="exam", question_id=999999,
+                          question="无做题记录的题", user_answer="3",
+                          correct_answer="3", subject="数学", status="pending")
+        db.add(ap)
+        db.commit()
+        db.refresh(ap)
+
+        r = client.post("/api/appeal/decide", json={
+            "user_id": uid, "appeal_id": ap.id, "action": "approve"})
+        assert r.status_code == 200, f"无做题记录时应降级批准而非 400: {r.text}"
+        data = r.json()
+        assert data["status"] == "approved"
+        assert data["credited"] is False
+        assert data["note"], "降级时应返回提示说明"
+
+        vdb = SessionLocal()
+        try:
+            assert vdb.query(AnswerAppeal).get(ap.id).status == "approved"
+        finally:
+            vdb.close()
+    finally:
+        db.query(AnswerAppeal).filter_by(user_id=uid).delete()
+        db.commit()
+        db.close()
+
+
+# ─────────────────────────────────────────────────────────────
 # 4) 申诉带 attempt_id：按（做题记录 + 题号）精确定位，不改判其它次作答
 # ─────────────────────────────────────────────────────────────
 def test_appeal_approve_by_attempt_id_exact(client):
