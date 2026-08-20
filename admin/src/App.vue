@@ -14,6 +14,7 @@
           <el-menu-item index="/manage">账本·IM 管理</el-menu-item>
           <el-menu-item index="/announcements">系统公告</el-menu-item>
           <el-menu-item index="/textbooks">教材版本</el-menu-item>
+          <el-menu-item index="/content">内容管理</el-menu-item>
         </el-menu>
         <div class="side-foot">
           <span class="uname">{{ username }}</span>

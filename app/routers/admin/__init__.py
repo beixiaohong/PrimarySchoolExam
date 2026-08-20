@@ -22,6 +22,7 @@ from . import study_records
 from . import ledger
 from . import analytics
 from . import textbooks
+from . import content
 
 # 重新导出所有原始顶层名字（含下划线辅助函数）
 from .common import *        # logger, TOKEN_TTL_HOURS, CONFIG_GROUPS, SECRET_HINTS, _require_admin, _audit
