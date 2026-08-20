@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from .database import init_db
 from .config import ENABLE_DOCS
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm, ledger, im, admin_panel, announcement, textbook
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm, ledger, im, admin_panel, announcement, textbook, courses
 from .routers.auth import require_self
 from .routers.quiet_hours import check_quiet_hours
 from .services.init_data import ensure_initial_data
@@ -106,6 +106,7 @@ app.include_router(admin_panel.router, prefix="/api/admin", tags=["管理后台-
 # 学生端公告/站内信：内部用 require_user 鉴权
 app.include_router(announcement.router, prefix="/api/announcements", tags=["系统公告"])
 app.include_router(textbook.router, prefix="/api/textbook", tags=["教材版本"], dependencies=user_auth_deps)
+app.include_router(courses.router, prefix="/api/courses", tags=["网课"], dependencies=user_auth_deps)
 
 # 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
 # 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。

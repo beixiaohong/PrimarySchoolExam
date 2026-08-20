@@ -1661,6 +1661,32 @@
           </div>
 
           <div class="pc-sec">
+            <div class="pc-title">🎬 网课设置 <span class="more">给孩子添加网课视频（支持 b站/腾讯视频/直链 mp4）</span></div>
+            <div class="pc-row" style="flex-wrap:wrap;gap:8px">
+              <input v-model="courseForm.title" class="fill-input" placeholder="课程标题（必填）" style="flex:1;min-width:150px">
+              <input v-model="courseForm.video_url" class="fill-input" placeholder="视频链接（必填）" style="flex:2;min-width:220px">
+            </div>
+            <div class="pc-row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+              <select v-model="courseForm.subject" class="fill-input" style="max-width:110px">
+                <option value="">不限学科</option>
+                <option v-for="s in subjectOptions" :key="s" :value="s">{{s}}</option>
+              </select>
+              <select v-model.number="courseForm.grade" class="fill-input" style="max-width:130px">
+                <option :value="0">不限年级</option>
+                <option v-for="g in [1,2,3,4,5,6,7,8,9]" :key="g" :value="g">{{g}}年级</option>
+              </select>
+              <button class="btn btn-primary btn-sm" @click="addParentCourse()">添加网课</button>
+            </div>
+            <div v-if="parentCourses.length" style="margin-top:10px">
+              <div v-for="c in parentCourses" :key="c.id" class="pc-row" style="justify-content:space-between">
+                <span style="font-size:13px">▶ {{c.title}}<span class="more" v-if="c.subject && c.subject!=='不限'"> · {{c.subject}}</span></span>
+                <button class="btn btn-danger btn-sm" @click="removeParentCourse(c)">删除</button>
+              </div>
+            </div>
+            <p v-else class="pc-empty" style="margin-top:8px">还没有添加网课</p>
+          </div>
+
+          <div class="pc-sec">
             <div class="pc-title">📝 试卷最少题数 <span class="more">孩子生成试卷（含每日练习）不得少于这个数</span></div>
             <div class="pc-row" style="gap:12px">
               <span class="more" style="font-size:13px">数学</span>
@@ -1808,6 +1834,42 @@
       <SearchView v-if="tab==='search'"></SearchView>
       <SyncView v-if="tab==='sync'"></SyncView>
       <ReadingView v-if="tab==='reading'"></ReadingView>
+
+      <!-- ═══════════ 网课（系统配置 + 家长配置） ═══════════ -->
+      <div v-if="tab==='courses'" class="fade-enter">
+        <div class="page-head"><h2>🎬 网课</h2><span class="page-sub">跟着视频课学习，家长可在「设置-家长管理」里添加更多课程</span></div>
+        <div v-if="!courses.length" class="empty">
+          <div class="em">🎬</div><h3>还没有网课</h3>
+          <p>请家长在「设置 → 家长管理 → 网课设置」里添加课程</p>
+        </div>
+        <div v-else class="course-grid">
+          <div v-for="c in courses" :key="c.id" class="course-card" @click="playCourse(c)">
+            <div class="course-cover" :style="c.cover_url ? {backgroundImage:'url('+c.cover_url+')'} : {}">
+              <span class="course-play">▶</span>
+              <span v-if="c.duration_min" class="course-dur">{{c.duration_min}}分钟</span>
+              <span class="course-tag" v-if="c.subject && c.subject!=='不限'">{{c.subject}}</span>
+              <span class="course-tag course-tag-src" v-if="c.source==='parent'">家长添加</span>
+            </div>
+            <div class="course-body">
+              <b class="course-title">{{c.title}}</b>
+              <p class="course-desc" v-if="c.description">{{c.description}}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 网课播放弹窗 -->
+      <div v-if="curCourse" class="modal-mask on" @click.self="closeCourse()">
+        <div class="modal-card course-modal">
+          <div class="modal-head"><b>{{curCourse.title}}</b><button class="icon-btn" @click="closeCourse()">✕</button></div>
+          <div class="course-player">
+            <video v-if="isMp4(curCourse.video_url)" :src="curCourse.video_url" controls autoplay style="width:100%;max-height:52vh;background:#000;border-radius:10px"></video>
+            <iframe v-else :src="curCourse.video_url" frameborder="0" allowfullscreen
+                    style="width:100%;height:52vh;border-radius:10px;background:#000"></iframe>
+          </div>
+          <p class="course-desc" v-if="curCourse.description" style="margin:12px 0 0">{{curCourse.description}}</p>
+        </div>
+      </div>
     </main>
   </div>
 

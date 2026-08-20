@@ -120,6 +120,9 @@ const appOptions = {
       papers: [],
       // 教材版本（2026-08-20：每科目可选，默认最靠前版本；影响背单词/听写取词）
       textbookPrefs: [], textbookVersions: {},
+      // 网课（2026-08-20：系统配置默认展示 + 家长单独配置）
+      courses: [], curCourse: null, parentCourses: [],
+      courseForm: { title: '', video_url: '', subject: '', grade: 0, description: '' },
       // 十万个为什么（Sprint 5 + 多轮对话）
       qaAsk: '', qaProvider: 'zhipu', qaLoading: false, qaAnswer: null,
       qaModels: [], qaModelsVip: false,
@@ -540,6 +543,43 @@ const appOptions = {
       if (t === 'assistant') this.loadAssistantProfile();
       if (t === 'stats') this.loadStats();
       if (t === 'settings') { this.initParentPanel(); this.loadTextbookPrefs(); }
+      if (t === 'courses') this.loadCourses();
+    },
+    /* ─────────── 网课（系统配置 + 家长配置，播放用弹窗） ─────────── */
+    async loadCourses() {
+      const d = await this.api(`/api/courses?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}&subject=${encodeURIComponent(this.subject)}`)
+        .catch(() => null);
+      this.courses = (d && d.courses) || [];
+    },
+    playCourse(c) {
+      this.curCourse = c;
+    },
+    closeCourse() { this.curCourse = null; },
+    isMp4(url) { return /\.(mp4|webm|ogg|m4v)(\?|$)/i.test(url || ''); },
+    /* 家长管理：网课设置 */
+    async loadParentCourses() {
+      const d = await this.api(`/api/courses/parent?user_id=${encodeURIComponent(this.user)}`).catch(() => null);
+      this.parentCourses = (d && d.courses) || [];
+    },
+    async addParentCourse() {
+      const f = this.courseForm;
+      if (!f.title.trim() || !f.video_url.trim()) { this.showToast('请填写标题和视频链接'); return; }
+      try {
+        await this.api('/api/courses/parent', {
+          method: 'POST',
+          body: JSON.stringify({ user_id: this.user, title: f.title.trim(), video_url: f.video_url.trim(), subject: f.subject, grade: f.grade, description: f.description }),
+        });
+        this.showToast('网课已添加，孩子能在「网课」里看到 🎬');
+        this.courseForm = { title: '', video_url: '', subject: '', grade: 0, description: '' };
+        this.loadParentCourses(); this.loadCourses();
+      } catch (e) { this.showToast(e.message); }
+    },
+    async removeParentCourse(c) {
+      try {
+        await this.api(`/api/courses/parent/${c.id}?user_id=${encodeURIComponent(this.user)}`, { method: 'DELETE' });
+        this.showToast('已删除该网课');
+        this.loadParentCourses(); this.loadCourses();
+      } catch (e) { this.showToast(e.message); }
     },
     /* ─────────── 教材版本（设置页：每科目选择，默认最靠前） ─────────── */
     async loadTextbookPrefs() {
@@ -2183,7 +2223,7 @@ const appOptions = {
         this._resetPwdForm();
         this.parentPhase = 'open';
         sessionStorage.setItem('zx_parent_pwd', pwd);
-        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
+        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); this.loadParentCourses();
         this.showToast('家长密码已设置，家长管理已解锁 🔓');
       }).catch(e => this.showToast(e.message));
     },
@@ -2196,7 +2236,7 @@ const appOptions = {
         this._resetPwdForm();
         this.parentPhase = 'open';
         sessionStorage.setItem('zx_parent_pwd', pwd);
-        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks();
+        this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); this.loadParentCourses();
         this.showToast('欢迎回来，家长 👋');
       }).catch(e => this.showToast(e.message));
     },

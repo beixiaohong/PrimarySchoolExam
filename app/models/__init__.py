@@ -35,6 +35,7 @@ from .im import Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClai
 from .announcement import Announcement
 from .judge_review import JudgeReviewIssue
 from .textbook import TextbookVersion, UserTextbookPref
+from .online_course import OnlineCourse
 
 __all__ = [
     "Word", "WordBook",
@@ -76,4 +77,5 @@ __all__ = [
     "Announcement",
     "JudgeReviewIssue",
     "TextbookVersion", "UserTextbookPref",
+    "OnlineCourse",
 ]

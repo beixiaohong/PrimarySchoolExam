@@ -229,6 +229,59 @@
           </el-table>
         </el-dialog>
       </el-tab-pane>
+
+      <!-- ═══════ 网课 ═══════ -->
+      <el-tab-pane label="🎬 网课" name="courses">
+        <div class="toolbar">
+          <el-input v-model="courseKw" placeholder="搜索课程标题" style="width: 220px" clearable @keyup.enter="loadCourses" />
+          <el-button type="primary" @click="loadCourses">搜索</el-button>
+          <el-button type="success" @click="openCourse()">新增网课</el-button>
+        </div>
+        <el-table :data="courses" border stripe style="margin-top: 12px">
+          <el-table-column prop="id" label="ID" width="56" />
+          <el-table-column prop="title" label="课程标题" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="subject" label="学科" width="80" />
+          <el-table-column label="年级" width="80">
+            <template #default="{ row }">{{ row.grade ? row.grade + ' 年级' : '不限' }}</template>
+          </el-table-column>
+          <el-table-column label="视频" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }"><a :href="row.video_url" target="_blank" rel="noopener">{{ row.video_url }}</a></template>
+          </el-table-column>
+          <el-table-column prop="duration_min" label="时长(分)" width="80" />
+          <el-table-column label="启用" width="70">
+            <template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '是' : '否' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" width="130" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" @click="openCourse(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="removeCourse(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-dialog v-model="courseOpen" :title="curCourse.id ? '编辑网课' : '新增网课'" width="560px">
+          <el-form label-width="80px">
+            <el-form-item label="标题"><el-input v-model="courseForm.title" /></el-form-item>
+            <el-form-item label="学科">
+              <el-select v-model="courseForm.subject" clearable style="width: 160px">
+                <el-option v-for="s in ['数学','语文','英语']" :key="s" :label="s" :value="s" />
+              </el-select>
+              <span style="margin-left:14px">年级（0=不限）
+                <el-input-number v-model="courseForm.grade" :min="0" :max="9" size="small" style="width:100px" />
+              </span>
+            </el-form-item>
+            <el-form-item label="视频URL"><el-input v-model="courseForm.video_url" placeholder="b站/腾讯视频/直链 mp4" /></el-form-item>
+            <el-form-item label="封面URL"><el-input v-model="courseForm.cover_url" placeholder="可选" /></el-form-item>
+            <el-form-item label="时长(分)"><el-input-number v-model="courseForm.duration_min" :min="0" :max="999" /></el-form-item>
+            <el-form-item label="排序"><el-input-number v-model="courseForm.sort_order" :min="0" :max="9999" /></el-form-item>
+            <el-form-item label="简介"><el-input v-model="courseForm.description" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="启用"><el-switch v-model="courseForm.enabled" /></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="courseOpen = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="saveCourse">保存</el-button>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -438,11 +491,48 @@ async function removePaper(row) {
   catch (e) { ElMessage.error(e.message) }
 }
 
+// ── 网课 ──
+const courses = ref([])
+const courseKw = ref('')
+const courseOpen = ref(false)
+const curCourse = ref({})
+const courseForm = ref({ title: '', subject: '', grade: 0, video_url: '', cover_url: '', duration_min: 0, sort_order: 0, description: '', enabled: true })
+
+async function loadCourses() {
+  const params = {}
+  if (courseKw.value) params.keyword = courseKw.value
+  const d = await api.get('/api/admin/courses', { params })
+  courses.value = (d && d.items) || []
+}
+function openCourse(row) {
+  curCourse.value = row || {}
+  courseForm.value = row
+    ? { title: row.title, subject: row.subject === '不限' ? '' : row.subject, grade: row.grade, video_url: row.video_url, cover_url: row.cover_url, duration_min: row.duration_min, sort_order: row.sort_order, description: row.description, enabled: !!row.enabled }
+    : { title: '', subject: '', grade: 0, video_url: '', cover_url: '', duration_min: 0, sort_order: 0, description: '', enabled: true }
+  courseOpen.value = true
+}
+async function saveCourse() {
+  saving.value = true
+  try {
+    if (curCourse.value.id) await api.put(`/api/admin/courses/${curCourse.value.id}`, courseForm.value)
+    else await api.post('/api/admin/courses', courseForm.value)
+    ElMessage.success('已保存')
+    courseOpen.value = false
+    loadCourses()
+  } catch (e) { ElMessage.error(e.message) } finally { saving.value = false }
+}
+async function removeCourse(row) {
+  try { await ElMessageBox.confirm(`删除网课「${row.title}」？`, '提示', { type: 'warning' }) } catch { return }
+  try { await api.delete(`/api/admin/courses/${row.id}`); ElMessage.success('已删除'); loadCourses() }
+  catch (e) { ElMessage.error(e.message) }
+}
+
 function onTabChange(name) {
   if (name === 'books') { loadBooks(); loadTextbookOptions() }
   if (name === 'classicals') loadClassicals()
   if (name === 'grammar') loadGrammar()
   if (name === 'papers') loadPapers()
+  if (name === 'courses') loadCourses()
 }
 
 onMounted(() => { loadBooks(); loadTextbookOptions() })
