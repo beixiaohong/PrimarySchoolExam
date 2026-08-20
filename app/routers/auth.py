@@ -221,6 +221,8 @@ def require_user(authorization: str = Header(default=""),
         raise HTTPException(401, "未登录或登录已过期")
     if user.token_expires_at and user.token_expires_at < datetime.now():
         raise HTTPException(401, "登录已过期，请重新登录")
+    if getattr(user, "is_active", True) is False:
+        raise HTTPException(401, "账号已停用，请联系管理员")
     return user
 
 
@@ -348,6 +350,8 @@ def auth_login(req: LoginReq, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == account).first()
     if not user:
         raise HTTPException(400, "账号不存在")
+    if getattr(user, "is_active", True) is False:
+        raise HTTPException(403, "账号已停用，请联系管理员")
     if not user.password_hash:
         raise HTTPException(400, "该账号未设置密码，请先重置密码")
     if not _verify_pwd(req.password or "", user.password_hash):

@@ -48,6 +48,10 @@ class User(Base):
     last_login_at = Column(DateTime, default=datetime.now, comment="最近活跃时间")
     last_login_date = Column(Date, nullable=True, comment="最近活跃日期（用于连续天数）")
 
+    # ── 账号状态（049 迁移）──
+    is_active = Column(Boolean, default=True, nullable=True,
+                       comment="账号状态：true=正常 / false=已停用（停用后无法登录）")
+
     def __repr__(self):
         return f"<User {self.user_id} grade={self.grade}>"
 

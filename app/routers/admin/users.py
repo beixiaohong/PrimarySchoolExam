@@ -35,13 +35,17 @@ class UserProfileUpdate(BaseModel):
     phone: Optional[str] = None   # 空串 = 解绑
 
 
-@router.get("/users", summary="用户列表（搜索 + 资产 + VIP）")
-def list_users(keyword: str = "", page: int = 1, page_size: int = 20,
+@router.get("/users", summary="用户列表（搜索 + 筛选 + 资产 + VIP）")
+def list_users(keyword: str = "", grade: int = 0, subject: str = "",
+               vip: str = "", active: str = "",
+               page: int = 1, page_size: int = 20,
                db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
-    """分页查询用户列表，支持按 user_id/昵称/邮箱/手机号搜索，并附带资产与 VIP 状态。
+    """分页查询用户列表，支持按 user_id/昵称/邮箱/手机号搜索，按 年级/学科/VIP/状态 筛选，
+    并附带资产与 VIP 状态。
 
-    参数：keyword：模糊搜索关键字；page / page_size：分页参数。
-    返回：{"total","page","page_size","items": [含 diamonds/coins/makeup_cards/is_vip 的用户信息]}。
+    参数：keyword：模糊搜索；grade：年级（>0 过滤）；subject：学科；
+    vip：''=全部 / 1=仅VIP / 0=非VIP；active：''=全部 / 1=正常 / 0=已停用。
+    返回：{"total","page","page_size","items": [...]}。
     副作用：只读。
     """
     q = db.query(User)
@@ -50,6 +54,19 @@ def list_users(keyword: str = "", page: int = 1, page_size: int = 20,
         like = f"%{kw}%"
         q = q.filter(or_(User.user_id.like(like), User.nickname.like(like),
                          User.email.like(like), User.phone.like(like)))
+    if grade > 0:
+        q = q.filter(User.grade == grade)
+    if subject:
+        q = q.filter(User.subject == subject)
+    if active == "1":
+        q = q.filter(or_(User.is_active.is_(None), User.is_active == True))  # noqa: E712
+    elif active == "0":
+        q = q.filter(User.is_active == False)  # noqa: E712
+    if vip in ("1", "0"):
+        vips_all = {v.user_id for v in db.query(VipUser).all()}
+        uids_all = [u.user_id for u in q.all()]
+        match = [u for u in uids_all if (u in vips_all) == (vip == "1")]
+        q = q.filter(User.user_id.in_(match))
     total = q.count()
     users = q.order_by(User.created_at.desc()).offset(
         max(0, (page - 1) * page_size)).limit(page_size).all()
@@ -77,8 +94,133 @@ def list_users(keyword: str = "", page: int = 1, page_size: int = 20,
             "coins": int(coins.get(u.user_id, 0) or 0),
             "makeup_cards": makeups.get(u.user_id, 0),
             "is_vip": u.user_id in vips,
+            "is_active": getattr(u, "is_active", True) is not False,
         } for u in users],
     }
+
+
+@router.get("/users/export", summary="导出用户列表（CSV）")
+def export_users(keyword: str = "", grade: int = 0, subject: str = "",
+                 vip: str = "", active: str = "",
+                 db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    """按当前筛选条件导出用户列表为 CSV（含资产/VIP/状态）。副作用：只读。"""
+    import csv
+    import io as _io
+    from fastapi.responses import Response
+
+    q = db.query(User)
+    kw = keyword.strip()
+    if kw:
+        like = f"%{kw}%"
+        q = q.filter(or_(User.user_id.like(like), User.nickname.like(like),
+                         User.email.like(like), User.phone.like(like)))
+    if grade > 0:
+        q = q.filter(User.grade == grade)
+    if subject:
+        q = q.filter(User.subject == subject)
+    if active == "1":
+        q = q.filter(or_(User.is_active.is_(None), User.is_active == True))  # noqa: E712
+    elif active == "0":
+        q = q.filter(User.is_active == False)  # noqa: E712
+    users = q.order_by(User.created_at.desc()).limit(5000).all()
+    uids = [u.user_id for u in users]
+    vips = {v.user_id for v in db.query(VipUser).filter(
+        VipUser.user_id.in_(uids)).all()} if uids else set()
+    diamonds = dict(db.query(DiamondAccount.user_id, DiamondAccount.balance).filter(
+        DiamondAccount.user_id.in_(uids)).all()) if uids else {}
+    coins = dict(db.query(CoinLedger.user_id, func.sum(CoinLedger.amount)).filter(
+        CoinLedger.user_id.in_(uids)).group_by(CoinLedger.user_id).all()) if uids else {}
+
+    buf = _io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["user_id", "昵称", "年级", "学科", "邮箱", "手机", "钻石", "金币",
+                "VIP", "状态", "注册时间", "最近活跃"])
+    for u in users:
+        w.writerow([
+            u.user_id, u.nickname or "", u.grade or "", u.subject or "",
+            u.email or "", u.phone or "",
+            diamonds.get(u.user_id, 0.0), int(coins.get(u.user_id, 0) or 0),
+            "是" if u.user_id in vips else "否",
+            "正常" if getattr(u, "is_active", True) is not False else "已停用",
+            u.created_at.strftime("%Y-%m-%d") if u.created_at else "",
+            u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "",
+        ])
+    data = "\ufeff" + buf.getvalue()  # BOM 供 Excel 正确识别 UTF-8
+    _audit(db, admin, "users:export", "", f"导出用户列表 {len(users)} 条")
+    return Response(content=data.encode("utf-8"),
+                    media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": "attachment; filename=users.csv"})
+
+
+@router.get("/users/{user_id}/overview", summary="用户学习概览统计")
+def user_overview(user_id: str, db: Session = Depends(get_db),
+                  admin: Admin = Depends(_require_admin)):
+    """学习概览：做题/试卷/得分/错题/背诵/单词/学习天数/最近活跃。副作用：只读。"""
+    from app.models.exam import ExamAttempt, ExamRecord, WrongRecord, Question
+    from app.models.classical import ClassicalProgress
+    from app.models.vocab import VocabProgress
+    from app.models.study_error import StudyError
+
+    u = db.query(User).filter(User.user_id == user_id).first()
+    if not u:
+        raise HTTPException(404, "用户不存在")
+
+    attempts = db.query(ExamAttempt).filter(ExamAttempt.user_id == user_id).all()
+    total_attempts = len(attempts)
+    avg_score = round(sum(a.score or 0 for a in attempts) / total_attempts, 1) if total_attempts else 0
+    total_questions = sum(a.total or 0 for a in attempts)
+
+    wrong_mastered = db.query(WrongRecord).filter(
+        WrongRecord.user_id == user_id, WrongRecord.is_mastered == True).count()  # noqa: E712
+    wrong_total = db.query(WrongRecord).filter(WrongRecord.user_id == user_id).count()
+    study_errors = db.query(StudyError).filter(StudyError.user_id == user_id).count()
+
+    vocab_learned = db.query(VocabProgress).filter(
+        VocabProgress.user_id == user_id,
+        VocabProgress.status == "mastered").count()
+    vocab_total = db.query(VocabProgress).filter(VocabProgress.user_id == user_id).count()
+    classical_learned = db.query(ClassicalProgress).filter(
+        ClassicalProgress.user_id == user_id,
+        ClassicalProgress.status == "mastered").count()
+    classical_total = db.query(ClassicalProgress).filter(
+        ClassicalProgress.user_id == user_id).count()
+
+    last_login = u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else ""
+    return {
+        "user_id": u.user_id,
+        "attempts": total_attempts,
+        "total_questions": total_questions,
+        "avg_score": avg_score,
+        "wrong_total": wrong_total,
+        "wrong_mastered": wrong_mastered,
+        "study_errors": study_errors,
+        "vocab_learned": vocab_learned, "vocab_total": vocab_total,
+        "classical_learned": classical_learned, "classical_total": classical_total,
+        "last_login": last_login,
+        "created_at": u.created_at.strftime("%Y-%m-%d") if u.created_at else "",
+    }
+
+
+class ActiveReq(BaseModel):
+    active: bool  # True=启用 / False=停用
+
+
+@router.post("/users/{user_id}/active", summary="停用/启用账号")
+def toggle_user_active(user_id: str, req: ActiveReq, db: Session = Depends(get_db),
+                       admin: Admin = Depends(_require_admin)):
+    """停用/启用账号：停用后该账号无法登录、已签发 token 立即失效。
+    副作用：更新 is_active、清空 token、记审计日志。"""
+    u = db.query(User).filter(User.user_id == user_id.strip()).first()
+    if not u:
+        raise HTTPException(404, "用户不存在")
+    u.is_active = req.active
+    if not req.active:
+        u.token = None          # 停用即吊销当前登录会话
+        u.token_expires_at = None
+    db.commit()
+    _audit(db, admin, "users:toggle_active", u.user_id,
+           f"{'启用' if req.active else '停用'}账号 {u.user_id}")
+    return {"ok": True, "active": req.active}
 
 
 @router.post("/users/account", summary="账号处理（重置密码/改绑解绑邮箱手机/重置为昵称态）")

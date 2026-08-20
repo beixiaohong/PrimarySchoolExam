@@ -23,9 +23,27 @@
       <el-button size="small" @click="openResetPwd">重置密码</el-button>
       <el-button v-if="!info.is_vip" size="small" type="warning" @click="openAddVip">设为 VIP</el-button>
       <el-button v-else size="small" type="danger" @click="removeVip">取消 VIP</el-button>
+      <el-button v-if="info.is_active !== false" size="small" type="danger" @click="toggleActive(false)">停用账号</el-button>
+      <el-button v-else size="small" type="success" @click="toggleActive(true)">启用账号</el-button>
     </div>
 
     <el-tabs v-model="tab">
+      <!-- 概览 -->
+      <el-tab-pane label="概览" name="overview">
+        <el-row :gutter="12" style="margin-top: 8px">
+          <el-col :span="6" v-for="c in ovCards" :key="c.label">
+            <el-card shadow="hover" class="ov-card">
+              <div class="ov-label">{{ c.label }}</div>
+              <div class="ov-value">{{ c.value }}</div>
+            </el-card>
+          </el-col>
+        </el-row>
+        <el-table :data="ovRows" border size="small" style="margin-top: 14px">
+          <el-table-column prop="k" label="统计项" width="200" />
+          <el-table-column prop="v" label="数值" />
+        </el-table>
+      </el-tab-pane>
+
       <!-- 学习记录 -->
       <el-tab-pane label="学习记录" name="study">
         <div class="toolbar">
@@ -145,7 +163,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api'
 
@@ -153,7 +171,46 @@ const route = useRoute()
 const userId = decodeURIComponent(route.params.userId)
 
 const info = ref({})
-const tab = ref('study')
+const tab = ref('overview')
+
+// 概览
+const ov = ref(null)
+const ovCards = computed(() => {
+  const o = ov.value || {}
+  return [
+    { label: '做题次数', value: o.attempts ?? 0 },
+    { label: '平均得分', value: o.avg_score ?? 0 },
+    { label: '错题数', value: o.wrong_total ?? 0 },
+    { label: '已掌握', value: o.wrong_mastered ?? 0 },
+    { label: '背单词', value: (o.vocab_learned ?? 0) + '/' + (o.vocab_total ?? 0) },
+    { label: '古诗文', value: (o.classical_learned ?? 0) + '/' + (o.classical_total ?? 0) },
+  ]
+})
+const ovRows = computed(() => {
+  const o = ov.value || {}
+  return [
+    { k: '做题总题数', v: o.total_questions ?? 0 },
+    { k: '学习错误（同步学）', v: o.study_errors ?? 0 },
+    { k: '最近活跃', v: o.last_login || '-' },
+    { k: '注册时间', v: o.created_at || '-' },
+  ]
+})
+async function loadOverview() {
+  const { data } = await api.get('/api/admin/users/' + encodeURIComponent(userId) + '/overview')
+  ov.value = data
+}
+async function toggleActive(active) {
+  try {
+    await ElMessageBox.confirm(`确定${active ? '启用' : '停用'}该账号？停用后无法登录`, '提示', { type: 'warning' })
+  } catch { return }
+  try {
+    await api.post('/api/admin/users/' + encodeURIComponent(userId) + '/active', { active })
+    ElMessage.success(active ? '已启用' : '已停用')
+    loadInfo()
+  } catch (e) {
+    ElMessage.error((e.response && e.response.data && e.response.data.detail) || '操作失败')
+  }
+}
 
 const catMap = { exam: '做题', wrong: '错题', classical: '背诵', vocab: '背单词', challenge: '刷题', ai: 'AI对话', parent: '家长记录' }
 function catType(c) {
@@ -292,18 +349,22 @@ async function removeVip() {
 }
 
 watch(tab, (t) => {
+  if (t === 'overview') loadOverview()
   if (t === 'ledger') loadLedger()
 })
 
 onMounted(() => {
   loadInfo()
-  loadStudy()
+  loadOverview()
 })
 </script>
 
 <style scoped>
 .toolbar { display: flex; align-items: center; flex-wrap: wrap; }
 .ops { margin: 12px 0; display: flex; gap: 10px; align-items: center; }
+.ov-card { text-align: center; }
+.ov-label { color: #909399; font-size: 12px; }
+.ov-value { font-size: 20px; font-weight: 600; color: #303133; margin-top: 4px; }
 .sum { margin-left: 8px; font-size: 14px; color: #303133; }
 .det { color: #909399; font-size: 12px; margin-top: 2px; }
 </style>
