@@ -118,6 +118,8 @@ const appOptions = {
       tomorrowQueue: { count: 0, items: [] },
       // 试卷中心
       papers: [],
+      // 教材版本（2026-08-20：每科目可选，默认最靠前版本；影响背单词/听写取词）
+      textbookPrefs: [], textbookVersions: {},
       // 十万个为什么（Sprint 5 + 多轮对话）
       qaAsk: '', qaProvider: 'zhipu', qaLoading: false, qaAnswer: null,
       qaModels: [], qaModelsVip: false,
@@ -537,7 +539,29 @@ const appOptions = {
       }
       if (t === 'assistant') this.loadAssistantProfile();
       if (t === 'stats') this.loadStats();
-      if (t === 'settings') this.initParentPanel();
+      if (t === 'settings') { this.initParentPanel(); this.loadTextbookPrefs(); }
+    },
+    /* ─────────── 教材版本（设置页：每科目选择，默认最靠前） ─────────── */
+    async loadTextbookPrefs() {
+      const d = await this.api(`/api/textbook/prefs?user_id=${encodeURIComponent(this.user)}&grade=${this.grade}`)
+        .catch(() => null);
+      this.textbookPrefs = (d && d.prefs) || [];
+      for (const p of this.textbookPrefs) {
+        const v = await this.api(`/api/textbook/versions?subject=${encodeURIComponent(p.subject)}&grade=${this.grade}`)
+          .catch(() => null);
+        if (v && v.versions) this.textbookVersions[p.subject] = v.versions;
+      }
+    },
+    async onTextbookChange(subject, ev) {
+      const tid = parseInt(ev.target.value, 10) || 0;
+      try {
+        await this.api('/api/textbook/prefs', {
+          method: 'PUT',
+          body: JSON.stringify({ user_id: this.user, subject, textbook_id: tid }),
+        });
+        this.showToast(tid ? `已切换${subject}教材版本 ✓` : '已恢复默认版本（最靠前）');
+        this.loadTextbookPrefs();
+      } catch (e) { this.showToast(e.message); }
     },
     switchSubject(s) {
       this.subject = s;

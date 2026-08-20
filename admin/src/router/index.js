@@ -12,6 +12,7 @@ const routes = [
   { path: '/datacenter', name: 'datacenter', component: () => import('../views/DataCenter.vue') },
   { path: '/manage', name: 'manage', component: () => import('../views/Manage.vue') },
   { path: '/announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
+  { path: '/textbooks', name: 'textbooks', component: () => import('../views/Textbooks.vue') },
 ]
 
 // hash 模式：客户端路由形如 /admin#/users，避免服务端 SPA 回退冲突。

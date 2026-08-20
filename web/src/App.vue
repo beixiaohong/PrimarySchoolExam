@@ -1491,6 +1491,18 @@
           <p class="card-desc">当前年级：{{grade}}年级 · 每年9月自动升一年级 · 学习数据按用户名保存在本地服务器</p>
         </div>
         <div class="card" style="max-width:640px;margin-top:16px">
+          <div class="card-head"><b>📖 教材版本</b><span class="more">背单词/听写按所选版本取词，未选择时默认最靠前的版本</span></div>
+          <div class="form-grid" style="margin-top:16px">
+            <div v-for="p in textbookPrefs" :key="p.subject" class="form-item">
+              <label>{{p.subject}}</label>
+              <select :value="p.textbook_id || 0" @change="onTextbookChange(p.subject, $event)">
+                <option value="0">默认（最靠前）</option>
+                <option v-for="v in textbookVersions[p.subject] || []" :key="v.id" :value="v.id">{{v.name}}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="max-width:640px;margin-top:16px">
           <div class="card-head"><b>🏙️ 我的城市</b><span class="more">用于首页天气展示</span></div>
           <div class="pc-row">
             <input v-model="cityInput" placeholder="如：杭州" maxlength="50" style="flex:1;padding:9px 12px;border:1px solid #E5E1F5;border-radius:10px;font-size:14px">

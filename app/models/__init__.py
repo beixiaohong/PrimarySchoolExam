@@ -34,6 +34,7 @@ from .ledger import Bill, Account, Location, Merchant, Person, Project, Category
 from .im import Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim, ReadReceipt
 from .announcement import Announcement
 from .judge_review import JudgeReviewIssue
+from .textbook import TextbookVersion, UserTextbookPref
 
 __all__ = [
     "Word", "WordBook",
@@ -74,4 +75,5 @@ __all__ = [
     "Chat", "Message", "Friendship", "GroupMember", "RedPacket", "RedPacketClaim", "ReadReceipt",
     "Announcement",
     "JudgeReviewIssue",
+    "TextbookVersion", "UserTextbookPref",
 ]

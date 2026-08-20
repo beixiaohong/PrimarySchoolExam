@@ -29,7 +29,12 @@ NEW_WORDS_PER_DAY = 20
 
 
 def _get_grade_books(db: Session, grade: int, user_id: Optional[str] = None) -> List[int]:
-    """获取指定年级的词库ID：默认只开当前学期，include_next 开启时预支下学期"""
+    """获取指定年级的词库ID：默认只开当前学期，include_next 开启时预支下学期。
+
+    教材版本（2026-08-20 新增）：用户为英语选择了教材版本时，新学选材只取该版本
+    对应词书（word_books.textbook_id）；该版本无词书/未选择时回退全部（保证有词可学）。
+    累计统计（_career_book_ids）不做版本过滤，切换版本不丢历史学习量。
+    """
     semesters = [_semester.current_semester()]
     if user_id and _load_study_flags(db, user_id).get("include_next"):
         semesters.append(_semester.next_semester())
@@ -38,6 +43,17 @@ def _get_grade_books(db: Session, grade: int, user_id: Optional[str] = None) -> 
         WordBook.grade == grade,
         WordBook.semester.in_(semesters),
     ).all()
+    if user_id:
+        from app.routers.textbook import resolve_textbook_id
+        tid = resolve_textbook_id(db, user_id, "英语", grade)
+        if tid:
+            version_books = db.query(WordBook).filter(
+                WordBook.grade == grade,
+                WordBook.semester.in_(semesters),
+                WordBook.textbook_id == tid,
+            ).all()
+            if version_books:
+                return [b.id for b in version_books]
     if not books:
         # 兜底：该年级当前学期无册（数据未就绪）时回退全量，避免无词可学
         books = db.query(WordBook).filter(WordBook.grade == grade).all()
