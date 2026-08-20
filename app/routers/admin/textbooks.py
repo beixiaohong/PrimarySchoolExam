@@ -70,7 +70,7 @@ def create_textbook(req: TextbookReq, db: Session = Depends(get_db),
                         remark=(req.remark or "")[:200])
     db.add(t)
     db.commit()
-    _audit(db, admin.user_id, "textbook_create",
+    _audit(db, admin, "textbook_create", f"tb:{t.id}",
            f"新增教材版本 {subject}/{req.grade}年级/{name}")
     return {"id": t.id, "ok": True}
 
@@ -99,7 +99,7 @@ def update_textbook(tid: int, req: TextbookReq, db: Session = Depends(get_db),
     t.sort_order, t.enabled = req.sort_order, req.enabled
     t.remark = (req.remark or "")[:200]
     db.commit()
-    _audit(db, admin.user_id, "textbook_update", f"编辑教材版本 id={tid}")
+    _audit(db, admin, "textbook_update", f"tb:{tid}", f"编辑教材版本 id={tid}")
     return {"ok": True}
 
 
@@ -115,5 +115,5 @@ def delete_textbook(tid: int, db: Session = Depends(get_db),
         raise HTTPException(400, f"该版本下仍有 {bound} 本词书绑定，请先调整词书版本后再删除")
     db.delete(t)
     db.commit()
-    _audit(db, admin.user_id, "textbook_delete", f"删除教材版本 id={tid} ({t.name})")
+    _audit(db, admin, "textbook_delete", f"tb:{tid}", f"删除教材版本 id={tid} ({t.name})")
     return {"ok": True}

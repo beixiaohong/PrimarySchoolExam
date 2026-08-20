@@ -68,7 +68,7 @@ def create_course(req: CourseReq, db: Session = Depends(get_db),
                      source="system")
     db.add(c)
     db.commit()
-    _audit(db, admin.user_id, "course_create", f"新增网课 {title}")
+    _audit(db, admin, "course_create", f"course:{c.id}", f"新增网课 {title}")
     return {"id": c.id, "ok": True}
 
 
@@ -87,7 +87,7 @@ def update_course(cid: int, req: CourseReq, db: Session = Depends(get_db),
     c.duration_min = max(0, req.duration_min)
     c.enabled, c.sort_order = req.enabled, req.sort_order
     db.commit()
-    _audit(db, admin.user_id, "course_update", f"编辑网课 id={cid}")
+    _audit(db, admin, "course_update", f"course:{cid}", f"编辑网课 id={cid}")
     return {"ok": True}
 
 
@@ -100,5 +100,5 @@ def delete_course(cid: int, db: Session = Depends(get_db),
         raise HTTPException(404, "网课不存在")
     db.delete(c)
     db.commit()
-    _audit(db, admin.user_id, "course_delete", f"删除网课 id={cid} ({c.title})")
+    _audit(db, admin, "course_delete", f"course:{cid}", f"删除网课 id={cid} ({c.title})")
     return {"ok": True}

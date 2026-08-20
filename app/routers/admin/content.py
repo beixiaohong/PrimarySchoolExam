@@ -93,7 +93,7 @@ def create_book(req: BookReq, db: Session = Depends(get_db),
                  textbook_id=req.textbook_id or None)
     db.add(b)
     db.commit()
-    _audit(db, admin.user_id, "book_create", f"新增词书 {name}")
+    _audit(db, admin, "book_create", f"book:{b.id}", f"新增词书 {name}")
     return {"id": b.id, "ok": True}
 
 
@@ -108,7 +108,7 @@ def update_book(bid: int, req: BookReq, db: Session = Depends(get_db),
     b.publisher = (req.publisher or "人教版PEP")[:50]
     b.textbook_id = req.textbook_id or None
     db.commit()
-    _audit(db, admin.user_id, "book_update", f"编辑词书 id={bid}")
+    _audit(db, admin, "book_update", f"book:{bid}", f"编辑词书 id={bid}")
     return {"ok": True}
 
 
@@ -126,7 +126,7 @@ def delete_book(bid: int, db: Session = Depends(get_db),
         raise HTTPException(400, f"该词书下有 {bound} 条学习进度记录，删除会丢失进度，请谨慎（可先停用）")
     db.delete(b)  # cascade 删单词
     db.commit()
-    _audit(db, admin.user_id, "book_delete", f"删除词书 id={bid} ({b.name})")
+    _audit(db, admin, "book_delete", f"book:{bid}", f"删除词书 id={bid} ({b.name})")
     return {"ok": True}
 
 
@@ -238,7 +238,7 @@ def import_words(bid: int, req: WordImportReq, db: Session = Depends(get_db),
         added += 1
     b.word_count = db.query(Word).filter(Word.book_id == bid).count()
     db.commit()
-    _audit(db, admin.user_id, "words_import",
+    _audit(db, admin, "words_import", f"book:{bid}",
            f"词书 {b.name} 导入 {added} 个，跳过 {skipped} 个")
     return {"ok": True, "added": added, "skipped": skipped}
 
@@ -300,7 +300,7 @@ def create_classical(req: ClassicalReq, db: Session = Depends(get_db),
                       tags=(req.tags or "")[:200])
     db.add(t)
     db.commit()
-    _audit(db, admin.user_id, "classical_create", f"新增诗词 {title}")
+    _audit(db, admin, "classical_create", f"cl:{t.id}", f"新增诗词 {title}")
     return {"id": t.id, "ok": True}
 
 
@@ -319,7 +319,7 @@ def update_classical(cid: int, req: ClassicalReq, db: Session = Depends(get_db),
     t.lines_json = _build_lines(t.content)
     t.tags = (req.tags or "")[:200]
     db.commit()
-    _audit(db, admin.user_id, "classical_update", f"编辑诗词 id={cid}")
+    _audit(db, admin, "classical_update", f"cl:{cid}", f"编辑诗词 id={cid}")
     return {"ok": True}
 
 
@@ -335,7 +335,7 @@ def delete_classical(cid: int, db: Session = Depends(get_db),
         raise HTTPException(400, f"该篇目有 {bound} 条学习进度记录，删除会丢失进度")
     db.delete(t)
     db.commit()
-    _audit(db, admin.user_id, "classical_delete", f"删除诗词 id={cid} ({t.title})")
+    _audit(db, admin, "classical_delete", f"cl:{cid}", f"删除诗词 id={cid} ({t.title})")
     return {"ok": True}
 
 
@@ -383,7 +383,7 @@ def create_grammar(req: GrammarReq, db: Session = Depends(get_db),
                      examples=req.examples or "")
     db.add(g)
     db.commit()
-    _audit(db, admin.user_id, "grammar_create", f"新增语法点 {name}")
+    _audit(db, admin, "grammar_create", f"gr:{g.id}", f"新增语法点 {name}")
     return {"id": g.id, "ok": True}
 
 
@@ -410,7 +410,7 @@ def delete_grammar(gid: int, db: Session = Depends(get_db),
     db.query(GrammarExercise).filter(GrammarExercise.grammar_point_id == gid).delete()
     db.delete(g)
     db.commit()
-    _audit(db, admin.user_id, "grammar_delete", f"删除语法点 id={gid}")
+    _audit(db, admin, "grammar_delete", f"gr:{gid}", f"删除语法点 id={gid}")
     return {"ok": True}
 
 
@@ -489,5 +489,5 @@ def delete_collected_paper(pid: int, db: Session = Depends(get_db),
     db.query(PaperQuestion).filter(PaperQuestion.paper_id == pid).delete()
     db.delete(p)
     db.commit()
-    _audit(db, admin.user_id, "paper_delete", f"删除采集试卷 id={pid} ({p.title})")
+    _audit(db, admin, "paper_delete", f"paper:{pid}", f"删除采集试卷 id={pid} ({p.title})")
     return {"ok": True}
