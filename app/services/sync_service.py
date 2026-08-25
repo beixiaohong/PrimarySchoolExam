@@ -100,7 +100,8 @@ def build_overview(db: Session, user_id: str, subject: str, grade: int,
     elif subject == "语文":
         units = _chinese_units(db, grade, semesters)
     elif subject == "数学":
-        units = _math_units(db, grade)
+        # 初中(7年级及以上)数学走 middle_questions 题库；小学仍走 ProblemType 路径
+        units = _middle_units(db, subject, grade) if grade >= 7 else _math_units(db, grade)
     elif _is_middle(subject):
         units = _middle_units(db, subject, grade)
     else:
@@ -235,6 +236,17 @@ def build_unit_points(db: Session, subject: str, grade: int, unit: str) -> dict:
                        for t in texts],
         }
     if subject == "数学":
+        if grade >= 7:
+            # 初中数学：直接展示该单元 middle_questions 题库条目作为要点
+            _, _, u = unit.split("::", 2)
+            qs = db.query(MiddleQuestion).filter(
+                MiddleQuestion.subject == subject,
+                MiddleQuestion.unit == u).order_by(MiddleQuestion.id).limit(80).all()
+            return {
+                "subject": subject, "unit": unit, "kind": "question_list",
+                "points": [{"id": q.id, "question": q.question,
+                            "answer": q.answer, "analysis": q.analysis or ""} for q in qs],
+            }
         _, chapter = unit.split("::", 1)
         pts = db.query(ProblemType).filter(
             ProblemType.textbook_chapter == chapter).order_by(ProblemType.id).all()
@@ -269,6 +281,8 @@ def build_unit_practice(db: Session, subject: str, grade: int, unit: str,
     if subject == "语文":
         return _chinese_practice(db, grade, unit, count)
     if subject == "数学":
+        if grade >= 7:
+            return _middle_practice(db, subject, grade, unit, count)
         return _math_practice(db, grade, unit, count)
     if _is_middle(subject):
         return _middle_practice(db, subject, grade, unit, count)
