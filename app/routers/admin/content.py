@@ -20,6 +20,7 @@ from app.database import get_db
 from app.models.admin import Admin
 from app.models.classical import ClassicalText
 from app.models.grammar import GrammarPoint, GrammarExercise
+from app.models.knowledge import KnowledgePoint
 from app.models.paper import Paper, PaperQuestion
 from app.models.problem_type import ProblemCategory, ProblemType
 from app.models.word import Word, WordBook
@@ -432,6 +433,114 @@ def knowledge_points(db: Session = Depends(get_db), admin: Admin = Depends(_requ
         "types_by_category": by_cat,
         "grammar_total": db.query(GrammarPoint).count(),
     }
+
+
+# ═══════════════ 九科知识点（KnowledgePoint） CRUD ═══════════════
+
+class KnowledgePointReq(BaseModel):
+    subject: str
+    grade: int = 7
+    unit: str = ""
+    title: str
+    summary: str = ""
+    content: str = ""
+    examples: str = ""
+    difficulty: int = 2
+    source: str = "manual"
+
+
+@router.get("/kp-points", summary="九科知识点列表（学科/年级/关键字分页）")
+def list_kp_points(subject: str = "", grade: int = 0, keyword: str = "",
+                   page: int = 1, page_size: int = 20,
+                   db: Session = Depends(get_db), admin: Admin = Depends(_require_admin)):
+    q = db.query(KnowledgePoint)
+    if subject:
+        q = q.filter(KnowledgePoint.subject == subject)
+    if grade > 0:
+        q = q.filter(KnowledgePoint.grade == grade)
+    kw = keyword.strip()
+    if kw:
+        like = f"%{kw}%"
+        q = q.filter(KnowledgePoint.title.like(like) | KnowledgePoint.unit.like(like))
+    total = q.count()
+    rows = q.order_by(KnowledgePoint.subject, KnowledgePoint.grade,
+                      KnowledgePoint.unit, KnowledgePoint.id.desc()).offset(
+        max(0, (page - 1) * page_size)).limit(min(page_size, 100)).all()
+    return {"total": total, "items": [{
+        "id": k.id, "subject": k.subject, "grade": k.grade, "unit": k.unit or "",
+        "title": k.title, "summary": k.summary or "", "content": k.content or "",
+        "examples": k.examples or "", "difficulty": k.difficulty,
+        "source": k.source or "",
+        "created_at": str(k.created_at)[:16] if k.created_at else "",
+    } for k in rows]}
+
+
+@router.post("/kp-points", summary="新增知识点")
+def create_kp_point(req: KnowledgePointReq, db: Session = Depends(get_db),
+                    admin: Admin = Depends(_require_admin)):
+    subject = (req.subject or "").strip()
+    title = (req.title or "").strip()
+    if not subject:
+        raise HTTPException(400, "学科不能为空")
+    if not title:
+        raise HTTPException(400, "知识点标题不能为空")
+    if not (1 <= req.grade <= 9):
+        raise HTTPException(400, "年级需在 1-9 之间")
+    unit = (req.unit or "").strip()
+    dup = db.query(KnowledgePoint).filter(
+        KnowledgePoint.subject == subject,
+        KnowledgePoint.grade == req.grade,
+        KnowledgePoint.unit == unit,
+        KnowledgePoint.title == title).first()
+    if dup:
+        raise HTTPException(400, f"知识点「{title}」已存在（{subject} G{req.grade} {unit}）")
+    k = KnowledgePoint(subject=subject[:20], grade=req.grade, unit=unit[:100],
+                       title=title[:200], summary=(req.summary or "").strip()[:500],
+                       content=req.content or "", examples=req.examples or "",
+                       difficulty=req.difficulty, source=(req.source or "manual")[:30])
+    db.add(k)
+    db.commit()
+    _audit(db, admin, "kp_create", f"kp:{k.id}", f"新增知识点 {subject} G{req.grade} {title}")
+    return {"id": k.id, "ok": True}
+
+
+@router.put("/kp-points/{kid}", summary="编辑知识点")
+def update_kp_point(kid: int, req: KnowledgePointReq, db: Session = Depends(get_db),
+                    admin: Admin = Depends(_require_admin)):
+    k = db.query(KnowledgePoint).get(kid)
+    if not k:
+        raise HTTPException(404, "知识点不存在")
+    subject = (req.subject or "").strip()
+    title = (req.title or "").strip()
+    if not subject:
+        raise HTTPException(400, "学科不能为空")
+    if not title:
+        raise HTTPException(400, "知识点标题不能为空")
+    k.subject = subject[:20]
+    k.grade = req.grade
+    k.unit = (req.unit or "").strip()[:100]
+    k.title = title[:200]
+    k.summary = (req.summary or "").strip()[:500]
+    k.content = req.content or ""
+    k.examples = req.examples or ""
+    k.difficulty = req.difficulty
+    if req.source:
+        k.source = req.source[:30]
+    db.commit()
+    _audit(db, admin, "kp_update", f"kp:{kid}", f"编辑知识点 id={kid} ({k.title})")
+    return {"ok": True}
+
+
+@router.delete("/kp-points/{kid}", summary="删除知识点")
+def delete_kp_point(kid: int, db: Session = Depends(get_db),
+                    admin: Admin = Depends(_require_admin)):
+    k = db.query(KnowledgePoint).get(kid)
+    if not k:
+        raise HTTPException(404, "知识点不存在")
+    db.delete(k)
+    db.commit()
+    _audit(db, admin, "kp_delete", f"kp:{kid}", f"删除知识点 id={kid} ({k.title})")
+    return {"ok": True}
 
 
 # ═══════════════ 采集试卷管理（papers / paper_questions） ═══════════════

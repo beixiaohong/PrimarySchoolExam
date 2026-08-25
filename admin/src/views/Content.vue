@@ -196,6 +196,59 @@
         </el-dialog>
       </el-tab-pane>
 
+      <!-- ═══════ 学科知识点 ═══════ -->
+      <el-tab-pane label="📖 知识点" name="kp">
+        <div class="toolbar">
+          <el-select v-model="kpFilter.subject" style="width: 130px" clearable placeholder="学科" @change="kpPage = 1; loadKp()">
+            <el-option v-for="s in SUBJECTS" :key="s" :label="s" :value="s" />
+          </el-select>
+          <el-select v-model="kpFilter.grade" style="width: 120px" clearable placeholder="年级" @change="kpPage = 1; loadKp()">
+            <el-option v-for="g in 9" :key="g" :label="g + ' 年级'" :value="g" />
+          </el-select>
+          <el-input v-model="kpKw" placeholder="搜索知识点/单元" style="width: 220px" clearable @keyup.enter="loadKp" @clear="loadKp" />
+          <el-button type="primary" @click="loadKp">搜索</el-button>
+          <el-button type="success" @click="openKp()">新增知识点</el-button>
+        </div>
+        <el-table :data="kps" border stripe style="margin-top: 12px">
+          <el-table-column prop="id" label="ID" width="56" />
+          <el-table-column prop="subject" label="学科" width="80" />
+          <el-table-column prop="grade" label="年级" width="56" />
+          <el-table-column prop="unit" label="单元" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="title" label="知识点" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="summary" label="要点" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="difficulty" label="难度" width="56" />
+          <el-table-column prop="source" label="来源" width="70" />
+          <el-table-column label="操作" width="130" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" @click="openKp(row)">编辑</el-button>
+              <el-button size="small" type="danger" @click="removeKp(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-pagination style="margin-top: 12px" background layout="prev, pager, next, total" :total="kpTotal"
+                       :page-size="kpPageSize" :current-page="kpPage" @current-change="p => { kpPage = p; loadKp() }" />
+        <el-dialog v-model="kpOpen" :title="curKp.id ? '编辑知识点' : '新增知识点'" width="640px">
+          <el-form label-width="80px">
+            <el-form-item label="学科">
+              <el-select v-model="kpForm.subject" style="width: 150px">
+                <el-option v-for="s in SUBJECTS" :key="s" :label="s" :value="s" />
+              </el-select>
+              <span style="margin-left:14px">年级 <el-input-number v-model="kpForm.grade" :min="1" :max="9" size="small" /></span>
+              <span style="margin-left:14px">难度 <el-input-number v-model="kpForm.difficulty" :min="1" :max="5" size="small" /></span>
+            </el-form-item>
+            <el-form-item label="单元"><el-input v-model="kpForm.unit" placeholder="如：七上·第1章 有理数" /></el-form-item>
+            <el-form-item label="知识点"><el-input v-model="kpForm.title" placeholder="如：有理数的加减法" /></el-form-item>
+            <el-form-item label="要点"><el-input v-model="kpForm.summary" placeholder="一句话结论/考点" /></el-form-item>
+            <el-form-item label="详细讲解"><el-input v-model="kpForm.content" type="textarea" :rows="5" placeholder="规则/推导/易错点" /></el-form-item>
+            <el-form-item label="示例"><el-input v-model="kpForm.examples" type="textarea" :rows="3" placeholder="每行一个示例" /></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="kpOpen = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="saveKp">保存</el-button>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
+
       <!-- ═══════ 采集试卷 ═══════ -->
       <el-tab-pane label="📄 采集试卷" name="papers">
         <div class="toolbar">
@@ -464,6 +517,50 @@ async function removeGrammar(row) {
   catch (e) { ElMessage.error(e.message) }
 }
 
+// ── 学科知识点 ──
+const SUBJECTS = ['数学', '语文', '英语', '物理', '化学', '生物', '道德与法治', '历史', '地理']
+const kps = ref([])
+const kpTotal = ref(0)
+const kpPage = ref(1)
+const kpPageSize = ref(20)
+const kpFilter = ref({ subject: '', grade: 0 })
+const kpKw = ref('')
+const kpOpen = ref(false)
+const curKp = ref({})
+const kpForm = ref({ subject: '数学', grade: 7, unit: '', title: '', summary: '', content: '', examples: '', difficulty: 2 })
+
+async function loadKp() {
+  const params = { page: kpPage.value, page_size: kpPageSize.value }
+  if (kpFilter.value.subject) params.subject = kpFilter.value.subject
+  if (kpFilter.value.grade) params.grade = kpFilter.value.grade
+  if (kpKw.value) params.keyword = kpKw.value
+  const d = await api.get('/api/admin/kp-points', { params })
+  kps.value = (d && d.items) || []
+  kpTotal.value = (d && d.total) || 0
+}
+function openKp(row) {
+  curKp.value = row || {}
+  kpForm.value = row
+    ? { subject: row.subject, grade: row.grade, unit: row.unit, title: row.title, summary: row.summary, content: row.content, examples: row.examples, difficulty: row.difficulty }
+    : { subject: kpFilter.value.subject || '数学', grade: kpFilter.value.grade || 7, unit: '', title: '', summary: '', content: '', examples: '', difficulty: 2 }
+  kpOpen.value = true
+}
+async function saveKp() {
+  saving.value = true
+  try {
+    if (curKp.value.id) await api.put(`/api/admin/kp-points/${curKp.value.id}`, kpForm.value)
+    else await api.post('/api/admin/kp-points', kpForm.value)
+    ElMessage.success('已保存')
+    kpOpen.value = false
+    loadKp()
+  } catch (e) { ElMessage.error(e.message) } finally { saving.value = false }
+}
+async function removeKp(row) {
+  try { await ElMessageBox.confirm(`删除知识点「${row.title}」？`, '提示', { type: 'warning' }) } catch { return }
+  try { await api.delete(`/api/admin/kp-points/${row.id}`); ElMessage.success('已删除'); loadKp() }
+  catch (e) { ElMessage.error(e.message) }
+}
+
 // ── 采集试卷 ──
 const papers = ref([])
 const paperTotal = ref(0)
@@ -531,6 +628,7 @@ function onTabChange(name) {
   if (name === 'books') { loadBooks(); loadTextbookOptions() }
   if (name === 'classicals') loadClassicals()
   if (name === 'grammar') loadGrammar()
+  if (name === 'kp') loadKp()
   if (name === 'papers') loadPapers()
   if (name === 'courses') loadCourses()
 }
