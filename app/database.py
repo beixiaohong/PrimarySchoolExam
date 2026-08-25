@@ -111,6 +111,8 @@ def _ensure_columns():
     # paper_questions 冗余年级/学科列（便于按年级+学科抽题，不依赖 JOIN）
     _ensure_column("paper_questions", "grade", "VARCHAR(20) DEFAULT ''")
     _ensure_column("paper_questions", "subject", "VARCHAR(20) DEFAULT ''")
+    # 解析/详解列（与 correct_answer 分离，便于前端展示）
+    _ensure_column("paper_questions", "explanation", "TEXT")
     # 回填已有 paper_questions 的 grade/subject（来自所属试卷）
     _backfill_pq_grade_subject()
     # 卡券限期窗口字段（required_within_days 有默认值，cycle_start_date 可空）

@@ -46,7 +46,8 @@ QBV_DIR = ROOT / "qb_versions"
 PAPER_COLS = ("subject", "grade", "title", "source_url", "download_url",
               "html_content", "answers", "total_questions", "year", "semester")
 Q_COLS = ("seq", "section", "section_idx", "qnum", "qtype", "grade", "subject",
-          "question_text", "question_html", "options", "correct_answer", "image_base64")
+          "question_text", "question_html", "options", "correct_answer", "image_base64",
+          "explanation")
 
 # 生成文件中的 upgrade 函数体（__PAPERS__ 占位符会被替换为数据字面量）
 UPGRADE_BODY = '''def upgrade(db):
@@ -81,16 +82,17 @@ UPGRADE_BODY = '''def upgrade(db):
                     "UPDATE paper_questions SET section=:section, section_idx=:section_idx, "
                     "qnum=:qnum, qtype=:qtype, grade=:grade, subject=:subject, "
                     "question_text=:question_text, question_html=:question_html, "
-                    "options=:options, correct_answer=:correct_answer, image_base64=:image_base64 "
+                    "options=:options, correct_answer=:correct_answer, image_base64=:image_base64, "
+                    "explanation=:explanation "
                     "WHERE id=:id"), {**q, "id": ex[0]})
             else:
                 db.execute(text(
                     "INSERT INTO paper_questions (paper_id, seq, section, section_idx, qnum, "
                     "qtype, grade, subject, question_text, question_html, options, "
-                    "correct_answer, image_base64) "
+                    "correct_answer, image_base64, explanation) "
                     "VALUES (:paper_id, :seq, :section, :section_idx, :qnum, :qtype, "
                     ":grade, :subject, :question_text, :question_html, :options, "
-                    ":correct_answer, :image_base64)"), {**q, "paper_id": pid})
+                    ":correct_answer, :image_base64, :explanation)"), {**q, "paper_id": pid})
     db.flush()
 '''
 

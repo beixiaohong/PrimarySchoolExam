@@ -85,6 +85,7 @@ class PaperQuestion(Base):
     question_html = Column(_longtext(), default="", comment="题目 HTML 富文本（含 base64 图片）")
     options = Column(Text, default="", comment="选项 JSON 数组（选择题有值）")
     correct_answer = Column(Text, default="", comment="参考答案")
+    explanation = Column(Text, default="", comment="解析/详解（与答案分离，便于展示）")
     image_base64 = Column(_longtext(), default="", comment="题目配图 base64（便于直接渲染）")
 
     created_at = Column(DateTime, default=datetime.now, comment="入库时间")
