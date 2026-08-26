@@ -78,35 +78,67 @@ if [ ! -f "$APP_DIR/.env" ]; then
     warn "未找到 $APP_DIR/.env，请先创建（参考 .env.example）"
 fi
 
-# ---------- 3.6 构建前端 ----------
-info "构建前端（npm ci + vite build）..."
+# ---------- 3.6 构建前端（仅源码变化时重建；小内存服务器防 OOM/CPU 拖垮）----------
+# 前端构建（vite build，admin 含 element-plus/echarts）在小内存服务器上容易把
+# CPU/内存打满导致全站无响应。策略：
+#   1) mtime 判断：web/admin 源码（src/package.json/vite 配置）比 dist 新才重建，
+#      只改后端/纯数据部署时直接复用现有 dist，秒级完成；
+#   2) 构建时 nice 降优先级 + 限制 Node 堆内存，避免拖垮 MySQL/Nginx；
+#   3) 无 swap 时自动补 2G swapfile 兜底防 OOM。
+frontend_needs_build() {
+    local dir=$1
+    [ -f "$dir/dist/index.html" ] || return 0  # 尚无产物 → 需要构建
+    # 任一源码文件比 dist 新 → 需要构建（find 无匹配时 grep 返回 1 = 不需要）
+    find "$dir/src" "$dir/package.json" "$dir/vite.config.js" \
+         -newer "$dir/dist/index.html" 2>/dev/null | grep -q .
+    return $?
+}
+
+# swap 兜底（仅首次创建一次；失败不影响部署）
+if [ ! -f /swapfile ] && command -v fallocate &>/dev/null; then
+    info "创建 2G swapfile 防编译 OOM..."
+    fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile \
+        || warn "swapfile 创建失败（忽略，继续部署）"
+    grep -q '^/swapfile' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 if command -v npm &>/dev/null && [ -f "$APP_DIR/web/package.json" ]; then
-    (cd "$APP_DIR/web" && npm ci --no-audit --no-fund && npm run build) \
-        && info "前端构建完成" \
-        || error "前端构建失败：请检查 Node 版本(需 18+)"
-    chown -R "$APP_USER:$APP_USER" "$APP_DIR/web/dist" 2>/dev/null || true
+    if frontend_needs_build "$APP_DIR/web"; then
+        info "web 前端源码有变化，开始构建..."
+        (cd "$APP_DIR/web" && export NODE_OPTIONS=--max-old-space-size=1024 && \
+         nice -n 10 npm ci --prefer-offline --no-audit --no-fund && nice -n 10 npm run build) \
+            && info "web 前端构建完成" \
+            || error "web 前端构建失败：请检查 Node 版本(需 18+)"
+        chown -R "$APP_USER:$APP_USER" "$APP_DIR/web/dist" 2>/dev/null || true
+    else
+        info "web 前端无源码变化，跳过构建（复用现有 dist）"
+    fi
 else
     error "未安装 Node.js/npm 或缺少 web/package.json"
 fi
 
-# ---------- 3.7 构建管理后台 ----------
-info "构建管理后台前端（npm ci + vite build）..."
+# ---------- 3.7 构建管理后台（仅源码变化时重建；内存受限 + 低优先级）----------
 if ! command -v npm &>/dev/null; then
     error "未检测到 Node.js/npm"
 fi
 if [ ! -f "$APP_DIR/admin/package.json" ]; then
     error "缺少 $APP_DIR/admin/package.json"
 fi
-# 管理后台使用了 element-plus / echarts，编译期内存占用较高；
-# 先改造成按需引入（见 admin/vite.config.js、admin/src/main.js），
-# 再加内存上限兜底，避免小内存服务器编译时 OOM / CPU 跑满。
-(cd "$APP_DIR/admin" && export NODE_OPTIONS=--max-old-space-size=1536 && npm ci --no-audit --no-fund && npm run build) \
-    && info "管理后台构建完成" \
-    || error "管理后台构建失败"
-if [ ! -f "$APP_DIR/admin/dist/index.html" ]; then
-    error "管理后台构建产物缺失"
+# 管理后台 element-plus/echarts 编译内存占用高：限制堆内存 + nice 降优先级，
+# 小内存服务器用上方 swap 兜底，避免 OOM / CPU 跑满拖垮全站。
+if frontend_needs_build "$APP_DIR/admin"; then
+    info "admin 前端源码有变化，开始构建..."
+    (cd "$APP_DIR/admin" && export NODE_OPTIONS=--max-old-space-size=1024 && \
+     nice -n 10 npm ci --prefer-offline --no-audit --no-fund && nice -n 10 npm run build) \
+        && info "管理后台构建完成" \
+        || error "管理后台构建失败"
+    if [ ! -f "$APP_DIR/admin/dist/index.html" ]; then
+        error "管理后台构建产物缺失"
+    fi
+    chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
+else
+    info "admin 前端无源码变化，跳过构建（复用现有 dist）"
 fi
-chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
 
 # ---------- 4. 配置 systemd 服务 ----------
 info "配置 systemd 服务..."
