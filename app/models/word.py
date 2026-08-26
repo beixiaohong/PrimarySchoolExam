@@ -19,6 +19,8 @@ class WordBook(Base):
     publisher = Column(String(50), default="人教版PEP", comment="出版社/教材版本")
     word_count = Column(Integer, default=0, comment="单词数量（自动维护）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    textbook_id = Column(Integer, nullable=True,
+                         comment="教材版本 id（textbook_versions.id，047 迁移加列）")
 
     # 双向一对多：删除词库时级联删除其下全部单词
     words = relationship("Word", back_populates="book", cascade="all, delete-orphan")
