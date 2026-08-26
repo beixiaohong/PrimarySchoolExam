@@ -26,6 +26,7 @@ from datetime import datetime, date, time as dtime
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".scheduler_state.json")
+LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".scheduler.lock")
 
 # ---- 任务定义（新增定时/采集/汇总类任务在此追加）---------------------------
 JOBS = [
@@ -34,11 +35,22 @@ JOBS = [
         "kind": "daily",              # once | daily | weekly
         "at": "01:00",                # HH:MM，当天到达该时刻后触发
         "valid_from": "2026-08-25",   # 可选，YYYY-MM-DD
-        "valid_until": "2026-09-10",  # 可选，YYYY-MM-DD；到期自动停止（“限制次数”的日期兜底）
+        "valid_until": "2026-09-10",  # 可选，YYYY-MM-DD；到期自动停止（"限制次数"的日期兜底）
         "max_runs": 30,               # 可选，None=不限；到达即停止
         "weekday": None,              # weekly 时 0=周一..6=周日
         "command": ["tools/seed_junior_grade7.py"],  # 相对 REPO_ROOT，用 sys.executable 运行
-        "timeout": 7200,              # 单任务超时（秒）
+        "timeout": 10800,             # 单任务超时（秒）：大纲拆细后 ~80 次 AI 调用，放宽到 3h
+    },
+    {
+        "name": "backfill_paper_answers",
+        "kind": "daily",
+        "at": "01:00",
+        "valid_from": "2026-08-27",
+        "valid_until": "2026-09-15",   # 每晚限量补，多晚补完（幂等：只补缺答案的）
+        "max_runs": 15,
+        "weekday": None,
+        "command": ["tools/backfill_paper_answers.py"],
+        "timeout": 10800,              # 每晚最多约 3000 题（智谱 ~2s/题）
     },
 ]
 
@@ -114,24 +126,64 @@ def _run_job(job, now):
         return False, str(e)
 
 
+def _acquire_lock() -> bool:
+    """单实例锁：防止 cron 每 15 分钟触发时，上一个长任务还没跑完就再起一个进程。
+
+    锁文件存 PID；若 PID 对应的进程仍存活 → 已有实例在跑，本次跳过；
+    PID 无效/进程已退出（陈旧锁）→ 清理后重新占用。
+    """
+    if os.path.exists(LOCK_FILE):
+        try:
+            with open(LOCK_FILE, "r", encoding="utf-8") as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 0)  # 进程存活则不抛异常
+            print(f"[scheduler] 已有实例运行中（pid={pid}），本次跳过", flush=True)
+            return False
+        except (ValueError, OSError):
+            try:
+                os.remove(LOCK_FILE)  # 陈旧锁：进程已退出
+            except OSError:
+                pass
+    try:
+        with open(LOCK_FILE, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+        return True
+    except OSError as e:
+        print(f"[scheduler] 无法创建锁文件: {e}", flush=True)
+        return False
+
+
+def _release_lock():
+    try:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
+    except OSError:
+        pass
+
+
 def run_due_jobs():
     now = datetime.now()
-    state = _load_state()
-    for job in JOBS:
-        name = job["name"]
-        st = state.get(name, {})
-        due, reason = _job_due(job, now, st)
-        if not due:
-            print(f"[{now.isoformat()}] 跳过 {name}: {reason}", flush=True)
-            continue
-        ok, out = _run_job(job, now)
-        st["last_run"] = now.isoformat()
-        st["run_count"] = st.get("run_count", 0) + 1
-        st["last_status"] = "ok" if ok else "fail"
-        st["last_output"] = out[-500:]
-        state[name] = st
-        _save_state(state)
-    print(f"[{now.isoformat()}] 调度检查完成", flush=True)
+    if not _acquire_lock():
+        return
+    try:
+        state = _load_state()
+        for job in JOBS:
+            name = job["name"]
+            st = state.get(name, {})
+            due, reason = _job_due(job, now, st)
+            if not due:
+                print(f"[{now.isoformat()}] 跳过 {name}: {reason}", flush=True)
+                continue
+            ok, out = _run_job(job, now)
+            st["last_run"] = now.isoformat()
+            st["run_count"] = st.get("run_count", 0) + 1
+            st["last_status"] = "ok" if ok else "fail"
+            st["last_output"] = out[-500:]
+            state[name] = st
+            _save_state(state)
+        print(f"[{now.isoformat()}] 调度检查完成", flush=True)
+    finally:
+        _release_lock()
 
 
 if __name__ == "__main__":
