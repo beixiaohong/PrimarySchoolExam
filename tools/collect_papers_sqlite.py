@@ -33,7 +33,7 @@ from datetime import datetime, date
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import create_engine, select, func  # noqa: E402
+from sqlalchemy import create_engine, select, func, text, Integer as SAInteger  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.database import Base  # noqa: E402
@@ -269,6 +269,34 @@ def fill_paper_answers(session_factory, paper_id, state):
 
 
 # ========== 历史遗留/积压答案补全（跨所有 daily 文件） ==========
+def ensure_paperquestion_columns(path):
+    """旧 daily 文件若在模型演进后缺列（如 explanation），用 ALTER 补齐以兼容 ORM 读取。
+
+    跨天 daily 文件各自独立建表；模型新增列后，旧文件不会自动拥有该列，
+    直接以当前 ORM 模型查询会报 'no such column'。此处按需补齐缺失列（TEXT/INTEGER），
+    保证 backlog 补全（阶段三）不会因 schema 漂移而崩溃。
+    """
+    try:
+        eng = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
+        with eng.connect() as conn:
+            existing = {r[1] for r in conn.execute(
+                text("PRAGMA table_info(paper_questions)")).fetchall()}
+        missing = []
+        for col in PaperQuestion.__table__.columns:
+            if col.name not in existing:
+                ctype = "INTEGER" if isinstance(col.type, SAInteger) else "TEXT"
+                missing.append((col.name, ctype))
+        if missing:
+            with eng.connect() as conn:
+                for name, ctype in missing:
+                    conn.execute(text(
+                        f"ALTER TABLE paper_questions ADD COLUMN {name} {ctype} DEFAULT ''"))
+                conn.commit()
+            print(f"  🔧 旧文件 {Path(path).name} 补齐列：{', '.join(n for n, _ in missing)}")
+    except Exception as e:
+        print(f"  ⚠️ 补齐列失败 {Path(path).name}: {e}")
+
+
 def backfill_files(file_paths, backlog_cap=0):
     """扫描给定 daily 文件（建议按日期从旧到新），补齐空答案。
 
@@ -294,6 +322,8 @@ def backfill_files(file_paths, backlog_cap=0):
         except Exception as e:
             print(f"  ⚠️ 无法打开 {f.name}，跳过：{e}")
             continue
+        # 先按当前模型补齐缺失列，避免旧 daily 文件因 schema 漂移报 'no such column'
+        ensure_paperquestion_columns(f)
         with SF() as s:
             ne = s.query(PaperQuestion).filter(
                 (PaperQuestion.correct_answer == None) | (PaperQuestion.correct_answer == "")).count()
