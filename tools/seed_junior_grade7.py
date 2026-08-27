@@ -528,8 +528,7 @@ def seed_chinese(dry: bool):
                 continue
             db.add(ClassicalText(
                 title=title, author=author, dynasty=dynasty, text_type=ttype,
-                content=content, translation=notes, grade=GRADE, semester="上",
-                difficulty=2))
+                content=content, grade=GRADE, semester="上"))
             added += 1
         db.commit()
         print(f"  +古诗文 {added}")

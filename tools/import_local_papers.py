@@ -245,7 +245,13 @@ def fill_missing_answers_online(limit=0):
                 if consecutive_fail >= 10:
                     print("  [AI] 连续 10 题失败，判定不可用，放弃本次补全")
                     return done
-                time.sleep(2)
+                # 抗限流：429/超时下逐级加大冷却，避免快速撞满 10 次保护而退出
+                if consecutive_fail >= 6:
+                    time.sleep(90)
+                elif consecutive_fail >= 3:
+                    time.sleep(30)
+                else:
+                    time.sleep(5)
                 continue
             consecutive_fail = 0
             updates.append(("[AI生成] " + ans, qid))
