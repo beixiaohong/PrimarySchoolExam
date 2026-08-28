@@ -541,9 +541,18 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--subjects", nargs="*", default=None,
                     help="限定学科，如 数学 物理")
+    ap.add_argument("--grammar-only", action="store_true",
+                    help="只生成 G7 英语语法点（含配套练习），用于补数")
     args = ap.parse_args()
     dry = args.dry_run
     subjects = args.subjects or SUBJECTS
+
+    if args.grammar_only:
+        print("浙江初中初一(7年级) 英语语法点补数 | dry={dry}")
+        ensure_tables()
+        seed_english_grammar(dry)
+        print("完成（仅英语语法点）。")
+        return
 
     print(f"浙江初中初一(7年级)九科内容采集 | dry={dry}")
     ensure_tables()
@@ -552,6 +561,7 @@ def main():
     for s in subjects:
         if s == "英语":
             seed_english(dry)
+            seed_english_grammar(dry)  # 英语语法点（G7），幂等按 code 去重
         elif s == "语文":
             seed_chinese(dry)
             seed_subject("语文", dry)  # 语文知识点（现代文/写作等）
