@@ -52,19 +52,6 @@ JOBS = [
         "command": ["tools/backfill_paper_answers.py"],
         "timeout": 10800,              # 每晚最多约 3000 题（智谱 ~2s/题）
     },
-    {
-        # 一次性补数：G7 英语语法点（之前漏生成，仅 1/8）。
-        # 走线上服务器 scheduler，12:00-14:00 窗口内触发（at=13:00）。
-        "name": "seed_english_grammar_g7",
-        "kind": "once",
-        "at": "13:00",                 # 落在 12:00-14:00 窗口内
-        "valid_from": "2026-08-28",
-        "valid_until": "2026-08-28",
-        "max_runs": 1,
-        "weekday": None,
-        "command": ["tools/seed_junior_grade7.py", "--grammar-only"],
-        "timeout": 1800,               # 8 个语法点 + 每点 2 题，约 20 次 AI 调用
-    },
 ]
 
 
