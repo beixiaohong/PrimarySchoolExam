@@ -223,9 +223,11 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
         key = v.get("idx")
         if key not in key_to_item:
             continue
+        it = key_to_item[key]
         child_correct = bool(v.get("child_correct") or v.get("correct") or False)
         my_ans = str(v.get("my_answer") or "").strip()
         reason = str(v.get("reason") or "")[:60]
+        ref_wrong = False
 
         # 确定性数值复核（修「AI 算对却字面比对判错」）：AI 独立算出的 my_answer
         # 与孩子作答都是数值且相等（极小容差）→ 以代码判定为准覆盖 AI 的布尔结论。
@@ -235,15 +237,22 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
             ua_val = _result_value(it.get("user_answer", ""))
             ma_val = _result_value(my_ans)
             if ua_val is not None and _numeric_close(ua_val, ma_val):
+                # 孩子对（AI 独立计算值与孩子作答一致），用确定性数值覆盖 AI 的布尔误判
                 child_correct = True
                 reason = "AI 独立计算值与孩子作答一致"
+                # 同时校验存储参考答案：若与 AI 独立计算值数值不等 → 参考答案存错，
+                # 须标记 stored_wrong 让系统沉淀。否则该题意被改判正确后不会进 Step2，
+                # 会漏标「参考答案有误」（回归点：10/3 修复前 Step2 永远不被触发）。
+                ref_val = _result_value(it.get("answer", ""))
+                ref_wrong = bool(ref_val is not None and not _numeric_close(ref_val, ma_val))
 
         if child_correct:
             approved[key] = {
                 "correct": True,
-                "stored_wrong": False,
+                "stored_wrong": ref_wrong,
                 "correct_answer": my_ans,
-                "reason": reason or "AI 独立判题：作答正确",
+                "reason": (f"参考答案有误({it.get('answer','')})，孩子作答正确"
+                           if ref_wrong else (reason or "AI 独立判题：作答正确")),
             }
         else:
             wrong_in_step1.append(key)
