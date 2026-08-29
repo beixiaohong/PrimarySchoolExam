@@ -102,8 +102,13 @@ def sync(prod_engine: Engine, local_engine: Engine, *, rebuild_schema: bool,
 
     if rebuild_schema:
         print("[sync] 重建本地 schema（drop_all + create_all）...")
-        Base.metadata.drop_all(bind=local_engine)
-        Base.metadata.create_all(bind=local_engine)
+        # 必须在关闭外键检查的同一连接里 drop/create，否则 InnoDB 因外键依赖
+        # 会漏删部分表（如 paper_questions），残留数据导致后续插入撞 Duplicate key。
+        with local_engine.connect() as lc:
+            lc.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+            Base.metadata.drop_all(bind=lc)
+            Base.metadata.create_all(bind=lc)
+            lc.execute(text("SET FOREIGN_KEY_CHECKS=1"))
 
     total_rows = 0
     with prod_engine.connect() as pconn, local_engine.connect() as lconn:

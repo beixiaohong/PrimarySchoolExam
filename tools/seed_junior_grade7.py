@@ -222,6 +222,12 @@ def _dedup_kp(db, subject, grade, unit, title) -> bool:
         subject=subject, grade=grade, unit=unit, title=title).first() is not None
 
 
+def _unit_already_seeded(db, subject, grade, unit) -> bool:
+    """该单元是否已有点评则点。用于避免每日定时器对已完整采集的单元重复空耗 AI。"""
+    return db.query(KnowledgePoint).filter_by(
+        subject=subject, grade=grade, unit=unit).first() is not None
+
+
 def seed_subject(subject: str, dry: bool):
     units = UNIT_OUTLINE.get(subject, [])
     if not units:
@@ -230,17 +236,24 @@ def seed_subject(subject: str, dry: bool):
     print(f"== {subject} G{GRADE}（{len(units)} 单元）==")
     total_k = total_q = 0
     for unit in units:
-        obj = gen_unit(subject, unit)
-        kps = obj.get("knowledge", []) or []
-        qs = obj.get("questions", []) or []
         if dry:
+            obj = gen_unit(subject, unit)
+            kps = obj.get("knowledge", []) or []
+            qs = obj.get("questions", []) or []
             print(f"  [dry] {unit}: 知识点 {len(kps)} / 题 {len(qs)}")
             total_k += len(kps)
             total_q += len(qs)
             time.sleep(0.3)
             continue
+        # 幂等：该单元已有知识点则跳过 AI 生成，避免每日定时器空耗 DeepSeek 额度
         db = SessionLocal()
         try:
+            if _unit_already_seeded(db, subject, GRADE, unit):
+                print(f"  [skip-AI] {subject}/{unit} 已有知识点，跳过生成")
+                continue
+            obj = gen_unit(subject, unit)
+            kps = obj.get("knowledge", []) or []
+            qs = obj.get("questions", []) or []
             added_k = added_q = 0
             for k in kps:
                 title = (k.get("title") or "").strip()
