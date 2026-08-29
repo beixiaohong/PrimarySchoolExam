@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from .database import init_db
 from .config import ENABLE_DOCS
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm, ledger, im, admin_panel, announcement, textbook, courses
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm, ledger, im, admin_panel, announcement, textbook, courses, knowledge
 from .routers.auth import require_self
 from .routers.quiet_hours import check_quiet_hours
 from .services.init_data import ensure_initial_data
@@ -70,6 +70,7 @@ app.include_router(vocab.router, prefix="/api/vocab", tags=["背单词"], depend
 app.include_router(classical.router, prefix="/api/classical", tags=["古诗文背诵"], dependencies=[*user_auth_deps, Depends(check_quiet_hours)])
 app.include_router(grammar.router, prefix="/api/grammar", tags=["英语语法"], dependencies=[*user_auth_deps, Depends(check_quiet_hours)])
 app.include_router(study.router, prefix="/api/study", tags=["学习错题与今日任务"], dependencies=[*user_auth_deps, Depends(check_quiet_hours)])
+app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识点互动学习"], dependencies=user_auth_deps)
 app.include_router(search.router, prefix="/api/search", tags=["搜题智能解答"], dependencies=user_auth_deps)
 app.include_router(sync.router, prefix="/api/sync", tags=["同步学"], dependencies=user_auth_deps)
 app.include_router(reading.router, prefix="/api/reading", tags=["阅读理解专项"], dependencies=user_auth_deps)

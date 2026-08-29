@@ -12,6 +12,7 @@ export const NAV_GROUPS = [
       { tab: 'wrong', label: '错题本', ico: '📝', badge: 'wrong' },
       { tab: 'search', label: '搜题', ico: '🔍' },
       { tab: 'sync', label: '同步学', ico: '📚' },
+      { tab: 'kp', label: '知识点卡', ico: '🧩' },
       { tab: 'reading', label: '阅读专项', ico: '📜' },
       { tab: 'courses', label: '网课', ico: '🎬' },
       { tab: 'focus', label: '专注钟', ico: '⏰' },

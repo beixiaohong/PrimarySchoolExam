@@ -6,6 +6,7 @@ import router from './router'
 import './styles/style.css'
 import SearchView from './views/SearchView.vue'
 import SyncView from './views/SyncView.vue'
+import KnowledgeView from './views/KnowledgeView.vue'
 import ReadingView from './views/ReadingView.vue'
 import AntiCheatInput from './components/AntiCheatInput.vue'
 
@@ -20,6 +21,7 @@ app.use(router)
 // 显式注册为全局组件，便于 App.vue 用动态组件按 tab 切换视图
 app.component('SearchView', SearchView)
 app.component('SyncView', SyncView)
+app.component('KnowledgeView', KnowledgeView)
 app.component('ReadingView', ReadingView)
 app.component('AntiCheatInput', AntiCheatInput)
 // 挂载到 index.html 中的 #app 节点

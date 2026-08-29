@@ -1833,6 +1833,7 @@
 
       <SearchView v-if="tab==='search'"></SearchView>
       <SyncView v-if="tab==='sync'"></SyncView>
+      <KnowledgeView v-if="tab==='kp'"></KnowledgeView>
       <ReadingView v-if="tab==='reading'"></ReadingView>
 
       <!-- ═══════════ 网课（系统配置 + 家长配置） ═══════════ -->
