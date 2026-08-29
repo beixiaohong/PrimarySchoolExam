@@ -23,6 +23,8 @@ import logging
 import os
 import re
 
+from ..services.answer_check import numeric_approx_equal
+
 logger = logging.getLogger(__name__)
 
 # ── Step 1: 独立解题（输入不含参考答案，迫使 AI 真正独立思考） ──
@@ -392,6 +394,14 @@ def _local_semantic_correct(user_answer: str, correct_answer: str) -> bool | Non
         return s
     u, a = _norm(ua), _norm(ca)
     if not a or len(a) < 2:
+        return None
+    # 数值近似容差：孩子作答与存储答案在末位半个单位内 → 本地判对（不依赖 AI）。
+    # 解决「孩子填 3.33333、参考答案存 3.33 被精确比对判错，且 AI 不可用时复查假复查」的问题。
+    if numeric_approx_equal(user_answer, correct_answer):
+        return True
+    # 纯数值/角度类答案：已由数值容差精确或容差判过，不再做子串匹配，
+    # 避免 "6" 误收 "6.4"、"3.33" 误收 "3.33333" 之类（数值近似已单独处理）。
+    if _re.fullmatch(r"[\d.°]+", a):
         return None
     # 仅当孩子作答包含参考核心内容（参考为孩子子串）才判对；
     # 反向（孩子过短且为参考子串）不判，避免只答片段被误判为正确。

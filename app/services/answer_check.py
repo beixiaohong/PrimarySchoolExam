@@ -175,6 +175,49 @@ def _same_num(a, b) -> bool:
     return a is not None and b is not None and abs(a - b) < 1e-9
 
 
+def _decimal_places(s: str) -> int:
+    """取最后一个数字 token 的小数位数（"3.33"->2，"6"->0，"161.6"->1）。"""
+    nums = re.findall(r"-?\d+\.?\d*", s)
+    if not nums:
+        return 0
+    ref = nums[-1]
+    return len(ref.split(".")[1]) if "." in ref else 0
+
+
+def numeric_approx_equal(user_ans: str, correct_ans: str) -> bool:
+    """数值近似相等（填空题小数答案容差判分）。
+
+    背景：数学题答案常被四舍五入到 2 位小数（如 10/3 存成 "3.33"），孩子写出
+    更精确的值（"3.33333"）却被精确比对判错。本函数允许孩子作答落在参考答案
+    「末位半个单位」以内即判对（3.33 容忍 ±0.005 → 3.33333 通过）；整数参考
+    答案（无小数位）保持严格精确，不会误收 6.4 之类。
+
+    仅当两侧均可求数值且参考答案含小数位时生效；否则返回 False，交由其余规则。
+    """
+    u = normalize_answer(user_ans)
+    a = normalize_answer(correct_ans)
+    if not a or not re.search(r"\d", a):
+        return False
+    u_res = _result_value(u)
+    a_res = _result_value(a)
+    if u_res is None or a_res is None:
+        return False
+    if _same_num(u_res, a_res):
+        return True
+    dp = _decimal_places(a)
+    if dp >= 1:
+        tol = 0.5 * (10 ** (-dp))            # half a unit in the last place
+        # 末尾加 1e-9 吸收浮点运算误差（如 161.65-161.6 实际得 0.050000000000011）
+        if abs(u_res - a_res) <= tol + 1e-9:
+            return True
+        try:
+            if round(u_res, dp) == round(a_res, dp):
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
 # 中文数字容差：孩子可能写「五」「二十五」而非阿拉伯数字（小学低年级常见）。
 # 仅当整个答案由中文数字字符构成时转换，避免误伤含数字义的普通文字答案。
 _CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
@@ -221,6 +264,9 @@ def fill_answer_correct(user_ans, correct_ans) -> bool:
     u_res = _result_value(u)
     a_res = _result_value(a)
     if _same_num(u_res, a_res):
+        return True
+    # a0) 小数近似容差：参考答案为小数时，允许末位半个单位内的近似（如 3.33 vs 3.33333）
+    if numeric_approx_equal(user_ans, correct_ans):
         return True
     # a2) 中文数字容差：用户写「五」「二十五」等（纯中文数字），参考答案为数值 → 等价
     u_cn = _cn_num_value(u)
