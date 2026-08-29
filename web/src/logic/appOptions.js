@@ -2135,6 +2135,10 @@ const appOptions = {
         else if (d.correct_answer) msg += '（正确答案：' + d.correct_answer + '）';
         this.showToast(msg);
         this.loadAnalysis(); this.loadDailyTasks(); this.loadWrongItems();
+      } else if (d.ai_unavailable) {
+        this.showToast('⚠️ AI 服务不可用，无法复查（' + (d.reason || '') + '）');
+      } else if (d.ai_limited) {
+        this.showToast('⏳ ' + (d.reason || 'AI 复查过于频繁，请稍后再试'));
       } else {
         this.showToast('🤖 AI 复核：' + (d.reason || '认为作答不正确，维持原判'));
       }
@@ -2162,6 +2166,10 @@ const appOptions = {
         if (d.fixed) msg += '，参考答案已修正为 ' + d.correct_answer;
         this.showToast(msg);
         this.decideAppeal(a, true); // 同步通过申诉（家长免手动确认）
+      } else if (d.ai_unavailable) {
+        this.showToast('⚠️ AI 服务不可用，无法复查（' + (d.reason || '') + '）');
+      } else if (d.ai_limited) {
+        this.showToast('⏳ ' + (d.reason || 'AI 复查过于频繁，请稍后再试'));
       } else {
         this.showToast('🤖 AI 复核：' + (d.reason || '认为作答不正确'));
       }
@@ -2190,6 +2198,10 @@ const appOptions = {
         else if (d.correct_answer) msg += '（正确答案：' + d.correct_answer + '）';
         this.showToast(msg);
         this.loadWrongItems(); this.loadDailyTasks(); this.loadAnalysis();
+      } else if (d.ai_unavailable) {
+        this.showToast('⚠️ AI 服务不可用，无法复查（' + (d.reason || '') + '）');
+      } else if (d.ai_limited) {
+        this.showToast('⏳ ' + (d.reason || 'AI 复查过于频繁，请稍后再试'));
       } else {
         this.showToast('🤖 AI 复核：' + (d.reason || '认为作答不正确，维持原判'));
       }

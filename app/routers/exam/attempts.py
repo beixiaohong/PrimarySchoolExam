@@ -88,7 +88,8 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
 
         # 判分：选择题精确匹配，其他去空格后包含匹配
         correct_ans = q.answer.strip()
-        is_correct = _check_answer(user_ans, correct_ans, q.options_json)
+        is_correct = _check_answer(user_ans, correct_ans, q.options_json,
+                                   getattr(q, "exact_answer", "") or "")
 
         if is_correct:
             correct_count += 1

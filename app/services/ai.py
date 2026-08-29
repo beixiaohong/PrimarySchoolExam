@@ -288,6 +288,13 @@ def rate_limit(key: str, max_calls: int, window_sec: int) -> bool:
     return True
 
 
+def rate_limit_peek(key: str, max_calls: int, window_sec: int) -> bool:
+    """限频只读探测：不计入调用次数，仅判断是否已达上限（供可用性预检用）"""
+    now = time.time()
+    bucket = _rate_buckets.get(key, [])
+    return len([t for t in bucket if now - t < window_sec]) < max_calls
+
+
 def _http_call(cfg: dict, system: str, user: str, max_tokens: int,
                history: Optional[list] = None, _attempt: int = 0) -> dict:
     """单次 OpenAI 兼容 POST；429 时短暂等待重试一次；开头全局节流防超时/限流

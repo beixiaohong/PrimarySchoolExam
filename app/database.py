@@ -123,6 +123,9 @@ def _ensure_columns():
     # 普通用户登录会话 token（028_user_token）：VARCHAR 可空、DATETIME 可空
     _ensure_column("users", "token", "VARCHAR(64)")
     _ensure_column("users", "token_expires_at", "DATETIME")
+    # 精确答案列（数学判分根因修复：除法/百分数等非整数结果存高精度值，
+    # 判分按精确值比对，不再被 2 位小数截断误判，如 10/3 → 3.33333）
+    _ensure_column("questions", "exact_answer", "VARCHAR(200) DEFAULT ''")
 
 
 def _backfill_pq_grade_subject():

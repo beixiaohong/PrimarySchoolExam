@@ -212,7 +212,22 @@ def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
     if not ua:
         raise HTTPException(400, "缺少孩子作答内容")
 
-    from ..services.judge import judge_wrong_items
+    # 先查 AI 可用性：不可用/限频要明确提示，绝不能静默维持原判还显示「AI 认为你错」
+    from ..services.judge import judge_wrong_items, ai_judge_status
+    status = ai_judge_status(req.user_id)
+    if status == "unavailable":
+        return {
+            "correct": False, "ai_unavailable": True,
+            "reason": "AI 服务不可用或未配置，无法复查（题面答案如有疑问请以老师/家长为准）",
+            "fixed": False, "credited": False,
+        }
+    if status == "limited":
+        return {
+            "correct": False, "ai_limited": True,
+            "reason": "AI 复查过于频繁，请稍后再试（限 30 次/小时）",
+            "fixed": False, "credited": False,
+        }
+
     items = [{
         "key": "x",
         "question_id": req.question_id,

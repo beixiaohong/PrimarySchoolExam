@@ -18,9 +18,14 @@ def ratio_basic(difficulty: int, grade: int):
     if difficulty <= 2:
         a, b = random.randint(2, 15), random.randint(2, 15)
         g = math.gcd(a, b)
+        # 根因修复：比值可能非整数（如 10/3），存高精度真值供判分精确比对，
+        # 不再被 2 位小数截断成 3.33 误判孩子写的 3.33333。
+        ratio_val = a / b
+        ratio_disp = f"{ratio_val:.2f}" if a % b != 0 else str(a // b)
+        ratio_exact = f"{ratio_val:.12f}".rstrip("0").rstrip(".")
         variants = [
             (f"化简比：{a}:{b}", f"{a//g}:{b//g}"),
-            (f"{a}:{b}的比值是多少？", f"{a/b:.2f}" if a % b != 0 else str(a//b)),
+            (f"{a}:{b}的比值是多少？", ratio_disp, "", ratio_exact),
             (f"把{a}:{b}写成分数形式。", f"{a//g}/{b//g}"),
         ]
         return random.choice(variants)

@@ -181,6 +181,7 @@ def generate_docx(req: MathGenRequest, db: Session = Depends(get_db)):
             type_name=p.type_name,
             question=p.question,
             answer=p.answer,
+            exact_answer=getattr(p, "exact_answer", "") or "",
             difficulty=p.difficulty,
         ))
     db.commit()

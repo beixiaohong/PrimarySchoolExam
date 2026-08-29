@@ -23,7 +23,27 @@ import logging
 import os
 import re
 
-from ..services.answer_check import numeric_approx_equal
+from ..services.answer_check import _result_value
+
+
+def _numeric_close(a: float, b: float) -> bool:
+    """数值近似（judge 复核用）：精确相等，或对齐到 1..6 位小数任一相同即算一致。
+
+    跳过整数位（k=0）以避免 6.4 误收 6；对齐到孩子/AI 任一方精度即可接受，
+    覆盖「AI 算出 3.33、孩子写 3.33333 都表示 10/3」这类。
+    """
+    if a is None or b is None:
+        return False
+    if abs(a - b) <= 1e-9:
+        return True
+    for k in range(1, 7):
+        try:
+            if round(a, k) == round(b, k):
+                return True
+        except (TypeError, ValueError):
+            return False
+    return False
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +81,20 @@ JUDGE_STEP2_SYSTEM = (
 )
 
 JUDGE_RATE_LIMIT = 30  # 次/小时/用户
+
+
+def ai_judge_status(user_id: str) -> str:
+    """AI 复核可用性预检：'ok' / 'unavailable'（未配置任何 Key）/ 'limited'（限频）。
+
+    供复查接口在真正调用前判断。不可用时应明确提示用户「AI 不可用/限频，无法复查」，
+    而不是静默维持原判、还显示「AI 认为你错」（那是假复查）。只读探测，不计次。
+    """
+    from ..services import ai as ai_svc
+    if not ai_svc.ai_any_enabled():
+        return "unavailable"
+    if not ai_svc.rate_limit_peek(f"judge:{user_id}", JUDGE_RATE_LIMIT, 3600):
+        return "limited"
+    return "ok"
 
 
 def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict:
@@ -192,6 +226,17 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
         child_correct = bool(v.get("child_correct") or v.get("correct") or False)
         my_ans = str(v.get("my_answer") or "").strip()
         reason = str(v.get("reason") or "")[:60]
+
+        # 确定性数值复核（修「AI 算对却字面比对判错」）：AI 独立算出的 my_answer
+        # 与孩子作答都是数值且相等（极小容差）→ 以代码判定为准覆盖 AI 的布尔结论。
+        # 例：10/3 孩子写 3.33333、AI 也算 ~3.333 但布尔误判 child_correct=false，
+        # 此处按数值一致改判正确。不走浮点容差猜参考答案精度，只用 AI 的精确计算值。
+        if not child_correct and my_ans and _result_value(my_ans) is not None:
+            ua_val = _result_value(it.get("user_answer", ""))
+            ma_val = _result_value(my_ans)
+            if ua_val is not None and _numeric_close(ua_val, ma_val):
+                child_correct = True
+                reason = "AI 独立计算值与孩子作答一致"
 
         if child_correct:
             approved[key] = {
@@ -395,12 +440,8 @@ def _local_semantic_correct(user_answer: str, correct_answer: str) -> bool | Non
     u, a = _norm(ua), _norm(ca)
     if not a or len(a) < 2:
         return None
-    # 数值近似容差：孩子作答与存储答案在末位半个单位内 → 本地判对（不依赖 AI）。
-    # 解决「孩子填 3.33333、参考答案存 3.33 被精确比对判错，且 AI 不可用时复查假复查」的问题。
-    if numeric_approx_equal(user_answer, correct_answer):
-        return True
-    # 纯数值/角度类答案：已由数值容差精确或容差判过，不再做子串匹配，
-    # 避免 "6" 误收 "6.4"、"3.33" 误收 "3.33333" 之类（数值近似已单独处理）。
+    # 纯数值/角度类答案：本地无法可靠判定（精度、近似、单位差异大），
+    # 一律交 AI 独立复核，不在本地做数值容差猜测——避免「AI 不可用时本地假判对/假判错」。
     if _re.fullmatch(r"[\d.°]+", a):
         return None
     # 仅当孩子作答包含参考核心内容（参考为孩子子串）才判对；

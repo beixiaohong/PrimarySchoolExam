@@ -154,11 +154,14 @@ def generate_math_problems(
             diff = random.randint(diff_range[0], diff_range[1])
             try:
                 result = gen_func(diff, grade)
-                if len(result) == 3:
+                if len(result) == 4:
+                    question, answer, image_path, exact_answer = result
+                elif len(result) == 3:
                     question, answer, image_path = result
+                    exact_answer = ""
                 else:
                     question, answer = result
-                    image_path = ""
+                    image_path, exact_answer = "", ""
                 problems.append(ProblemItem(
                     id=pid,
                     category=type_info.get("category", "\u7efc\u5408"),
@@ -167,6 +170,7 @@ def generate_math_problems(
                     difficulty=diff,
                     question=question,
                     answer=answer if include_answer else "",
+                    exact_answer=exact_answer if include_answer else "",
                     image_path=image_path,
                 ))
                 pid += 1

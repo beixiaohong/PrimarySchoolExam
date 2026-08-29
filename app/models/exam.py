@@ -87,7 +87,11 @@ class Question(Base):
     question = Column(Text, nullable=False,
                       comment="题目文本")
     answer = Column(Text, default="",
-                    comment="参考答案")
+                    comment="参考答案（展示用，可能四舍五入）")
+    exact_answer = Column(String(200), default="",
+                          comment="精确答案（根因修复：除法/百分数等非整数结果存高精度值，"
+                                  "如 10/3 存 '3.3333333333'；判分按此精确比对，避免 3.33 误判。"
+                                  "空串表示无精确值，回落 numeric_approx_equal 过渡网")
     options_json = Column(Text, default="",
                           comment="选项JSON数组（选择题有值，非选择题为空串）")
     image_path = Column(String(500), default="",

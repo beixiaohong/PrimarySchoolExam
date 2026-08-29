@@ -2,8 +2,12 @@
 import json
 
 
-def _check_answer(user_ans: str, correct_ans: str, options_json: str) -> bool:
-    """判断答案是否正确（填空题为容错判题：规范化 + 数学式求值，见 answer_check）"""
+def _check_answer(user_ans: str, correct_ans: str, options_json: str,
+                  exact_answer: str = "") -> bool:
+    """判断答案是否正确（填空题为容错判题：规范化 + 数学式求值，见 answer_check）
+
+    exact_answer: 题目精确答案（高精度真值），有则优先按精确值判分（根因修复路径）。
+    """
     if not user_ans:
         return False
     ua = user_ans.strip().lower()
@@ -24,7 +28,7 @@ def _check_answer(user_ans: str, correct_ans: str, options_json: str) -> bool:
 
     # 填空题：容错判题（算式过程/单位/全角符号/顺序差异均可识别）
     from app.services.answer_check import fill_answer_correct
-    return fill_answer_correct(ua, ca)
+    return fill_answer_correct(ua, ca, exact_answer)
 
 
 __all__ = ["_check_answer"]

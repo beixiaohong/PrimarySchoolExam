@@ -175,6 +175,31 @@ def _same_num(a, b) -> bool:
     return a is not None and b is not None and abs(a - b) < 1e-9
 
 
+def _both_numeric_equal(user_ans: str, exact_ans: str, correct_ans: str) -> bool:
+    """精确答案判分（根因修复路径）：用展示答案的精度 dp 作容差。
+
+    exact_ans 是生成时存的高精度真值（如 '3.3333333333'），correct_ans 是展示用答案
+    （如 '3.33'，其小数位数 dp=2 表示「本题答案保留 2 位小数」）。判分规则：
+    - 整数答案（dp=0）→ 严格精确，6.4 不会误收 6；
+    - 小数答案（dp>=1）→ 允许孩子在「末位半个单位」内近似（3.33333 与 3.33 差 3e-6
+      < 0.005 → 判对；3.3 差 0.03 > 0.005 → 判错）。
+    这比单纯看浮点差更可靠：容差由「答案本该保留几位」决定，而非瞎猜。
+    """
+    if not exact_ans:
+        return False
+    dp = _decimal_places(correct_ans)
+    if dp < 1:
+        return False  # 整数答案严格，交由精确匹配/其余规则
+    u_res = _result_value(normalize_answer(user_ans))
+    e_res = _result_value(normalize_answer(exact_ans))
+    if u_res is None or e_res is None:
+        return False
+    if _same_num(u_res, e_res):
+        return True
+    # 半个单位容差（加 1e-9 吸收浮点误差，如 161.65-161.6 实际得 0.0500000001）
+    return abs(u_res - e_res) <= 0.5 * (10 ** (-dp)) + 1e-9
+
+
 def _decimal_places(s: str) -> int:
     """取最后一个数字 token 的小数位数（"3.33"->2，"6"->0，"161.6"->1）。"""
     nums = re.findall(r"-?\d+\.?\d*", s)
@@ -249,8 +274,12 @@ def _cn_num_value(s: str):
     return total + section + digit
 
 
-def fill_answer_correct(user_ans, correct_ans) -> bool:
-    """填空题容错判题（与前端 _matchAnswer 一致）"""
+def fill_answer_correct(user_ans, correct_ans, exact_answer: str = "") -> bool:
+    """填空题容错判题（与前端 _matchAnswer 一致）
+
+    exact_answer: 生成时存的高精度真值（如 '3.3333333333'）。提供时优先按精确值比对，
+    这是根因修复路径——不再被 2 位小数截断误导；为空时回落 numeric_approx_equal 过渡网。
+    """
     u = normalize_answer(user_ans)
     a = normalize_answer(correct_ans)
     if not a:
@@ -260,13 +289,17 @@ def fill_answer_correct(user_ans, correct_ans) -> bool:
     if not re.search(r"\d", a):   # 正确答案无数字（单词/古诗文/句子）→ 严格
         return False
 
+    # a) 精确答案优先（根因修复）：10/3 存 '3.3333333333'，孩子写 3.33333 即判对
+    if exact_answer and _both_numeric_equal(user_ans, exact_answer, correct_ans):
+        return True
     # a) 最终结果求值比对：用户最后一段（陈述的结果）≈ 正确答案结果 → 对
     u_res = _result_value(u)
     a_res = _result_value(a)
     if _same_num(u_res, a_res):
         return True
-    # a0) 小数近似容差：参考答案为小数时，允许末位半个单位内的近似（如 3.33 vs 3.33333）
-    if numeric_approx_equal(user_ans, correct_ans):
+    # a0) 小数近似容差（过渡网）：参考答案为小数时，允许末位半个单位内的近似
+    #     （如旧题 3.33 vs 3.33333）。仅当无精确答案时作为兜底，新题走上面 a)。
+    if not exact_answer and numeric_approx_equal(user_ans, correct_ans):
         return True
     # a2) 中文数字容差：用户写「五」「二十五」等（纯中文数字），参考答案为数值 → 等价
     u_cn = _cn_num_value(u)

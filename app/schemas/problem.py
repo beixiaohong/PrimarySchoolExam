@@ -67,6 +67,7 @@ class ProblemItem(BaseModel):
     difficulty: int  # 难度档
     question: str  # 题干
     answer: str = ""  # 答案（include_answer=False 时为空）
+    exact_answer: str = ""  # 精确答案（根因修复：非整数结果存高精度值，如 10/3→'3.3333333333'）
     image_path: str = ""  # 配图路径（如有）
 
 
