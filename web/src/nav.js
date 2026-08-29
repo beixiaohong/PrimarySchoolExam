@@ -16,6 +16,7 @@ export const NAV_GROUPS = [
       { tab: 'reading', label: '阅读专项', ico: '📜' },
       { tab: 'courses', label: '网课', ico: '🎬' },
       { tab: 'focus', label: '专注钟', ico: '⏰' },
+      { tab: 'goals', label: '学习目标', ico: '🎯' },
     ],
   },
   {
@@ -40,8 +41,9 @@ export const NAV_GROUPS = [
     title: '我的',
     items: [
       { tab: 'stats', label: '学习统计', ico: '📊' },
-      { tab: 'settings', label: '设置', ico: '⚙️' },
-    ],
+  { tab: 'settings', label: '设置', ico: '⚙️' },
+  { tab: 'goals', label: '目标', ico: '🎯' },
+],
   },
 ]
 

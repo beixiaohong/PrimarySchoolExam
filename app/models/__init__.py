@@ -37,6 +37,7 @@ from .judge_review import JudgeReviewIssue
 from .textbook import TextbookVersion, UserTextbookPref
 from .online_course import OnlineCourse
 from .knowledge import KnowledgePoint
+from .learning_goal import LearningGoal, LearningCheckin, LearningWeeklyReview
 
 __all__ = [
     "Word", "WordBook",
@@ -80,4 +81,5 @@ __all__ = [
     "TextbookVersion", "UserTextbookPref",
     "OnlineCourse",
     "KnowledgePoint",
+    "LearningGoal", "LearningCheckin", "LearningWeeklyReview",
 ]

@@ -1835,6 +1835,7 @@
       <SyncView v-if="tab==='sync'"></SyncView>
       <KnowledgeView v-if="tab==='kp'"></KnowledgeView>
       <ReadingView v-if="tab==='reading'"></ReadingView>
+      <LearningGoalsView v-if="tab==='goals'"></LearningGoalsView>
 
       <!-- ═══════════ 网课（系统配置 + 家长配置） ═══════════ -->
       <div v-if="tab==='courses'" class="fade-enter">
