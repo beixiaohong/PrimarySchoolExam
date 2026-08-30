@@ -41,9 +41,8 @@ export const NAV_GROUPS = [
     title: '我的',
     items: [
       { tab: 'stats', label: '学习统计', ico: '📊' },
-  { tab: 'settings', label: '设置', ico: '⚙️' },
-  { tab: 'goals', label: '目标', ico: '🎯' },
-],
+      { tab: 'settings', label: '设置', ico: '⚙️' },
+    ],
   },
 ]
 
