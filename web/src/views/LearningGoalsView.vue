@@ -106,6 +106,27 @@
       <!-- ============ 看板 ============ -->
       <section v-else-if="sub==='board'" class="lg-sec">
         <div class="lg-sec-head"><h2>看板</h2></div>
+        <!-- C2：老「学期目标」（三类固定目标）已并入管理台，这里兼容展示并可达成/移除 -->
+        <div v-if="legacyGoals.length" class="lg-legacy">
+          <div class="lg-legacy-head"><span class="lg-legacy-tag">旧版</span> 学期目标（已并入管理台）</div>
+          <div class="lg-legacy-list">
+            <div v-for="lg in legacyGoals" :key="'legacy-'+lg.id" class="lg-legacy-item" :class="'lg-legacy-'+lg.status">
+              <div class="lg-legacy-main">
+                <div class="lg-legacy-name">{{ lg.title }}</div>
+                <div class="lg-legacy-meta">{{ lg.kind_label }} · {{ lg.current }}/{{ lg.target }} · {{ lg.pct }}%
+                  <span v-if="lg.deadline"> · 剩 {{ lg.days_left>=0?lg.days_left:'已逾期' }} 天</span>
+                </div>
+              </div>
+              <div class="lg-legacy-actions">
+                <span v-if="lg.status==='done'" class="lg-legacy-badge ok">已达成</span>
+                <template v-else>
+                  <button class="btn btn-sm btn-primary" @click="doneLegacy(lg.id)">达成</button>
+                  <button class="btn btn-sm btn-ghost danger" @click="archiveLegacy(lg.id)">移除</button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
         <div v-if="goals.length===0" class="lg-box lg-empty"><p>暂无目标，先去「今日」新建一个吧。</p></div>
         <div v-else class="lg-board">
           <article v-for="g in goals" :key="g.id" class="lg-board-card" :style="cardStyle(g)">
@@ -357,7 +378,7 @@ export default {
       ],
       icons: SVG,
       colorKeys: Object.keys(THEMES),
-      goals: [], serverDate: '', hasExamples: false,
+      goals: [], legacyGoals: [], serverDate: '', hasExamples: false,
       loadError: '', online: true, lastSync: '',
       showForm: false, editing: null, form: this.blankForm(), formErr: '', savingForm: false,
       showCheckin: false, ckGoal: {}, ck: { amount: '', minutes: '', date: '' }, ckErr: '', savingCk: false,
@@ -407,6 +428,12 @@ export default {
         this.hasExamples = r.has_examples
         this.online = true
         this.lastSync = new Date().toLocaleString('zh-CN')
+        // C2：兼容展示老「学期目标」（/api/goals，score/wrong/recite 三类固定目标），
+        // 读取失败不阻断管理台主流程；archived 状态不展示
+        try {
+          const lg = await api('/api/goals?user_id=' + encodeURIComponent(this.user || ''))
+          this.legacyGoals = (lg.goals || []).filter(x => x.status !== 'archived')
+        } catch (e) { this.legacyGoals = [] }
         if (this.goals.length === 0 && !localStorage.getItem('lg_cleared')) {
           await this.seedExamples(true)
         }
@@ -484,6 +511,27 @@ export default {
         this.toastMsg('已删除记录'); await this.refresh()
         if (this.sub === 'board') this.loadMinutes()
       } catch (e) { this.toastMsg('删除失败：' + (e.message || ''), 'err') }
+    },
+    // C2：老「学期目标」达成 / 移除（复用 /api/goals 老接口，操作后立即刷新本区）
+    async _reloadLegacy() {
+      try {
+        const lg = await api('/api/goals?user_id=' + encodeURIComponent(this.user || ''))
+        this.legacyGoals = (lg.goals || []).filter(x => x.status !== 'archived')
+      } catch (e) { this.legacyGoals = [] }
+    },
+    async doneLegacy(id) {
+      try {
+        await api('/api/goals/' + id + '/done', { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+        this.toastMsg('✅ 学期目标已达成')
+        await this._reloadLegacy()
+      } catch (e) { this.toastMsg('操作失败：' + (e.message || ''), 'err') }
+    },
+    async archiveLegacy(id) {
+      try {
+        await api('/api/goals/' + id + '/archive', { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
+        this.toastMsg('已移除学期目标')
+        await this._reloadLegacy()
+      } catch (e) { this.toastMsg('操作失败：' + (e.message || ''), 'err') }
     },
 
     async loadMinutes() {
@@ -669,6 +717,18 @@ export default {
 .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 90; overflow: hidden; }
 .cf { position: absolute; top: -20px; width: 9px; height: 14px; border-radius: 2px; animation: fall 2.4s linear forwards; }
 @keyframes fall { to { transform: translateY(105vh) rotate(540deg); opacity: .9; } }
+/* C2：老学期目标兼容展示区 */
+.lg-legacy { margin-bottom: 16px; border: 1px dashed var(--border); border-radius: var(--radius); padding: 12px 14px; background: var(--bg); }
+.lg-legacy-head { font-size: 13px; color: var(--text-2); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.lg-legacy-tag { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: var(--text-3); color: #fff; }
+.lg-legacy-list { display: flex; flex-direction: column; gap: 8px; }
+.lg-legacy-item { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.lg-legacy-item.lg-legacy-done { border-color: var(--success); background: var(--success-light); }
+.lg-legacy-main { flex: 1; min-width: 0; }
+.lg-legacy-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.lg-legacy-meta { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.lg-legacy-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.lg-legacy-badge.ok { font-size: 12px; color: #fff; background: var(--success); border-radius: 6px; padding: 2px 8px; }
 /* 移动端：四 Tab 同屏横向 pills，列布局收敛，不再底部固定（消除与全局 TabBar 叠加） */
 @media (max-width: 640px) {
   .lg-nav { gap: 6px; }
