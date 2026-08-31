@@ -145,6 +145,12 @@
 
 ---
 
+- **B1（结构性重构·组件化）启动**：已建立「壳 `provide` + View `inject`」解耦模式。
+  - App.vue 壳加 `provide()` 暴露实例 `appCtx`；抽出的业务视图通过 `inject:['appCtx']` 访问壳的响应式状态与方法，自身零 data/methods，业务逻辑仍由 `appOptions.js` mixin 在壳统一持有（壳 `mounted` 加载、壳方法交互）。
+  - **B1-0 验证块**：背诵中心内联块(620-678)抽为 `web/src/views/ReciteView.vue`，`main.js` 全局注册；App.vue 仅留 `<recite-view v-if="tab==='recite'">`。模板所有壳引用加 `appCtx.` 前缀，局部 `v-for` 变量不动。
+  - **为何不纯搬模板**：`appOptions.js`(3603 行)集中 hold 全部 18 块状态与加载逻辑，纯搬模板会导致抽出的 View 拿不到响应式数据/调不到壳方法(`goTab`/`scrollToTasks` 等)。故先用「壳 provide 实例」解耦，后续按需把状态下沉到 Pinia(B1 后期，可选)。
+  - 后续按此模式批量抽 home/practice/wrong/.../courses 等内联块；每块抽完以服务器 `deploy` 重建 `web/dist` 为验证闸门(沙箱 vite 受限无本地 build)。
+
 ## 六、风险与约定
 
 - 所有改动遵循项目约定：每完成一个可独立验证模块即 commit；前端保持可构建（`cd web && npm run build` 通过为准，沙箱 vite 受限时在服务器验证）；后端改动上线前跑全套 pytest。

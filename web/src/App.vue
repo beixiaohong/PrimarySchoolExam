@@ -617,65 +617,7 @@
       </div>
 
       <!-- ═══════════ 背诵中心 ═══════════ -->
-      <div v-if="tab==='recite'" class="fade-enter">
-        <div class="sub-tabs">
-          <button class="pill" :class="{active: reciteSub==='words'}" @click="switchRecite('words')">📖 背单词</button>
-          <button class="pill" :class="{active: reciteSub==='classical'}" @click="switchRecite('classical')">📜 古诗文</button>
-        </div>
-
-        <!-- 背单词 -->
-        <div v-if="reciteSub==='words'">
-          <div class="grid-2">
-            <div class="card recite-card">
-              <div class="card-head"><b>📖 今日新词</b><span class="tag tag-blue">{{vocabToday.stats.new_remaining}} 个待学</span></div>
-              <p class="card-desc">每轮学 {{vocabToday.stats.new_remaining}} 个新单词，学完可再来一轮，不限次数</p>
-              <button class="btn btn-primary btn-lg recite-btn" :disabled="vocabToday.stats.new_remaining<=0" @click="startWordSession('new')">开始学习新词 →</button>
-            </div>
-            <div class="card recite-card">
-              <div class="card-head"><b>🔁 今日复习</b><span class="tag tag-orange">{{vocabToday.stats.due_today}} 个待复习</span></div>
-              <p class="card-desc">到期的单词现在复习，记忆效果最好</p>
-              <button class="btn btn-warning btn-lg recite-btn" :disabled="vocabToday.stats.due_today<=0" @click="startWordSession('review')">开始复习 →</button>
-            </div>
-          </div>
-          <div class="card" style="margin-top:16px">
-            <div class="card-head"><b>学习进度</b><span class="more">{{vocabToday.stats.learned}} / {{vocabToday.stats.total_words}} 已学</span></div>
-            <div class="progress" style="margin:14px 0 18px"><i :style="{width: vocabPct+'%'}"></i></div>
-            <div class="recite-stats">
-              <div><b>{{vocabToday.stats.learned}}</b><span>已学单词</span></div>
-              <div><b>{{vocabToday.stats.mastered}}</b><span>已掌握</span></div>
-              <div><b>{{vocabToday.stats.streak_days}}</b><span>连续天数</span></div>
-              <div><b>{{vocabToday.stats.new_today}}</b><span>今日新学</span></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 古诗文 -->
-        <div v-if="reciteSub==='classical'">
-          <div class="grid-2">
-            <div class="card recite-card">
-              <div class="card-head"><b>📜 今日新篇</b><span class="tag tag-blue">{{classicalToday.stats.new_remaining}} 篇待背</span></div>
-              <p class="card-desc">每轮背 {{classicalToday.stats.new_remaining}} 篇古诗文，背完可再来一轮，不限次数</p>
-              <button class="btn btn-primary btn-lg recite-btn" :disabled="classicalToday.stats.new_remaining<=0" @click="startTextSession('new')">开始背诵 →</button>
-            </div>
-            <div class="card recite-card">
-              <div class="card-head"><b>🔁 今日复习</b><span class="tag tag-orange">{{classicalToday.stats.due_today}} 篇待复习</span></div>
-              <p class="card-desc">按记忆曲线复习，背过的篇目要定期巩固</p>
-              <button class="btn btn-warning btn-lg recite-btn" :disabled="classicalToday.stats.due_today<=0" @click="startTextSession('review')">开始复习 →</button>
-            </div>
-          </div>
-          <div class="card" style="margin-top:16px">
-            <div class="card-head"><b>📚 篇目列表</b><span class="more">已背 {{classicalToday.stats.learned}} / {{classicalToday.stats.total}} 篇</span></div>
-            <div class="text-list" style="margin-top:6px">
-              <div v-for="t in classicalTexts" :key="t.id" class="text-item">
-                <div class="t-main"><b>《{{t.title}}》</b><span>{{t.author}} · {{t.dynasty}} · {{t.grade}}年级</span></div>
-                <span class="tag tag-gray">{{t.text_type==='prose'?'古文':'古诗'}}</span>
-                <button class="btn btn-ghost btn-sm" @click="openTextDetail(t)">查看</button>
-              </div>
-              <div v-if="!classicalTexts.length" class="empty"><div class="em">📜</div><h3>暂无篇目</h3><p>当前年级还没有古诗文数据，换个年级试试</p></div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <recite-view v-if="tab==='recite'"></recite-view>
 
       <!-- ═══════════ 错题本 ═══════════ -->
       <div v-if="tab==='wrong'" class="fade-enter">
@@ -2520,6 +2462,11 @@ export default {
     homeSub(s) {
       if (s === 'today' && this.tab === 'home') this.loadHomeGoals()
     },
+  },
+  // B1 组件化：把壳实例暴露给抽出的各业务视图，视图通过 inject('appCtx') 访问壳的
+  // 响应式状态(data/computed)与方法(methods)，无需把 3603 行的 appOptions mixin 搬到每个视图。
+  provide() {
+    return { appCtx: this }
   },
   mounted() {
     appOptions.mounted.call(this)
