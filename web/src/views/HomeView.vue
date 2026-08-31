@@ -32,7 +32,7 @@
         <template v-if="appCtx.homeSub==='today'">
         <!-- 今日提醒条（P5：聚合待办提醒，点击直达） -->
         <div class="today-remind" v-if="appCtx.taskRemain>0 || appCtx.wrongBadge>0">
-          <span class="tr-ico">⏰</span>
+          <span class="tr-ico"><app-icon name="focus" :size="18"></app-icon></span>
           <button v-if="appCtx.taskRemain>0" class="tr-item" @click="appCtx.scrollToTasks">📋 还差 <b>{{appCtx.taskRemain}}</b> 项任务全勤</button>
           <button v-if="appCtx.wrongBadge>0" class="tr-item tr-warn" @click="appCtx.goTab('wrong')">📕 <b>{{appCtx.wrongBadge}}</b> 道错题待消灭</button>
         </div>
@@ -134,7 +134,7 @@
         <div class="grid-3" v-if="appCtx.dashboard">
           <template v-for="t in appCtx.todayTasks" :key="t.key">
             <button class="card task-card" :class="{done: t.done}" @click="appCtx.startTask(t)">
-              <div class="task-ico" :class="t.icoCls">{{t.ico}}</div>
+              <div class="task-ico" :class="t.icoCls"><app-icon :name="t.ico" :size="22"></app-icon></div>
               <div class="task-info">
                 <b>{{t.title}}</b>
                 <div class="meta"><span>{{t.subject}}</span><span class="dot">·</span><span>{{t.detail}}</span></div>
@@ -156,7 +156,7 @@
         </div>
         <div class="card" style="margin-top:12px" v-if="appCtx.reviewQueue">
           <div v-for="it in appCtx.reviewQueue.items.slice(0,6)" :key="it.type+it.id" class="queue-item">
-            <div class="qi-ico" :class="it.type==='vocab' ? 't-blue' : 't-green'">{{it.type==='vocab' ? '🔤' : '📜'}}</div>
+            <div class="qi-ico" :class="it.type==='vocab' ? 't-blue' : 't-green'"><app-icon :name="it.type==='vocab' ? 'abc' : 'scroll'" :size="20"></app-icon></div>
             <div class="qi-body"><b>{{it.title}}</b><span>{{it.subtitle}} · {{it.type==='vocab' ? '单词' : '古诗文'}}复习</span></div>
             <span class="tag" :class="it.overdue_days>0 ? 'tag-red' : 'tag-orange'" style="flex-shrink:0">{{it.overdue_days>0 ? '已逾期'+it.overdue_days+'天' : '今天到期'}}</span>
           </div>
@@ -357,9 +357,9 @@
         <!-- 学习概览 -->
         <div class="section-title">📈 学习概览</div>
         <div class="grid-3">
-          <div class="card stat-card"><div class="ico">📚</div><b>{{appCtx.vocabTotal ? appCtx.vocabLearned+'/'+appCtx.vocabTotal : 0}}</b><span>已学单词</span></div>
-          <div class="card stat-card highlight"><div class="ico">🎯</div><b>{{appCtx.avgScore}}%</b><span>平均正确率</span></div>
-          <div class="card stat-card"><div class="ico">🏅</div><b>{{appCtx.masteredTotal}}</b><span>已掌握错题</span></div>
+          <div class="card stat-card"><div class="ico"><app-icon name="reading" :size="22"></app-icon></div><b>{{appCtx.vocabTotal ? appCtx.vocabLearned+'/'+appCtx.vocabTotal : 0}}</b><span>已学单词</span></div>
+          <div class="card stat-card highlight"><div class="ico"><app-icon name="goals" :size="22"></app-icon></div><b>{{appCtx.avgScore}}%</b><span>平均正确率</span></div>
+          <div class="card stat-card"><div class="ico"><app-icon name="badges" :size="22"></app-icon></div><b>{{appCtx.masteredTotal}}</b><span>已掌握错题</span></div>
         </div>
       </template>
 </div>

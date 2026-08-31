@@ -160,7 +160,12 @@
 - **B3（全站图标统一）批次1 已完成并推送**：`components/AppIcon.vue`（新增，内联 SVG 图标集）+ `main.js`（全局注册）+ `nav.js`（ico emoji→icon 名称）+ `App.vue`（侧边栏 & 移动端 TabBar 渲染 `<app-icon>`）+ `styles/style.css`（`.ico/.ti-ico/.nav-caret` 承载 SVG）。
   - 新增 `AppIcon.vue`：22 个导航图标 + `caret` 折叠指示 + `placeholder` 兜底，统一 `stroke=currentColor` 继承主题色（active 态随 `--primary` 变蓝），消除「导航 emoji 与页内 SVG 风格割裂」(P0-5/P1-3 最显眼处)。
   - 导航条目 `ico`(emoji) 统一改为 `icon`(SVG 名称)；折叠指示由 `▾/▸` 文本改为 `caret` SVG 旋转表达开合。
-  - **B3 批次2（待做）**：各 View 内部零散 emoji（HomeView 任务卡/称号/徽章 `ico` 字段、appOptions.js 任务卡 `ico` 等）替换——按方案文档第 165 行建议单独成项，避免一次大改互相污染；本次未触碰，业务逻辑零改动。
+  - **B3 批次2（已完成并推送）**：首页/今日任务卡图标统一。
+    - `AppIcon.vue` 新增任务域图标 `abc`(🔤)/`repeat`(🔁)/`memo`(📝)/`scroll`(📜)/`abacus`(🧮)，复用 `wrong`(📕)/`reading`(📚)/`goals`(🎯)/`badges`(🏅)/`focus`(⏰)。
+    - `appOptions.js` 的 `todayTasks` 7 处 `ico`(emoji)→icon 名称（前端可控数据源）。
+    - `HomeView.vue`：今日任务卡 `task-ico`、`qi-ico`(vocab/古诗文复习)、`tr-ico`(专注钟)、stat 卡(已学单词/平均正确率/已掌握错题) 改渲染 `<app-icon>`；`.stat-card .ico`/`.tr-ico` 加 inline-flex 承载 SVG。
+    - **刻意跳过**：`mandatoryTasks.ico` 来自后端 API(`d.tasks`)，需后端改；纯内容 emoji(💌🌟🎫📮⚡👑🔒👋🎉📋📕提醒文案) 非图标语言，保留。
+  - B3 收尾说明：导航+TabBar(批次1)+首页任务卡/stat(批次2) 已统一为 SVG；后端驱动任务卡与内容 emoji 为已知残留，非阻塞。
 
 ## 六、风险与约定
 

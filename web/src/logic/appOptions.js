@@ -1201,17 +1201,17 @@ const appOptions = {
           this.vocabLearned = (eng.vocab || {}).learned || 0;
           const tasks = [];
           if (eng.vocab) {
-            if (eng.vocab.new_words > 0) tasks.push({ key: 'word_new', ico: '🔤', icoCls: 't-blue', title: '背单词 · 新学', subject: '英语', detail: eng.vocab.new_words + ' 个新单词', done: false });
-            if (eng.vocab.review_words > 0) tasks.push({ key: 'word_review', ico: '🔁', icoCls: 't-green', title: '背单词 · 复习', subject: '英语', detail: eng.vocab.review_words + ' 个到期复习', done: false });
+            if (eng.vocab.new_words > 0) tasks.push({ key: 'word_new', ico: 'abc', icoCls: 't-blue', title: '背单词 · 新学', subject: '英语', detail: eng.vocab.new_words + ' 个新单词', done: false });
+            if (eng.vocab.review_words > 0) tasks.push({ key: 'word_review', ico: 'repeat', icoCls: 't-green', title: '背单词 · 复习', subject: '英语', detail: eng.vocab.review_words + ' 个到期复习', done: false });
           }
-          if (eng.grammar && eng.grammar.total_exercises > 0) tasks.push({ key: 'grammar', ico: '📝', icoCls: 't-violet', title: '语法专项练习', subject: '英语', detail: eng.grammar.total_exercises + ' 道题库可选', done: false });
+          if (eng.grammar && eng.grammar.total_exercises > 0) tasks.push({ key: 'grammar', ico: 'memo', icoCls: 't-violet', title: '语法专项练习', subject: '英语', detail: eng.grammar.total_exercises + ' 道题库可选', done: false });
           if (chi.classical) {
-            if (chi.classical.new_texts > 0) tasks.push({ key: 'text_new', ico: '📜', icoCls: 't-orange', title: '古诗文 · 新背', subject: '语文', detail: chi.classical.new_texts + ' 篇待背诵', done: false });
-            if (chi.classical.review_texts > 0) tasks.push({ key: 'text_review', ico: '🔁', icoCls: 't-green', title: '古诗文 · 复习', subject: '语文', detail: chi.classical.review_texts + ' 篇到期复习', done: false });
+            if (chi.classical.new_texts > 0) tasks.push({ key: 'text_new', ico: 'scroll', icoCls: 't-orange', title: '古诗文 · 新背', subject: '语文', detail: chi.classical.new_texts + ' 篇待背诵', done: false });
+            if (chi.classical.review_texts > 0) tasks.push({ key: 'text_review', ico: 'repeat', icoCls: 't-green', title: '古诗文 · 复习', subject: '语文', detail: chi.classical.review_texts + ' 篇到期复习', done: false });
           }
           const pendingWrong = this._pendingWrong(d);
-          if (pendingWrong > 0) tasks.push({ key: 'wrong', ico: '📕', icoCls: 't-red', title: '错题攻坚', subject: '全部', detail: pendingWrong + ' 道待攻克', tag: '建议优先', tagCls: 'tag-red', done: false });
-          if (!tasks.length) tasks.push({ key: 'practice', ico: '🧮', icoCls: 't-violet', title: '刷一套新试卷', subject: this.subject, detail: '生成试卷立即开始做题', done: false });
+          if (pendingWrong > 0) tasks.push({ key: 'wrong', ico: 'wrong', icoCls: 't-red', title: '错题攻坚', subject: '全部', detail: pendingWrong + ' 道待攻克', tag: '建议优先', tagCls: 'tag-red', done: false });
+          if (!tasks.length) tasks.push({ key: 'practice', ico: 'abacus', icoCls: 't-violet', title: '刷一套新试卷', subject: this.subject, detail: '生成试卷立即开始做题', done: false });
           this.todayTasks = tasks;
         }).catch(e => this.showToast(e.message));
     },

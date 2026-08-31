@@ -31,6 +31,12 @@ const ICONS = {
   dict: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13" width="4" height="7" rx="1.6"/><rect x="17" y="13" width="4" height="7" rx="1.6"/>',
   stats: '<path d="M4 20V10M9 20V4M14 20v-7M19 20v-11"/>',
   settings: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
+  // —— 任务域图标（B3 批次2：首页今日任务卡 / 复习队列）——
+  abc: '<path d="M4 18 7 6l3 12"/><path d="M5 14h4"/><path d="M14 18v-6a2.3 2.3 0 0 1 4.6 0v6"/><path d="M14 14.5h4"/>',
+  repeat: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  memo: '<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8.5 9h7M8.5 13h7M8.5 17h4"/>',
+  scroll: '<path d="M6 4h11a2 2 0 0 1 2 2v12a2 2 0 0 0 2 2H9a2 2 0 0 1-2-2V4Z"/><path d="M6 4a2 2 0 0 0-2 2v1h2"/><path d="M10 8h6M10 12h6"/>',
+  abacus: '<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8 7h8"/><circle cx="9" cy="11" r="1"/><circle cx="12" cy="11" r="1"/><circle cx="15" cy="11" r="1"/><circle cx="9" cy="15" r="1"/><circle cx="12" cy="15" r="1"/><circle cx="15" cy="15" r="1"/>',
   // —— 折叠指示 ——
   caret: '<path d="M6 9l6 6 6-6"/>',
   // —— 占位（name 未命中时）——
