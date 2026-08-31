@@ -500,7 +500,7 @@ export default {
         const r = await api('/api/learning-goals/' + this.ckGoal.id + '/checkin', { method: 'POST', body: JSON.stringify(body) })
         this.closeCheckin(); await this.refresh()
         if (this.sub === 'board') this.loadMinutes()
-        if (r.just_achieved) this.fireConfetti()
+        if (r.just_achieved) { this.fireConfetti(); await this._syncBadges() }
         else this.toastMsg('打卡成功 +' + this.fmt(amt) + ' ' + this.ckGoal.unit)
       } catch (e) { this.ckErr = e.message || '打卡失败' }
       finally { this.savingCk = false }
@@ -519,11 +519,21 @@ export default {
         this.legacyGoals = (lg.goals || []).filter(x => x.status !== 'archived')
       } catch (e) { this.legacyGoals = [] }
     },
+    // C3：目标达成后刷新徽章墙，若本次解锁目标徽章(goal_*)则提示；失败不阻断主流程
+    async _syncBadges() {
+      try {
+        const b = await api('/api/badges?user_id=' + encodeURIComponent(this.user || ''))
+        const unlocked = (b.newly || []).map(code => (b.items || []).find(i => i.code === code)).filter(Boolean)
+        const goalBadges = unlocked.filter(i => i.code && i.code.startsWith('goal_'))
+        if (goalBadges.length) this.toastMsg('🏅 解锁新徽章：' + goalBadges.map(i => i.name).join('、'), '')
+      } catch (e) { /* 徽章刷新失败不阻断 */ }
+    },
     async doneLegacy(id) {
       try {
         await api('/api/goals/' + id + '/done', { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
         this.toastMsg('✅ 学期目标已达成')
         await this._reloadLegacy()
+        await this._syncBadges()
       } catch (e) { this.toastMsg('操作失败：' + (e.message || ''), 'err') }
     },
     async archiveLegacy(id) {

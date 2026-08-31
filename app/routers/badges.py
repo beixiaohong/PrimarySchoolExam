@@ -30,6 +30,10 @@ BADGES = [
     {"code": "mood_7", "emoji": "💖", "name": "心情晴雨表", "desc": "打卡心情 7 天"},
     {"code": "coin_100", "emoji": "🪙", "name": "小金库", "desc": "累计赚到 100 金币"},
     {"code": "tree_300", "emoji": "🌳", "name": "参天大树", "desc": "成长值达到 300"},
+    # C3：目标达成徽章（学习目标管理台 + 老学期目标，达成数联动 badges 体系）
+    {"code": "goal_1", "emoji": "🎯", "name": "目标达成者", "desc": "达成第 1 个学习目标"},
+    {"code": "goal_3", "emoji": "🏅", "name": "目标达人", "desc": "累计达成 3 个学习目标"},
+    {"code": "goal_5", "emoji": "👑", "name": "习惯大师", "desc": "累计达成 5 个学习目标"},
 ]
 
 
@@ -78,6 +82,7 @@ def _metrics(db: Session, user_id: str) -> dict:
         "coins_in": db.query(func.coalesce(func.sum(CoinLedger.amount), 0)).filter(
             CoinLedger.user_id == user_id, CoinLedger.amount > 0).scalar() or 0,
         "tree_score": _tree_score(db, user_id),
+        "goals_done": _goals_done(db, user_id),
     }
 
 
@@ -106,6 +111,16 @@ def _tree_score(db: Session, user_id: str) -> int:
             + cls_m * 2 + tasks_done + chal * 2 + teach_p * 3 + mood)
 
 
+def _goals_done(db: Session, user_id: str) -> int:
+    """累计达成目标数：学习目标管理台(learning_goals.status=done) + 老学期目标(goal_items.status=done)。"""
+    from ..models.learning_goal import LearningGoal
+    from ..models.reward import GoalItem
+
+    n1 = db.query(func.count()).filter(LearningGoal.user_id == user_id, LearningGoal.status == "done").scalar() or 0
+    n2 = db.query(func.count()).filter(GoalItem.user_id == user_id, GoalItem.status == "done").scalar() or 0
+    return n1 + n2
+
+
 def _check(code: str, m: dict) -> bool:
     return {
         "first_exam": m["attempts"] >= 1,
@@ -123,6 +138,10 @@ def _check(code: str, m: dict) -> bool:
         "mood_7": m["moods"] >= 7,
         "coin_100": m["coins_in"] >= 100,
         "tree_300": m["tree_score"] >= 300,
+        # C3：目标达成徽章
+        "goal_1": m["goals_done"] >= 1,
+        "goal_3": m["goals_done"] >= 3,
+        "goal_5": m["goals_done"] >= 5,
     }.get(code, False)
 
 
