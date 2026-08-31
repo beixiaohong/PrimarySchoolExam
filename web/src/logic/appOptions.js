@@ -103,8 +103,6 @@ const appOptions = {
       titleInfo: null, titleBadges: [],
       chalOverlay: { show: false, stage: 'pick', kind: 'math', questions: [], i: 0, timeLeft: 60, input: '', correct: 0, total: 0, newBest: false },
       chalCombo: 0, chalBest: { math: { best: 0 }, word: { best: 0 } },
-      goalOverlay: { show: false, kind: 'score', target: 90, deadline: '', subject: '数学' },
-      goals: [],
       teachOverlay: { show: false, cards: [], idx: 0, step: 1, card: null, answerText: '', result: '', hint: '' },
       teachDue: [], recheckOverlay: { show: false, card: null, answerText: '' },
       // 通用答题状态机
@@ -1175,7 +1173,6 @@ const appOptions = {
         this.loadMood();
         this.loadRewards();
         this.loadTitles();
-        this.loadGoals();
         this.loadChalBest();
         this.loadTeachDue();
         this.loadParentMsgs();
@@ -2716,37 +2713,6 @@ const appOptions = {
         this.chalOverlay.stage = 'done';
         this.loadTitles();
       }).catch(() => { this.chalOverlay.stage = 'done'; });
-    },
-    /* ─────────── 学期目标（Sprint 4） ─────────── */
-    loadGoals() {
-      this.api(`/api/goals?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.goals = (d && d.goals) || []; })
-        .catch(() => { this.goals = []; });
-    },
-    submitGoal() {
-      const target = Number(this.goalOverlay.target) || 0;
-      if (target <= 0) return this.showToast('写下目标值（正整数）');
-      if (this.goalOverlay.kind === 'score' && !(this.goalOverlay.subject || '').trim()) return this.showToast('写下学科，如：数学');
-      this.api('/api/goals', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: this.user, kind: this.goalOverlay.kind, target,
-          deadline: this.goalOverlay.deadline || '', subject: this.goalOverlay.subject,
-        }),
-      }).then(() => {
-        this.loadGoals();
-        this.showToast('目标已立下，冲鸭 🎯');
-      }).catch(e => this.showToast(e.message));
-    },
-    doneGoal(g) {
-      this.api(`/api/goals/${g.id}/done`, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
-        .then(() => { this.loadGoals(); this.showToast('目标达成，太棒了 🏆'); })
-        .catch(e => this.showToast(e.message));
-    },
-    archiveGoal(g) {
-      this.api(`/api/goals/${g.id}/archive`, { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
-        .then(() => { this.loadGoals(); })
-        .catch(e => this.showToast(e.message));
     },
     /* ─────────── 小老师模式（Sprint 4 + PRD 17：1-3 道错题） ─────────── */
     loadTeachCards() {

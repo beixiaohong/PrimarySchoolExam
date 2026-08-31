@@ -134,6 +134,17 @@
 
 ---
 
+## 七、实施记录
+
+- **一期（目标模块换皮）**：已提交 `85e4e7d`。`nav.js` 收敛 goals 重复入口（删「我的」组冗余项）；`LearningGoalsView.vue` 视觉回归全局 Token（紫→`--primary`/`--violet`、页面背景→`--bg`、按钮/圆角/阴影引用全局变量、语义色映射 `--success/--warning/--danger`）、子导航由 168px 竖排改为页内横向 pill、移动端不再 fixed（消除与全局 TabBar 双栏叠加）。业务逻辑零改动。
+- **二期（目标心智统一）**：改 `web/src/App.vue` + `web/src/logic/appOptions.js`。
+  - **A2 老浮层跳转/下线**：首页「学期目标」入口 card 改为 `goTab('goals')` 跳转到学习目标管理台；删除已下线的老「学期目标」浮层模板；清理 mixin 死代码 `loadGoals/submitGoal/doneGoal/archiveGoal` 方法与 `goalOverlay/goals` 数据（老 `/api/goals` 数据保留在库，迁移留待四期 C2）。
+  - **C1 首页今日目标卡**：首页「今日」子页新增「今日学习目标」卡，调用 `/api/learning-goals` 展示各目标今日建议量与进度（红/琥珀/绿状态点），点击「打卡 →」进入管理台；进首页/切到今日子页时自动加载。
+  - 老目标数据未丢失，仅 UI 收敛到单一管理台。
+- **SFC 编译**：本沙箱 vite/子进程写盘受限，无法跑 `npm run build`；改动经人工复核（模板/脚本/mixin 三处删除均闭合），最终以服务器 `deploy.sh` 重建 `web/dist` 为验证闸门。
+
+---
+
 ## 六、风险与约定
 
 - 所有改动遵循项目约定：每完成一个可独立验证模块即 commit；前端保持可构建（`cd web && npm run build` 通过为准，沙箱 vite 受限时在服务器验证）；后端改动上线前跑全套 pytest。

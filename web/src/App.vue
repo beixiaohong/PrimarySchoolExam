@@ -474,13 +474,18 @@
             </div>
             <span class="btn btn-ghost btn-sm">开战 →</span>
           </div>
-          <div class="card goal-entry" @click="goalOverlay.show=true; loadGoals()">
+          <div class="card goal-entry" @click="goTab('goals')">
             <div class="w-ico">🎯</div>
             <div class="w-body">
-              <b>学期目标</b>
-              <span>分数 / 消灭错题 / 背诵 倒计时</span>
+              <b>今日学习目标</b>
+              <template v-if="homeGoals.length">
+                <span class="gt-line" v-for="g in homeGoals.slice(0,3)" :key="g.id" style="display:block;font-size:12px;color:#6b7180;margin-top:3px">
+                  <i :style="{display:'inline-block',width:'7px',height:'7px',borderRadius:'50%',marginRight:'5px',background: g.card_kind==='rest' ? '#F5A623' : (g.card_kind ? '#F2604C' : '#34C77B')}"></i>{{g.name}} 建议 {{g.daily_suggestion}} {{g.unit}} · {{g.pct}}%
+                </span>
+              </template>
+              <span v-else>还没目标？立一个有终点、有总量的小目标</span>
             </div>
-            <span class="btn btn-ghost btn-sm">查看 →</span>
+            <span class="btn btn-primary btn-sm">打卡 →</span>
           </div>
         </div>
 
@@ -2096,45 +2101,7 @@
   </div>
 </div>
 
-<!-- ═══════════ 学期目标浮层（Sprint 4） ═══════════ -->
-<div class="quiz-overlay overlay-pop" v-if="goalOverlay.show" @click.self="goalOverlay.show=false">
-  <div class="quiz-shell goal-shell">
-    <div class="quiz-top">
-      <span class="qname">🎯 学期目标</span>
-      <button class="icon-btn" @click="goalOverlay.show=false" title="关闭">✕</button>
-    </div>
-    <div class="goal-body">
-      <div class="goal-list" v-if="goals.length">
-        <div class="goal-item" v-for="g in goals" :key="g.id">
-          <div class="g-head"><b>{{g.title}}</b><span class="tag" :class="g.achieved ? 'tag-green' : 'tag-blue'">{{g.achieved ? '已达成 🎉' : g.current + ' / ' + g.target}}</span></div>
-          <div class="progress" style="margin:8px 0"><i :style="{width: g.pct+'%'}"></i></div>
-          <div class="g-foot">
-            <span v-if="g.deadline">⏳ 还剩 {{g.days_left}} 天（{{g.deadline}} 截止）</span>
-            <span v-else>长期目标 · 持续进步中</span>
-            <span v-if="g.daily_step && !g.achieved" class="tag tag-blue">每日小步 ≈ {{g.daily_step}}</span>
-            <span v-if="g.achieved && g.status==='active'"><button class="btn btn-success btn-sm" @click="doneGoal(g)">标记达成 🏆</button></span>
-            <button class="btn btn-ghost btn-sm" @click="archiveGoal(g)">移除</button>
-          </div>
-        </div>
-      </div>
-      <p v-else class="pc-empty">还没有目标，立一个吧 👇（最多同时 2 个）</p>
-      <div class="goal-form">
-        <label>立下新目标</label>
-        <div class="pc-row">
-          <select v-model="goalOverlay.kind" class="fill-input" style="max-width:120px">
-            <option value="score">分数</option><option value="wrong">消灭错题</option><option value="recite">背诵</option>
-          </select>
-          <input v-if="goalOverlay.kind==='score'" v-model="goalOverlay.subject" class="fill-input" maxlength="4" placeholder="学科，如：数学">
-          <input v-model.number="goalOverlay.target" class="fill-input" type="number" placeholder="目标值">
-          <input v-model="goalOverlay.deadline" class="fill-input" type="date">
-        </div>
-        <div class="detail-actions" style="margin-top:12px">
-          <button class="btn btn-primary" @click="submitGoal()">立下目标 🎯</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- 学期目标浮层已于二期下线：目标统一进入「学习目标」管理台（/api/learning-goals） -->
 
 <!-- ═══════════ 小老师浮层（Sprint 4） ═══════════ -->
 <div class="quiz-overlay overlay-pop" v-if="teachOverlay.show" @click.self="closeTeach()">
@@ -2502,7 +2469,7 @@ export default {
   ...appOptions,
   data() {
     // 合并 mixin 的 data，并注入侧边栏/底部导航配置供模板渲染
-    return { ...appOptions.data.call(this), NAV_GROUPS, TABBAR }
+    return { ...appOptions.data.call(this), NAV_GROUPS, TABBAR, homeGoals: [] }
   },
   setup() {
     // 钱包 store 仅在 App 级创建一次，供钱包页与各任务卡共用
@@ -2531,6 +2498,12 @@ export default {
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       })
     },
+    // 二期 C1：首页「今日目标」卡 —— 联动学习目标管理台，展示各目标今日建议量与进度
+    loadHomeGoals() {
+      this.api('/api/learning-goals')
+        .then(d => { this.homeGoals = (d && d.goals) || []; })
+        .catch(() => { this.homeGoals = []; })
+    },
   },
   watch: {
     // 浏览器前进/后退或深链进入时，URL 中的 tab 变化要同步到界面（含钱包拉取）
@@ -2539,6 +2512,13 @@ export default {
         appOptions.methods.goTab.call(this, t)
         if (t === 'wallet') this.wallet.load(this.user, this.makeupCards)
       }
+    },
+    // 二期 C1：进入首页「今日」子页时拉取今日目标
+    tab(t) {
+      if (t === 'home') this.$nextTick(() => { if (this.homeSub === 'today') this.loadHomeGoals() })
+    },
+    homeSub(s) {
+      if (s === 'today' && this.tab === 'home') this.loadHomeGoals()
     },
   },
   mounted() {
@@ -2549,6 +2529,8 @@ export default {
       appOptions.methods.goTab.call(this, t)
       if (t === 'wallet') this.wallet.load(this.user, this.makeupCards)
     }
+    // 二期 C1：默认在首页「今日」时加载今日目标卡
+    if (this.tab === 'home' && this.homeSub === 'today') this.loadHomeGoals()
   },
 }
 </script>
