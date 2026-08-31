@@ -84,7 +84,7 @@ def get_prefs(user_id: str = Query(..., description="用户名"),
         tid = resolve_textbook_id(db, user_id, subject, grade)
         name = ""
         if tid:
-            t = db.query(TextbookVersion).get(tid)
+            t = db.get(TextbookVersion, tid)
             name = t.name if t else ""
         result.append({"subject": subject, "grade": grade,
                        "textbook_id": tid or 0, "textbook_name": name})
@@ -104,7 +104,7 @@ def save_pref(req: PrefReq, db: Session = Depends(get_db)):
             db.delete(pref)
             db.commit()
         return {"ok": True, "subject": req.subject, "textbook_id": 0}
-    t = db.query(TextbookVersion).get(req.textbook_id)
+    t = db.get(TextbookVersion, req.textbook_id)
     if not t or t.subject != req.subject or not t.enabled:
         raise HTTPException(400, "教材版本不存在或未启用")
     if not pref:

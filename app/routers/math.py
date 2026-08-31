@@ -87,7 +87,7 @@ def update_type(type_id: int, data: ProblemTypeCreate, db: Session = Depends(get
     返回：更新后的 ProblemTypeOut；type_id 不存在返回 404。
     副作用：更新 ProblemType 表。无需家长密码。
     """
-    pt = db.query(ProblemType).get(type_id)
+    pt = db.get(ProblemType, type_id)
     if not pt:
         raise HTTPException(404, "题型不存在")
     for k, v in data.model_dump().items():
@@ -105,7 +105,7 @@ def delete_type(type_id: int, db: Session = Depends(get_db)):
     返回：{"message": "已删除"}；type_id 不存在返回 404。
     副作用：删除 ProblemType 表记录。无需家长密码。
     """
-    pt = db.query(ProblemType).get(type_id)
+    pt = db.get(ProblemType, type_id)
     if not pt:
         raise HTTPException(404, "题型不存在")
     db.delete(pt)

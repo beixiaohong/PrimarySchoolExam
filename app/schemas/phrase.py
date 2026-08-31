@@ -1,6 +1,6 @@
 """词组和句子 Schema"""
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class PhraseCreate(BaseModel):
@@ -19,8 +19,7 @@ class PhraseOut(BaseModel):
     meaning: str  # 中文释义
     type: str  # 词组类型
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SentenceCreate(BaseModel):
@@ -41,5 +40,4 @@ class SentenceOut(BaseModel):
     type: str  # 句子类型
     grammar_point: str  # 语法点
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

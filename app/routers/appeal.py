@@ -239,7 +239,7 @@ def _approve_exam(db: Session, a: AnswerAppeal) -> bool:
             # 否则下方「全量重算」的 count 看不到本事务内刚改判的 is_correct，导致分数算错。
             db.flush()
 
-            attempt = db.query(ExamAttempt).get(answer.attempt_id)
+            attempt = db.get(ExamAttempt, answer.attempt_id)
             if attempt and attempt.total:
                 # 关键点：从本卷所有作答重新统计，幂等（重复改判同一题不再 +1）
                 correct = db.query(AttemptAnswer).filter(
@@ -256,7 +256,7 @@ def _approve_exam(db: Session, a: AnswerAppeal) -> bool:
 
             # 撤销本次新建的错题记录（本就不是错题，删除）；重复执行时记录已删，自动跳过
             if a.wrong_record_id and a.wrong_new:
-                rec = db.query(WrongRecord).get(a.wrong_record_id)
+                rec = db.get(WrongRecord, a.wrong_record_id)
                 if rec:
                     db.delete(rec)
             return True
@@ -264,7 +264,7 @@ def _approve_exam(db: Session, a: AnswerAppeal) -> bool:
     # 未找到做题记录（如 AI 出题/每日练习路径的作答不落 attempt_answers）：
     # 家长已人工确认孩子做对 → 降级批准：仍清理本次错题痕迹，不报错卡死。
     if a.wrong_record_id:
-        rec = db.query(WrongRecord).get(a.wrong_record_id)
+        rec = db.get(WrongRecord, a.wrong_record_id)
         if rec:
             db.delete(rec)
     return False

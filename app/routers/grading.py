@@ -261,7 +261,7 @@ def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
     if qid:
         db = SessionLocal()
         try:
-            q = db.query(Question).get(qid)
+            q = db.get(Question, qid)
             # 1) 参考答案本身算错 → 修正为标准正确值（双保险：孩子作答须与修正值等价）
             if q and verdict.get("stored_wrong") and verdict.get("correct_answer"):
                 corrected = verdict["correct_answer"].strip()
@@ -280,7 +280,7 @@ def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
             if ans:
                 ans.is_correct = True
                 db.flush()
-                attempt = db.query(ExamAttempt).get(ans.attempt_id)
+                attempt = db.get(ExamAttempt, ans.attempt_id)
                 if attempt and attempt.total:
                     correct = db.query(AttemptAnswer).filter(
                         AttemptAnswer.attempt_id == attempt.id,

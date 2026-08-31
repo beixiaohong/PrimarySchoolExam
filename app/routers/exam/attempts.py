@@ -25,7 +25,7 @@ def _fix_stored_answer(db: Session, qid: int, verdict: dict, r: dict):
     corrected = (verdict.get("correct_answer") or "").strip()
     if not corrected:
         return
-    q = db.query(Question).get(qid)
+    q = db.get(Question, qid)
     if not q:
         return
     if (q.answer or "").strip() == corrected:
@@ -66,7 +66,7 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
     if duration > 0 and duration < len(answers) * 3:
         raise HTTPException(400, "提交太快啦，认真做完再交卷哦")
 
-    record = db.query(ExamRecord).get(exam_id)
+    record = db.get(ExamRecord, exam_id)
     if not record:
         raise HTTPException(404, "试卷不存在")
 
@@ -172,13 +172,13 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
             if r["seq"] in wrong_seqs:
                 wrong_seqs.remove(r["seq"])
             if qid in wrong_new_ids:
-                rec = db.query(WrongRecord).get(wrong_new_ids[qid])
+                rec = db.get(WrongRecord, wrong_new_ids[qid])
                 if rec:
                     db.delete(rec)  # 本次新建的记录：本就不是错题，删除
                 wrong_ids.pop(qid, None)
                 wrong_new_ids.pop(qid, None)
             elif qid in prev_states:
-                rec = db.query(WrongRecord).get(wrong_ids.get(qid))
+                rec = db.get(WrongRecord, wrong_ids.get(qid))
                 if rec:
                     st = prev_states[qid]  # 恢复历史记录（撤销本次重新标错）
                     rec.is_mastered = st["is_mastered"]
@@ -303,13 +303,13 @@ def get_attempt_detail(attempt_id: int, db: Session = Depends(get_db)):
     参数：attempt_id 做题记录 ID（路径参数）。记录不存在返回 404。
     返回含得分、题数及逐题明细（题干/用户答案/正确答案/题型）。
     """
-    attempt = db.query(ExamAttempt).get(attempt_id)
+    attempt = db.get(ExamAttempt, attempt_id)
     if not attempt:
         raise HTTPException(404, "记录不存在")
     answers = db.query(AttemptAnswer).filter(AttemptAnswer.attempt_id == attempt_id).all()
     detail = []
     for aa in answers:
-        q = db.query(Question).get(aa.question_id)
+        q = db.get(Question, aa.question_id)
         detail.append({
             "question_id": aa.question_id,
             "user_answer": aa.user_answer,

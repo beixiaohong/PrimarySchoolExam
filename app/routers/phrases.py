@@ -65,7 +65,7 @@ def delete_phrase(phrase_id: int, db: Session = Depends(get_db)):
     返回：{"message": "已删除"}；不存在返回 404。
     副作用：删除 phrases 表记录。无需家长密码。
     """
-    p = db.query(Phrase).get(phrase_id)
+    p = db.get(Phrase, phrase_id)
     if not p:
         raise HTTPException(404, "词组不存在")
     db.delete(p)
@@ -127,7 +127,7 @@ def delete_sentence(sentence_id: int, db: Session = Depends(get_db)):
     返回：{"message": "已删除"}；不存在返回 404。
     副作用：删除 sentences 表记录。无需家长密码。
     """
-    s = db.query(Sentence).get(sentence_id)
+    s = db.get(Sentence, sentence_id)
     if not s:
         raise HTTPException(404, "句子不存在")
     db.delete(s)

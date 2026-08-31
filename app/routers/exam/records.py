@@ -46,7 +46,7 @@ def download_exam(record_id: int, db: Session = Depends(get_db)):
     参数：record_id 试卷记录 ID（路径参数）。记录不存在或文件缺失返回 404。
     返回 word 文档文件响应（.docx）。
     """
-    record = db.query(ExamRecord).get(record_id)
+    record = db.get(ExamRecord, record_id)
     if not record:
         raise HTTPException(404, "记录不存在")
     if not os.path.exists(record.file_path):
@@ -65,7 +65,7 @@ def list_questions(exam_id: int, db: Session = Depends(get_db)):
     参数：exam_id 试卷记录 ID（路径参数）。试卷不存在返回 404。
     返回题目对象数组（含题干/答案/选项/题型等）。
     """
-    record = db.query(ExamRecord).get(exam_id)
+    record = db.get(ExamRecord, exam_id)
     if not record:
         raise HTTPException(404, "试卷不存在")
     questions = db.query(Question).filter(

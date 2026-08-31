@@ -372,7 +372,7 @@ def batch_master(req: dict, db: Session = Depends(get_db)):
 
 def _locate_questions(db: Session, exam_id: int, question_ids: list = None, seqs: list = None) -> list:
     """根据 question_ids 或 seqs 定位题目"""
-    record = db.query(ExamRecord).get(exam_id)
+    record = db.get(ExamRecord, exam_id)
     if not record:
         raise HTTPException(404, "试卷不存在")
 

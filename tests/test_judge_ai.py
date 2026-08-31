@@ -204,9 +204,9 @@ def test_appeal_approve_fuzzy_match_finds_record(client):
         # 用全新会话验证（本会话 REPEATABLE READ 快照看不到 HTTP 会话已提交的改判）
         vdb = SessionLocal()
         try:
-            a2 = vdb.query(AttemptAnswer).get(aa.id)
+            a2 = vdb.get(AttemptAnswer, aa.id)
             assert a2.is_correct is True, "格式差异时应能定位并改判该作答"
-            assert vdb.query(AnswerAppeal).get(ap.id).status == "approved"
+            assert vdb.get(AnswerAppeal, ap.id).status == "approved"
         finally:
             vdb.close()
     finally:
@@ -245,7 +245,7 @@ def test_appeal_approve_without_attempt_record(client):
 
         vdb = SessionLocal()
         try:
-            assert vdb.query(AnswerAppeal).get(ap.id).status == "approved"
+            assert vdb.get(AnswerAppeal, ap.id).status == "approved"
         finally:
             vdb.close()
     finally:
@@ -300,9 +300,9 @@ def test_appeal_approve_by_attempt_id_exact(client):
 
         vdb = SessionLocal()
         try:
-            assert vdb.query(AttemptAnswer).get(aa1.id).is_correct is True, \
+            assert vdb.get(AttemptAnswer, aa1.id).is_correct is True, \
                 "应按 (attempt_id, question_id) 精确改判申诉对应那次作答"
-            assert vdb.query(AttemptAnswer).get(aa2.id).is_correct is False, \
+            assert vdb.get(AttemptAnswer, aa2.id).is_correct is False, \
                 "其它做题记录的作答不得被误改判"
         finally:
             vdb.close()

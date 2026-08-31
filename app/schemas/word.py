@@ -1,6 +1,6 @@
 """英语单词相关 Schema"""
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class WordCreate(BaseModel):
@@ -37,8 +37,7 @@ class WordOut(BaseModel):
     difficulty: int  # 难度档 1~5
     tags: str  # 标签
 
-    class Config:
-        from_attributes = True  # 允许从 ORM 实例直接构造
+    model_config = ConfigDict(from_attributes=True)  # 允许从 ORM 实例直接构造
 
 
 class WordBookOut(BaseModel):
@@ -50,8 +49,7 @@ class WordBookOut(BaseModel):
     publisher: str  # 出版社
     word_count: int  # 该词书单词总数
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WordImportResult(BaseModel):

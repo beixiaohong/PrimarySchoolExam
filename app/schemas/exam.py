@@ -1,6 +1,6 @@
 """试卷生成相关 Schema"""
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ExamCreateRequest(BaseModel):
@@ -36,8 +36,7 @@ class ExamOut(BaseModel):
     file_path: str  # 生成的试卷文件（docx）路径
     created_at: str  # 创建时间
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QuestionOut(BaseModel):
@@ -56,8 +55,7 @@ class QuestionOut(BaseModel):
     audio_path: str = ""  # 音频路径（如听写）
     difficulty: int  # 难度档
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WrongRecordOut(BaseModel):
@@ -115,8 +113,7 @@ class CollectionPracticeQuestionOut(BaseModel):
     options: List[str] = []
     correct_answer: str = ""
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CollectionSubmitRequest(BaseModel):

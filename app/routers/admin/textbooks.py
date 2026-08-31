@@ -78,7 +78,7 @@ def create_textbook(req: TextbookReq, db: Session = Depends(get_db),
 @router.put("/textbooks/{tid}", summary="编辑教材版本")
 def update_textbook(tid: int, req: TextbookReq, db: Session = Depends(get_db),
                     admin: Admin = Depends(_require_admin)):
-    t = db.query(TextbookVersion).get(tid)
+    t = db.get(TextbookVersion, tid)
     if not t:
         raise HTTPException(404, "版本不存在")
     subject = (req.subject or "").strip()
@@ -106,7 +106,7 @@ def update_textbook(tid: int, req: TextbookReq, db: Session = Depends(get_db),
 @router.delete("/textbooks/{tid}", summary="删除教材版本")
 def delete_textbook(tid: int, db: Session = Depends(get_db),
                     admin: Admin = Depends(_require_admin)):
-    t = db.query(TextbookVersion).get(tid)
+    t = db.get(TextbookVersion, tid)
     if not t:
         raise HTTPException(404, "版本不存在")
     from app.models.word import WordBook

@@ -1,6 +1,6 @@
 """数学题目相关 Schema"""
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ProblemTypeCreate(BaseModel):
@@ -30,8 +30,7 @@ class ProblemTypeOut(BaseModel):
     is_active: bool  # 是否启用
     description: str  # 说明
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategoryOut(BaseModel):
@@ -43,8 +42,7 @@ class CategoryOut(BaseModel):
     is_active: bool  # 是否启用
     problem_types: List[ProblemTypeOut] = []  # 该大类下的题型列表
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MathGenRequest(BaseModel):

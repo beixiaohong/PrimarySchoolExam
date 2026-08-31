@@ -128,7 +128,7 @@ def knowledge_units(
 @router.get("/{kp_id}", response_model=KnowledgeDetail)
 def knowledge_detail(kp_id: int, db: Session = Depends(get_db)):
     """知识点详情：summary + content（讲解）+ examples（例子，按行拆分）。只读。"""
-    kp = db.query(KnowledgePoint).get(kp_id)
+    kp = db.get(KnowledgePoint, kp_id)
     if not kp:
         raise HTTPException(404, "知识点不存在")
     examples = [e for e in (kp.examples or "").split("\n") if e.strip()]
@@ -188,7 +188,7 @@ def _build_cloze(kp: KnowledgePoint) -> List[ClozeItem]:
 @router.get("/{kp_id}/cloze", response_model=ClozeOut)
 def knowledge_cloze(kp_id: int, db: Session = Depends(get_db)):
     """生成挖空自测：从知识点正文/例子中确定性抽取 1-3 个填空，可自动判分。只读，无 AI。"""
-    kp = db.query(KnowledgePoint).get(kp_id)
+    kp = db.get(KnowledgePoint, kp_id)
     if not kp:
         raise HTTPException(404, "知识点不存在")
     items = _build_cloze(kp)
@@ -204,7 +204,7 @@ def knowledge_cloze(kp_id: int, db: Session = Depends(get_db)):
 @router.post("/{kp_id}/master", response_model=MasterOut)
 def knowledge_master(kp_id: int, req: MasterReq, db: Session = Depends(get_db)):
     """标记掌握：自测全对或主动标记 → 发 +3 金币 + 鼓励文案。短会话落库，无外部阻塞调用。"""
-    kp = db.query(KnowledgePoint).get(kp_id)
+    kp = db.get(KnowledgePoint, kp_id)
     if not kp:
         raise HTTPException(404, "知识点不存在")
     granted = 0

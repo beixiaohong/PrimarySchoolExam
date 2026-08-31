@@ -101,7 +101,7 @@ def create_book(req: BookReq, db: Session = Depends(get_db),
 @router.put("/books/{bid}", summary="编辑词书")
 def update_book(bid: int, req: BookReq, db: Session = Depends(get_db),
                 admin: Admin = Depends(_require_admin)):
-    b = db.query(WordBook).get(bid)
+    b = db.get(WordBook, bid)
     if not b:
         raise HTTPException(404, "词书不存在")
     b.name = (req.name or "").strip()[:100]
@@ -116,7 +116,7 @@ def update_book(bid: int, req: BookReq, db: Session = Depends(get_db),
 @router.delete("/books/{bid}", summary="删除词书（级联删除其下单词）")
 def delete_book(bid: int, db: Session = Depends(get_db),
                 admin: Admin = Depends(_require_admin)):
-    b = db.query(WordBook).get(bid)
+    b = db.get(WordBook, bid)
     if not b:
         raise HTTPException(404, "词书不存在")
     from app.models.vocab import VocabProgress
@@ -151,7 +151,7 @@ def list_words(bid: int, keyword: str = "", page: int = 1, page_size: int = 50,
 @router.post("/books/{bid}/words", summary="词书内新增单词")
 def create_word(bid: int, req: WordReq, db: Session = Depends(get_db),
                 admin: Admin = Depends(_require_admin)):
-    b = db.query(WordBook).get(bid)
+    b = db.get(WordBook, bid)
     if not b:
         raise HTTPException(404, "词书不存在")
     word = (req.word or "").strip()
@@ -174,7 +174,7 @@ def create_word(bid: int, req: WordReq, db: Session = Depends(get_db),
 @router.put("/words/{wid}", summary="编辑单词")
 def update_word(wid: int, req: WordReq, db: Session = Depends(get_db),
                 admin: Admin = Depends(_require_admin)):
-    w = db.query(Word).get(wid)
+    w = db.get(Word, wid)
     if not w:
         raise HTTPException(404, "单词不存在")
     word = (req.word or "").strip()
@@ -194,7 +194,7 @@ def update_word(wid: int, req: WordReq, db: Session = Depends(get_db),
 @router.delete("/words/{wid}", summary="删除单词")
 def delete_word(wid: int, db: Session = Depends(get_db),
                 admin: Admin = Depends(_require_admin)):
-    w = db.query(Word).get(wid)
+    w = db.get(Word, wid)
     if not w:
         raise HTTPException(404, "单词不存在")
     from app.models.vocab import VocabProgress
@@ -210,7 +210,7 @@ def delete_word(wid: int, db: Session = Depends(get_db),
 def import_words(bid: int, req: WordImportReq, db: Session = Depends(get_db),
                  admin: Admin = Depends(_require_admin)):
     """每行一条：`word|音标|词性|释义`（或 `word 释义`），空行/重复自动跳过。"""
-    b = db.query(WordBook).get(bid)
+    b = db.get(WordBook, bid)
     if not b:
         raise HTTPException(404, "词书不存在")
     added = skipped = 0
@@ -308,7 +308,7 @@ def create_classical(req: ClassicalReq, db: Session = Depends(get_db),
 @router.put("/classicals/{cid}", summary="编辑诗词篇目")
 def update_classical(cid: int, req: ClassicalReq, db: Session = Depends(get_db),
                      admin: Admin = Depends(_require_admin)):
-    t = db.query(ClassicalText).get(cid)
+    t = db.get(ClassicalText, cid)
     if not t:
         raise HTTPException(404, "篇目不存在")
     t.title = (req.title or "").strip()[:200]
@@ -327,7 +327,7 @@ def update_classical(cid: int, req: ClassicalReq, db: Session = Depends(get_db),
 @router.delete("/classicals/{cid}", summary="删除诗词篇目")
 def delete_classical(cid: int, db: Session = Depends(get_db),
                      admin: Admin = Depends(_require_admin)):
-    t = db.query(ClassicalText).get(cid)
+    t = db.get(ClassicalText, cid)
     if not t:
         raise HTTPException(404, "篇目不存在")
     from app.models.classical import ClassicalProgress
@@ -391,7 +391,7 @@ def create_grammar(req: GrammarReq, db: Session = Depends(get_db),
 @router.put("/grammar-points/{gid}", summary="编辑语法点")
 def update_grammar(gid: int, req: GrammarReq, db: Session = Depends(get_db),
                    admin: Admin = Depends(_require_admin)):
-    g = db.query(GrammarPoint).get(gid)
+    g = db.get(GrammarPoint, gid)
     if not g:
         raise HTTPException(404, "语法点不存在")
     g.name = (req.name or "").strip()[:100]
@@ -405,7 +405,7 @@ def update_grammar(gid: int, req: GrammarReq, db: Session = Depends(get_db),
 @router.delete("/grammar-points/{gid}", summary="删除语法点（级联其练习题）")
 def delete_grammar(gid: int, db: Session = Depends(get_db),
                    admin: Admin = Depends(_require_admin)):
-    g = db.query(GrammarPoint).get(gid)
+    g = db.get(GrammarPoint, gid)
     if not g:
         raise HTTPException(404, "语法点不存在")
     db.query(GrammarExercise).filter(GrammarExercise.grammar_point_id == gid).delete()
@@ -507,7 +507,7 @@ def create_kp_point(req: KnowledgePointReq, db: Session = Depends(get_db),
 @router.put("/kp-points/{kid}", summary="编辑知识点")
 def update_kp_point(kid: int, req: KnowledgePointReq, db: Session = Depends(get_db),
                     admin: Admin = Depends(_require_admin)):
-    k = db.query(KnowledgePoint).get(kid)
+    k = db.get(KnowledgePoint, kid)
     if not k:
         raise HTTPException(404, "知识点不存在")
     subject = (req.subject or "").strip()
@@ -534,7 +534,7 @@ def update_kp_point(kid: int, req: KnowledgePointReq, db: Session = Depends(get_
 @router.delete("/kp-points/{kid}", summary="删除知识点")
 def delete_kp_point(kid: int, db: Session = Depends(get_db),
                     admin: Admin = Depends(_require_admin)):
-    k = db.query(KnowledgePoint).get(kid)
+    k = db.get(KnowledgePoint, kid)
     if not k:
         raise HTTPException(404, "知识点不存在")
     db.delete(k)
@@ -572,7 +572,7 @@ def list_collected_papers(keyword: str = "", subject: str = "", page: int = 1,
 @router.get("/collected-papers/{pid}", summary="采集试卷详情（题目列表）")
 def collected_paper_detail(pid: int, db: Session = Depends(get_db),
                            admin: Admin = Depends(_require_admin)):
-    p = db.query(Paper).get(pid)
+    p = db.get(Paper, pid)
     if not p:
         raise HTTPException(404, "试卷不存在")
     qs = db.query(PaperQuestion).filter(PaperQuestion.paper_id == pid).order_by(
@@ -592,7 +592,7 @@ def collected_paper_detail(pid: int, db: Session = Depends(get_db),
 @router.delete("/collected-papers/{pid}", summary="删除采集试卷")
 def delete_collected_paper(pid: int, db: Session = Depends(get_db),
                            admin: Admin = Depends(_require_admin)):
-    p = db.query(Paper).get(pid)
+    p = db.get(Paper, pid)
     if not p:
         raise HTTPException(404, "试卷不存在")
     db.query(PaperQuestion).filter(PaperQuestion.paper_id == pid).delete()

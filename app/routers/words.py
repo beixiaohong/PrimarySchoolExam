@@ -120,7 +120,7 @@ def create_word(
     返回：新建的 WordOut；词库不存在 404、单词已存在 409。
     副作用：写 Word 表并更新该词库 word_count。无需家长密码。
     """
-    book = db.query(WordBook).get(book_id)
+    book = db.get(WordBook, book_id)
     if not book:
         raise HTTPException(404, "词库不存在")
     existing = db.query(Word).filter(Word.book_id == book_id, Word.word == data.word).first()
@@ -142,7 +142,7 @@ def update_word(word_id: int, data: WordUpdate, db: Session = Depends(get_db)):
     返回：更新后的 WordOut；单词不存在 404。
     副作用：更新 Word 表。无需家长密码。
     """
-    word = db.query(Word).get(word_id)
+    word = db.get(Word, word_id)
     if not word:
         raise HTTPException(404, "单词不存在")
     for k, v in data.model_dump(exclude_unset=True).items():
@@ -160,13 +160,13 @@ def delete_word(word_id: int, db: Session = Depends(get_db)):
     返回：{"message": "已删除"}；单词不存在 404。
     副作用：删除 Word 表记录 + 更新 WordBook.word_count。无需家长密码。
     """
-    word = db.query(Word).get(word_id)
+    word = db.get(Word, word_id)
     if not word:
         raise HTTPException(404, "单词不存在")
     book_id = word.book_id
     db.delete(word)
     db.commit()
-    book = db.query(WordBook).get(book_id)
+    book = db.get(WordBook, book_id)
     if book:
         book.word_count = db.query(Word).filter(Word.book_id == book_id).count()
         db.commit()
@@ -186,7 +186,7 @@ async def import_words(
     CSV 列顺序：word, phonetic, pos, meaning, unit, difficulty, tags
     Excel 列名：word/单词, phonetic/音标, pos/词性, meaning/释义, unit/单元, difficulty/难度, tags/标签
     """
-    book = db.query(WordBook).get(book_id)
+    book = db.get(WordBook, book_id)
     if not book:
         raise HTTPException(404, "词库不存在")
 
