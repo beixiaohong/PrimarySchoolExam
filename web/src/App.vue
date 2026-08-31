@@ -106,12 +106,26 @@
     <nav class="nav">
       <div class="nav-group" v-for="g in NAV_GROUPS" :key="g.title">
         <div class="nav-group-title">{{g.title}}</div>
-        <button v-for="it in g.items" :key="it.tab" class="nav-item" :class="{active: tab===it.tab}" @click="goTab(it.tab)">
-          <span class="ico">{{it.ico}}</span>{{it.label}}
-          <span v-if="it.badge==='wrong' && wrongBadge>0" class="badge">{{wrongBadge}}</span>
-          <span v-if="it.badge==='pet' && petProfile && petLeveledUp" class="badge badge-gold">升级</span>
-          <span v-if="it.badge==='badge' && badgeNew.length" class="badge badge-gold">新</span>
-        </button>
+        <template v-for="it in g.items" :key="it.label">
+          <!-- 叶子节点：直接跳转 -->
+          <button v-if="!it.children" class="nav-item" :class="{active: tab===it.tab}" @click="goTab(it.tab)">
+            <span class="ico">{{it.ico}}</span>{{it.label}}
+            <span v-if="it.badge==='wrong' && wrongBadge>0" class="badge">{{wrongBadge}}</span>
+            <span v-if="it.badge==='pet' && petProfile && petLeveledUp" class="badge badge-gold">升级</span>
+            <span v-if="it.badge==='badge' && badgeNew.length" class="badge badge-gold">新</span>
+          </button>
+          <!-- 场景折叠父节点：点击展开/收起，子项缩进展示 -->
+          <template v-else>
+            <button class="nav-item nav-parent" :class="{active: it.children.some(c=>c.tab===tab)}" @click="toggleNav(it.label)">
+              <span class="ico">{{it.ico}}</span>{{it.label}}
+              <span class="nav-caret">{{ isNavOpen(it) ? '▾' : '▸' }}</span>
+            </button>
+            <button v-for="c in it.children" v-show="isNavOpen(it)" :key="c.tab" class="nav-item nav-child" :class="{active: tab===c.tab}" @click="goTab(c.tab)">
+              <span class="ico">{{c.ico}}</span>{{c.label}}
+              <span v-if="c.badge==='wrong' && wrongBadge>0" class="badge">{{wrongBadge}}</span>
+            </button>
+          </template>
+        </template>
       </div>
     </nav>
     <div class="user">
@@ -797,7 +811,7 @@ export default {
   ...appOptions,
   data() {
     // 合并 mixin 的 data，并注入侧边栏/底部导航配置供模板渲染
-    return { ...appOptions.data.call(this), NAV_GROUPS, TABBAR, homeGoals: [] }
+    return { ...appOptions.data.call(this), NAV_GROUPS, TABBAR, homeGoals: [], openNav: {} }
   },
   setup() {
     // 钱包 store 仅在 App 级创建一次，供钱包页与各任务卡共用
@@ -812,6 +826,17 @@ export default {
       appOptions.methods.goTab.call(this, t)
       if (t === 'wallet') this.wallet.load(this.user, this.makeupCards)
       this._syncRoute(t)
+    },
+    // B2 导航收敛：场景折叠父节点的展开/收起。openNav 仅记录「手动收起」(false)，
+    // 未设置时默认展开；若当前激活 tab 落在某子组内，则无论如何强制展开（保证可见）。
+    toggleNav(label) {
+      // 当前为收起(false)则点开展开(true)；否则（含默认未设置）点按收起(false)
+      this.openNav[label] = this.openNav[label] === false
+    },
+    isNavOpen(it) {
+      if (!it.children) return false
+      if (this.openNav[it.label] === false) return it.children.some(c => c.tab === this.tab)
+      return true
     },
     // URL ↔ tab 同步（vue-router 深链/刷新保持当前页）
     _syncRoute(t) {

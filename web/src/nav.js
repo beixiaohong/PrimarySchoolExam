@@ -1,21 +1,29 @@
-// 侧边栏导航分组（P5：16 项平铺 → 4 分组，新增「钱包」）
-// 每项：name=路由名/组件名，tab=旧版 tab 标识，label/ico 展示用
-// NAV_GROUPS 为桌面端侧边栏的四组分导航数据，驱动 App.vue 的侧边栏渲染
+// 侧边栏导航分组（B2 导航收敛：桌面端 5 分组，学习组按场景折叠子组）
+// 每项：tab=旧版 tab 标识（叶子节点才有，驱动路由），label/ico 展示用；
+//       含 children 的项为「场景折叠父节点」，本身不跳转，点击展开/收起子项。
+// NAV_GROUPS 驱动 App.vue 侧边栏渲染，ALL_TABS 仅汇总叶子 tab（见文件底部）。
 export const NAV_GROUPS = [
   {
     title: '学习',
     items: [
       { tab: 'home', label: '今日学习', ico: '🏠' },
-      { tab: 'practice', label: '刷题中心', ico: '✏️' },
+      {
+        label: '练习', ico: '✏️',
+        children: [
+          { tab: 'practice', label: '刷题中心', ico: '✏️' },
+          { tab: 'wrong', label: '错题本', ico: '📝', badge: 'wrong' },
+        ],
+      },
+      {
+        label: '阅读', ico: '📜',
+        children: [
+          { tab: 'reading', label: '阅读专项', ico: '📜' },
+          { tab: 'kp', label: '知识点卡', ico: '🧩' },
+          { tab: 'sync', label: '同步学', ico: '📚' },
+          { tab: 'courses', label: '网课', ico: '🎬' },
+        ],
+      },
       { tab: 'recite', label: '背诵中心', ico: '📖' },
-      { tab: 'dict', label: '听写磨耳朵', ico: '👂' },
-      { tab: 'wrong', label: '错题本', ico: '📝', badge: 'wrong' },
-      { tab: 'search', label: '搜题', ico: '🔍' },
-      { tab: 'sync', label: '同步学', ico: '📚' },
-      { tab: 'kp', label: '知识点卡', ico: '🧩' },
-      { tab: 'reading', label: '阅读专项', ico: '📜' },
-      { tab: 'courses', label: '网课', ico: '🎬' },
-      { tab: 'focus', label: '专注钟', ico: '⏰' },
       { tab: 'goals', label: '学习目标', ico: '🎯' },
     ],
   },
@@ -38,6 +46,14 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    title: '工具',
+    items: [
+      { tab: 'search', label: '搜题', ico: '🔍' },
+      { tab: 'focus', label: '专注钟', ico: '⏰' },
+      { tab: 'dict', label: '听写磨耳朵', ico: '👂' },
+    ],
+  },
+  {
     title: '我的',
     items: [
       { tab: 'stats', label: '学习统计', ico: '📊' },
@@ -56,5 +72,5 @@ export const TABBAR = [
   { tab: 'settings', label: '我的', ico: '⚙️' },
 ]
 
-// 汇总所有 tab 标识，用于校验 URL/路由合法性、切换白名单等
-export const ALL_TABS = NAV_GROUPS.flatMap(g => g.items.map(i => i.tab))
+// 汇总所有「叶子」tab 标识（跳过仅作场景折叠的父节点），用于校验 URL/路由合法性、切换白名单等
+export const ALL_TABS = NAV_GROUPS.flatMap(g => g.items.flatMap(i => i.children ? i.children.map(c => c.tab) : [i.tab]))
