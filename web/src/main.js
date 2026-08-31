@@ -10,6 +10,7 @@ import KnowledgeView from './views/KnowledgeView.vue'
 import ReadingView from './views/ReadingView.vue'
 import LearningGoalsView from './views/LearningGoalsView.vue'
 import ReciteView from './views/ReciteView.vue'
+import PracticeView from './views/PracticeView.vue'
 import AntiCheatInput from './components/AntiCheatInput.vue'
 
 // 周报分享截图依赖（旧版经 CDN 挂到 window，这里改用 npm 依赖并保持 window 引用）
@@ -27,6 +28,7 @@ app.component('KnowledgeView', KnowledgeView)
 app.component('ReadingView', ReadingView)
 app.component('LearningGoalsView', LearningGoalsView)
 app.component('ReciteView', ReciteView)
+app.component('PracticeView', PracticeView)
 app.component('AntiCheatInput', AntiCheatInput)
 // 挂载到 index.html 中的 #app 节点
 app.mount('#app')
