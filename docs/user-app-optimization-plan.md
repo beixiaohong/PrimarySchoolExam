@@ -167,12 +167,12 @@
     - **刻意跳过**：`mandatoryTasks.ico` 来自后端 API(`d.tasks`)，需后端改；纯内容 emoji(💌🌟🎫📮⚡👑🔒👋🎉📋📕提醒文案) 非图标语言，保留。
   - B3 收尾说明：导航+TabBar(批次1)+首页任务卡/stat(批次2) 已统一为 SVG；后端驱动任务卡与内容 emoji 为已知残留，非阻塞。
 
-- **四期 C2（老目标并入管理台·兼容展示）已完成并推送**：`web/src/views/LearningGoalsView.vue`（提交 f60b362）。
+- **四期 C2（老目标并入管理台·兼容展示）已完成并推送**：`web/src/views/LearningGoalsView.vue`（提交 e8c8caa）。
   - 前端管理台「看板」Tab 顶部新增「学期目标（旧版）」分区：在 `refresh()` 并行调 `/api/goals?user_id=` 读取老三类固定目标（score/wrong/recite，current 实时聚合）存入 `legacyGoals`（读取失败静默不阻断）；展示 title/current/target/pct/截止信息，active 态提供「达成」(`POST /api/goals/{id}/done`) 与「移除」(`POST /api/goals/{id}/archive`) 按钮，操作后即时刷新本区；archived 状态不展示。
   - 老 `/api/goals` 后端接口**保留**（兼容展示与操作）；二期(A2)已删除老「学期目标」浮层模板与 mixin 死代码。物理把 `goal_items` 合并进 `learning_goals` 表因两套模型 current 语义不同（实时聚合 vs checkin 聚合）存在数据一致性风险，且需线上写库（沙箱禁直连克隆库），故按方案文档退路采用「管理台兼容展示」作为 C2 完成态，物理合并留待后续评估。
   - 效果：老目标不再「孤立」，在管理台可见、可达成/移除，用户目标心智统一到单一管理台；业务逻辑零改动。
 
-- **四期 C3（目标达成徽章联动）已完成并推送**：`app/routers/badges.py` + `web/src/views/LearningGoalsView.vue`（提交 9faf23c）。
+- **四期 C3（目标达成徽章联动）已完成并推送**：`app/routers/badges.py` + `web/src/views/LearningGoalsView.vue`（提交 694312a）。
   - 后端徽章墙新增 3 个「目标达成」徽章：`goal_1`🎯目标达成者（达成 1 个）/ `goal_3`🏅目标达人（3 个）/ `goal_5`👑习惯大师（5 个）；`_metrics` 新增 `goals_done`（learning_goals.status=done 数 + 老 goal_items.status=done 数，延迟 import 避免循环依赖），`_check` 加对应规则。BadgeEarned 表已存在，首次访问 `/api/badges` 即自动授予，无需迁移脚本。
   - 前端：新目标打卡 `just_achieved` 撒花时，与新老目标「达成」操作（含 C2 老目标 doneLegacy）后，统一调用 `_syncBadges()` 刷新徽章墙（`/api/badges?user_id=`），若本次解锁 goal_* 徽章则在 toast 提示「🏅 解锁新徽章：XXX」，失败静默不阻断。
   - 效果：目标达成 → 自动进入 badges 体系（C3 仪式感），撒花保留并叠加徽章解锁反馈；业务逻辑零改动。
