@@ -38,14 +38,15 @@ input,select,textarea{font-family:inherit}
 .nav-item{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--radius-sm);color:var(--text-2);font-size:14px;font-weight:500;transition:.15s;text-align:left;width:100%}
 .nav-item:hover{background:var(--bg);color:var(--text)}
 .nav-item.active{background:var(--primary-light);color:var(--primary);font-weight:600}
-.nav-item .ico{font-size:17px;width:22px;text-align:center}
+.nav-item .ico{display:inline-flex;align-items:center;justify-content:center;width:22px;flex:none}
 .nav-item .badge{margin-left:auto;background:var(--danger);color:#fff;font-size:11px;border-radius:20px;padding:1px 8px;font-weight:600}
 /* B2 导航收敛：场景折叠父节点 + 子项缩进 */
 .nav-item.nav-parent{font-weight:600;color:var(--text)}
 .nav-item.nav-parent .ico{opacity:.9}
 .nav-item.nav-child{padding-left:34px;font-size:13px;color:var(--text-2)}
-.nav-item.nav-child .ico{width:18px;font-size:15px}
-.nav-caret{margin-left:auto;font-size:10px;line-height:1;color:var(--text-3,#9aa0ae)}
+.nav-item.nav-child .ico{width:18px;font-size:15px;flex:none}
+.nav-caret{margin-left:auto;display:inline-flex;line-height:1;color:var(--text-3,#9aa0ae);transition:transform .15s}
+.nav-caret.caret-collapsed{transform:rotate(-90deg)}
 .sidebar .user{display:flex;align-items:center;gap:10px;padding:12px;background:var(--bg);border-radius:var(--radius-sm);margin-top:12px}
 .avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#F5A623,#FFD08A);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:14px;flex-shrink:0}
 .user b{font-size:13px;display:block;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px}
@@ -1029,7 +1030,7 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 @media (max-width:900px){
   .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;height:58px;background:var(--card,#fff);border-top:1px solid var(--border,#ececf4);z-index:60;padding-bottom:env(safe-area-inset-bottom)}
   .tabbar-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;color:var(--text-2,#8a8fa3);font-size:11px;cursor:pointer;transition:.15s}
-  .tabbar-item .ti-ico{font-size:20px;line-height:1}
+  .tabbar-item .ti-ico{display:inline-flex;align-items:center;justify-content:center;line-height:1}
   .tabbar-item.active{color:var(--primary,#4E7CF6);font-weight:700}
   /* 内容底部预留 TabBar 高度，避免遮挡 */
   .content{padding-bottom:76px}

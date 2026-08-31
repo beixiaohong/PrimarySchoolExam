@@ -151,6 +151,17 @@
   - **为何不纯搬模板**：`appOptions.js`(3603 行)集中 hold 全部 18 块状态与加载逻辑，纯搬模板会导致抽出的 View 拿不到响应式数据/调不到壳方法(`goTab`/`scrollToTasks` 等)。故先用「壳 provide 实例」解耦，后续按需把状态下沉到 Pinia(B1 后期，可选)。
   - 后续按此模式批量抽 home/practice/wrong/.../courses 等内联块；每块抽完以服务器 `deploy` 重建 `web/dist` 为验证闸门(沙箱 vite 受限无本地 build)。
 
+- **B2（结构性重构·导航收敛）已完成并推送**：`nav.js` + `App.vue` + `styles/style.css`，提交 `7335576`（3 文件 +68/-21）。
+  - 「学习」组 12 项平铺 → 按场景折叠为 **练习/阅读 子组 + 背诵中心/学习目标直接项**（一级 5 项，≤8）；新增「**工具**」分组收纳 搜题/专注钟/听写（桌面端变 5 分组）。
+  - `App.vue` 侧边栏支持 `children` 子分组渲染：场景父节点点击展开/收起（`openNav` 仅记手动收起、默认展开；激活 tab 所在子组强制展开保证可见），子项缩进展示；`style.css` 加 `.nav-parent/.nav-child/.nav-caret`。
+  - `ALL_TABS` 改为只汇总叶子 tab（22 个，无丢失）；移动端 TabBar 不变；未碰业务逻辑，仅导航结构换皮。
+  - 验证闸门：服务器 `git pull` + `sudo bash deploy.sh` 重建 `web/dist`（沙箱 vite 受限无本地 build）。
+
+- **B3（全站图标统一）批次1 已完成并推送**：`components/AppIcon.vue`（新增，内联 SVG 图标集）+ `main.js`（全局注册）+ `nav.js`（ico emoji→icon 名称）+ `App.vue`（侧边栏 & 移动端 TabBar 渲染 `<app-icon>`）+ `styles/style.css`（`.ico/.ti-ico/.nav-caret` 承载 SVG）。
+  - 新增 `AppIcon.vue`：22 个导航图标 + `caret` 折叠指示 + `placeholder` 兜底，统一 `stroke=currentColor` 继承主题色（active 态随 `--primary` 变蓝），消除「导航 emoji 与页内 SVG 风格割裂」(P0-5/P1-3 最显眼处)。
+  - 导航条目 `ico`(emoji) 统一改为 `icon`(SVG 名称)；折叠指示由 `▾/▸` 文本改为 `caret` SVG 旋转表达开合。
+  - **B3 批次2（待做）**：各 View 内部零散 emoji（HomeView 任务卡/称号/徽章 `ico` 字段、appOptions.js 任务卡 `ico` 等）替换——按方案文档第 165 行建议单独成项，避免一次大改互相污染；本次未触碰，业务逻辑零改动。
+
 ## 六、风险与约定
 
 - 所有改动遵循项目约定：每完成一个可独立验证模块即 commit；前端保持可构建（`cd web && npm run build` 通过为准，沙箱 vite 受限时在服务器验证）；后端改动上线前跑全套 pytest。

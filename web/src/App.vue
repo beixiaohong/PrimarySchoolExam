@@ -109,7 +109,7 @@
         <template v-for="it in g.items" :key="it.label">
           <!-- 叶子节点：直接跳转 -->
           <button v-if="!it.children" class="nav-item" :class="{active: tab===it.tab}" @click="goTab(it.tab)">
-            <span class="ico">{{it.ico}}</span>{{it.label}}
+            <span class="ico"><app-icon :name="it.icon"></app-icon></span>{{it.label}}
             <span v-if="it.badge==='wrong' && wrongBadge>0" class="badge">{{wrongBadge}}</span>
             <span v-if="it.badge==='pet' && petProfile && petLeveledUp" class="badge badge-gold">升级</span>
             <span v-if="it.badge==='badge' && badgeNew.length" class="badge badge-gold">新</span>
@@ -117,11 +117,11 @@
           <!-- 场景折叠父节点：点击展开/收起，子项缩进展示 -->
           <template v-else>
             <button class="nav-item nav-parent" :class="{active: it.children.some(c=>c.tab===tab)}" @click="toggleNav(it.label)">
-              <span class="ico">{{it.ico}}</span>{{it.label}}
-              <span class="nav-caret">{{ isNavOpen(it) ? '▾' : '▸' }}</span>
+              <span class="ico"><app-icon :name="it.icon"></app-icon></span>{{it.label}}
+              <span class="nav-caret" :class="{'caret-collapsed': !isNavOpen(it)}"><app-icon name="caret" :size="14"></app-icon></span>
             </button>
             <button v-for="c in it.children" v-show="isNavOpen(it)" :key="c.tab" class="nav-item nav-child" :class="{active: tab===c.tab}" @click="goTab(c.tab)">
-              <span class="ico">{{c.ico}}</span>{{c.label}}
+              <span class="ico"><app-icon :name="c.icon" :size="18"></app-icon></span>{{c.label}}
               <span v-if="c.badge==='wrong' && wrongBadge>0" class="badge">{{wrongBadge}}</span>
             </button>
           </template>
@@ -225,7 +225,7 @@
   <!-- 移动端底部 TabBar（P5：≤900px 显示，修复旧版隐藏侧边栏后无法导航） -->
   <nav class="tabbar">
     <button v-for="it in TABBAR" :key="it.tab" class="tabbar-item" :class="{active: tab===it.tab}" @click="goTab(it.tab)">
-      <span class="ti-ico">{{it.ico}}</span><span class="ti-label">{{it.label}}</span>
+      <span class="ti-ico"><app-icon :name="it.icon" :size="22"></app-icon></span><span class="ti-label">{{it.label}}</span>
     </button>
   </nav>
 </div>
