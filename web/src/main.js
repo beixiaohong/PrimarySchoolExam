@@ -37,6 +37,21 @@ window.html2canvas = html2canvas
 
 // 创建根应用实例
 const app = createApp(App)
+// 全局错误边界：捕获单个视图渲染/逻辑中的未处理异常，避免整页白屏拖垮整个 SPA
+// （例如某页面访问了不存在的响应式字段）。出错时仅该视图渲染失败，其余页面仍可正常使用。
+app.config.errorHandler = (err, instance, info) => {
+  const name = (instance && instance.$options && instance.$options.name) || 'AnonymousComponent'
+  // 打到控制台，便于定位根因（含组件名与出错阶段 render/setup 等）
+  console.error(`[AppError] 组件 ${name} 在 ${info} 阶段抛出异常：`, err)
+  // 同时在页面顶部给出非阻塞提示，用户可继续操作其他页面
+  try {
+    const tip = document.createElement('div')
+    tip.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:9999;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;padding:8px 14px;border-radius:10px;font-size:13px;max-width:90vw;box-shadow:0 4px 16px rgba(0,0,0,.12)'
+    tip.textContent = `⚠️ 「${name}」页面出错（已隔离，不影响其他页面）：${err && err.message ? err.message : err}`
+    document.body.appendChild(tip)
+    setTimeout(() => tip.remove(), 6000)
+  } catch (e) { /* 忽略 UI 提示异常 */ }
+}
 // 注册全局状态管理（Pinia）与哈希路由
 app.use(createPinia())
 app.use(router)
