@@ -815,7 +815,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
 
 
 __all__ = [
-    "logger", "SUBJECTS", "MANDATORY_TASKS", "OPTIONAL_POOL",
+    "logger", "SUBJECTS", "MANDATORY_TASKS", "MANDATORY_CHOICES", "OPTIONAL_POOL",
     "_UNCONFIGURABLE_CODES", "CONFIGURABLE_CODES", "MIN_TARGET", "MAX_TARGET",
     "CODE_MIN_TARGET", "QUOTA_KEYS", "TASK_PASS_SCORE",
     "_pick_daily_optional", "_default_target", "_display_title",
