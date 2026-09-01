@@ -64,7 +64,7 @@ UPGRADE_BODY = '''def upgrade(db):
             pid = row[0]
             db.execute(text(
                 "UPDATE papers SET subject=:subject, grade=:grade, title=:title, "
-                "source_url=:source_url, download_url=:download_url, html_content=:html_content, "
+                "source_url=:source_url, download_url=:download_url, __HTML_SET__ "
                 "answers=:answers, total_questions=:total_questions, year=:year, semester=:semester "
                 "WHERE id=:id"), {**params, "id": pid})
         else:
@@ -128,13 +128,16 @@ def _ensure_applied(db):
         "applied_at DATETIME)"))
 
 
-def generate(grade=None, subject=None, dry_run=False, source=None):
+def generate(grade=None, subject=None, dry_run=False, source=None, no_html=False):
     """本地：抽取未导出的采集式题库，生成一份版本化更新脚本。
 
     源库：配置了 STAGING_DB_URL 时读本地 SQLite 暂存库，否则读主库 MySQL
           （由 collection_session() 自动选择）。
           指定 source=路径 时直接读该 SQLite 文件（用于录入 data/papers_*.sqlite
            等多批本地采集数据）。
+
+    no_html：精简模式，剥离整卷原始 HTML（体积可降 90%+），题目本体不受影响；
+             已存在的线上试卷不会被清空 html_content。
     """
     _ensure_dir()
     if source:
@@ -189,20 +192,31 @@ def generate(grade=None, subject=None, dry_run=False, source=None):
 
     import pprint
     version = _next_version()
-    slug = datetime.now().strftime("%Y%m%d")
+    slug = datetime.now().strftime("%Y%m%d") + ("_nohtml" if no_html else "")
     fname = f"{version}_{slug}.py"
     nq = sum(len(p["questions"]) for p in papers)
+    if no_html:
+        # 精简模式：剥离整卷原始 HTML（通常占脚本体积 90% 以上，仅用于溯源/重新解析）。
+        # 题目本体（question_html/options/答案）完整保留，不影响刷题与补答案。
+        for p in papers:
+            p["html_content"] = ""
     papers_literal = pprint.pformat(papers, width=120, sort_dicts=False)
     header = (
         f'"""{version}（tools/qb_release.py generate 自动生成）\n'
         f'导出时间：{datetime.now().strftime("%Y-%m-%d %H:%M")}\n'
         f'内容：{len(papers)} 份试卷 / {nq} 道采集题目（papers + paper_questions）。\n'
-        f'应用：线上执行 `python tools/qb_release.py apply`。\n\n'
+        + (f'精简模式（--no-html）：不含整卷原始 HTML；已存在的试卷记录不覆盖其 html_content。\n'
+           if no_html else '')
+        + f'应用：线上执行 `python tools/qb_release.py apply`。\n\n'
         f'upsert 策略：按 source_url 定位/写入 papers，再按 (paper_id, seq) 定位/写入题目，\n'
         f'避免使用本地自增 id，规避本地与线上 paper_id 不一致。\n'
         f'"""\n\n'
     )
-    content = header + UPGRADE_BODY.replace("__PAPERS__", papers_literal)
+    # 精简模式下 UPDATE 不触碰 html_content，避免把线上已有原文清空
+    html_set = "" if no_html else "html_content=:html_content, "
+    content = (header + UPGRADE_BODY
+               .replace("__PAPERS__", papers_literal)
+               .replace("__HTML_SET__", html_set))
     out = QBV_DIR / fname
 
     if dry_run:
@@ -212,14 +226,22 @@ def generate(grade=None, subject=None, dry_run=False, source=None):
     out.write_text(content, encoding="utf-8")
 
     # 记录已导出，保证下一次 generate 只产出增量
-        with _open() as db:
-            _ensure_export_state(db)
-            now = datetime.now()
-        for p in papers:
-            db.execute(text(
+    with _open() as db:
+        _ensure_export_state(db)
+        now = datetime.now()
+        # UPSERT 方言适配：SQLite 不支持 MySQL 的 ON DUPLICATE KEY UPDATE，
+        # 改用标准 UPSERT（ON CONFLICT ... DO UPDATE），否则以 SQLite 为源时报错。
+        if db.bind.dialect.name == "sqlite":
+            upsert_sql = (
                 "INSERT INTO qb_export_state (source_url, version, exported_at) "
-                "VALUES (:s, :v, :t) ON DUPLICATE KEY UPDATE version=:v, exported_at=:t"),
-                {"s": p["source_url"], "v": version, "t": now})
+                "VALUES (:s, :v, :t) "
+                "ON CONFLICT(source_url) DO UPDATE SET version=:v, exported_at=:t")
+        else:
+            upsert_sql = (
+                "INSERT INTO qb_export_state (source_url, version, exported_at) "
+                "VALUES (:s, :v, :t) ON DUPLICATE KEY UPDATE version=:v, exported_at=:t")
+        for p in papers:
+            db.execute(text(upsert_sql), {"s": p["source_url"], "v": version, "t": now})
         db.commit()
 
     print(f"已生成 {out}：{len(papers)} 份试卷 / {nq} 题")
@@ -263,12 +285,15 @@ def main():
     g.add_argument("--subject", default=None, help="仅导出指定学科（如 数学）")
     g.add_argument("--source", default=None, help="指定源 SQLite 路径（覆盖 collection_session，录入本地 data/papers_*.sqlite）")
     g.add_argument("--dry-run", action="store_true", help="仅预览，不写文件、不记录")
+    g.add_argument("--no-html", action="store_true",
+                   help="精简模式：不导出整卷原始 HTML（脚本体积大幅减小，题目本体不受影响）")
 
     sub.add_parser("apply", help="线上按版本顺序应用未执行的更新脚本")
 
     args = ap.parse_args()
     if args.cmd == "generate":
-        generate(grade=args.grade, subject=args.subject, dry_run=args.dry_run, source=args.source)
+        generate(grade=args.grade, subject=args.subject, dry_run=args.dry_run,
+                 source=args.source, no_html=args.no_html)
     elif args.cmd == "apply":
         apply()
 
