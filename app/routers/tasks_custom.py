@@ -179,8 +179,11 @@ def list_parent_custom_tasks(user_id: str = Query(...), db: Session = Depends(ge
     返回：家长自定义任务数组（含 id/title/subject/task_type/target/active/created_at）。
     副作用：无（只读）。无需家长密码。
     """
+    # 仅返回生效中的任务（active=True）；软删除（active=False）的任务已从管理列表隐藏，
+    # 与每日任务注入逻辑（common.py 按 active==True 注入）保持一致，避免「删除后仍在列表」的错觉。
     rows = db.query(ParentCustomTask).filter(
-        ParentCustomTask.user_id == user_id).order_by(
+        ParentCustomTask.user_id == user_id,
+        ParentCustomTask.active == True).order_by(
         ParentCustomTask.task_type, ParentCustomTask.sort_order, ParentCustomTask.id).all()
     return [{
         "id": t.id, "title": t.title, "subject": t.subject,
