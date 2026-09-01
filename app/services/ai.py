@@ -217,8 +217,21 @@ def _config_provider(name: str) -> dict:
     return cfg
 
 
+def _ai_paused() -> bool:
+    """紧急止血开关：环境变量 AI_PAUSED=1 时，所有 AI 调用立即停止。
+
+    用途：线上额度告急、Key 泄漏或接口异常时，不改代码、不停服务，
+    仅在服务器 .env 里加一行 AI_PAUSED=1 并重启即可切断全部 AI 请求
+    （含批量补答案、知识点生成等离线任务），各调用方自动降级/跳过。
+    """
+    _load_env_file()
+    return os.environ.get("AI_PAUSED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def ai_enabled() -> bool:
-    """任一免费提供商配置了 Key 即视为 AI 可用"""
+    """任一免费提供商配置了 Key 即视为 AI 可用（AI_PAUSED 时恒为 False）"""
+    if _ai_paused():
+        return False
     _load_env_file()
     return any(_config_provider(n)["api_key"] for n in FREE_CHAIN)
 
@@ -228,7 +241,10 @@ def ai_any_enabled() -> bool:
 
     错题复核等场景若只配了 DEEPSEEK_API_KEY（没有免费链 Key），
     也必须能工作（付费优先），不能因为 ai_enabled() 只看免费链而整体跳过。
+    AI_PAUSED 开启时恒为 False，使离线批量任务（补答案等）整体跳过。
     """
+    if _ai_paused():
+        return False
     _load_env_file()
     return any(_config_provider(n)["api_key"] for n in FREE_CHAIN) or bool(
         _config_provider("deepseek")["api_key"])
@@ -383,6 +399,10 @@ def _is_timeout(e: BaseException) -> bool:
 def _call_model(cfg: dict, system: str, user: str,
                 max_tokens: int, history: Optional[list] = None) -> Optional[dict]:
     """调用单个模型，返回 {"text", ...}；失败/异常返回 None"""
+    # 紧急止血：AI_PAUSED=1 时不再发起任何外部请求（避免继续消耗额度）
+    if _ai_paused():
+        logger.warning("AI_PAUSED 已开启，跳过 AI 调用（紧急止血）")
+        return None
     try:
         data = _http_call(cfg, system, user, max_tokens, history)
         choice = (data.get("choices") or [{}])[0]
