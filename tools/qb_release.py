@@ -128,14 +128,28 @@ def _ensure_applied(db):
         "applied_at DATETIME)"))
 
 
-def generate(grade=None, subject=None, dry_run=False):
+def generate(grade=None, subject=None, dry_run=False, source=None):
     """本地：抽取未导出的采集式题库，生成一份版本化更新脚本。
 
     源库：配置了 STAGING_DB_URL 时读本地 SQLite 暂存库，否则读主库 MySQL
-    （由 collection_session() 自动选择）。
+          （由 collection_session() 自动选择）。
+          指定 source=路径 时直接读该 SQLite 文件（用于录入 data/papers_*.sqlite
+           等多批本地采集数据）。
     """
     _ensure_dir()
-    with collection_session() as db:
+    if source:
+        # 指定本地 SQLite 源（如 data/papers_2026-08-30.sqlite），覆盖默认 collection_session
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        eng = create_engine(f"sqlite:///{source}")
+        sm = sessionmaker(bind=eng, future=True)
+
+        def _open():
+            return sm()
+    else:
+        def _open():
+            return collection_session()
+    with _open() as db:
         _ensure_export_state(db)
         exported = {r[0] for r in db.execute(text("SELECT source_url FROM qb_export_state"))}
 
@@ -198,9 +212,9 @@ def generate(grade=None, subject=None, dry_run=False):
     out.write_text(content, encoding="utf-8")
 
     # 记录已导出，保证下一次 generate 只产出增量
-    with collection_session() as db:
-        _ensure_export_state(db)
-        now = datetime.now()
+        with _open() as db:
+            _ensure_export_state(db)
+            now = datetime.now()
         for p in papers:
             db.execute(text(
                 "INSERT INTO qb_export_state (source_url, version, exported_at) "
@@ -247,13 +261,14 @@ def main():
     g = sub.add_parser("generate", help="本地增量抽取未导出题库，生成更新脚本")
     g.add_argument("--grade", default=None, help="仅导出指定年级（如 一年级）")
     g.add_argument("--subject", default=None, help="仅导出指定学科（如 数学）")
+    g.add_argument("--source", default=None, help="指定源 SQLite 路径（覆盖 collection_session，录入本地 data/papers_*.sqlite）")
     g.add_argument("--dry-run", action="store_true", help="仅预览，不写文件、不记录")
 
     sub.add_parser("apply", help="线上按版本顺序应用未执行的更新脚本")
 
     args = ap.parse_args()
     if args.cmd == "generate":
-        generate(grade=args.grade, subject=args.subject, dry_run=args.dry_run)
+        generate(grade=args.grade, subject=args.subject, dry_run=args.dry_run, source=args.source)
     elif args.cmd == "apply":
         apply()
 
