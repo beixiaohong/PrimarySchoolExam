@@ -37,12 +37,21 @@ GRADE = 7
 
 # ── DeepSeek 配置（复用 .env 的 DEEPSEEK_API_KEY）──
 DEEPSEEK_KEY = ""
+# 模型名可由 .env 的 DEEPSEEK_MODEL 覆盖：接口返回 405/404 多为模型名不被
+# 受理，改配置即可，无需改代码（官方公开模型为 deepseek-chat / deepseek-reasoner）。
+DEEPSEEK_MODEL = "deepseek-chat"
+# 紧急止血：.env 里设 AI_PAUSED=1 可一键停止本脚本的全部 AI 请求
+AI_PAUSED = False
 env_path = ROOT / ".env"
 if env_path.exists():
     for line in env_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line.startswith("DEEPSEEK_API_KEY="):
             DEEPSEEK_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
+        elif line.startswith("DEEPSEEK_MODEL="):
+            DEEPSEEK_MODEL = line.split("=", 1)[1].strip().strip('"').strip("'")
+        elif line.startswith("AI_PAUSED="):
+            AI_PAUSED = line.split("=", 1)[1].strip().lower() in ("1", "true", "yes", "on")
 
 SUBJECTS = ["数学", "物理", "化学", "生物", "地理", "道德与法治", "历史", "语文", "英语"]
 
@@ -112,8 +121,11 @@ def call_deepseek(system: str, user: str, max_tokens: int = 3000) -> str:
     if not DEEPSEEK_KEY:
         print("  [warn] 未配置 DEEPSEEK_API_KEY，跳过 AI 生成")
         return ""
+    if AI_PAUSED:
+        print("  [warn] AI_PAUSED 已开启，跳过 AI 生成（紧急止血）")
+        return ""
     payload = {
-        "model": "deepseek-v4-flash",
+        "model": DEEPSEEK_MODEL,
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": user}],
         "max_tokens": max_tokens,
