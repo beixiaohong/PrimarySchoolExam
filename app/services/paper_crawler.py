@@ -31,6 +31,109 @@ from app.database import collection_session, init_collection_db
 from app.models.paper import Paper, PaperQuestion
 from app.services.question_parser import parse_paper
 
+# ========== 跨日去重注册表（持久化已抓 URL，确保「之前没抓过的」跨天生效） ==========
+# 每日 SQLite 数据文件是「当天」独立的（见 tools/collect_daily.py），因此不能用
+# 每日库内的 Paper.source_url 做去重（否则每天都会把同一批卷子重新抓一遍）。
+# 这里用一份与每日文件解耦的持久化 SQLite 记录所有曾抓过的 source_url，
+# 由 paper_crawler 在抓取前查询、抓取后写入，跨天/跨进程均生效。
+import sqlite3 as _sqlite3
+
+REGISTRY_PATH = BASE_DIR / "data" / "scrape_registry.sqlite"
+_registry_conn = None
+
+
+def _registry_conn_get():
+    """懒加载注册表连接（进程级单例），确保表存在。"""
+    global _registry_conn
+    if _registry_conn is None:
+        REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _registry_conn = _sqlite3.connect(str(REGISTRY_PATH), timeout=30)
+        _registry_conn.execute(
+            "CREATE TABLE IF NOT EXISTS scraped ("
+            "url TEXT PRIMARY KEY, day TEXT, subject TEXT, grade TEXT, "
+            "title TEXT, ts TEXT)"
+        )
+        _registry_conn.commit()
+    return _registry_conn
+
+
+def is_scraped(url):
+    """该 source_url 是否已在历史中抓过（跨天去重核心）。"""
+    if not url:
+        return False
+    try:
+        cur = _registry_conn_get().execute("SELECT 1 FROM scraped WHERE url=?", (url,))
+        return cur.fetchone() is not None
+    except Exception:
+        return False
+
+
+def mark_scraped(url, day, subject, grade, title):
+    """记录已抓 URL（幂等，重复写入忽略）。"""
+    if not url:
+        return
+    try:
+        _registry_conn_get().execute(
+            "INSERT OR IGNORE INTO scraped(url, day, subject, grade, title, ts) "
+            "VALUES(?,?,?,?,?,?)",
+            (url, day, subject, grade, title, datetime.now().isoformat(timespec="seconds")))
+        _registry_conn_get().commit()
+    except Exception:
+        pass
+
+
+def count_scraped_today(subject, grade, day):
+    """当日该 (学科,年级) 已抓份数（用于 PER_CATEGORY_CAP 每日配额）。"""
+    try:
+        cur = _registry_conn_get().execute(
+            "SELECT COUNT(*) FROM scraped WHERE subject=? AND grade=? AND day=?",
+            (subject, grade, day))
+        return cur.fetchone()[0]
+    except Exception:
+        return 0
+
+
+def seed_registry_from_staging(staging_path=None):
+    """从既有 staging 库（data/collected_staging.sqlite）导入 source_url，
+    避免切换到每日文件后把历史已采卷又抓一遍。仅当注册表尚未种子化时执行。"""
+    if is_scraped("__seeded__marker__"):
+        return 0
+    if staging_path is None:
+        staging_path = BASE_DIR / "data" / "collected_staging.sqlite"
+    if not os.path.exists(str(staging_path)):
+        return 0
+    try:
+        src = _sqlite3.connect(str(staging_path), timeout=30)
+        rows = src.execute(
+            "SELECT source_url, subject, grade, title FROM papers "
+            "WHERE source_url IS NOT NULL AND source_url <> ''"
+        ).fetchall()
+        src.close()
+    except Exception:
+        return 0
+    today = datetime.now().strftime("%Y-%m-%d")
+    n = 0
+    for url, subject, grade, title in rows:
+        try:
+            _registry_conn_get().execute(
+                "INSERT OR IGNORE INTO scraped(url, day, subject, grade, title, ts) "
+                "VALUES(?,?,?,?,?,?)",
+                (url, "legacy", subject or "", grade or "", title or "", today))
+            n += 1
+        except Exception:
+            pass
+    # 写入种子标记，避免重复 seed（也作为一条普通记录，不影响去重）
+    try:
+        _registry_conn_get().execute(
+            "INSERT OR IGNORE INTO scraped(url, day, subject, grade, title, ts) "
+            "VALUES(?,?,?,?,?,?)", ("__seeded__marker__", "legacy", "", "", "", today))
+    except Exception:
+        pass
+    _registry_conn_get().commit()
+    print(f"🌱 已从历史 staging 库导入 {n} 条已抓记录到跨日注册表")
+    return n
+
+
 # requests / bs4 / mammoth / pdfplumber / rarfile 等重依赖延迟导入：
 # 仅在本模块真正发起网络请求或解析文档时才加载，避免「仅引用即拉起网络依赖」
 # 触发运行环境对 import 的拦截。
@@ -316,7 +419,12 @@ def embed_images_as_base64(html_file):
 
 
 def convert_document_to_html(file_path):
-    """文档 -> 自包含 HTML（图片 base64 内联）。失败返回 None。"""
+    """文档 -> 自包含 HTML（图片 base64 内联）。失败返回 None。
+
+    优先级：LibreOffice（覆盖 doc/docx/pdf 等）→ mammoth(.docx) →
+    pdfplumber(.pdf)。旧版 .doc（OLE 二进制）在缺少 LibreOffice 时无法可靠
+    转为 HTML，直接返回 None（仅记录元信息、不存二进制乱码）。
+    """
     ext = os.path.splitext(file_path)[1].lower()
     html_file = convert_with_libreoffice(file_path, str(TEMP_HTML_DIR))
     if html_file:
@@ -326,6 +434,10 @@ def convert_document_to_html(file_path):
         return convert_docx_mammoth(file_path)
     if ext == '.pdf':
         return convert_pdf_text(file_path)
+    if ext == '.doc':
+        # 旧版 .doc 为 OLE 二进制，无 LibreOffice 无法可靠转换，返回 None（仅记录元信息）
+        return None
+    # 其余（.txt/.html 等）按纯文本兜底
     try:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             return f"<pre>{f.read()}</pre>"
@@ -588,6 +700,23 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
     from app.database import init_collection_db
     init_collection_db()
 
+    # 批量补答案属离线定时任务（非在线请求路径），放宽全局节流以提升吞吐
+    # （在线接口仍保持 AI_THROTTLE_SEC 防限流；此处仅作用于本批处理进程）。
+    if fill_answers_after:
+        try:
+            import app.services.ai as _ai_mod
+            _ai_mod.AI_THROTTLE_SEC = 0.2
+        except Exception:
+            pass
+        # 开局先补一次当日库内「已入库但尚未有答案」的试卷（含本日早些时候已采集、
+        # 或因中断续跑遗留的卷子），保证随采随补、可断点续传。
+        try:
+            from app.services.answer_generator import fill_missing_answers
+            print("🤖 开局先补当日库内已有试卷的缺失答案...")
+            fill_missing_answers()
+        except BaseException as e:
+            print(f"⚠️ 开局答案补全异常（不影响采集）: {type(e).__name__}: {e}")
+
     ensure_dir(DOWNLOAD_DIR)
     ensure_dir(EXTRACT_DIR)
     ensure_dir(CLEAN_DIR)
@@ -613,18 +742,11 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                 stage = GRADE_STAGE.get(grade_name, "初中")
                 if stage_collected.get(stage, 0) >= STAGE_CAP.get(stage, 10):
                     continue
-                # 续跑优化：该 (学科,年级) 今日已采满，跳过整类列表抓取，直接下一个分类。
-                # 注意：必须按「今日」计数（created_at >= 今日0点），而非历史累计——
-                # 否则某分类一旦累计达 PER_CATEGORY_CAP 就永久不再采集，既违背「每天约200份新卷」，
-                # 也会让已采满的初中段被整体跳过、破坏「优先初中」的学段优先级。
-                today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                with collection_session() as s:
-                    have = s.execute(
-                        select(func.count(Paper.id)).where(
-                            Paper.subject == subject_name, Paper.grade == grade_name,
-                            Paper.created_at >= today_start)
-                    ).scalar() or 0
-                if have >= PER_CATEGORY_CAP:
+                # 当日 (学科,年级) 配额：基于跨日注册表统计「今日」已抓份数，
+                # 因为每日 SQLite 文件是独立的（不能用库内 created_at 计数，否则永远为 0
+                # 导致该分类每天都被重新抓、且破坏「优先初中」的学段优先级）。
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                if count_scraped_today(subject_name, grade_name, today_str) >= PER_CATEGORY_CAP:
                     continue
                 print(f"\n📚 [{datetime.now():%Y-%m-%d %H:%M:%S}] 处理: {subject_name} - {grade_name}")
                 papers = get_paper_list(url_suffix)
@@ -640,15 +762,10 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                     if new_count >= PER_CATEGORY_CAP:
                         break
                     source_url = paper['detail_url']
-                    # 去重：已采集过的不再采集
-                    try:
-                        with collection_session() as session:
-                            if session.execute(
-                                select(Paper.id).where(Paper.source_url == source_url)
-                            ).first():
-                                print(f"  ⏭ 已采集，跳过: {paper['title']}")
-                                continue
-                    except BaseException:
+                    # 跨日去重：注册表已记录的 source_url 不再采集（之前抓过的，
+                    # 包括历史 staging 库与之前任意一天的每日文件中的卷子）。
+                    if is_scraped(source_url):
+                        print(f"  ⏭ 已采集（注册表），跳过: {paper['title']}")
                         continue
 
                     # 单份试卷处理异常时跳过并续跑（自动化每日任务不能因一份坏卷中断）
@@ -680,6 +797,17 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                                 source_url, download_url, html_content, year=yr)
                             print(f"    📝 入库试卷 ID={paper_id}，题目 {q_count} 道")
                             new_paper_ids.append(paper_id)
+                            # 写入跨日注册表：确保「之前没抓过的」跨天生效
+                            mark_scraped(source_url, today_str, subject_name, grade_name, paper['title'])
+
+                            # 采集后即时补该卷 AI 答案（增量、随采随补，避免「全部采完再统一补」
+                            # 时若中途中断导致整批卷子无答案；AI 调用期间不持 DB 连接）。
+                            if fill_answers_after:
+                                try:
+                                    from app.services.answer_generator import fill_missing_answers
+                                    fill_missing_answers(paper_ids=[paper_id])
+                                except BaseException as e:
+                                    print(f"  ⚠️ 该卷答案补全异常（不影响入库）: {type(e).__name__}: {e}")
 
                             # 不使用 doc 保存：转换入库后删除原件
                             _safe_remove(doc_path)
@@ -725,11 +853,20 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
     # 单独 try 包裹：AI 补全异常绝不影响已采集试卷。
     if fill_answers_after and new_paper_ids:
         from app.services.answer_generator import fill_missing_answers
+        # 批量补答案属离线定时任务（非在线请求路径），放宽全局节流以提升吞吐
+        # （在线接口仍保持 AI_THROTTLE_SEC 防限流；此处仅作用于本批处理进程）。
+        try:
+            import app.services.ai as _ai_mod
+            _ai_mod.AI_THROTTLE_SEC = 0.2
+        except Exception:
+            pass
         cap = answer_cap if answer_cap and answer_cap > 0 else None
-        print(f"\n🤖 优先为本次新采集的 {len(new_paper_ids)} 份试卷补全 AI 答案"
+        print(f"\n🤖 为当日 SQLite 内全部缺失答案的试卷补全 AI 答案"
               f"{('（本日上限 ' + str(cap) + ' 题）') if cap else '（不限额）'}...")
         try:
-            fill_missing_answers(paper_ids=new_paper_ids, limit=cap)
+            # 当日 SQLite 仅含本日采集的试卷，故「全局补全」（不限 paper_ids）即覆盖全部当日卷，
+            # 包括本轮之前已入库的当日卷的剩余空缺；已含答案的题目会被自动跳过。
+            fill_missing_answers(limit=cap)
         except BaseException as e:
             print(f"⚠️ AI 答案补全异常（不影响已采集试卷）: {type(e).__name__}: {e}")
             traceback.print_exc()

@@ -94,6 +94,10 @@ PROVIDERS: dict = {
         "tier": "paid",
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-v4-flash",
+        # 采集批量补答案场景单题调用密集：给足推理超时，并在网络抖动时重试一次，
+        # 避免 10s 全局默认把偶发慢响应误判为失败（实测正常 1-2s，但偶发会 >10s）。
+        "timeout": 30,
+        "retry_on_timeout": True,
     },
     # 第三方 OpenAI 兼容中转站（备用兜底）：RELAY_* 环境变量配置，未配置自动跳过
     "relay": {
@@ -360,6 +364,22 @@ def _call_provider(name: str, cfg: dict, system: str, user: str,
     return result
 
 
+def _is_timeout(e: BaseException) -> bool:
+    """判断异常是否为超时（含 urllib 的 URLError(socket.timeout) 这类非 TimeoutError）"""
+    if isinstance(e, TimeoutError):
+        return True
+    if isinstance(e, urllib.error.URLError):
+        reason = getattr(e, "reason", None)
+        if isinstance(reason, TimeoutError):
+            return True
+        # socket.timeout 是 OSError 子类（非 TimeoutError），用 errno/文案兜底
+        if isinstance(reason, OSError) and (
+                getattr(reason, "errno", None) in (110, 10060)
+                or "timed out" in str(reason).lower()):
+            return True
+    return False
+
+
 def _call_model(cfg: dict, system: str, user: str,
                 max_tokens: int, history: Optional[list] = None) -> Optional[dict]:
     """调用单个模型，返回 {"text", ...}；失败/异常返回 None"""
@@ -394,9 +414,10 @@ def _call_model(cfg: dict, system: str, user: str,
         return None
     except Exception as e:  # 超时/连接失败等
         logger.warning("AI[%s] 调用失败: %s", cfg["model"], e)
-        # 中转站实测约 50% 20s 超时 → 超时后重试一次（_timeout_retried 标记防递归）
+        # 中转站/DeepSeek 实测偶发超时（urllib 超时表现为 URLError(reason=socket.timeout)，
+        # 不是 TimeoutError）→ 超时后重试一次（_timeout_retried 标记防递归）。
         if (cfg.get("retry_on_timeout") and not cfg.get("_timeout_retried")
-                and isinstance(e, TimeoutError)):
+                and _is_timeout(e)):
             cfg2 = dict(cfg)
             cfg2["_timeout_retried"] = True
             logger.warning("AI[%s] 超时，重试一次…", cfg["model"])
