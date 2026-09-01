@@ -334,27 +334,28 @@
     </div>
     <div style="padding:16px">
       <div style="font-size:12px;color:#888;margin-bottom:10px;line-height:1.5">数量 = 每天要完成的目标（如试卷张数 / 题目数 / 次数）；任务标题里的数字会随数量自动变化</div>
-      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">强制任务（每科默认任务固定，可再添加多个）</div>
-      <div v-for="d in taskDialog.defaults" :key="'def-'+d.code" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span style="min-width:36px;font-size:13px">{{d.subject}}</span>
-        <span class="fill-input" style="flex:1;font-size:12px;display:flex;align-items:center;gap:6px">{{taskOptTitle(d.def, d.target)}}<i class="tag tag-gray" style="font-style:normal">默认</i></span>
-        <input v-model.number="d.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量">
+      <div style="font-weight:bold;margin-bottom:4px;color:#3a4a6b">强制任务（每科可自定义）</div>
+      <div style="font-size:12px;color:#888;margin-bottom:10px;line-height:1.5">每科至少 1 项；可把默认任务换成其它类型，如 数学=同步练、语文=阅读+家庭作业、英语=朗读+背单词</div>
+      <div v-for="key in ['math','chi','eng']" :key="'m-'+key" style="margin-bottom:10px;border:1px solid #eee;border-radius:8px;padding:8px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <span class="tag" :class="key==='math'?'tag-orange':(key==='chi'?'tag-green':'tag-blue')">{{mandSubjectLabel(key)}}</span>
+          <select v-model="taskDialog._add[key]" class="fill-input" style="flex:1;min-width:110px;font-size:12px">
+            <option value="">-- 选择任务类型 --</option>
+            <option v-for="o in mandAvail(key)" :key="o.code" :value="o.code">{{o.title}}</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px" @click="addMandatory(key)">+ 添加</button>
+        </div>
+        <div v-for="(m, idx) in taskDialog.mandatory[key]" :key="'mm-'+key+'-'+idx" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <span class="fill-input" style="flex:1;min-width:110px;font-size:12px;display:flex;align-items:center;gap:6px">
+            {{taskOptTitle({title: m.title}, m.target)}}
+            <i v-if="m.code === mandDefaultCode(key)" class="tag tag-gray" style="font-style:normal">默认</i>
+            <i v-if="m.locked" class="tag tag-gray" style="font-style:normal">全量</i>
+          </span>
+          <input v-model.number="m.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量">
+          <button class="btn btn-ghost btn-sm" @click="removeMandatory(key, idx)" style="padding:2px 8px;font-size:12px">✕</button>
+        </div>
       </div>
-      <div v-for="(ex, idx) in taskDialog.extra" :key="'ex-'+idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <select v-model="ex.subject" class="fill-input" style="width:68px;font-size:12px" @change="ex.code=''">
-          <option value="math">数学</option>
-          <option value="chi">语文</option>
-          <option value="eng">英语</option>
-        </select>
-        <select v-model="ex.code" class="fill-input" style="flex:1;min-width:120px;font-size:12px">
-          <option value="">-- 选择 --</option>
-          <option v-for="t in taskDialog.subOpts[ex.subject]" :key="t.code" :value="t.code">{{t.title}}</option>
-        </select>
-        <input v-model.number="ex.target" type="number" min="1" max="50" class="fill-input" style="width:56px;font-size:12px" placeholder="数量" title="每天要完成的数量">
-        <button class="btn btn-ghost btn-sm" @click="taskDialog.extra.splice(idx,1)" style="padding:2px 8px;font-size:12px">✕</button>
-      </div>
-      <button class="btn btn-ghost btn-sm" @click="taskDialog.extra.push({subject:'math',code:'',target:1})" style="margin-bottom:16px">+ 添加强制任务</button>
-      <div style="font-weight:bold;margin-bottom:10px;color:#3a4a6b">可选任务（可添加多条）</div>
+      <div style="font-weight:bold;margin:6px 0 10px;color:#3a4a6b">可选任务（可添加多条）</div>
       <div v-for="(opt, idx) in taskDialog.optional" :key="idx" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
         <select v-model="opt.subject" class="fill-input" style="width:68px;font-size:12px" @change="opt.code=''">
           <option value="math">数学</option>

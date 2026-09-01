@@ -25,7 +25,8 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
     """获取每日任务配置（目标数/启用状态/追加强制任务/背诵额度/可选任务/学习开关）。
 
     参数（Query）：user_id。
-    返回：{items[{code,subject,title,default,target,enabled,manual}], mandatory{学科:[追加codes]},
+    返回：{items[{code,subject,title,default,target,enabled,manual}], mandatory{学科:[完整codes]},
+          mandatory_choices{学科:[{code,title,target,is_default,manual,locked}]},
           quotas{每日新学单词/古诗文数}, optional[家长添加的可选code], study_flags{include_next/sync_mode/xsc_bridge}}。
     副作用：无（只读）。无需家长密码。
     """
@@ -68,7 +69,24 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
             "default": item["target"], "target": targets.get(code, item["target"]),
             "enabled": True, "manual": item.get("manual", False),
         })
+    # 每科可配置为「强制任务」的类型库（前端据此渲染下拉多选，替换默认固定项）
+    mandatory_choices = {}
+    for subj in SUBJECTS:
+        opts = []
+        for code in MANDATORY_CHOICES.get(subj, []):
+            item = next((t for t in all_tasks if t["code"] == code), None)
+            if not item:
+                continue
+            opts.append({
+                "code": code, "title": item["title"],
+                "target": targets.get(code, item["target"]),
+                "is_default": code == MANDATORY_TASKS[subj]["code"],
+                "manual": item.get("manual", False),
+                "locked": code in _UNCONFIGURABLE_CODES,  # 背诵类固定「全量完成」语义
+            })
+        mandatory_choices[subj] = opts
     return {"items": items, "mandatory": current_mandatory, "quotas": quotas,
+            "mandatory_choices": mandatory_choices,
             "optional": user.get("optional", []),
             "study_flags": {k: bool(_load_study_flags(db, user_id).get(k, False))
                             for k in STUDY_FLAG_KEYS}}

@@ -172,7 +172,8 @@
           <div class="pc-sec">
             <div class="pc-title">📋 每日任务设置 <span class="more">管理强制任务和可选任务</span></div>
             <div v-if="appCtx.taskSettings" style="font-size:13px;color:#666;margin-bottom:8px">
-              强制任务 3 科 · 可选任务 {{(appCtx.taskSettings.optional || []).length}} 个已配置
+              强制任务 {{appCtx.mandatorySummary}} · 可选任务 {{(appCtx.taskSettings.optional || []).length}} 个已配置
+              <div style="margin-top:4px">打开「管理任务」可更换每科任务类型（如数学同步练、语文阅读+家庭作业、英语朗读+背单词）</div>
             </div>
             <div class="pc-row" style="margin-top:8px">
               <button class="btn btn-primary btn-sm" @click="appCtx.showTaskSettingsDialog()">管理任务</button>

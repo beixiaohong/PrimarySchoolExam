@@ -96,7 +96,9 @@ const appOptions = {
       submitWrongIds: {}, submitWrongNew: {},
       // 每日任务设置
       taskSettings: { items: [] },
-      taskDialog: { show: false, defaults: [], extra: [], optional: [], disabled: [] },
+      // mandatory: 每科强制任务完整列表（可替换默认固定项）；mandOpts: 每科可选类型库；_add: 各科下拉暂存
+      taskDialog: { show: false, mandatory: { math: [], chi: [], eng: [] }, mandOpts: { math: [], chi: [], eng: [] },
+        _add: { math: '', chi: '', eng: '' }, optional: [], subOpts: { math: [], chi: [], eng: [] }, disabled: [] },
       parentCustomTasks: [],
       customTaskForm: { title: '', subject: '数学', task_type: 'optional', target: 1 },
       // Sprint 4：称号 / 挑战赛 / 学期目标 / 小老师
@@ -339,7 +341,15 @@ const appOptions = {
         { code: 'eng_dictation', title: '听写单词', subject: '英语' },
         { code: 'eng_challenge', title: '英语60秒挑战赛', subject: '英语' },
         { code: 'eng_sync', title: '学习平板同步练习', subject: '英语' },
+        // 手动确认型（家长确认完成）：可配置为语文/英语强制任务
+        { code: 'reading', title: '完成阅读', subject: '语文' },
+        { code: 'family_homework', title: '完成家庭作业', subject: '语文' },
       ];
+    },
+    // 家长端「每日任务设置」概览：各科强制任务条数
+    mandatorySummary() {
+      const m = (this.taskSettings && this.taskSettings.mandatory) || {};
+      return ['数学', '语文', '英语'].map(s => `${s} ${(m[s] || []).length || 1}`).join(' · ');
     },
   },
 
@@ -2405,26 +2415,27 @@ const appOptions = {
       const subjMap = { '数学': 'math', '语文': 'chi', '英语': 'eng' };
       const revMap = { math: '数学', chi: '语文', eng: '英语' };
       const DEFAULTS = { math: 'math_exam', chi: 'chi_classical', eng: 'eng_vocab' };
-      // 每科默认强制任务：固定保留不可删，仅可调数量
-      const defaults = ['math', 'chi', 'eng'].map(key => {
-        const code = DEFAULTS[key];
-        const def = this.allTaskOptions.find(o => o.code === code)
-          || { code, title: code, subject: revMap[key] };
-        const item = items.find(i => i.code === code);
-        return { subject: revMap[key], code, def, target: item ? item.target : (key === 'eng' ? 5 : 1) };
-      });
-      // 回显家长追加的强制任务（后端 settings.mandatory 存 {学科: [追加codes]}）
-      const extra = [];
-      if (this.taskSettings.mandatory) {
-        for (const [subj, codes] of Object.entries(this.taskSettings.mandatory)) {
-          const key = subjMap[subj];
-          if (!key) continue;
-          for (const code of (Array.isArray(codes) ? codes : [codes])) {
-            if (!code || code === DEFAULTS[key]) continue;
-            const item = items.find(i => i.code === code);
-            extra.push({ subject: key, code, target: item ? item.target : 1 });
-          }
-        }
+      const KEYS = ['math', 'chi', 'eng'];
+      // ── 强制任务：每科为「完整 code 列表」，家长可替换默认固定项（后端 mandatory 语义）
+      const cur = this.taskSettings.mandatory || {};
+      const choices = this.taskSettings.mandatory_choices || {};
+      const mandatory = {};
+      const mandOpts = {};
+      for (const key of KEYS) {
+        const subj = revMap[key];
+        // 下拉选项优先用后端下发的该科可选类型库（含标题/默认目标/是否全量），缺失时回退前端内置列表
+        mandOpts[key] = (choices[subj] && choices[subj].length)
+          ? choices[subj].map(o => ({ code: o.code, title: o.title, target: o.target,
+            is_default: !!o.is_default, manual: !!o.manual, locked: !!o.locked }))
+          : this.allTaskOptions.filter(t => t.subject === subj);
+        // 后端返回完整列表；未配置/空则回退该科默认项
+        const codes = (Array.isArray(cur[subj]) && cur[subj].length) ? cur[subj] : [DEFAULTS[key]];
+        mandatory[key] = codes.map(code => {
+          const opt = mandOpts[key].find(o => o.code === code);
+          const item = items.find(i => i.code === code);
+          return { code, title: opt ? opt.title : code, locked: opt ? !!opt.locked : false,
+            target: item ? item.target : (opt ? opt.target : 1) };
+        });
       }
       for (const it of items) {
         if (it.enabled === false) disabled.push(it.code);
@@ -2444,8 +2455,38 @@ const appOptions = {
         chi: all.filter(t => t.subject === '语文' && !UNCONFIGURABLE.includes(t.code)),
         eng: all.filter(t => t.subject === '英语' && !UNCONFIGURABLE.includes(t.code)),
       };
-      this.taskDialog = { show: true, defaults, extra, optional, disabled, subOpts };
+      this.taskDialog = { show: true, mandatory, mandOpts, optional, disabled, subOpts,
+        _add: { math: '', chi: '', eng: '' } };
       this.loadParentCustomTasks();
+    },
+    /* ─────────── 强制任务自定义（每科下拉多选） ─────────── */
+    mandSubjectLabel(key) {
+      return { math: '数学', chi: '语文', eng: '英语' }[key] || key;
+    },
+    mandDefaultCode(key) {
+      return { math: 'math_exam', chi: 'chi_classical', eng: 'eng_vocab' }[key];
+    },
+    // 该科尚未选中的强制任务类型（下拉可选）
+    mandAvail(key) {
+      const used = (this.taskDialog.mandatory[key] || []).map(m => m.code);
+      return (this.taskDialog.mandOpts[key] || []).filter(o => used.indexOf(o.code) < 0);
+    },
+    addMandatory(key) {
+      const code = this.taskDialog._add[key];
+      if (!code) return this.showToast('先选择要添加的任务类型');
+      const opt = (this.taskDialog.mandOpts[key] || []).find(o => o.code === code);
+      if (!opt) return;
+      const item = (this.taskSettings.items || []).find(i => i.code === code);
+      this.taskDialog.mandatory[key].push({ code, title: opt.title, locked: !!opt.locked,
+        target: item ? item.target : opt.target });
+      this.taskDialog._add[key] = '';
+    },
+    removeMandatory(key, idx) {
+      const rows = this.taskDialog.mandatory[key] || [];
+      if (rows.length <= 1) {
+        return this.showToast(`${this.mandSubjectLabel(key)}至少保留 1 项强制任务，可换成其它类型`);
+      }
+      rows.splice(idx, 1);
     },
     loadParentCustomTasks() {
       this.api(`/api/tasks/custom-task?user_id=${encodeURIComponent(this.user)}`)
@@ -2482,8 +2523,8 @@ const appOptions = {
     saveTaskDialog() {
       const targets = {};
       const enabled = {};
-      const { defaults, extra, optional, disabled } = this.taskDialog;
-      // 背诵类固定「全量完成」语义，不可作为可选/追加任务，但默认强制行的数量仍回传供回显
+      const { mandatory, optional, disabled } = this.taskDialog;
+      // 背诵类固定「全量完成」语义，不可作为可选任务，但作为强制任务时数量仍回传供回显
       const UNCONFIGURABLE = ['chi_classical', 'eng_vocab'];
       // 处理所有任务的目标数量
       for (const it of this.taskSettings.items || []) {
@@ -2491,20 +2532,19 @@ const appOptions = {
         targets[it.code] = it.target;
         enabled[it.code] = !disabled.includes(it.code);
       }
-      // 默认强制任务的目标数量（含背诵类回显数量）
-      for (const d of defaults) {
-        targets[d.code] = d.target || 1;
-      }
-      // 追加的强制任务：目标数 + 按学科归组为 {学科: [追加codes]}
-      const subjMap = { math: '数学', chi: '语文', eng: '英语' };
-      const mandatoryOut = { '数学': [], '语文': [], '英语': [] };
-      for (const ex of extra) {
-        if (!ex.code) continue;
-        if (UNCONFIGURABLE.includes(ex.code)) continue;
-        targets[ex.code] = ex.target || 1;
-        enabled[ex.code] = true;
-        const subj = subjMap[ex.subject];
-        if (subj && !mandatoryOut[subj].includes(ex.code)) mandatoryOut[subj].push(ex.code);
+      // 强制任务：每科回传「完整 code 列表」（替换默认固定项），并写入各自目标数
+      const revMap = { math: '数学', chi: '语文', eng: '英语' };
+      const mandatoryOut = {};
+      for (const key of ['math', 'chi', 'eng']) {
+        const rows = mandatory[key] || [];
+        const codes = [];
+        for (const m of rows) {
+          if (!m.code || codes.includes(m.code)) continue;
+          codes.push(m.code);
+          targets[m.code] = m.target || 1;
+          if (!UNCONFIGURABLE.includes(m.code)) enabled[m.code] = true;
+        }
+        mandatoryOut[revMap[key]] = codes;
       }
       // 处理可选任务（新增的）
       for (const opt of optional) {

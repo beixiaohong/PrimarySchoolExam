@@ -226,7 +226,11 @@ def _is_task_enabled(settings: dict, code: str) -> bool:
 
 
 def _normalize_mandatory(raw) -> dict:
-    """将存储的 mandatory 归一化为 {subject: [追加codes]}（兼容旧格式单 code 字符串）"""
+    """将存储的 mandatory 归一化为 {subject: [完整 code 列表]}（兼容旧格式单 code 字符串）。
+
+    新语义：列表为该科强制任务的完整集合（可替换默认固定项）；空列表 = 未配置，由
+    _get_mandatory_codes 回退到默认任务，保证老用户（历史上存过空数组）不受影响。
+    """
     out = {}
     if not isinstance(raw, dict):
         return out
