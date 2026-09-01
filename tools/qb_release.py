@@ -28,6 +28,7 @@
 import argparse
 import importlib.util
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -50,9 +51,13 @@ Q_COLS = ("seq", "section", "section_idx", "qnum", "qtype", "grade", "subject",
           "explanation")
 
 # 生成文件中的 upgrade 函数体（__PAPERS__ 占位符会被替换为数据字面量）
-UPGRADE_BODY = '''def upgrade(db):
+# 数据放在模块级常量 PAPERS（而非 upgrade 内部），便于生成后做静态校验：
+# 校验脚本可直接读取 PAPERS 而不必执行 upgrade（执行会连库写入）。
+UPGRADE_BODY = '''PAPERS = __PAPERS__
+
+
+def upgrade(db):
     from sqlalchemy import text
-    PAPERS = __PAPERS__
 
     for p in PAPERS:
         params = {k: p[k] for k in (
@@ -128,7 +133,37 @@ def _ensure_applied(db):
         "applied_at DATETIME)"))
 
 
-def generate(grade=None, subject=None, dry_run=False, source=None, no_html=False):
+# 内联 base64 图片（仅匹配较长的 data URI，避免误伤短占位图）
+_B64_IMG_RE = re.compile(r'(src\s*=\s*")data:image/[^"]{1024,}(")', re.I)
+
+
+def _strip_inline_images(html, limit_bytes):
+    """单题 HTML 超限时剥离内联 base64 图片，保留文字与题面结构。
+
+    返回 (新HTML, 是否被处理)。采集转换偶尔会把整页扫描图内联进每题，
+    单题可达数百 KB —— 1% 的题目就能占掉脚本体积的绝大部分。
+    """
+    if not html or len(html.encode("utf-8", "ignore")) <= limit_bytes:
+        return html, False
+    return _B64_IMG_RE.sub(r'\1\2', html), True
+
+
+def _online_source_urls():
+    """主库（本地 .env 所连库，即线上库的克隆）中已存在的试卷 source_url 集合。
+
+    仅只读查询，用于 skip_existing 过滤，避免重复导出线上已有的卷子。
+    """
+    from app.database import SessionLocal
+    from sqlalchemy import text as _text
+    with SessionLocal() as db:
+        rows = db.execute(_text(
+            "SELECT source_url FROM papers WHERE source_url IS NOT NULL "
+            "AND source_url <> ''")).fetchall()
+    return {r[0] for r in rows}
+
+
+def generate(grade=None, subject=None, dry_run=False, source=None, no_html=False,
+             skip_existing=False, max_html_kb=64):
     """本地：抽取未导出的采集式题库，生成一份版本化更新脚本。
 
     源库：配置了 STAGING_DB_URL 时读本地 SQLite 暂存库，否则读主库 MySQL
@@ -138,6 +173,12 @@ def generate(grade=None, subject=None, dry_run=False, source=None, no_html=False
 
     no_html：精简模式，剥离整卷原始 HTML（体积可降 90%+），题目本体不受影响；
              已存在的线上试卷不会被清空 html_content。
+    skip_existing：对照主库（本地 .env 所连库，= 线上库的克隆）过滤掉线上已存在的
+             source_url，只产出真增量。录入历史采集库时务必开启，否则会把线上
+             已有的卷子重新导出一遍（apply 虽幂等，但脚本体积与时间白白浪费）。
+    max_html_kb：单题 question_html 超过该 KB 时，剥离其中内联的 base64 图片
+             （保留文字与题面结构）。极少数题目会内嵌数百 KB 的整页扫描图，
+             1% 的题目可占到脚本体积的 80%；设为 0 表示不限制。
     """
     _ensure_dir()
     if source:
@@ -176,18 +217,44 @@ def generate(grade=None, subject=None, dry_run=False, source=None, no_html=False
             stmt = stmt.bindparams(bindparam("exported", expanding=True))
         rows = db.execute(stmt, params).mappings().all()
 
+        # skip_existing：剔除主库（本地 .env 所连库 = 线上克隆）中已存在的试卷，
+        # 只产出真增量。放在 Python 层过滤，避免把上千个 source_url 塞进 SQL 的
+        # IN 占位符（可能撞上 SQLite 的变量数上限）。
+        skipped_existing = 0
+        if skip_existing:
+            online = _online_source_urls()
+            kept = [r for r in rows if r["source_url"] not in online]
+            skipped_existing = len(rows) - len(kept)
+            rows = kept
+
         papers = []
+        stripped_imgs = 0
+        # 单题 HTML 体积上限（字节）：超限则剥离内联 base64 图片，保住文字题面
+        img_limit = max_html_kb * 1024 if max_html_kb and max_html_kb > 0 else 0
         for r in rows:
             pid = r["id"]
             qs = db.execute(
                 text("SELECT " + ", ".join(Q_COLS) + " FROM paper_questions WHERE paper_id=:pid ORDER BY seq"),
                 {"pid": pid}).mappings().all()
             p = {k: r[k] for k in PAPER_COLS}
-            p["questions"] = [{k: q[k] for k in Q_COLS} for q in qs]
+            p["questions"] = []
+            for q in qs:
+                item = {k: q[k] for k in Q_COLS}
+                if img_limit:
+                    item["question_html"], hit = _strip_inline_images(
+                        item["question_html"], img_limit)
+                    if hit:
+                        stripped_imgs += 1
+                p["questions"].append(item)
             papers.append(p)
 
+    if skipped_existing:
+        print(f"跳过线上已有试卷 {skipped_existing} 份（--skip-existing）")
+    if stripped_imgs:
+        print(f"剥离超大内联图片：{stripped_imgs} 题（单题 HTML > {max_html_kb}KB）")
+
     if not papers:
-        print("无新增题库（所有 papers 已导出，或过滤条件下无未导出试卷）。")
+        print("无新增题库（所有 papers 已导出或线上已存在，或过滤条件下无未导出试卷）。")
         return None
 
     import pprint
@@ -287,13 +354,18 @@ def main():
     g.add_argument("--dry-run", action="store_true", help="仅预览，不写文件、不记录")
     g.add_argument("--no-html", action="store_true",
                    help="精简模式：不导出整卷原始 HTML（脚本体积大幅减小，题目本体不受影响）")
+    g.add_argument("--skip-existing", action="store_true",
+                   help="跳过主库中已存在的试卷（本地库为线上克隆，据此只导出真增量）")
+    g.add_argument("--max-html-kb", type=int, default=64,
+                   help="单题 HTML 超过该 KB 时剥离内联 base64 图片（默认 64，0 表示不限）")
 
     sub.add_parser("apply", help="线上按版本顺序应用未执行的更新脚本")
 
     args = ap.parse_args()
     if args.cmd == "generate":
         generate(grade=args.grade, subject=args.subject, dry_run=args.dry_run,
-                 source=args.source, no_html=args.no_html)
+                 source=args.source, no_html=args.no_html,
+                 skip_existing=args.skip_existing, max_html_kb=args.max_html_kb)
     elif args.cmd == "apply":
         apply()
 
