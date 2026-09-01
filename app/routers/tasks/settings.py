@@ -50,9 +50,12 @@ def get_task_settings(user_id: str = Query(...), db: Session = Depends(get_db)):
         })
     current_mandatory = {}
     for subj in SUBJECTS:
-        # 返回家长追加的强制任务 code 列表（默认任务后端保证存在，不存配置）
-        current_mandatory[subj] = [c for c in mandatory_map.get(subj, [])
-                                   if isinstance(c, str)]
+        # 返回该科强制任务完整 code 列表（家长自定义优先；未配置则回退默认三科固定项）
+        cfg = [c for c in mandatory_map.get(subj, []) if isinstance(c, str)]
+        if cfg:
+            current_mandatory[subj] = [c for c in cfg if c in MANDATORY_CHOICES.get(subj, [])]
+        else:
+            current_mandatory[subj] = [MANDATORY_TASKS[subj]["code"]]
     quotas = {k: int(user.get("quotas", {}).get(k, d)) for k, (_, _, d) in QUOTA_KEYS.items()}
     # 背诵类任务不在可配置列表，但作为强制任务时仍需返回 target 供前端回显数量
     for code in _UNCONFIGURABLE_CODES:
@@ -135,15 +138,13 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
             for subj, val in _payload["mandatory"].items():
                 if subj not in SUBJECTS:
                     raise HTTPException(400, f"不支持的学科: {subj}")
-                # 兼容旧格式单 code 字符串；只存追加项，默认强制任务后端保证存在
+                # 新语义：每科强制任务完整 code 列表（可替换默认三科固定项），
+                # 每项必须在该科 MANDATORY_CHOICES 内（含默认项本身）。
                 codes = [val] if isinstance(val, str) else (val if isinstance(val, list) else [])
                 extra = []
                 for code in codes:
-                    if code == MANDATORY_TASKS[subj]["code"]:
-                        continue
-                    t = _task_def_by_code(code)
-                    if not t or t.get("subject") != subj:
-                        raise HTTPException(400, f"不支持的任务类型: {code}")
+                    if code not in MANDATORY_CHOICES.get(subj, []):
+                        raise HTTPException(400, f"不支持的任务类型: {code}（学科 {subj}）")
                     if code not in extra:
                         extra.append(code)
                 new_mandatory[subj] = extra

@@ -63,7 +63,21 @@ OPTIONAL_POOL = [
      "ico": "⚡", "desc": "限时挑战赛，60 秒内尽可能多答对；本场正确率需 ≥ 80% 才算完成", "subject": "英语"},
     {"code": "eng_sync", "title": "学习平板完成同步练习", "target": 1, "manual": True,
      "ico": "📱", "desc": "在学习平板完成英语同步练习后，找家长确认", "subject": "英语"},
+    # 新增：可配置为强制任务的家庭类手动确认型（家长确认完成）
+    {"code": "reading", "title": "完成阅读", "target": 1, "manual": True,
+     "ico": "📖", "desc": "完成阅读任务（含朗读/课外阅读），家长确认", "subject": "语文"},
+    {"code": "family_homework", "title": "完成家庭作业", "target": 1, "manual": True,
+     "ico": "📝", "desc": "完成当日家庭作业，家长确认", "subject": "语文"},
 ]
+
+# 每科可选的「强制任务类型」库（家长可为每科自定义强制任务，替换默认三科固定项）
+MANDATORY_CHOICES = {
+    "数学": ["math_exam", "math_sync", "math_fix", "math_teach", "math_challenge"],
+    "语文": ["chi_classical", "chi_exam", "chi_read", "chi_dictation", "chi_sync",
+             "reading", "family_homework"],
+    "英语": ["eng_vocab", "eng_exam", "eng_dictation", "eng_challenge", "eng_sync",
+             "reading"],
+}
 
 # 家长可配置目标数量的任务（背诵类固定「全量完成」语义，不可配置目标数）
 _UNCONFIGURABLE_CODES = {"chi_classical", "eng_vocab"}
@@ -229,12 +243,14 @@ def _normalize_mandatory(raw) -> dict:
 
 
 def _get_mandatory_codes(settings: dict, subject: str) -> list:
-    """该科强制任务 code 列表：默认任务固定保留 + 家长追加项（去重）"""
-    codes = [MANDATORY_TASKS[subject]["code"]]
-    for c in settings.get("mandatory", {}).get(subject, []):
-        if c not in codes:
-            codes.append(c)
-    return codes
+    """该科强制任务 code 列表：家长配置优先（可自定义科目/类型/数量），
+    未配置则回退默认三科固定任务。"""
+    cfg = settings.get("mandatory", {}).get(subject, [])
+    if cfg:
+        valid = [c for c in cfg if c in MANDATORY_CHOICES.get(subject, [])]
+        if valid:
+            return valid
+    return [MANDATORY_TASKS[subject]["code"]]
 
 
 def _task_def_by_code(code: str) -> dict | None:
