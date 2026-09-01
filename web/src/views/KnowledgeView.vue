@@ -72,6 +72,8 @@ export default {
   name: 'KnowledgeView',
   // 知识点卡：把 knowledge_points 死数据变成「讲解→例子→挖空自测」互动卡，
   // 自测全对/标记掌握发 +3 金币，制造即时正反馈，解决"知识点枯燥没用上"的问题。
+  // 与其他业务视图一致：仅 inject appCtx 访问壳的响应式状态，自身只保留本页用到的本地 state。
+  inject: ['appCtx'],
   data() {
     let user = '', grade = 6
     try { const z = JSON.parse(localStorage.getItem('zx_user') || '{}'); user = z.user || ''; grade = z.grade || 6 } catch (e) {}
@@ -88,7 +90,8 @@ export default {
   },
   computed: {
     // 学科 tab：复用全局九科分类（初中 grade>=7 显示九科，小学显示语数英）
-    subjectTabs() { return (this.$root.subjectOptions && this.$root.subjectOptions()) || ['语文', '数学', '英语'] },
+    // 与 App.vue 一致：通过 inject 进来的 appCtx 取计算属性（数组，不是方法，不加括号）。
+    subjectTabs() { return (this.appCtx && this.appCtx.subjectOptions) ? this.appCtx.subjectOptions : ['语文', '数学', '英语'] },
   },
   mounted() {
     this.subjects = this.subjectTabs

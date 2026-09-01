@@ -88,6 +88,8 @@ import { api } from '../api/http.js'
 export default {
   name: 'SyncView',
   // 同步学组件：按学科/年级浏览课本单元，含单元要点、同步练习、单元小测（10 题过关制）
+  // 与其他业务视图一致：仅 inject appCtx 访问壳的响应式状态，自身只保留本页用到的本地 state。
+  inject: ['appCtx'],
   data() {
     let user = '', grade = 6
     try { const z = JSON.parse(localStorage.getItem('zx_user') || '{}'); user = z.user || ''; grade = z.grade || 6 } catch (e) {}
@@ -105,7 +107,8 @@ export default {
   },
   computed: {
     // 学科 tab：复用全局九科分类（初中六科仅在 grade>=7 时出现）
-    subjectTabs() { return (this.$root.subjectOptions && this.$root.subjectOptions()) || ['语文', '数学', '英语'] },
+    // 与 App.vue 一致：通过 inject 进来的 appCtx 取计算属性（数组，不是方法，不加括号）。
+    subjectTabs() { return (this.appCtx && this.appCtx.subjectOptions) ? this.appCtx.subjectOptions : ['语文', '数学', '英语'] },
   },
   mounted() {
     this.subjects = this.subjectTabs
