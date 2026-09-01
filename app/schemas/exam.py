@@ -112,6 +112,7 @@ class CollectionPracticeQuestionOut(BaseModel):
     image_base64: str = ""
     options: List[str] = []
     correct_answer: str = ""
+    source: str = "bank"  # bank=采集题库 / ai=AI 生成（组合刷题时区分来源）
 
     model_config = ConfigDict(from_attributes=True)
 

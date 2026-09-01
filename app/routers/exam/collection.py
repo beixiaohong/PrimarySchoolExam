@@ -13,6 +13,7 @@ from app.schemas.exam import (
 )
 from app.services.collection_practice import (
     random_paper_questions, get_paper_questions_by_ids, collection_stats,
+    mixed_practice,
 )
 
 
@@ -41,23 +42,32 @@ def _pq_to_dict(q: PaperQuestion, include_answer: bool = True) -> dict:
 
 
 @router.get("/collection/practice", response_model=List[CollectionPracticeQuestionOut],
-            summary="采集题库随机抽题（刷题系统）")
+            summary="采集题库抽题 / 组合刷题（题库+AI自适应）")
 def collection_practice(
     grade: Optional[str] = Query(None, description="年级，如 一年级 / 初三 / 中考"),
     subject: Optional[str] = Query(None, description="学科，如 数学 / 语文"),
     qtype: Optional[str] = Query(None, description="题型：choice / fill_blank / qa"),
     limit: int = Query(10, ge=1, le=50, description="抽题数量"),
+    mode: str = Query("bank", description="bank=仅题库 / mixed=题库+AI自适应补足 / ai=仅AI生成"),
     include_answer: bool = Query(True, description="是否附带参考答案（练习时建议先 False）"),
     db: Session = Depends(get_db),
 ):
-    """从采集题库按「年级 + 学科 + 题型」随机抽题，供刷题系统使用。
+    """从采集题库（或组合 AI 生成）抽题，供刷题系统使用。
 
-    - grade / subject / qtype 均为可选筛选；不传则返回全库随机题。
-    - 随机排序使用方言兼容的 random_order()，每次调用结果不同。
-    - 返回题目含 question_html / image_base64 / options，可直接渲染。
+    - mode=bank（默认）：仅从 paper_questions 随机抽题（原行为）。
+    - mode=mixed：优先题库，题库不足该学科/题型时用 AI 实时生成补足（自适应）。
+    - mode=ai：仅用 AI 生成（适合题库空或特定薄弱点强化）。
+    - AI 题以 source="ai"、id<=0 标记，提交判分时用携带答案（见 /collection/submit）。
     """
-    qs = random_paper_questions(db, grade=grade, subject=subject, qtype=qtype, limit=limit)
-    return [_pq_to_dict(q, include_answer) for q in qs]
+    if mode == "bank":
+        qs = random_paper_questions(db, grade=grade, subject=subject, qtype=qtype, limit=limit)
+        return [_pq_to_dict(q, include_answer) for q in qs]
+    items = mixed_practice(db, grade=grade, subject=subject, qtype=qtype,
+                           limit=limit, ai_fill=(mode != "ai"))
+    if not include_answer:
+        for it in items:
+            it["correct_answer"] = ""
+    return items
 
 
 @router.get("/collection/stats", summary="采集题库规模统计")
@@ -83,16 +93,22 @@ def collection_submit(req: CollectionSubmitRequest, db: Session = Depends(get_db
         qid = a.get("question_id")
         user_ans = str(a.get("user_answer", "")).strip()
         q = qmap.get(qid)
-        if not q:
+        if q:
+            ok = _check_answer(user_ans, q.correct_answer or "", q.options)
+            std = q.correct_answer or ""
+        elif qid is not None and str(qid).lstrip("-").isdigit() and int(qid) <= 0:
+            # AI 生成题（id<=0）：用前端携带的标准答案判分，不查库
+            std = a.get("correct_answer") or ""
+            ok = _check_answer(user_ans, std, "")
+        else:
             results.append({"question_id": qid, "correct": False, "error": "题目不存在"})
             continue
-        ok = _check_answer(user_ans, q.correct_answer or "", q.options)
         if ok:
             correct_count += 1
         results.append({
             "question_id": qid,
             "correct": ok,
-            "correct_answer": q.correct_answer or "",
+            "correct_answer": std,
         })
     total = len(req.answers)
     return {
