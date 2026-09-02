@@ -167,27 +167,29 @@ python -m pytest tests -q
 
 ```
 /home/PrimarySchoolExam/
-├── app/                      # FastAPI 后端（31 个路由模块）
-│   ├── main.py               # 应用工厂：注册 31 个路由、lifespan 启动
+├── app/                      # FastAPI 后端（45 个路由前缀 / 377 个端点）
+│   ├── main.py               # 应用工厂：注册全部路由、挂载 dist、lifespan 启动
 │   ├── config.py             # 全局配置（DB_DRIVER、AI Key、输出目录等）
 │   ├── database.py           # SQLAlchemy 引擎 / 会话 / Base / init_db
-│   ├── models/               # 数据模型（User / Word / Exam / Classical …）
+│   ├── logging_setup.py      # 按天 + 按大小滚动日志（log/YYYY-MM-DD[.partN].log）
+│   ├── models/               # 数据模型（40 个文件 / 85 个模型类）
 │   ├── schemas/              # Pydantic 请求 / 响应模型
-│   ├── routers/              # API 路由（31 个文件）
-│   ├── services/             # 业务逻辑（出题 / 生成 docx / AI 路由 …）
-│   ├── migrations/           # 数据库迁移系统（40 个版本脚本，MySQL-only）
+│   ├── routers/              # API 路由（36 个单文件模块 + 7 个子包）
+│   ├── services/             # 业务逻辑（24 个文件 + init_data/、math_generator/ 子包）
+│   ├── migrations/           # 数据库迁移系统（56 个版本脚本，MySQL-only）
 │   └── data/                 # 种子 CSV（小学/初中单词、词组、句子）
 ├── web/                      # 孩子端生产前端（Vue 3 + Vite + Pinia），产物 web/dist 由后端托管
 ├── admin/                    # 管理后台生产前端（独立 Vite 工程），产物 admin/dist 由后端托管在 /admin
-├── tools/                    # 运维 / 迁移 / 题库发布工具（qb_release 等）
-├── tests/                    # pytest 回归套件（58 用例 / 9 文件）
+├── tools/                    # 运维 / 迁移 / 采集 / 调度工具（scheduler、collect_daily、qb_release 等）
+├── tests/                    # pytest 回归套件（124 用例 / 20 文件）
+├── log/                      # 运行日志（gitignore）
 ├── output/                   # 生成文件（docx / figures / audio，gitignore）
 ├── run.py                    # 启动入口
 ├── deploy.sh                 # 一键部署脚本
 ├── requirements.txt          # 生产依赖
 ├── requirements-dev.txt      # 开发依赖（测试）
 ├── .env.example              # 环境变量模板
-└── docs/ROADMAP.md           # 产品优化落地路线
+└── docs/                     # 文档（架构说明书 / 项目说明书 / ROADMAP / INDEX）
 ```
 
 ## 十、访问地址

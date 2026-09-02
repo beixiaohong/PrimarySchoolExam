@@ -35,9 +35,17 @@
 - 听写磨耳朵：edge-tts 朗读 + 拼写校验
 
 ### 4. 每日任务
-- 三科默认强制任务（数学练习 / 古诗文背诵 / 单词学习）固定保留
-- 家长可**每科追加多个**强制任务，全部强制任务完成才算全勤
-- 可选任务池（家长配置）、全勤奖励补签卡、昨日错题复习任务
+- 强制任务 + 可选任务双轨：全部强制完成才算全勤，可选任务全完成奖励补签卡
+- 家长可在「任务设置」里**按学科整体替换**强制任务（未配置/清空才回退系统默认：数学练习 / 古诗文背诵 / 单词学习）
+- 家长可添加自定义任务（含「其他」学科），生命周期由自定义任务管理接口维护，不受任务设置保存影响
+- 家长按 id 确认孩子完成；漏打可用补签卡补签
+
+### 4.5 学习目标与内容扩展
+- **学习目标管理台**：设定目标量与截止日 → 自动算今日建议量、连续打卡（每周允许 1 个休息日）、预计完成日与逾期提醒
+- **知识点互动**：知识点的「讲解 → 例子 → 挖空自测」互动卡，零 AI 调用
+- **教材版本**：按学科选择教材版本，背单词/听写按版本过滤取词
+- **网课**：系统网课 + 家长自建网课
+- **夜间免打扰**：22:30–次日 07:00 拦截刷题/背诵等动作类接口，保护睡眠
 
 ### 5. 激励系统
 - 金币宠物：答题/任务赚金币，喂养虚拟宠物升级
@@ -68,12 +76,14 @@
 
 | 层 | 技术 | 说明 |
 |---|---|---|
-| 后端 | FastAPI + Uvicorn | Python 3.12，38 个 API 路由模块 |
-| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（42 个版本脚本，001-025 为 MySQL 下不执行的 SQLite 历史基线、026+ 为生效的幂等迁移） |
-| 前端 | Vue 3 + Vite 工程化（`web/`） | SPA，构建产物 `web/dist` 由后端托管 |
+| 后端 | FastAPI + Uvicorn | Python 3.12+，45 个路由前缀 / **377 个 HTTP 端点**（IM 另有 WebSocket 端点） |
+| 数据库 | MySQL 8（utf8mb4，生产 / 本地统一） | SQLAlchemy 2.0 ORM + 自建迁移系统（**56 个版本脚本**，001-025 为 MySQL 下不执行的 SQLite 历史基线、026+ 为生效的幂等迁移） |
+| 前端 | Vue 3 + Vite 工程化（`web/` 学生端、`admin/` 管理端） | SPA，构建产物 `web/dist`（`/`）与 `admin/dist`（`/admin`）由后端同源托管 |
 | AI | 智谱 / Relay / DeepSeek | 多供应商 fallback，按 token 扣钻石 |
-| 文档与媒体 | python-docx / matplotlib / edge-tts | 试卷 Word、数学图形、TTS 音频 |
-| 测试 | pytest + FastAPI TestClient | 58 个回归用例（14 个文件），独立 MySQL 测试库（`DB_NAME` + `_test`）隔离，AI/邮件全打桩 |
+| 文档与媒体 | python-docx / matplotlib / edge-tts / PyMuPDF | 试卷 Word、数学图形、TTS 音频、PDF 渲染 |
+| 测试 | pytest + FastAPI TestClient | **124 个回归用例（20 个文件）**，独立 MySQL 测试库（`DB_NAME` + `_test`）隔离，AI/邮件全打桩 |
+
+> 数字口径以 `PROJECT_STRUCTURE.md` 文末「口径自检」的实测命令为准。
 
 ---
 
@@ -119,6 +129,11 @@ python -m pytest tests/ -q    # 58 用例，覆盖注册登录/任务/出卷判�
 
 ## 四、相关文档
 
-- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — 项目结构与模块清单
-- [DEPLOY.md](DEPLOY.md) — 服务器部署指南
-- [docs/ROADMAP.md](docs/ROADMAP.md) — 产品优化落地路线（年级成长 / 课堂同步 / 初中衔接）
+| 文档 | 定位 |
+|---|---|
+| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 项目结构与模块清单（含实测口径自检命令） |
+| [docs/架构说明书.md](docs/架构说明书.md) | 分层架构、请求生命周期、关键设计决策与硬性约束 |
+| [docs/项目说明书.md](docs/项目说明书.md) | 「文件 → 作用」速查手册 |
+| [DEPLOY.md](DEPLOY.md) | 服务器部署指南 |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 产品优化落地路线 |
+| [docs/INDEX.md](docs/INDEX.md) | 文档总览与导航 |
