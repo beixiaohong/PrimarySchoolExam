@@ -37,6 +37,11 @@ README.md（是什么 / 怎么跑）
 
 ## 四、配套子系统文档
 
+- **任务系统（每日任务/自定义/补签卡/完成确认）**：见 `docs/tasks-module.md`。
+  模块收敛在 `app/routers/tasks/` 包内（constants/service/progress/makeup_service 分层 +
+  5 个薄路由文件），端点 21 条（`/api/tasks/*` + `/api/task-confirm/*`）。
+  家长确认状态机统一为 `pending/confirmed/rejected`；孩子端自定义任务标注 DEPRECATED 保留待复活。
+
 - **试卷采集与题库（采集式）**：见 `app/services/paper_crawler.py` 与 `app/services/question_parser.py`。
   运行入口为 `tools/collect_papers.py`。采集结果入库到主库 `papers` / `paper_questions` 表，
   试卷以 HTML 富文本（图片 base64 内联）保存，按 `source_url` 去重，已采集过的不再重复采集。

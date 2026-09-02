@@ -26,6 +26,7 @@ from .service import (
     get_daily_quota, _load_settings, _load_study_flags,
     _build_payload, _get_makeup_balance, _has_makeup_card,
 )
+from .progress import _today_mastered, _today_new_attempts, _today_challenge_count
 
 # ═══════════════ 自定义任务子路由（custom.py 自带独立 APIRouter） ═══════════════
 # 孩子端 /custom（DEPRECATED 保留待复活）与家长端 /custom-task 均在 custom.py，
