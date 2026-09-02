@@ -1,3 +1,13 @@
+"""计算类题型生成器：整数 / 小数 / 分数 / 混合运算 / 简易方程
+
+注册题型（@register）：calc_int_basic、calc_decimal、calc_fraction、calc_mixed、calc_equation。
+
+约定：
+- 生成器签名 (db, grade, difficulty, count) -> List[ProblemItem]，由 core.generate_math_problems
+  按 code 从 common.GENERATORS 注册表分发；新增题型只需 `@register("code")` 即可接入，无需改调用方。
+- 小数与金额统一用 Decimal(ROUND_HALF_UP) 计算并格式化，避免浮点误差导致答案误判
+  （历史 bug：折扣 / 利润 / 百分比类题目曾因 `//100` 整型截断算错答案）。
+"""
 import random
 import math
 from fractions import Fraction

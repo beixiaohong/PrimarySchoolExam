@@ -1,3 +1,10 @@
+"""逻辑与规律类题型生成器：推理 / 找规律 / 组合 / 方案优化 / 抽屉原理 / 周期 / 时钟
+
+注册题型 7 个：logic_reasoning、logic_pattern、logic_combinatorics、logic_optimization、
+logic_pigeonhole、logic_period、logic_clock。
+
+约定同 calc.py：`@register` 注册 → core 按 code 分发。
+"""
 import random
 import math
 from fractions import Fraction

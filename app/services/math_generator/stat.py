@@ -1,3 +1,9 @@
+"""统计与概率类题型生成器：平均数 / 概率 / 统计图表 / 量的计量
+
+注册题型 4 个：stat_average、stat_probability、stat_chart、stat_measure。
+
+约定同 calc.py：`@register` 注册 → core 按 code 分发。
+"""
 import random
 import math
 from fractions import Fraction

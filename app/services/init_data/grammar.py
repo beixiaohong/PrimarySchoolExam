@@ -1,3 +1,8 @@
+"""种子数据 · 英语语法知识点与配套练习（GrammarPoint / GrammarExercise）
+
+幂等：表内已有数据则直接跳过（`count() > 0` 即 return），可随每次启动安全重跑，
+由 `init_data/core.py` 的 `ensure_initial_data()` 统一调用。
+"""
 import csv
 import os
 from pathlib import Path

@@ -1,3 +1,16 @@
+"""数学题生成核心：题型选取、年级守卫、题数分配与统一分发入口
+
+职责：
+- `generate_math_problems`：本包唯一对外入口。按年级 / 分类 / 难度挑选题型并分配题数，
+  再从 `common.GENERATORS` 注册表按 code 取生成器产出题目。
+- 年级守卫（三级，缺一不可）：
+  * `_get_available_types`：从 DB 题型表取可用题型；
+  * `_filter_by_grade`：对 DB 返回结果做年级二次校正；
+  * `_fallback_types_by_grade`：DB 为空或异常时，用 `_TYPE_GRADE_RANGE` 做「年级安全 fallback」。
+  目的是保证不把五六年级 / 中学题型下放到低年级
+  （历史 bug：旧逻辑 fallback 回退到全部生成器，导致三年级出现五六年级题）。
+- `_allocate_counts`：按总题数在各题型间分配，保证不超发、不漏发。
+"""
 import random
 import math
 from fractions import Fraction

@@ -1,3 +1,10 @@
+"""数与代数（数论）类题型生成器：公因数公倍数 / 负数 / 整除特征 / 数的改写 / 运算定律 / 大数
+
+注册题型 6 个：number_gcd_lcm、number_negative、number_divisibility、
+number_conversion、number_operation_law、number_large。
+
+约定同 calc.py：`@register` 注册 → core 按 code 分发。
+"""
 import random
 import math
 from fractions import Fraction

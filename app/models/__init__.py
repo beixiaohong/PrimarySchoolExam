@@ -1,3 +1,14 @@
+"""数据模型包：统一导出全部 ORM 模型类，供 `Base.metadata` 建表与各模块 import。
+
+新增模型三步：
+1. 在 `models/<x>.py` 定义类（继承 `database.Base`）；
+2. 在本文件 `from .<x> import <类名>` 导出（否则建表时会漏表）；
+3. 新增 `app/migrations/versions/0NN_*.py` 幂等建表脚本。`create_all` 会自动建新表，
+   但生产环境仍建议显式写迁移，便于回滚与审计。
+
+注意：MySQL 的 TEXT / MEDIUMTEXT 列**不允许 DEFAULT**，跨方言加列请用
+`database._ensure_column()`；大文本用 `paper.py` 的 `_longtext()` 做方言自适应。
+"""
 from .word import Word, WordBook
 from .phrase import Phrase, Sentence
 from .problem_type import ProblemType, ProblemCategory

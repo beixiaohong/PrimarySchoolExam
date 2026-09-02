@@ -1,3 +1,12 @@
+"""应用题（情境题）生成器：行程 / 工程 / 浓度 / 利润 / 分数应用 / 鸡兔同笼等
+
+注册题型 15 个：app_travel、app_work、app_concentration、app_profit、app_fraction、
+app_chicken_rabbit、app_tree_planting、app_sum_difference、app_proportional_dist、
+app_surplus_deficit、app_unit_rate、app_total_rate、app_ratio_compare、app_boat_stream、app_cow_grazing。
+
+约定同 calc.py：`@register` 注册 → core 按 code 分发；涉及百分比、金额的结果一律
+用 Decimal(ROUND_HALF_UP) 收敛后再格式化输出。
+"""
 import random
 import math
 from decimal import Decimal, ROUND_HALF_UP

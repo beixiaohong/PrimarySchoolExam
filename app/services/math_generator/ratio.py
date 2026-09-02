@@ -1,3 +1,10 @@
+"""比与比例类题型生成器：比的意义 / 比例 / 百分数
+
+注册题型 3 个：ratio_basic、ratio_proportion、ratio_percent。
+
+注：百分数、折扣、成数类计算统一走 Decimal(ROUND_HALF_UP)，
+避免浮点误差与整型截断造成答案错误（见 calc.py 模块注释）。
+"""
 import random
 import math
 from fractions import Fraction

@@ -1,3 +1,9 @@
+"""单位换算类题型生成器
+
+注册题型 1 个：unit_conversion（长度 / 面积 / 体积 / 质量 / 时间等跨单位换算）。
+
+约定同 calc.py：`@register` 注册 → core 按 code 分发。
+"""
 import random
 import math
 from fractions import Fraction
