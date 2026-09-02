@@ -1,7 +1,14 @@
 """每日任务 · 自定义任务子路由
 
-从 app/routers/tasks.py 拆分而出：孩子端 /custom 与家长端 /custom-task 相关接口。
-由 tasks.py 末尾 include 进主路由，对外路径仍为 /api/tasks/custom、/api/tasks/custom-task 等，
+本模块承载两套「自定义任务」，名称相近但语义完全不同，维护时务必分清：
+
+1. 家长端 /custom-task（**现行**）—— 模型 ParentCustomTask（表 parent_custom_tasks）。
+   家长在「任务设置」中定义，注入每日任务的强制/可选区，手动确认完成。
+2. 孩子端 /custom（**已废弃 DEPRECATED**）—— 模型 CustomTask（表 custom_tasks）。
+   孩子创建、家长确认。现状：web/src 与 admin/src 零引用，库内 custom_tasks 表 0 行。
+   代码保留仅为日后可能复活孩子端任务，新需求一律走 /custom-task。
+
+由 tasks 包 include 进主路由，对外路径仍为 /api/tasks/custom、/api/tasks/custom-task，
 对调用方零影响。
 """
 from datetime import date, datetime
@@ -18,6 +25,12 @@ from ..models.daily_task import DailyTask
 from .tasks import MAX_TARGET
 
 router = APIRouter()
+
+
+# ═══════════ 孩子端自定义任务（DEPRECATED 已废弃，代码保留待复活） ═══════════
+# 废弃原因：前端 web/src 与 admin/src 均无引用，库内 custom_tasks 表 0 行（无历史数据）。
+# 现状：保留但不再迭代；新需求一律使用下方「家长自定义任务」/custom-task 系列。
+# 复活方式：模型 CustomTask 与表 custom_tasks 均保留，直接复用本段端点即可。
 
 
 class CustomTaskCreate(BaseModel):
