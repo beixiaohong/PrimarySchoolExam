@@ -219,16 +219,24 @@ def save_task_settings(req: SettingsRequest, request: Request, db: Session = Dep
     for r in rows:
         if r.status != "done" and r.task_code in new_targets:
             r.target = new_targets[r.task_code]
-    # 强制任务追加列表变更：删除今日未完成且已不在（默认+追加）列表中的强制行
+    # 强制任务追加列表变更：删除今日未完成且已不在（默认+追加）列表中的强制行。
+    # 仅处理标准强制任务行（subject 在三科内且 task_code 非 custom:）。
+    # 家长自定义任务行（task_code=custom:N）的生命周期由 /custom-task 增删改接口
+    # 管理（custom.py 在更新/删除时同步移除今日行），不受 settings 配置影响；
+    # 且其 subject 可能为"其他"（不在 SUBJECTS），_get_mandatory_codes 无法处理。
     for r in rows:
         if getattr(r, "task_type", "") == "mandatory" and r.status != "done":
+            if r.subject not in SUBJECTS or str(r.task_code).startswith("custom:"):
+                continue
             valid = _get_mandatory_codes({"mandatory": new_mandatory}, r.subject)
             if r.task_code not in valid:
                 db.delete(r)
-    # 可选任务配置变更：删除今日未完成的可选行，下次 /daily 按新配置重新生成
+    # 可选任务配置变更：仅删除系统可选行（非 custom:），家长自定义可选行由
+    # /custom-task 接口管理；下次 /daily 按新配置重新生成系统可选行。
     if new_optional != list(existing.get("optional", [])):
         for r in rows:
-            if getattr(r, "task_type", "") == "optional" and r.status != "done":
+            if getattr(r, "task_type", "") == "optional" and r.status != "done" \
+                    and not str(r.task_code).startswith("custom:"):
                 db.delete(r)
     db.commit()
     return get_task_settings(req.user_id, db)

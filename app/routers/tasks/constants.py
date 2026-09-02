@@ -164,13 +164,20 @@ def _normalize_mandatory(raw) -> dict:
 
 def _get_mandatory_codes(settings: dict, subject: str) -> list:
     """该科强制任务 code 列表：家长配置优先（可自定义科目/类型/数量），
-    未配置则回退默认三科固定任务。"""
+    未配置则回退默认三科固定任务。
+
+    注意：subject 必须是 SUBJECTS 三科之一。家长自定义任务（task_code 形如
+    custom:N、subject 可能为"其他"）不属于标准强制体系，调用方须在传入前跳过；
+    此处对未知学科返回空列表（而非抛 KeyError），避免误用时 500。
+    """
     cfg = settings.get("mandatory", {}).get(subject, [])
     if cfg:
         valid = [c for c in cfg if c in MANDATORY_CHOICES.get(subject, [])]
         if valid:
             return valid
-    return [MANDATORY_TASKS[subject]["code"]]
+    if subject in MANDATORY_TASKS:
+        return [MANDATORY_TASKS[subject]["code"]]
+    return []
 
 
 def _task_def_by_code(code: str) -> dict | None:

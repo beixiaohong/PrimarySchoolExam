@@ -196,7 +196,8 @@ def test_optional_conflicts_with_mandatory(client):
 
 
 def test_mandatory_multiple_roundtrip(client):
-    """强制任务支持每科追加多个：保存 → 回显 → 今日任务全部生成"""
+    """强制任务每科可整体自定义多个（2b3dd4c 起为「完整替换默认」语义）：
+    保存 → 回显 → 今日任务按配置全量生成，默认三科固定项被替换"""
     uid = "多强制配置生"
     _ensure_parent_pwd(client, uid)
     mandatory = {
@@ -209,28 +210,28 @@ def test_mandatory_multiple_roundtrip(client):
     }, headers={"X-Parent-Pwd": PARENT_PWD})
     assert r.status_code == 200, r.text
 
-    # 回显：读回配置，追加项原样返回（默认任务不进配置）
+    # 回显：读回配置，每科配置的完整 code 列表原样返回
     r = client.get("/api/tasks/settings", params={"user_id": uid})
     assert r.json()["mandatory"] == mandatory
 
-    # 今日任务：每科默认强制任务 + 全部追加项都生成，且均为 mandatory
+    # 今日任务：强制区恰为配置的 5 条（完整替换默认三科固定项）
     r = client.get("/api/tasks/daily", params={"user_id": uid})
     assert r.status_code == 200, r.text
     tasks = r.json()["tasks"]
     mand_codes = {t["task_code"] for t in tasks if t["mandatory"]}
-    # 三科默认任务固定保留
-    assert {"math_exam", "chi_classical", "eng_vocab"} <= mand_codes
-    # 追加项全部出现
-    for subj_codes in mandatory.values():
-        assert set(subj_codes) <= mand_codes
+    expected = {c for subj_codes in mandatory.values() for c in subj_codes}
+    assert mand_codes == expected
+    # 默认固定项（math_exam/chi_classical/eng_vocab）已被配置替换，不再出现
+    assert not ({"math_exam", "chi_classical", "eng_vocab"} & mand_codes)
     # 无重复行
     all_codes = [t["task_code"] for t in tasks if t["mandatory"]]
     assert len(all_codes) == len(set(all_codes))
 
 
-def test_mandatory_default_code_dropped(client):
-    """提交里带默认任务 code（如 math_exam）被静默去掉，不与默认行重复"""
-    uid = "多强制去重生"
+def test_mandatory_default_code_can_be_included(client):
+    """强制任务提交里可显式包含默认 code（math_exam 属 MANDATORY_CHOICES）：
+    完整替换语义按提交原样保存回显，不静默剔除；今日强制区两行各恰好一条"""
+    uid = "多强制含默认生"
     _ensure_parent_pwd(client, uid)
     r = client.post("/api/tasks/settings", json={
         "user_id": uid,
@@ -238,7 +239,14 @@ def test_mandatory_default_code_dropped(client):
     }, headers={"X-Parent-Pwd": PARENT_PWD})
     assert r.status_code == 200, r.text
     r = client.get("/api/tasks/settings", params={"user_id": uid})
-    assert r.json()["mandatory"]["数学"] == ["math_fix"]
+    assert r.json()["mandatory"]["数学"] == ["math_exam", "math_fix"]
+
+    # 今日强制区：math_exam 与 math_fix 各恰好一行（不撞唯一索引、不重复生成）
+    r = client.get("/api/tasks/daily", params={"user_id": uid})
+    assert r.status_code == 200, r.text
+    mand_codes = [t["task_code"] for t in r.json()["tasks"] if t["mandatory"]]
+    assert mand_codes.count("math_exam") == 1
+    assert mand_codes.count("math_fix") == 1
 
 
 def test_mandatory_legacy_str_compat(client):
@@ -366,7 +374,8 @@ def test_exam_task_requires_new_paper(client):
 
 
 def test_parent_custom_task_in_daily(client):
-    """家长自定义任务：添加后可出现在每日任务（强制/可选），家长按 id 确认完成，可删除"""
+    """家长自定义任务：添加后可出现在每日任务（强制/可选），家长按 id 确认完成，
+    删除后（软删除）从管理列表消失"""
     uid = "自定义任务生"
     _ensure_parent_pwd(client, uid)
 
@@ -409,13 +418,13 @@ def test_parent_custom_task_in_daily(client):
     assert r.status_code == 200, r.text
     assert next(t for t in r.json()["tasks"] if t["task_code"] == f"custom:{cid_o}")["status"] == "done"
 
-    # 删除自定义任务（软删除）→ 列表中 active=False
+    # 删除自定义任务（软删除）→ GET /custom-task 仅返回 active=True，该任务从管理列表消失
     r = client.delete(f"/api/tasks/custom-task/{cid_m}?user_id={uid}",
                       headers={"X-Parent-Pwd": PARENT_PWD})
     assert r.status_code == 200, r.text
     r = client.get("/api/tasks/custom-task", params={"user_id": uid})
-    deleted = next(c for c in r.json() if c["id"] == cid_m)
-    assert deleted["active"] is False
+    assert r.status_code == 200, r.text
+    assert all(c["id"] != cid_m for c in r.json()), "软删除后任务应从管理列表消失"
 
 
 def test_manual_optional_claimable_by_task_id(client):
