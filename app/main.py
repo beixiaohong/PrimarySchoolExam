@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from .database import init_db
 from .config import ENABLE_DOCS
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, task_confirm, ledger, im, admin_panel, announcement, textbook, courses, knowledge, learning_goals
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, ledger, im, admin_panel, announcement, textbook, courses, knowledge, learning_goals
 from .routers.auth import require_self
 from .routers.quiet_hours import check_quiet_hours
 from .services.init_data import ensure_initial_data
@@ -98,7 +98,7 @@ app.include_router(focus.router, prefix="/api/focus", tags=["番茄专注钟"], 
 app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"], dependencies=[*user_auth_deps, Depends(check_quiet_hours)])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"], dependencies=user_auth_deps)
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
-app.include_router(task_confirm.router, prefix="/api/task-confirm", tags=["完成确认"], dependencies=user_auth_deps)
+app.include_router(tasks.confirm_router, prefix="/api/task-confirm", tags=["完成确认"], dependencies=user_auth_deps)
 # 账本(ledger)与即时通讯(im)：路由内部已用 require_user 鉴权，不挂全局 user_auth_deps
 app.include_router(ledger.router, prefix="/api/ledger", tags=["个人账本"])
 app.include_router(im.router, prefix="/api/im", tags=["即时通讯"])

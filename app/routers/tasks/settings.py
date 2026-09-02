@@ -8,7 +8,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from . import router
-from .common import *
+from .constants import (
+    SUBJECTS, MANDATORY_TASKS, MANDATORY_CHOICES, OPTIONAL_POOL,
+    CONFIGURABLE_CODES, _UNCONFIGURABLE_CODES, QUOTA_KEYS, STUDY_FLAG_KEYS,
+    _bounded_target, _get_mandatory_codes,
+)
+from .service import _load_settings, _load_study_flags
 from app.database import get_db
 from app.services.parent_guard import ensure_parent_pwd
 from app.models.daily_task import DailyTask

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import router
-from .common import *
+from .service import _get_makeup_balance, _has_makeup_card
 from app.database import get_db
 from app.services.parent_guard import ensure_parent_pwd
 from app.models.makeup_card import MakeupCard, MakeupUsageLog
