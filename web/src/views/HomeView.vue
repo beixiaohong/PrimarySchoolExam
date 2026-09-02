@@ -207,13 +207,13 @@
               </div>
               <div class="ci-row ci-sub">
                 <span class="ci-time">{{c.created_at}}</span>
-                <span class="tag" :class="c.status==='pending' ? 'tag-orange' : (c.status==='approved' ? 'tag-green' : 'tag-red')">
-                  {{c.status==='pending' ? '待确认' : (c.status==='approved' ? '已通过 ✓' : '已拒绝')}}
+                <span class="tag" :class="c.status==='pending' ? 'tag-orange' : (c.status==='confirmed' ? 'tag-green' : 'tag-red')">
+                  {{c.status==='pending' ? '待确认' : (c.status==='confirmed' ? '已通过 ✓' : '已拒绝')}}
                 </span>
               </div>
               <div v-if="c.status==='rejected' && c.reject_reason" class="ci-reason">家长意见：{{c.reject_reason}}</div>
               <div v-if="c.status==='pending' && appCtx.parentPhase==='open'" class="ci-actions">
-                <button class="btn btn-success btn-sm" @click="appCtx.resolveTaskConfirm(c.id,'approve')">通过 ✓</button>
+                <button class="btn btn-success btn-sm" @click="appCtx.resolveTaskConfirm(c.id,'confirm')">通过 ✓</button>
                 <button class="btn btn-ghost btn-sm" @click="appCtx.openReject(c.id)">拒绝</button>
               </div>
               <div v-if="appCtx.taskReject.id===c.id" class="ci-reject-box">

@@ -3,7 +3,7 @@
 设计：
 - /create ：孩子端调用（无需家长密码），生成一条 pending 确认请求；同用户同类型当天已有 pending 时改为更新，避免重复刷屏。
 - /list  ：孩子端调用（无需家长密码），返回该用户全部确认记录（首页「完成确认」区块展示）。
-- /resolve：家长端调用（需家长密码，由 X-Parent-Pwd 头校验），approve 通过 / reject 拒绝（必须填写理由）。
+- /resolve：家长端调用（需家长密码，由 X-Parent-Pwd 头校验），confirm 通过 / reject 拒绝（必须填写理由）。
 """
 from datetime import date, datetime
 
@@ -45,7 +45,7 @@ class CreateReq(BaseModel):
 class ResolveReq(BaseModel):
     user_id: str
     id: int
-    action: str          # approve / reject
+    action: str          # confirm / reject
     reject_reason: str = ""
 
 
@@ -110,7 +110,7 @@ def list_confirms(user_id: str = "", limit: int = 200, offset: int = 0,
 def resolve_confirm(req: ResolveReq, request: Request, db: Session = Depends(get_db)):
     """家长对一条 pending 确认请求进行最终处理。
 
-    - approve：状态置 approved（家长已通过）。
+    - confirm：状态置 confirmed（家长已通过）。
     - reject ：状态置 rejected，必须填写 reject_reason（家长拒绝理由）。
     需家长密码（由 http.js 自动附加 X-Parent-Pwd，服务端 ensure_parent_pwd 校验）。
     返回：{id, status, reject_reason}；记录不存在 404、已处理 400、reject 缺理由 400。
@@ -123,11 +123,11 @@ def resolve_confirm(req: ResolveReq, request: Request, db: Session = Depends(get
     if c.status != "pending":
         raise HTTPException(400, "该记录已被处理")
 
-    if req.action == "approve":
-        c.status = "approved"
+    if req.action == "confirm":
+        c.status = "confirmed"
         c.resolved_at = datetime.now()
         db.commit()
-        return {"id": c.id, "status": "approved", "reject_reason": ""}
+        return {"id": c.id, "status": "confirmed", "reject_reason": ""}
     elif req.action == "reject":
         reason = (req.reject_reason or "").strip()
         if not reason:
@@ -138,4 +138,4 @@ def resolve_confirm(req: ResolveReq, request: Request, db: Session = Depends(get
         db.commit()
         return {"id": c.id, "status": "rejected", "reject_reason": c.reject_reason}
     else:
-        raise HTTPException(400, "action 只能是 approve 或 reject")
+        raise HTTPException(400, "action 只能是 confirm 或 reject")

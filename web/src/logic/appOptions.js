@@ -1850,7 +1850,7 @@ const appOptions = {
       }).then(() => {
         if (action === 'reject') this.cancelReject();
         this.loadTaskConfirms();
-        this.showToast(action === 'approve' ? '已通过，太棒了！✅' : '已拒绝并记录理由');
+        this.showToast(action === 'confirm' ? '已通过，太棒了！✅' : '已拒绝并记录理由');
       }).catch(e => this.showToast(e.message || '操作失败'));
     },
     openTextDetail(t) {
