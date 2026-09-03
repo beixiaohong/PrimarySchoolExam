@@ -39,7 +39,7 @@ def _mock_ai(monkeypatch, text="【思路】先算速度和…【解答】300千
         return {"text": text, "provider": "zhipu", "model": "glm-4.7",
                 "prompt_tokens": 10, "completion_tokens": 20}
 
-    import app.services.ai as ai_svc
+    import app.domains.platform.services.ai as ai_svc
     monkeypatch.setattr(ai_svc, "chat_for", fake_chat)
     return calls
 

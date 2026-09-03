@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import SessionLocal, get_db
+from app.database import SessionLocal, get_db
 from ..services import ai as ai_svc
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class ChatTurn(BaseModel):
 
 def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
                result: dict | None = None, error: str = ""):
-    from ..models.ai_usage import AIUsageLog
+    from app.models.ai_usage import AIUsageLog
     try:
         db.add(AIUsageLog(
             user_id=user_id,
@@ -69,10 +69,10 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
     from datetime import date, timedelta
     from sqlalchemy import func
 
-    from ..models.study_error import StudyError
-    from ..models.exam import ExamAttempt
-    from ..models.daily_task import DailyTask
-    from ..models.badge import BadgeEarned
+    from app.models.study_error import StudyError
+    from app.models.exam import ExamAttempt
+    from app.models.daily_task import DailyTask
+    from app.models.badge import BadgeEarned
     from app.domains.engagement.routers.pet import _balance
     from app.domains.engagement.routers.tree import compute_tree_score
 
@@ -122,7 +122,7 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
         pass
     # 连续打卡（daily_tasks 往前数）
     try:
-        from ..models.daily_task import DailyTask as DT
+        from app.models.daily_task import DailyTask as DT
         d = date.today()
         streak = 0
         for i in range(60):
@@ -147,7 +147,7 @@ def assistant_profile(user_id: str = Query(...), db: Session = Depends(get_db)):
     返回：{grade, subject, profile}（profile 为今日任务/错题/最近考试/徽章/树/金币/连续打卡的文本摘要）。
     副作用：只读，无写库。
     """
-    from ..models.user import User
+    from app.models.user import User
 
     u = db.query(User).filter(User.user_id == user_id).first()
     grade = u.grade if u else 6
@@ -168,7 +168,7 @@ def assistant_chat(req: ChatReq):
     副作用：限频 5 次/分钟，消息限 300 字；组装最近 6 轮历史 + 实时学习画像调用 AI，
             成功按 token 扣钻（reason=ai_assistant）并写 ai_usage_log，扣费失败不阻断。
     """
-    from ..models.user import User
+    from app.models.user import User
 
     message = (req.message or "").strip()
     if not message:
@@ -210,7 +210,7 @@ def assistant_chat(req: ChatReq):
         _log_usage(db, req.user_id, "assistant", True, resp)
         # 钻石扣费
         try:
-            from ..services import diamond as diamond_svc
+            from app.services import diamond as diamond_svc
             diamond_svc.check_and_deduct(db, req.user_id,
                                           resp.get("prompt_tokens", 0),
                                           resp.get("completion_tokens", 0),

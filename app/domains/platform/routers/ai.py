@@ -1,7 +1,7 @@
 """AI API：错题讲解 / 成长周报 / 即时鼓励语
 
 约定：
-- 全部调用走 app.services.ai（多提供商：智谱 GLM 免费（glm-4.7-flash，失败自动回退 glm-4.7 标准版）/ DeepSeek 付费，VIP 用户可享付费链）
+- 全部调用走 app.domains.platform.services.ai（多提供商：智谱 GLM 免费（glm-4.7-flash，失败自动回退 glm-4.7 标准版）/ DeepSeek 付费，VIP 用户可享付费链）
 - 未配置 Key 或全链调用失败 → degraded=true + 本地模板，前端无感
 - 每次调用记录 ai_usage_log（provider/用量/失败原因）
 """
@@ -15,11 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import SessionLocal, get_db
-from ..models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
-from ..models.vocab import VocabDailyLog
-from ..models.classical import ClassicalDailyLog
-from ..models.daily_task import DailyTask
+from app.database import SessionLocal, get_db
+from app.models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
+from app.models.vocab import VocabDailyLog
+from app.models.classical import ClassicalDailyLog
+from app.models.daily_task import DailyTask
 from ..services import ai as ai_svc
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ class EncourageReq(BaseModel):
 
 def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
                result: dict | None = None, error: str = ""):
-    from ..models.ai_usage import AIUsageLog  # noqa: 延迟导入避免循环
+    from app.models.ai_usage import AIUsageLog  # noqa: 延迟导入避免循环
     try:
         db.add(AIUsageLog(
             user_id=user_id,
@@ -105,7 +105,7 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
 def _deduct_diamonds(db: Session, user_id: str, result: dict, feature: str) -> dict:
     """根据 AI 返回的 token 用量扣除钻石，返回扣费信息（失败不阻断主流程）"""
     try:
-        from ..services import diamond as diamond_svc
+        from app.services import diamond as diamond_svc
         prompt_tokens = result.get("prompt_tokens", 0)
         completion_tokens = result.get("completion_tokens", 0)
         info = diamond_svc.check_and_deduct(db, user_id, prompt_tokens, completion_tokens,
@@ -133,7 +133,7 @@ def _explain_core(user_id: str, question_id: int, question_text: str,
                 "question": question_text, "answer": answer_text}
 
     # 数据库全局缓存：同题（ref_id）已有成功讲解 → 直接复用，不再请求 AI
-    from ..models.ai_usage import AiQa
+    from app.models.ai_usage import AiQa
     db = SessionLocal()
     try:
         db_cached = db.query(AiQa).filter(
@@ -290,7 +290,7 @@ def _aggregate_week(db: Session, user_id: str) -> dict:
         "best_mood_day": None, "ai_explains": 0,
     }
     # 本周心情最好的一天（mood 档位：great > happy > ok > blue > sad，取最好的一天）
-    from ..models.mood import MoodCheckin
+    from app.models.mood import MoodCheckin
     moods = db.query(MoodCheckin).filter(
         MoodCheckin.user_id == user_id,
         MoodCheckin.check_date >= start, MoodCheckin.check_date <= end,
@@ -304,7 +304,7 @@ def _aggregate_week(db: Session, user_id: str) -> dict:
             "label": {"great": "超开心", "happy": "开心", "ok": "一般", "blue": "有点烦", "sad": "很难过"}.get(best.mood, best.mood),
         }
     # 本周 AI 讲解使用次数（周报亮点数据源，q_type=explain 非降级记录）
-    from ..models.ai_usage import AiQa
+    from app.models.ai_usage import AiQa
     stats["ai_explains"] = db.query(AiQa).filter(
         AiQa.user_id == user_id,
         AiQa.q_type == "explain",
@@ -356,7 +356,7 @@ def ai_report(req: ReportReq):
     if not ai_svc.rate_limit(f"report:{req.user_id}", 2, 86400):
         raise HTTPException(400, "今天周报已生成过啦")
 
-    from ..models.ai_usage import WeeklyReport
+    from app.models.ai_usage import WeeklyReport
     # 读阶段短会话：聚合 + 查重，取完即释放，等待 AI 期间不占连接
     db = SessionLocal()
     try:

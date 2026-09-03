@@ -78,7 +78,7 @@ def generate_quiz(req: QuizGenReq):
     返回：{theme, count, questions:[{question,options,answer,explanation,fun}]}（questions 为空时抛 502）。
     副作用：最多重试 2 次解析 AI 输出；成功按 token 扣钻（reason=ai_quiz），扣费失败不阻断。
     """
-    from app.services.ai import chat_with
+    from app.domains.platform.services.ai import chat_with
 
     if req.subject not in QUIZ_SUBJECTS:
         raise HTTPException(400, f"学科只能是 {('/'.join(QUIZ_SUBJECTS))}")

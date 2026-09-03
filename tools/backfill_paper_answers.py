@@ -4,7 +4,7 @@
 
 - 由 tools/scheduler.py 的 backfill_paper_answers 任务在每日 01:00 调用（线上服务器）。
 - 只处理 correct_answer 为空的 paper_questions；[AI生成] 前缀存储，不覆盖已有答案。
-- AI 走 app.services.ai 的多提供商路由：智谱 GLM（用户指定）优先，余额耗尽回退免费版，
+- AI 走 app.domains.platform.services.ai 的多提供商路由：智谱 GLM（用户指定）优先，余额耗尽回退免费版，
   relay/DeepSeek 兜底；自带全局节流与「连续失败即停止」保护。
 - 每晚默认最多 3000 题（BACKFILL_PER_RUN 可覆盖），多晚跑完，幂等可重入。
 

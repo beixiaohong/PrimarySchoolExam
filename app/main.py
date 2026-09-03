@@ -16,7 +16,8 @@ from fastapi.responses import FileResponse
 from .database import init_db
 from .config import ENABLE_DOCS, ENABLE_IM, ENABLE_LEDGER
 from .migrations.runner import run_migrations
-from .routers import vocab, study, search, ai, qa, assistant, diamond, weather, admin, admin_panel, announcement, learning_goals
+from .routers import vocab, study, diamond, admin, learning_goals
+from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
 from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus
@@ -26,7 +27,7 @@ from .domains.frozen.routers import admin_im as frozen_admin_im, admin_ledger as
 from .domains.identity.routers import auth, user
 from .domains.family.routers import appeal, parent, sync
 from .domains.identity.routers.auth import require_self
-from .routers.quiet_hours import check_quiet_hours
+from .domains.platform.routers.quiet_hours import check_quiet_hours
 from .domains.content.services.init_data import ensure_initial_data
 from .logging_setup import apply_logging
 

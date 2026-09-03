@@ -14,9 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import SessionLocal, get_db
-from ..models.ai_usage import AiQa
-from ..models.study_error import StudyError
+from app.database import SessionLocal, get_db
+from app.models.ai_usage import AiQa
+from app.models.study_error import StudyError
 from ..services import ai as ai_svc
 from ..services.search_service import (
     ai_explain, cached_search, match_library, normalize_question,
@@ -49,7 +49,7 @@ class SearchToWrongReq(BaseModel):
 # ── 用量与扣费（与 routers/ai.py 一致） ──
 def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
                result: dict | None = None, error: str = ""):
-    from ..models.ai_usage import AIUsageLog
+    from app.models.ai_usage import AIUsageLog
     try:
         db.add(AIUsageLog(
             user_id=user_id,
@@ -70,7 +70,7 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
 def _deduct_diamonds(db: Session, user_id: str, result: dict, feature: str) -> dict:
     """根据 AI 返回的 token 用量扣除钻石，返回扣费信息（失败不阻断主流程）"""
     try:
-        from ..services import diamond as diamond_svc
+        from app.services import diamond as diamond_svc
         info = diamond_svc.check_and_deduct(
             db, user_id,
             result.get("prompt_tokens", 0), result.get("completion_tokens", 0),
@@ -83,7 +83,7 @@ def _deduct_diamonds(db: Session, user_id: str, result: dict, feature: str) -> d
 
 
 def _balance(db: Session, user_id: str) -> float:
-    from ..services import diamond as diamond_svc
+    from app.services import diamond as diamond_svc
     try:
         return diamond_svc.get_balance(db, user_id)
     except Exception:

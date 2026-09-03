@@ -67,7 +67,7 @@ def mock_reading_ai(monkeypatch):
                     "prompt_tokens": 10, "completion_tokens": 20, "model": "glm-4.7"}
         return {"text": "ok", "prompt_tokens": 10, "completion_tokens": 20, "model": "glm-4.7"}
 
-    monkeypatch.setattr("app.services.ai.chat_for", fake)
+    monkeypatch.setattr("app.domains.platform.services.ai.chat_for", fake)
     return calls
 
 
@@ -160,7 +160,7 @@ def test_admin_reviews_run_conflict_resolve(client, admin_token, pending_questio
                 "prompt_tokens": 8, "completion_tokens": 16, "model": "glm-4.7"}
 
     import app.services.review_service as rs
-    import app.services.ai as ai_svc
+    import app.domains.platform.services.ai as ai_svc
     orig = ai_svc.chat_with
     ai_svc.chat_with = fake_chat
     try:

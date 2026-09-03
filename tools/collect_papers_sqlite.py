@@ -13,7 +13,7 @@
 - 年份：仅最近 10 年（标题年份过滤，YEAR_MIN）
 - 学段优先级：初中 → 小学 → 高中（STAGE_CAP 配额保证小/高中都覆盖）
 - 学科：九大学科全覆盖（ORDERED_CATEGORY_MAP 按学段重排）
-- AI 答案：采集后调用 AI（智谱 GLM 等，复用 app.services.ai）补全 correct_answer，
+- AI 答案：采集后调用 AI（智谱 GLM 等，复用 app.domains.platform.services.ai）补全 correct_answer，
           已有来源答案不覆盖；限流时连续失败即优雅放弃，绝不死循环刷接口
 - 入库：试卷转 HTML 富文本（base64 内联图片）存 papers / paper_questions
 

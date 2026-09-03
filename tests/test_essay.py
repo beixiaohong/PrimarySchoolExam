@@ -34,7 +34,7 @@ def mock_ai(monkeypatch):
         calls["n"] += 1
         return {"text": text, "prompt_tokens": 12, "completion_tokens": 30}
 
-    monkeypatch.setattr("app.services.ai.chat_for", fake)
+    monkeypatch.setattr("app.domains.platform.services.ai.chat_for", fake)
     return calls
 
 

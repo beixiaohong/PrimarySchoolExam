@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.services.ai import rate_limit
+from app.domains.platform.services.ai import rate_limit
 from app.domains.identity.services.parent_guard import ensure_parent_pwd
 
 router = APIRouter()

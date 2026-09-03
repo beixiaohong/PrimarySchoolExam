@@ -13,7 +13,7 @@ from app.database import SessionLocal
 from app.models.diamond import DiamondAccount, DiamondLedger
 from app.models.exam import ExamRecord, Question, ExamAttempt, AttemptAnswer
 from app.models.appeal import AnswerAppeal
-import app.services.ai as ai_svc
+import app.domains.platform.services.ai as ai_svc
 
 
 # ─────────────────────────────────────────────────────────────

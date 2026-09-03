@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.admin import Admin, SystemConfig
-from app.services import sysconfig
+from app.domains.platform.services import sysconfig
 
 from . import router
 from .common import CONFIG_GROUPS, SECRET_HINTS, _audit, _require_admin

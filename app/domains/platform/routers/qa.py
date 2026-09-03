@@ -14,8 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import SessionLocal, get_db
-from ..models.ai_usage import AiQa
+from app.database import SessionLocal, get_db
+from app.models.ai_usage import AiQa
 from ..services import ai as ai_svc
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def _norm_question(q: str) -> str:
 
 def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
                result: dict | None = None, error: str = ""):
-    from ..models.ai_usage import AIUsageLog
+    from app.models.ai_usage import AIUsageLog
     try:
         db.add(AIUsageLog(
             user_id=user_id,
@@ -210,7 +210,7 @@ def qa_ask(req: AskReq):
             _log_usage(db, req.user_id, "qa_ask", True, result)
             # 钻石扣费
             try:
-                from ..services import diamond as diamond_svc
+                from app.services import diamond as diamond_svc
                 diamond_svc.check_and_deduct(db, req.user_id,
                                               result.get("prompt_tokens", 0),
                                               result.get("completion_tokens", 0),

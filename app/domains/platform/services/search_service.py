@@ -18,9 +18,9 @@ import re
 
 from sqlalchemy.orm import Session
 
-from ..models.ai_usage import AiQa
-from ..models.exam import Question
-from ..models.middle import MiddleQuestion
+from app.models.ai_usage import AiQa
+from app.models.exam import Question
+from app.models.middle import MiddleQuestion
 from ..services import ai as ai_svc
 
 logger = logging.getLogger(__name__)

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from ..models.content_review import ContentReview
 from ..models.middle import MiddleQuestion
 from ..models.reading import ReadingPassage
-from ..services import ai as ai_svc
+from app.domains.platform.services import ai as ai_svc
 
 logger = logging.getLogger(__name__)
 

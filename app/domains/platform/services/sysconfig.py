@@ -21,8 +21,8 @@ def get(key: str, default: str = "") -> str:
 
     value = default
     try:
-        from ..database import SessionLocal
-        from ..models.admin import SystemConfig
+        from app.database import SessionLocal
+        from app.models.admin import SystemConfig
         db = SessionLocal()
         try:
             row = db.query(SystemConfig).filter(SystemConfig.key == key).first()

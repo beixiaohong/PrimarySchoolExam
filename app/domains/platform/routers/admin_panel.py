@@ -19,19 +19,19 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models.user import User, VipUser
-from ..models.exam import ExamAttempt
-from ..models.vocab import VocabDailyLog
-from ..models.classical import ClassicalDailyLog
-from ..models.sprint4 import ChallengeRecord
-from ..models.daily_task import DailyTask
-from ..models.ai_usage import AiQa
-from ..models.ledger import Bill, Account, Category
-from ..models.im import Chat, Message, Friendship, RedPacket
-from ..models.admin import Admin
-from ..models.announcement import Announcement
-from .admin import _require_admin, _audit
+from app.database import get_db
+from app.models.user import User, VipUser
+from app.models.exam import ExamAttempt
+from app.models.vocab import VocabDailyLog
+from app.models.classical import ClassicalDailyLog
+from app.models.sprint4 import ChallengeRecord
+from app.models.daily_task import DailyTask
+from app.models.ai_usage import AiQa
+from app.models.ledger import Bill, Account, Category
+from app.models.im import Chat, Message, Friendship, RedPacket
+from app.models.admin import Admin
+from app.models.announcement import Announcement
+from app.routers.admin import _require_admin, _audit
 
 logger = logging.getLogger(__name__)
 

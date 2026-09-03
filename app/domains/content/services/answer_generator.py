@@ -4,13 +4,13 @@
 - 仅补全 correct_answer 为空的题目；试卷自带的参考答案原样保留，不覆盖。
 - 客观题（选择/填空/判断）直接给最终答案；主观/简答/应用题给关键步骤与要点。
 - AI 生成的答案以「[AI生成] 」前缀存储，便于与来源答案区分。
-- 复用 app.services.ai 的多提供商路由（智谱 GLM / relay / DeepSeek），自带全局节流。
+- 复用 app.domains.platform.services.ai 的多提供商路由（智谱 GLM / relay / DeepSeek），自带全局节流。
 """
 import json
 import logging
 import time
 
-from app.services.ai import chat, ai_enabled, ai_any_enabled
+from app.domains.platform.services.ai import chat, ai_enabled, ai_any_enabled
 
 logger = logging.getLogger("answer_generator")
 
@@ -40,7 +40,7 @@ def _build_user(q) -> str:
 def _deepseek_configured() -> bool:
     """DeepSeek Key 是否已配置（采集批量补答案的主用提供商）"""
     try:
-        from app.services import ai as _ai
+        from app.domains.platform.services import ai as _ai
         return bool(_ai._config_provider("deepseek").get("api_key"))
     except Exception:
         return False
@@ -59,7 +59,7 @@ def generate_answer_for(q, max_tokens: int = 400) -> str | None:
         return None
     if _deepseek_configured():
         try:
-            from app.services import ai as _ai
+            from app.domains.platform.services import ai as _ai
             ds_cfg = _ai._config_provider("deepseek")
             res = _ai._call_provider("deepseek", ds_cfg, _SYSTEM, user, max_tokens)
         except Exception as e:

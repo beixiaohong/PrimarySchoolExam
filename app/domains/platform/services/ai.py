@@ -48,7 +48,7 @@ def _load_vip_users() -> set:
     失败返回空集（不阻断启动/调用）"""
     try:
         from sqlalchemy import text
-        from ..database import SessionLocal
+        from app.database import SessionLocal
         db = SessionLocal()
         try:
             rows = db.execute(text("SELECT user_id FROM vip_users")).fetchall()
@@ -266,8 +266,8 @@ def chat_paid_first(user_id: str, system: str, user: str, max_tokens: int = 800,
     cfg = _config_provider("deepseek")
     if cfg["api_key"]:
         try:
-            from ..database import SessionLocal
-            from ..services.diamond import get_balance, calc_cost, deduct
+            from app.database import SessionLocal
+            from app.services.diamond import get_balance, calc_cost, deduct
             # 余额预检（短会话，立即释放连接）
             with SessionLocal() as s:
                 balance = get_balance(s, user_id)

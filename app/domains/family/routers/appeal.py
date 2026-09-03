@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.appeal import AnswerAppeal
 from app.models.exam import AttemptAnswer, ExamAttempt, WrongRecord
-from app.services.ai import rate_limit
+from app.domains.platform.services.ai import rate_limit
 
 router = APIRouter()
 

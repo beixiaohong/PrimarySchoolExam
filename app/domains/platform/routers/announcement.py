@@ -8,9 +8,9 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models.user import User
-from ..models.announcement import Announcement
+from app.database import get_db
+from app.models.user import User
+from app.models.announcement import Announcement
 from app.domains.identity.routers.auth import require_user
 
 logger = logging.getLogger(__name__)
