@@ -17,7 +17,7 @@ from .database import init_db
 from .config import ENABLE_DOCS, ENABLE_IM, ENABLE_LEDGER
 from .migrations.runner import run_migrations
 from .routers import admin
-from .domains.engine.routers import vocab, study, learning_goals
+from .domains.engine.routers import vocab, study, learning_goals, mastery
 from .domains.commerce.routers import diamond
 from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
@@ -137,6 +137,7 @@ app.include_router(textbook.router, prefix="/api/textbook", tags=["教材版本"
 app.include_router(courses.router, prefix="/api/courses", tags=["网课"], dependencies=user_auth_deps)
 # 学习目标管理台（有终点/有总量）：路由内部已用 require_self 鉴权，不挂全局 user_auth_deps 以免重复校验
 app.include_router(learning_goals.router, prefix="/api/learning-goals", tags=["学习目标管理台"])
+app.include_router(mastery.router, prefix="/api/mastery", tags=["掌握度"], dependencies=user_auth_deps)
 
 # 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
 # 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。
