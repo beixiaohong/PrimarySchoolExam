@@ -37,6 +37,38 @@ def _fix_stored_answer(db: Session, qid: int, verdict: dict, r: dict):
     r["correct_answer"] = corrected
 
 
+def _parse_duration_ms(val):
+    """单题用时（毫秒）→ int；非法/缺失记 0（未采集）。"""
+    try:
+        return int(val) if val is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_started_at(val):
+    """本题开始作答时间：接受 epoch 毫秒(int/float) 或 ISO 字符串 → datetime；
+    缺失/非法返回 None（未采集）。
+    """
+    if val is None or val == "":
+        return None
+    if isinstance(val, (int, float)):
+        try:
+            # epoch 毫秒（>1e12）与秒分别处理
+            return datetime.fromtimestamp(val / 1000 if val > 1e12 else val)
+        except (ValueError, OSError, OverflowError):
+            return None
+    if isinstance(val, str):
+        s = val.strip().replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(s)
+        except ValueError:
+            try:
+                return datetime.fromtimestamp(float(s) / 1000)
+            except (ValueError, OSError, OverflowError):
+                return None
+    return None
+
+
 @router.post("/submit-answers", summary="提交答案（在线做题判分）")
 def submit_answers(req: dict, db: Session = Depends(get_db)):
     """
@@ -150,6 +182,9 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
             "correct_answer": correct_ans if is_correct else "",
             "user_answer": user_ans,
             "is_correct": is_correct,
+            # S2-M3：单题用时采集（前端上报，回显供展示）
+            "duration_ms": _parse_duration_ms(item.get("duration_ms")),
+            "started_at": _parse_started_at(item.get("started_at")),
         })
 
     # ── AI 判题复核：本地判错的题批量送 AI，AI 判对 → 改判正确 ──
@@ -227,6 +262,12 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
             question_id=r["question_id"],
             user_answer=r["user_answer"],
             is_correct=r["is_correct"],
+            # S2-M3：答题过程字段（07 §3.2.2，便于还原逐题用时/难度分布）
+            seq=r.get("seq", 0),
+            duration_ms=r.get("duration_ms", 0) or 0,
+            started_at=r.get("started_at"),
+            difficulty=3,  # questions 无 difficulty 列，先填默认档，后续可按掌握度回填
+            created_at=now,
         ))
     # 答题发金币：每题答对 +1，全对额外 +10（P2 金币宠物）
     try:
