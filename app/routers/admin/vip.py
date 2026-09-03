@@ -8,7 +8,8 @@ from app.models.admin import Admin
 from app.models.user import User, VipUser
 
 from . import router
-from .common import _audit, _require_admin
+from .common import _audit
+from app.core.permissions import require_perm
 
 
 class VipReq(BaseModel):
@@ -20,7 +21,7 @@ class VipReq(BaseModel):
 
 @router.post("/vip", summary="VIP 设置（增删 + 备注）")
 def manage_vip(req: VipReq, db: Session = Depends(get_db),
-               admin: Admin = Depends(_require_admin)):
+               admin: Admin = Depends(require_perm("benefit:vip_manage", high_risk=True))):
     """开通或取消指定用户的 VIP，并记审计日志。
 
     参数：req：user_id、action(add/remove)、note。

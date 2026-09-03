@@ -70,3 +70,10 @@ QUIZ_SECRET = os.environ.get("QUIZ_SECRET", "zhixue_sync_quiz_v1")
 # 默认开启保持现状；关闭后对应路由不挂载（/api/im、/api/ledger 及后台管理端点）。
 ENABLE_IM = os.environ.get("ENABLE_IM", "true").strip().lower() in ("1", "true", "yes", "on")
 ENABLE_LEDGER = os.environ.get("ENABLE_LEDGER", "true").strip().lower() in ("1", "true", "yes", "on")
+
+# ── S1 后台 RBAC（权限严格模式，默认关闭=灰度放行存量后台）──
+# RBAC_STRICT=true 时后台高危操作按权限点校验，无权限返回 403；
+# 默认 false：仅做登录鉴权，权限点校验跳过，避免影响既有后台调用。开启前须先为存量管理员赋权。
+RBAC_STRICT = os.environ.get("RBAC_STRICT", "false").strip().lower() in ("1", "true", "yes", "on")
+# 结构化日志开关（默认开启；文件处理器输出 JSON，控制台保持可读）
+STRUCTURED_LOGS = os.environ.get("STRUCTURED_LOGS", "true").strip().lower() in ("1", "true", "yes", "on")

@@ -13,7 +13,8 @@ from app.models.user import User
 from app.domains.commerce.contracts import grant as grant_diamond
 
 from . import router
-from .common import _audit, _require_admin
+from .common import _audit
+from app.core.permissions import require_perm
 
 
 class AssetAdjustReq(BaseModel):
@@ -26,7 +27,7 @@ class AssetAdjustReq(BaseModel):
 
 @router.post("/assets/adjust", summary="资产调整（钻石/金币/补签卡，必填理由）")
 def adjust_assets(req: AssetAdjustReq, db: Session = Depends(get_db),
-                  admin: Admin = Depends(_require_admin)):
+                  admin: Admin = Depends(require_perm("benefit:grant_manual", high_risk=True))):
     """管理员调整指定用户的资产（钻石 / 金币 / 补签卡），需填写理由并落审计日志。
 
     参数：

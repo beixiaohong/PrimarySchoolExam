@@ -52,7 +52,7 @@ def test_nickname_login_rejected(client):
     r = client.post("/api/auth/login",
                     json={"account": "小新", "password": REG_PWD})
     assert r.status_code == 400
-    assert "邮箱" in r.json()["detail"]
+    assert "邮箱" in r.json()["message"]
 
 
 def test_register_wrong_code(client, fake_mail):
@@ -66,7 +66,7 @@ def test_register_wrong_code(client, fake_mail):
     if r.status_code == 200:
         return
     assert r.status_code == 400
-    assert "验证码" in r.json()["detail"]
+    assert "验证码" in r.json()["message"]
 
 
 def test_register_duplicate_rejected(client, fake_mail):
@@ -74,7 +74,7 @@ def test_register_duplicate_rejected(client, fake_mail):
     r = client.post("/api/auth/send-code",
                     json={"target": REG_EMAIL, "purpose": "register"})
     assert r.status_code == 400
-    assert "已注册" in r.json()["detail"]
+    assert "已注册" in r.json()["message"]
 
 
 def test_send_code_rate_limit(client, fake_mail):

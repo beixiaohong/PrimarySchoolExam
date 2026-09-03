@@ -10,7 +10,8 @@ from app.models.admin import Admin, AdminOperationLog
 
 logger = logging.getLogger(__name__)
 
-TOKEN_TTL_HOURS = 12
+# 后台登录鉴权依赖上提至 app.core.auth（打破 core→routers 循环依赖），此处复用并再导出
+from app.core.auth import TOKEN_TTL_HOURS, _require_admin
 
 # 三方配置分组（管理后台展示用；密钥类列表脱敏）
 CONFIG_GROUPS = {
@@ -23,27 +24,10 @@ CONFIG_GROUPS = {
 SECRET_HINTS = ("KEY", "PASSWORD", "TOKEN")
 
 
-def _require_admin(authorization: str = Header(default=""),
-                   db: Session = Depends(get_db)) -> Admin:
-    """鉴权依赖：从 Bearer token 解析并校验管理员会话。
-
-    参数：authorization：Authorization 请求头（"Bearer <token>"）。
-    业务约束：非 Bearer、token 缺失、登录已失效或过期（12h）均返回 401。
-    返回：已认证的管理员 Admin 对象。
-    """
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(401, "未登录")
-    admin = db.query(Admin).filter(Admin.token == token).first()
-    if not admin:
-        raise HTTPException(401, "登录已失效")
-    if admin.token_expires_at and admin.token_expires_at < datetime.now():
-        raise HTTPException(401, "登录已过期，请重新登录")
-    return admin
-
-
-def _audit(db: Session, admin: Admin, action: str, target: str, detail: str):
-    """记录一条管理员操作审计日志并落库。
+def _audit(db: Session, admin: Admin, action: str, target: str, detail: str,
+           *, ip: str = "", user_agent: str = "", amount_fen: int | None = None,
+           target_type: str = "", extra_json: str = ""):
+    """记录一条管理员操作审计日志并落库（S1-B7 审计增强字段）。
 
     参数：
         db：数据库会话。
@@ -51,10 +35,17 @@ def _audit(db: Session, admin: Admin, action: str, target: str, detail: str):
         action：操作类型标识（如 "assets:diamond"）。
         target：操作目标（用户 id / 配置键等）。
         detail：操作摘要。
+        ip：操作来源 IP（建议由请求 request.client.host 传入）。
+        user_agent：操作来源 UA。
+        amount_fen：涉及金额（分），无则 None。
+        target_type：操作对象类型（user/config/asset/vip/order/permission...）。
+        extra_json：扩展上下文 JSON 字符串。
     副作用：新增 AdminOperationLog 并 db.commit。
     """
-    db.add(AdminOperationLog(admin=admin.username, action=action,
-                             target=target, detail=detail))
+    db.add(AdminOperationLog(
+        admin=admin.username, action=action, target=target, detail=detail,
+        ip=ip, user_agent=user_agent, amount_fen=amount_fen,
+        target_type=target_type, extra_json=extra_json))
     db.commit()
 
 

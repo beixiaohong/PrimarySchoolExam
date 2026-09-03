@@ -32,6 +32,7 @@ from .badge import BadgeEarned
 from .focus import FocusSession
 from .mood import MoodCheckin
 from .ai_usage import AIUsageLog, WeeklyReport, AiQa
+from .metrics import MetricDaily
 from .sprint4 import ChallengeRecord, TeachingRecord
 from .middle import MiddleQuestion, TeachingProgress
 from .paper import Paper, PaperQuestion
@@ -62,7 +63,7 @@ __all__ = [
     "StudyError",
     "User", "VipUser",
     "AuthCode",
-    "Admin", "AdminOperationLog", "SystemConfig",
+    "Admin", "AdminOperationLog", "SystemConfig", "AdminPermission", "AdminRolePermission",
     "DiamondAccount", "DiamondLedger",
     "MakeupCard", "MakeupUsageLog",
     "CustomTask",
@@ -75,6 +76,7 @@ __all__ = [
     "FocusSession",
     "MoodCheckin",
     "AIUsageLog", "WeeklyReport", "AiQa",
+    "MetricDaily",
     "ChallengeRecord", "TeachingRecord",
     "MiddleQuestion", "TeachingProgress",
     "Paper", "PaperQuestion",

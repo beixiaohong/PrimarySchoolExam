@@ -32,6 +32,9 @@ from .domains.identity.routers.auth import require_self
 from .domains.platform.routers.quiet_hours import check_quiet_hours
 from .domains.content.services.init_data import ensure_initial_data
 from .logging_setup import apply_logging
+# S1 可观测性：request-id / 结构化日志 / 统一异常信封
+from .core.logging import install_structured_logging
+from .core.middleware import request_context_middleware, register_exception_handlers
 
 # 应用导入即配置日志：按天+大小滚动，输出到 log/（控制台 + 文件双写）
 apply_logging()
@@ -64,6 +67,11 @@ app = FastAPI(
     redoc_url="/redoc" if ENABLE_DOCS else None,
     openapi_url="/openapi.json" if ENABLE_DOCS else None,
 )
+
+# ── S1 可观测性 & 统一错误处理（request-id / 访问日志 / 异常信封）──
+install_structured_logging()
+register_exception_handlers(app)
+app.middleware("http")(request_context_middleware)
 
 # 业务路由统一鉴权：除登录入口 /api/auth 与管理员 /api/admin 外，全部要求登录会话 token。
 # 严格账号绑定：require_self 在登录校验基础上，强制请求中的 user_id == 当前登录账号，

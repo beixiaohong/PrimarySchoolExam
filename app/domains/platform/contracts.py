@@ -36,6 +36,15 @@ _EXPORTS = {
     # 系统配置与免打扰
     "sysconfig": ("app.domains.platform.services.sysconfig", None),
     "check_quiet_hours": ("app.domains.platform.routers.quiet_hours", "check_quiet_hours"),
+    # RBAC 角色分配服务（S1-B8：角色权限集变更 + 管理员角色分配，含 BR-PERM-04 互斥校验）
+    "rbac": ("app.domains.platform.services.rbac", None),
+    "rbac_list_roles": ("app.domains.platform.services.rbac", "list_roles"),
+    "rbac_get_permissions": ("app.domains.platform.services.rbac", "get_permissions_catalog"),
+    "rbac_set_role_permissions": ("app.domains.platform.services.rbac", "set_role_permissions"),
+    "rbac_add_role_permission": ("app.domains.platform.services.rbac", "add_role_permission"),
+    "rbac_remove_role_permission": ("app.domains.platform.services.rbac", "remove_role_permission"),
+    "rbac_assign_admin_role": ("app.domains.platform.services.rbac", "assign_admin_role"),
+    "rbac_check_mutex": ("app.domains.platform.services.rbac", "check_mutex"),
 }
 
 __all__ = tuple(_EXPORTS)
