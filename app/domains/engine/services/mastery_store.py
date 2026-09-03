@@ -113,4 +113,96 @@ def recompute_user_mastery(
     return len(grouped)
 
 
-__all__ = ["build_answer_records", "recompute_user_mastery", "ALGO_VERSION"]
+def _level_bucket(level: str) -> str:
+    return {"已掌握": "mastered", "基本掌握": "basic", "薄弱": "weak"}.get(level, "unknown")
+
+
+def get_user_mastery_matrix(db: Session, user_id: str) -> dict:
+    """后台：返回任意用户的掌握度矩阵（按学科分组 + 整体汇总）。
+
+    纯 DB 读，无外部调用。供 /api/admin/mastery/users/{user_id} 使用。
+    """
+    recs = db.query(MasteryRecord).filter_by(user_id=user_id).all()
+    subjects: dict = {}
+    overall = {"total": 0, "mastered": 0, "basic": 0, "weak": 0,
+               "unknown": 0, "mastery_sum": 0}
+    for r in recs:
+        row = {
+            "kp_id": r.kp_id,
+            "subject": r.subject,
+            "grade": int(r.grade or 0),
+            "mastery": int(r.mastery),
+            "level": r.level,
+            "answer_count": int(r.answer_count),
+            "correct_count": int(r.correct_count),
+            "correct_rate": float(r.correct_rate),
+            "avg_duration_ms": int(r.avg_duration_ms),
+            "correct_streak": int(r.correct_streak),
+            "confidence": float(r.confidence),
+            "algo_version": r.algo_version,
+            "computed_at": str(r.computed_at),
+        }
+        subjects.setdefault(r.subject or "未分类", []).append(row)
+        overall["total"] += 1
+        overall["mastery_sum"] += int(r.mastery)
+        overall[_level_bucket(r.level)] += 1
+    overall["avg_mastery"] = round(
+        overall["mastery_sum"] / overall["total"]) if overall["total"] else 0
+    overall.pop("mastery_sum", None)
+    return {"user_id": user_id, "subjects": subjects, "overall": overall}
+
+
+def get_coverage_report(db: Session) -> dict:
+    """后台：知识点标注覆盖率报表（07 §4.3 /api/admin/mastery/coverage）。
+
+    指标：知识点总数 / 已标注（有 question_kp_map）数 / 覆盖率；按学科拆分；
+    以及已计算掌握度的用户数、mastery_records 行数（反映掌握度落地进度）。
+    纯 DB 读，无外部调用。
+    """
+    from sqlalchemy import func
+
+    total_kp = db.query(func.count(KnowledgePoint.id)).scalar() or 0
+    # 已标注 = 拥有至少一条 question_kp_map 的知识点（取交集，排除孤儿映射）
+    annotated_kp = (
+        db.query(func.count(func.distinct(KnowledgePoint.id)))
+        .join(QuestionKpMap, QuestionKpMap.kp_id == KnowledgePoint.id)
+        .scalar() or 0
+    )
+
+    by_subject: dict = {}
+    for subj, cnt in db.query(
+            KnowledgePoint.subject, func.count(KnowledgePoint.id)
+    ).group_by(KnowledgePoint.subject).all():
+        by_subject[subj or "未分类"] = {
+            "total_kp": cnt, "annotated_kp": 0, "coverage": 0.0}
+
+    for subj, cnt in (
+        db.query(KnowledgePoint.subject, func.count(func.distinct(QuestionKpMap.kp_id)))
+        .join(QuestionKpMap, QuestionKpMap.kp_id == KnowledgePoint.id)
+        .group_by(KnowledgePoint.subject)
+        .all()
+    ):
+        if subj in by_subject:
+            by_subject[subj]["annotated_kp"] = cnt
+            by_subject[subj]["coverage"] = (
+                round(cnt / by_subject[subj]["total_kp"], 4)
+                if by_subject[subj]["total_kp"] else 0.0)
+
+    computed_users = db.query(func.count(func.distinct(MasteryRecord.user_id))).scalar() or 0
+    mastery_rows = db.query(func.count(MasteryRecord.id)).scalar() or 0
+    coverage = round(annotated_kp / total_kp, 4) if total_kp else 0.0
+
+    return {
+        "total_kp": total_kp,
+        "annotated_kp": annotated_kp,
+        "coverage": coverage,
+        "computed_users": computed_users,
+        "mastery_records": mastery_rows,
+        "by_subject": by_subject,
+    }
+
+
+__all__ = [
+    "build_answer_records", "recompute_user_mastery",
+    "get_user_mastery_matrix", "get_coverage_report", "ALGO_VERSION",
+]

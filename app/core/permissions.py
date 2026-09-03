@@ -45,6 +45,7 @@ PERMISSIONS = [
     {"code": "dashboard:view", "name": "数据看板查看", "group": "数据", "is_high_risk": False},
     {"code": "analytics:view", "name": "运营分析查看", "group": "数据", "is_high_risk": False},
     {"code": "mastery:recompute", "name": "掌握度重算触发", "group": "数据", "is_high_risk": False},
+    {"code": "mastery:view_all", "name": "掌握度全量查看", "group": "数据", "is_high_risk": False},
 ]
 
 # 角色默认权限映射（直接复用 admins.role 现有枚举值）
@@ -56,7 +57,7 @@ ROLE_PERMISSIONS = {
         "content:manage", "content:review", "content:view", "content:annotate", "knowledge:manage",
         "user:manage", "benefit:grant_manual", "benefit:vip_manage", "benefit:grant",
         "audit:view", "config:manage", "dashboard:view", "analytics:view",
-        "mastery:recompute",
+        "mastery:recompute", "mastery:view_all",
     ],
     # 运维：只读
     "ops": ["dashboard:view", "analytics:view", "audit:view"],

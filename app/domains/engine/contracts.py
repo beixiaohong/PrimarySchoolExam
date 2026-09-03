@@ -27,11 +27,13 @@ _EXPORTS = {
     "submit_reading_quiz": ("app.domains.engine.services.reading_service", "submit_reading_quiz"),
     "MASTER_STREAK": ("app.domains.engine.routers.study", "MASTER_STREAK"),
     "review_service": ("app.domains.engine.services.review_service", None),
-    # 掌握度模型（S3-M1/M2/M3）：对外暴露纯算法与 DB 编排，供其它域/后台复用
+    # 掌握度模型（S3-M1/M2/M3/M4）：对外暴露纯算法与 DB 编排，供其它域/后台复用
     "compute_mastery": ("app.domains.engine.services.mastery", "compute_mastery"),
     "MasteryParams": ("app.domains.engine.services.mastery", "MasteryParams"),
     "recompute_user_mastery": ("app.domains.engine.services.mastery_store", "recompute_user_mastery"),
     "build_answer_records": ("app.domains.engine.services.mastery_store", "build_answer_records"),
+    "get_user_mastery_matrix": ("app.domains.engine.services.mastery_store", "get_user_mastery_matrix"),
+    "get_coverage_report": ("app.domains.engine.services.mastery_store", "get_coverage_report"),
 }
 
 __all__ = tuple(_EXPORTS)
