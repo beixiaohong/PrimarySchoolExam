@@ -16,9 +16,9 @@ import logging
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models.content_review import ContentReview
-from ..models.middle import MiddleQuestion
-from ..models.reading import ReadingPassage
+from app.models.content_review import ContentReview
+from app.models.middle import MiddleQuestion
+from app.models.reading import ReadingPassage
 from app.domains.platform.services import ai as ai_svc
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ def run_reviews(db: Session, content_types: list = None, limit: int = 50,
     db 参数仅供调用方自身使用（如审计）；校对过程内部用短会话，
     长时间等待 AI 期间不持有数据库连接（防连接池耗尽）。
     """
-    from ..database import SessionLocal
+    from app.database import SessionLocal
     types = content_types or list(CONTENT_MODELS.keys())
     reviewed = approved = conflict = 0
     for ctype in types:
@@ -122,7 +122,7 @@ def run_reviews(db: Session, content_types: list = None, limit: int = 50,
 
 def _review_one(content_type: str, content_id: int, user_id: str) -> bool:
     """单条校对：读内容（短会话）→ AI 审阅（会话外）→ 写回结果（短会话）"""
-    from ..database import SessionLocal
+    from app.database import SessionLocal
     model = CONTENT_MODELS[content_type]
 
     # 读待审内容：短会话

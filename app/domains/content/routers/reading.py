@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.services.reading_service import get_passages, submit_reading_quiz
+from app.domains.engine.services.reading_service import get_passages, submit_reading_quiz
 
 router = APIRouter()
 

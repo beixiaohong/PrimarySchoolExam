@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.admin import Admin
-from app.services import review_service
+from app.domains.engine.services import review_service
 
 from . import router
 from .common import _audit, _require_admin

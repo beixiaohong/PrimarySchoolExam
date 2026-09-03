@@ -274,7 +274,7 @@ def _approve_retry(db: Session, a: AnswerAppeal):
     """错题重练改判：该错题记录正确连击 +1（视为答对一次），累计 3 次自动掌握。"""
     if not a.record_id:
         raise HTTPException(400, "申诉缺少错题记录信息，无法改判")
-    from app.routers.study import MASTER_STREAK
+    from app.domains.engine.routers.study import MASTER_STREAK
     if a.record_kind == "study":
         from app.models.study_error import StudyError
         rec = db.query(StudyError).filter(

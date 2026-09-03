@@ -103,7 +103,7 @@ def test_vocab_semester_filter_and_include_next(client, monkeypatch):
     import app.services.semester as sem
     from app.database import SessionLocal
     from app.models.word import Word, WordBook
-    from app.routers.vocab import _get_grade_books
+    from app.domains.engine.routers.vocab import _get_grade_books
 
     uid = "学期过滤生"
     db = SessionLocal()
@@ -162,7 +162,7 @@ def test_vocab_career_stats_span_semester_and_grade(client, monkeypatch):
     from app.database import SessionLocal
     from app.models.word import Word, WordBook
     from app.models.vocab import VocabProgress
-    from app.routers.vocab import _career_book_ids
+    from app.domains.engine.routers.vocab import _career_book_ids
 
     uid = "生涯累计生"
     db = SessionLocal()

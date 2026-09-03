@@ -10,7 +10,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from ..models.reading import ReadingPassage
+from app.models.reading import ReadingPassage
 from app.domains.platform.services import ai as ai_svc
 from app.domains.commerce.services.diamond import check_and_deduct
 
@@ -59,7 +59,7 @@ def submit_reading_quiz(user_id: str, passage_id: int,
     answers: [{qid, user_answer}]；主观题 user_answer 为自由文本。
     内部用短会话：等待 AI 判分期间不持有数据库连接（防连接池耗尽）。
     """
-    from ..database import SessionLocal
+    from app.database import SessionLocal
     db = SessionLocal()
     try:
         passage = db.query(ReadingPassage).filter(ReadingPassage.id == passage_id).first()
@@ -164,7 +164,7 @@ def _grade_short(user_id: str, q: dict, user_answer: str) -> dict:
 
     if result and result.get("prompt_tokens") is not None:
         # 计费：短会话（失败不阻断）
-        from ..database import SessionLocal
+        from app.database import SessionLocal
         db = SessionLocal()
         try:
             try:

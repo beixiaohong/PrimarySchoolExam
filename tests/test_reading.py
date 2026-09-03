@@ -159,7 +159,7 @@ def test_admin_reviews_run_conflict_resolve(client, admin_token, pending_questio
         return {"text": json.dumps({"verdict": verdict, "comment": f"{provider}意见"}),
                 "prompt_tokens": 8, "completion_tokens": 16, "model": "glm-4.7"}
 
-    import app.services.review_service as rs
+    import app.domains.engine.services.review_service as rs
     import app.domains.platform.services.ai as ai_svc
     orig = ai_svc.chat_with
     ai_svc.chat_with = fake_chat
