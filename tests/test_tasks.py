@@ -282,7 +282,7 @@ def test_makeup_card_granted_once(client):
     from datetime import date
     from app.database import SessionLocal
     from app.models.daily_task import DailyTask
-    from app.routers.tasks import _build_payload, _get_makeup_balance
+    from app.domains.engagement.routers.tasks import _build_payload, _get_makeup_balance
 
     uid = "补签卡防重测试生"
     client.get("/api/tasks/daily", params={"user_id": uid})  # 生成今日任务
@@ -311,7 +311,7 @@ def test_exam_task_requires_new_paper(client):
     from app.database import SessionLocal
     from app.models.exam import ExamRecord, ExamAttempt
     from app.models.daily_task import DailyTask
-    from app.routers.tasks import _build_payload, _today_new_attempts
+    from app.domains.engagement.routers.tasks import _build_payload, _today_new_attempts
     from datetime import date, datetime, timedelta
 
     uid = "新卷子判定生"
@@ -582,7 +582,7 @@ def test_challenge_requires_80pct_pass_rate(client):
     from datetime import datetime
     from app.database import SessionLocal
     from app.models.sprint4 import ChallengeRecord
-    from app.routers.tasks import _today_challenge_count
+    from app.domains.engagement.routers.tasks import _today_challenge_count
 
     uid = "挑战赛通过率生"
     client.get("/api/tasks/daily", params={"user_id": uid})  # 触发建表/会话

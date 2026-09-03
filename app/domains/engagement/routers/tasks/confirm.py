@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ...database import get_db
-from ...models.task_confirm import TaskConfirm
+from app.database import get_db
+from app.models.task_confirm import TaskConfirm
 from app.domains.identity.services.parent_guard import ensure_parent_pwd
 
 router = APIRouter()

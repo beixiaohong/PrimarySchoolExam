@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from app.database import get_db
 
 router = APIRouter()
 
@@ -29,8 +29,8 @@ class GoalReq(BaseModel):
 
 def _current(db: Session, user_id: str, kind: str, subject: str = "") -> int:
     if kind == "score":
-        from ..models.exam import ExamAttempt
-        from ..models.exam import ExamRecord
+        from app.models.exam import ExamAttempt
+        from app.models.exam import ExamRecord
         q = db.query(ExamAttempt).join(
             ExamRecord, ExamAttempt.exam_id == ExamRecord.id
         ).filter(ExamAttempt.user_id == user_id)
@@ -39,15 +39,15 @@ def _current(db: Session, user_id: str, kind: str, subject: str = "") -> int:
         rows = q.order_by(ExamAttempt.id.desc()).limit(10).all()
         return round(sum(a.score or 0 for a in rows) / len(rows)) if rows else 0
     if kind == "wrong":
-        from ..models.exam import WrongRecord
-        from ..models.study_error import StudyError
+        from app.models.exam import WrongRecord
+        from app.models.study_error import StudyError
         n1 = db.query(WrongRecord).filter(
             WrongRecord.user_id == user_id, WrongRecord.is_mastered.is_(True)).count()
         n2 = db.query(StudyError).filter(
             StudyError.user_id == user_id, StudyError.is_mastered.is_(True)).count()
         return n1 + n2
     if kind == "recite":
-        from ..models.classical import ClassicalDailyLog
+        from app.models.classical import ClassicalDailyLog
         rows = db.query(ClassicalDailyLog).filter(
             ClassicalDailyLog.user_id == user_id).all()
         # 只累计"新背"篇数：复习/重复学习不重复计数，避免进度虚高
@@ -99,7 +99,7 @@ def _reset_impossible_goals(db: Session, user_id: str):
       仅顺延 deadline = 今天 + 原有效期天数，保留已累积的真实进度
       （目标进度是真实成就，如已消灭的错题数，故不清零；如需强制清零可再调整）。
     """
-    from ..models.reward import GoalItem
+    from app.models.reward import GoalItem
     today = date.today()
     rows = db.query(GoalItem).filter(
         GoalItem.user_id == user_id, GoalItem.status == "active",
@@ -129,7 +129,7 @@ def list_goals(user_id: str = Query(...), db: Session = Depends(get_db)):
     返回：{goals:[{id, kind, kind_label, title, subject, target, current, pct, deadline, days_left, status, daily_step, achieved}]}。
     副作用：只读，无写库。current 按 kind 实时聚合（score 取最近 10 次均分 / wrong 累计掌握错题 / recite 累计新背篇数）。
     """
-    from ..models.reward import GoalItem
+    from app.models.reward import GoalItem
     _reset_impossible_goals(db, user_id)  # 惰性执行「必然完成不了→顺延 deadline」
     rows = db.query(GoalItem).filter(
         GoalItem.user_id == user_id, GoalItem.status.in_(("active", "done")),
@@ -146,7 +146,7 @@ def create_goal(req: GoalReq, db: Session = Depends(get_db)):
     副作用：校验 kind 合法、进行中目标数 < 2（超限拒绝）；解析截止日（须晚于今天）；
             自动生成标题，写 goal_items(status=active) 并落库。
     """
-    from ..models.reward import GoalItem
+    from app.models.reward import GoalItem
     if req.kind not in KINDS:
         raise HTTPException(400, f"kind 只能是 {list(KINDS)}")
     target = max(1, min(1000, req.target))
@@ -185,7 +185,7 @@ class GoalActionReq(BaseModel):
 def done_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
     """标记目标达成（status=done）。路径参数 gid；请求：{user_id}。仅本人目标可操作，否则 404。
     副作用：更新 goal_items.status=done 并落库。"""
-    from ..models.reward import GoalItem
+    from app.models.reward import GoalItem
     g = db.query(GoalItem).filter(GoalItem.id == gid).first()
     if not g or g.user_id != req.user_id:
         raise HTTPException(404, "目标不存在")
@@ -198,7 +198,7 @@ def done_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
 def archive_goal(gid: int, req: GoalActionReq, db: Session = Depends(get_db)):
     """移除目标（status=archived）。路径参数 gid；请求：{user_id}。仅本人目标可操作，否则 404。
     副作用：更新 goal_items.status=archived 并落库（保留记录，不删除）。"""
-    from ..models.reward import GoalItem
+    from app.models.reward import GoalItem
     g = db.query(GoalItem).filter(GoalItem.id == gid).first()
     if not g or g.user_id != req.user_id:
         raise HTTPException(404, "目标不存在")

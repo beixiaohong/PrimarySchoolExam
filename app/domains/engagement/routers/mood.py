@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from app.database import get_db
 
 router = APIRouter()
 
@@ -44,7 +44,7 @@ def mood_checkin(req: MoodCheckinReq, db: Session = Depends(get_db)):
         raise HTTPException(400, f"心情取值只能是 {MOODS}")
     note = (req.note or "").strip()[:50]
 
-    from ..models.mood import MoodCheckin
+    from app.models.mood import MoodCheckin
     today = date.today()
     row = db.query(MoodCheckin).filter(
         MoodCheckin.user_id == user_id,
@@ -70,7 +70,7 @@ def mood_trend(user_id: str = Query(..., description="用户名"), db: Session =
     today = date.today()
     start = today - timedelta(days=6)
 
-    from ..models.mood import MoodCheckin
+    from app.models.mood import MoodCheckin
     rows = db.query(MoodCheckin).filter(
         MoodCheckin.user_id == user_id,
         MoodCheckin.check_date >= start,

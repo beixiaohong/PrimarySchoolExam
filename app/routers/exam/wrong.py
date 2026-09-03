@@ -318,7 +318,7 @@ def answer_unanswered(req, db: Session = Depends(get_db)):
         db.commit()
         # 答对发金币
         try:
-            from app.routers.pet import _grant_coins
+            from app.domains.engagement.routers.pet import _grant_coins
             _grant_coins(db, req.user_id, 3, "未答题答对")
         except Exception:
             pass

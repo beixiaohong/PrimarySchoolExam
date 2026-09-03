@@ -249,7 +249,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
     """刷新今日任务：计算进度、自动完成、汇总全勤"""
     # 惰性执行心愿「有效期+清零重发」规则（孩子打开面板即触发，无需定时任务）
     try:
-        from app.routers.rewards.common import _expire_wishes
+        from app.domains.engagement.routers.rewards.common import _expire_wishes
         _expire_wishes(db, user_id)
     except Exception:
         pass
@@ -287,7 +287,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
                 # 可选任务自动完成仍计入心愿进度
                 if (getattr(row, 'task_type', 'mandatory') or 'mandatory') == "optional":
                     try:
-                        from app.routers.rewards import inc_active_wish_progress
+                        from app.domains.engagement.routers.rewards import inc_active_wish_progress
                         inc_active_wish_progress(db, user_id, 1)
                     except Exception:
                         pass
@@ -299,7 +299,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
                 # 心愿进度仅统计可选任务（强制任务不计入）
                 if (getattr(row, 'task_type', 'mandatory') or 'mandatory') == "optional":
                     try:
-                        from app.routers.rewards import inc_active_wish_progress
+                        from app.domains.engagement.routers.rewards import inc_active_wish_progress
                         inc_active_wish_progress(db, user_id, 1)
                     except Exception:
                         pass
@@ -307,7 +307,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
 
     # 检查 optional_streak 类型许愿进度
     try:
-        from app.routers.rewards import check_wish_optional_streak
+        from app.domains.engagement.routers.rewards import check_wish_optional_streak
         check_wish_optional_streak(db, user_id)
     except Exception:
         pass
@@ -326,7 +326,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
     mandatory_all_done = all(r.status == "done" for r in mandatory_rows) if mandatory_rows else False
     if mandatory_all_done:
         try:
-            from app.routers.rewards import sync_coupon_progress
+            from app.domains.engagement.routers.rewards import sync_coupon_progress
             sync_coupon_progress(db, user_id)
         except Exception:
             pass

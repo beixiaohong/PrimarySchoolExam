@@ -11,8 +11,8 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models.pet import CoinLedger, PetProfile
+from app.database import get_db
+from app.models.pet import CoinLedger, PetProfile
 
 router = APIRouter(tags=["pet"])
 

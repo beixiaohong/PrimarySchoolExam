@@ -73,8 +73,8 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
     from ..models.exam import ExamAttempt
     from ..models.daily_task import DailyTask
     from ..models.badge import BadgeEarned
-    from .pet import _balance
-    from .tree import compute_tree_score
+    from app.domains.engagement.routers.pet import _balance
+    from app.domains.engagement.routers.tree import compute_tree_score
 
     lines = []
     # 今日任务

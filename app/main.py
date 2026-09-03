@@ -16,7 +16,8 @@ from fastapi.responses import FileResponse
 from .database import init_db
 from .config import ENABLE_DOCS, ENABLE_IM, ENABLE_LEDGER
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, reading, tasks, ai, mood, rewards, challenge, teach, goals, qa, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, weather, admin, grading, admin_panel, announcement, textbook, courses, knowledge, learning_goals
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, reading, ai, challenge, teach, qa, dictation, ai_quiz, assistant, diamond, weather, admin, grading, admin_panel, announcement, textbook, courses, knowledge, learning_goals
+from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus
 # D9 冻结域（im/ledger）：已抽至 app/domains/frozen，受 ENABLE_IM/ENABLE_LEDGER 开关控制
 from .domains.frozen.routers import im as frozen_im, ledger as frozen_ledger
 from .domains.frozen.routers import admin_im as frozen_admin_im, admin_ledger as frozen_admin_ledger

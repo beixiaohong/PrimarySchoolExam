@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db, random_order
+from app.database import get_db, random_order
 
 router = APIRouter(tags=["cards"])
 
@@ -22,8 +22,8 @@ def _cat_cards(db: Session, user_id: str) -> list:
     cats = []
 
     # ── 单词卡 ──
-    from ..models.vocab import VocabProgress
-    from ..models.word import Word
+    from app.models.vocab import VocabProgress
+    from app.models.word import Word
     collected = set()
     for (wid,) in db.query(VocabProgress.word_id).filter(
             VocabProgress.user_id == user_id,
@@ -39,7 +39,7 @@ def _cat_cards(db: Session, user_id: str) -> list:
                  "collected": len(w_cards), "cards": w_cards})
 
     # ── 古诗文卡 ──
-    from ..models.classical import ClassicalProgress, ClassicalText
+    from app.models.classical import ClassicalProgress, ClassicalText
     cids = [r[0] for r in db.query(ClassicalProgress.text_id).filter(
         ClassicalProgress.user_id == user_id,
         ClassicalProgress.status == "mastered").limit(MAX_PER_CAT).all()]
@@ -53,8 +53,8 @@ def _cat_cards(db: Session, user_id: str) -> list:
                  "collected": len(t_cards), "cards": t_cards})
 
     # ── 题型卡（练习过的题型点亮）──
-    from ..models.exam import Question
-    from ..models.problem_type import ProblemType
+    from app.models.exam import Question
+    from app.models.problem_type import ProblemType
     done_types = {r[0] for r in db.query(Question.type_code).filter(
         Question.type_code.isnot(None)).distinct().limit(MAX_PER_CAT).all()}
     types = db.query(ProblemType).filter(ProblemType.code.in_(done_types)).all() if done_types else []
@@ -88,11 +88,11 @@ def draw_cards(user_id: str = Query(...), db: Session = Depends(get_db)):
     """从「尚未收集」的知识点中随机抽 3 张，作为今日新知引导学习。
     单词/古诗文取未掌握的；题型取未练习过的。
     """
-    from ..models.vocab import VocabProgress
-    from ..models.word import Word
-    from ..models.classical import ClassicalProgress, ClassicalText
-    from ..models.exam import Question
-    from ..models.problem_type import ProblemType
+    from app.models.vocab import VocabProgress
+    from app.models.word import Word
+    from app.models.classical import ClassicalProgress, ClassicalText
+    from app.models.exam import Question
+    from app.models.problem_type import ProblemType
 
     pool = []
 

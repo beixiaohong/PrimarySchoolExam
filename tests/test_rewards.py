@@ -87,7 +87,7 @@ def test_coupon_progress_not_reset_for_new_user(client):
     from app.database import SessionLocal
     from app.models.daily_task import DailyTask
     from app.models.reward import RewardCoupon
-    from app.routers.rewards import sync_coupon_progress
+    from app.domains.engagement.routers.rewards import sync_coupon_progress
 
     uid = USER + "卡券"
     today = date.today()
@@ -161,7 +161,7 @@ def test_practice_quiz_no_answer_and_check_answer(client):
 def test_manual_mastered_not_counted_in_task_progress(client):
     """防刷：手动标记已掌握不计入错题订正任务进度（须答对才算）"""
     from app.database import SessionLocal
-    from app.routers.tasks import _today_mastered
+    from app.domains.engagement.routers.tasks import _today_mastered
 
     uid = USER + "手动掌握"
     r = client.post("/api/exam/generate", json={

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
-from app.routers.tasks import get_daily_quota, _load_study_flags
+from app.domains.engagement.routers.tasks import get_daily_quota, _load_study_flags
 from app.services import semester as _semester
 
 from . import router

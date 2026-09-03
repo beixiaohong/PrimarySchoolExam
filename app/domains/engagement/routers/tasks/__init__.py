@@ -20,7 +20,7 @@ router = APIRouter()
 # 触发各子模块装饰器注册（settings/makeup/daily 共用本包级 router，须在 router 定义之后导入）
 from . import settings, makeup, daily, custom, confirm
 
-# 向后兼容：导出顶层常用符号（原 common.py 公共面，供外部 `from app.routers.tasks import ...` 使用）
+# 向后兼容：导出顶层常用符号（原 common.py 公共面，供外部 `from app.domains.engagement.routers.tasks import ...` 使用）
 from .constants import (
     SUBJECTS, MANDATORY_TASKS, MANDATORY_CHOICES, OPTIONAL_POOL,
     CONFIGURABLE_CODES, QUOTA_KEYS, STUDY_FLAG_KEYS,

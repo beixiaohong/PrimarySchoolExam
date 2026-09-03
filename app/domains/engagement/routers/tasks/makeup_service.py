@@ -72,7 +72,7 @@ def confirm_makeup(db: Session, user_id: str, log_id: int, action: str) -> dict:
                 row.progress = row.target
                 row.status = "done"
                 try:
-                    from app.routers.pet import _grant_coins
+                    from app.domains.engagement.routers.pet import _grant_coins
                     _grant_coins(db, user_id, 5, "使用补签卡完成任务")
                 except Exception:
                     pass

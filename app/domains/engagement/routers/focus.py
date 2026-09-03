@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from app.database import get_db
 
 router = APIRouter(tags=["focus"])
 
@@ -32,7 +32,7 @@ def complete_focus(req: FocusCompleteReq, db: Session = Depends(get_db)):
     副作用：写 focus_sessions；每日记录上限 FOCUS_DAILY_LIMIT(8)（防刷且保护视力），超限仍记 0 币；
             记录成功后 _grant_coins(+2, reason=专注完成)，发币失败不阻断。
     """
-    from ..models.focus import FocusSession
+    from app.models.focus import FocusSession
 
     if req.minutes not in (10, 15, 25):
         raise HTTPException(400, "专注时长只能是 10/15/25 分钟")
@@ -58,7 +58,7 @@ def focus_today(user_id: str = Query(...), db: Session = Depends(get_db)):
     """今日专注统计。查询参数：user_id；无需家长密码，只读。
     返回：{count, minutes, limit(每日上限)}。
     """
-    from ..models.focus import FocusSession
+    from app.models.focus import FocusSession
 
     today = date.today()
     rows = db.query(FocusSession).filter(
@@ -74,7 +74,7 @@ def focus_stats(user_id: str = Query(...), db: Session = Depends(get_db)):
     """专注总统计（今日/本周/累计）。查询参数：user_id；无需家长密码，只读。
     返回：{today, week, total} 各含 {count, minutes}；本周以本周一为起点。
     """
-    from ..models.focus import FocusSession
+    from app.models.focus import FocusSession
 
     today = date.today()
     week_start = today.fromordinal(today.toordinal() - today.weekday())

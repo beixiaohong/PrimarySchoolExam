@@ -12,7 +12,7 @@ import datetime as _dt
 from app.database import SessionLocal
 from app.models.daily_task import DailyTask
 from app.models.reward import RewardCoupon
-import app.routers.rewards.exchange as exchange_mod
+import app.domains.engagement.routers.rewards.exchange as exchange_mod
 
 
 class _FakeDate(_dt.date):

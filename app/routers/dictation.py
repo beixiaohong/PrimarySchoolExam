@@ -122,7 +122,7 @@ def dictation_reward(req: DictationRewardReq, db: Session = Depends(get_db)):
     """全对（correct == total 且 total > 0）→ 金币 +3；否则不发放"""
     if req.total <= 0 or req.correct < req.total:
         return {"ok": True, "granted": 0}
-    from .pet import _grant_coins
+    from app.domains.engagement.routers.pet import _grant_coins
     _grant_coins(db, req.user_id, DICTATION_PAID, "听写全对")
     db.commit()
     return {"ok": True, "granted": DICTATION_PAID}

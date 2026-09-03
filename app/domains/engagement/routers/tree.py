@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from app.database import get_db
 
 router = APIRouter(tags=["tree"])
 
@@ -46,13 +46,13 @@ def _stage_of(score: int) -> dict:
 
 def compute_tree_score(db: Session, user_id: str) -> int:
     """计算孩子成长值（供成长树接口与 AI 学习助手画像复用）"""
-    from ..models.exam import AttemptAnswer, ExamAttempt, WrongRecord
-    from ..models.study_error import StudyError
-    from ..models.vocab import VocabProgress
-    from ..models.classical import ClassicalProgress
-    from ..models.daily_task import DailyTask
-    from ..models.sprint4 import ChallengeRecord, TeachingRecord
-    from ..models.mood import MoodCheckin
+    from app.models.exam import AttemptAnswer, ExamAttempt, WrongRecord
+    from app.models.study_error import StudyError
+    from app.models.vocab import VocabProgress
+    from app.models.classical import ClassicalProgress
+    from app.models.daily_task import DailyTask
+    from app.models.sprint4 import ChallengeRecord, TeachingRecord
+    from app.models.mood import MoodCheckin
 
     def _count(model, col):
         return db.query(func.count(func.distinct(col))).filter(model.user_id == user_id).scalar() or 0
@@ -87,13 +87,13 @@ def get_tree(user_id: str = Query(...), db: Session = Depends(get_db)):
     返回：{user_id, score, stage{stage,name,emoji,next,pct,maxed}, parts[按得分倒序]}。
     副作用：无（只读，零新表，由学习数据派生）。无需家长密码。
     """
-    from ..models.exam import AttemptAnswer, ExamAttempt, WrongRecord
-    from ..models.study_error import StudyError
-    from ..models.vocab import VocabProgress
-    from ..models.classical import ClassicalProgress
-    from ..models.daily_task import DailyTask
-    from ..models.sprint4 import ChallengeRecord, TeachingRecord
-    from ..models.mood import MoodCheckin
+    from app.models.exam import AttemptAnswer, ExamAttempt, WrongRecord
+    from app.models.study_error import StudyError
+    from app.models.vocab import VocabProgress
+    from app.models.classical import ClassicalProgress
+    from app.models.daily_task import DailyTask
+    from app.models.sprint4 import ChallengeRecord, TeachingRecord
+    from app.models.mood import MoodCheckin
 
     def _count(model, col):
         return db.query(func.count(func.distinct(col))).filter(model.user_id == user_id).scalar() or 0

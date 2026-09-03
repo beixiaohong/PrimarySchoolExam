@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from app.database import get_db
 
 router = APIRouter(tags=["badges"])
 
@@ -39,14 +39,14 @@ BADGES = [
 
 def _metrics(db: Session, user_id: str) -> dict:
     """一次扫描所有需要的统计数据"""
-    from ..models.exam import AttemptAnswer, ExamAttempt, WrongRecord
-    from ..models.study_error import StudyError
-    from ..models.vocab import VocabProgress
-    from ..models.classical import ClassicalProgress
-    from ..models.sprint4 import ChallengeRecord, TeachingRecord
-    from ..models.mood import MoodCheckin
-    from ..models.pet import CoinLedger
-    from ..models.daily_task import DailyTask
+    from app.models.exam import AttemptAnswer, ExamAttempt, WrongRecord
+    from app.models.study_error import StudyError
+    from app.models.vocab import VocabProgress
+    from app.models.classical import ClassicalProgress
+    from app.models.sprint4 import ChallengeRecord, TeachingRecord
+    from app.models.mood import MoodCheckin
+    from app.models.pet import CoinLedger
+    from app.models.daily_task import DailyTask
 
     def _cnt(model, cond=None):
         q = db.query(func.count()).filter(model.user_id == user_id)
@@ -88,13 +88,13 @@ def _metrics(db: Session, user_id: str) -> dict:
 
 def _tree_score(db: Session, user_id: str) -> int:
     """与 tree.py 同口径的成长值（简化复制，避免循环依赖）"""
-    from ..models.exam import AttemptAnswer, ExamAttempt, WrongRecord
-    from ..models.study_error import StudyError
-    from ..models.vocab import VocabProgress
-    from ..models.classical import ClassicalProgress
-    from ..models.daily_task import DailyTask
-    from ..models.sprint4 import ChallengeRecord, TeachingRecord
-    from ..models.mood import MoodCheckin
+    from app.models.exam import AttemptAnswer, ExamAttempt, WrongRecord
+    from app.models.study_error import StudyError
+    from app.models.vocab import VocabProgress
+    from app.models.classical import ClassicalProgress
+    from app.models.daily_task import DailyTask
+    from app.models.sprint4 import ChallengeRecord, TeachingRecord
+    from app.models.mood import MoodCheckin
 
     attempts = db.query(func.count(func.distinct(ExamAttempt.id))).filter(ExamAttempt.user_id == user_id).scalar() or 0
     correct_ans = db.query(func.count()).select_from(AttemptAnswer).join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id).filter(
@@ -113,8 +113,8 @@ def _tree_score(db: Session, user_id: str) -> int:
 
 def _goals_done(db: Session, user_id: str) -> int:
     """累计达成目标数：学习目标管理台(learning_goals.status=done) + 老学期目标(goal_items.status=done)。"""
-    from ..models.learning_goal import LearningGoal
-    from ..models.reward import GoalItem
+    from app.models.learning_goal import LearningGoal
+    from app.models.reward import GoalItem
 
     n1 = db.query(func.count()).filter(LearningGoal.user_id == user_id, LearningGoal.status == "done").scalar() or 0
     n2 = db.query(func.count()).filter(GoalItem.user_id == user_id, GoalItem.status == "done").scalar() or 0
@@ -153,7 +153,7 @@ def get_badges(user_id: str = Query(...), db: Session = Depends(get_db)):
     返回：{total, earned(已得数), newly(本次新解锁 code 列表), items:[{code,emoji,name,desc,earned,earned_at}]}。
     副作用：一次性统计学习数据，对首次达成阈值的徽章新增 badge_earned 记录并落库（阈值见 _check）。
     """
-    from ..models.badge import BadgeEarned
+    from app.models.badge import BadgeEarned
 
     m = _metrics(db, user_id)
     earned_map = {b.badge_code: b.earned_at for b in db.query(BadgeEarned).filter(

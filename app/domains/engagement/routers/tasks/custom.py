@@ -17,11 +17,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ...database import get_db
+from app.database import get_db
 from app.domains.identity.services.parent_guard import ensure_parent_pwd
-from ...models.custom_task import CustomTask
-from ...models.parent_custom_task import ParentCustomTask
-from ...models.daily_task import DailyTask
+from app.models.custom_task import CustomTask
+from app.models.parent_custom_task import ParentCustomTask
+from app.models.daily_task import DailyTask
 from .constants import MAX_TARGET
 
 router = APIRouter()
@@ -110,7 +110,7 @@ def confirm_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
     task.confirmed_at = datetime.now()
     # 奖励金币
     try:
-        from ...pet import _grant_coins
+        from app.pet import _grant_coins
         _grant_coins(db, task.user_id, 5, "完成自定义任务")
     except Exception:
         pass

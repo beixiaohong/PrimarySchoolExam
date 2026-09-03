@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal, get_db
 from app.domains.family.services.sync_service import MIDDLE_SUBJECTS
-from .pet import _grant_coins
+from app.domains.engagement.routers.pet import _grant_coins
 
 router = APIRouter(tags=["AI 趣味出题"])
 
