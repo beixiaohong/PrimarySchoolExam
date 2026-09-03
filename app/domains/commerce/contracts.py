@@ -31,9 +31,19 @@ _EXPORTS = {
     "get_balance": ("app.domains.commerce.services.diamond", "get_balance"),
     "grant": ("app.domains.commerce.services.diamond", "grant"),
     "grant_all_existing": ("app.domains.commerce.services.diamond", "grant_all_existing"),
+    # 支付网关抽象（S4-M2 / 07 §5.2.1）：对外契约入口，内部委托 PaymentGateway 策略
+    "get_gateway": ("app.domains.commerce.services.payment.factory", "get_gateway"),
+    "register_gateway": ("app.domains.commerce.services.payment.factory", "register_gateway"),
+    "ManualGateway": ("app.domains.commerce.services.payment.manual_gateway", "ManualGateway"),
+    "PaymentGateway": ("app.domains.commerce.services.payment.gateway", "PaymentGateway"),
+    "PaymentIntent": ("app.domains.commerce.services.payment.gateway", "PaymentIntent"),
+    "PaymentStatus": ("app.domains.commerce.services.payment.gateway", "PaymentStatus"),
+    "ConfirmPayload": ("app.domains.commerce.services.payment.gateway", "ConfirmPayload"),
+    "ConfirmResult": ("app.domains.commerce.services.payment.gateway", "ConfirmResult"),
+    "RefundResult": ("app.domains.commerce.services.payment.gateway", "RefundResult"),
 }
 
-__all__ = ("DiamondService",) + tuple(_EXPORTS)
+__all__ = ("DiamondService", "PaymentService") + tuple(_EXPORTS)
 
 
 def __getattr__(name):
@@ -82,3 +92,41 @@ class DiamondService:
         """充值钻石，返回新余额（管理后台人工充值入口）"""
         from app.domains.commerce.services.diamond import grant
         return grant(db, uid, amount, reason=biz)
+
+
+class PaymentService:
+    """支付网关对外契约入口（S4-M2 / 07 §5.2.1）。
+
+    与 `DiamondService` 同级，由 contracts.py 收口；内部委托 `PaymentGateway` 策略。
+    本期交付「manual」策略（满足本期「下单 + 人工核销」），M1 再加 wechat/alipay 策略，
+    订单/权益服务代码不变（AC-M0-2-12）。
+
+    注意：本类仅做网关调度，不持有 DB 会话、无外部阻塞调用；实际「写 pay_transactions +
+    订单状态机流转」在 `order_service`（M3）与后台 confirm-payment（M5）中完成。
+    """
+
+    @staticmethod
+    def gateway():
+        """返回当前配置的网关实例（默认 manual）。"""
+        from app.domains.commerce.services.payment.factory import get_gateway
+        return get_gateway()
+
+    @staticmethod
+    def create_payment(order):
+        """创建支付意图：返回给用户看的支付信息（二维码/备注/金额/超时）。"""
+        return PaymentService.gateway().create_payment(order)
+
+    @staticmethod
+    def query_payment(order):
+        """查询支付状态。"""
+        return PaymentService.gateway().query_payment(order)
+
+    @staticmethod
+    def confirm(order, payload):
+        """核销校验（网关层纯校验，不写库）。"""
+        return PaymentService.gateway().confirm(order, payload)
+
+    @staticmethod
+    def refund(order, amount_fen: int):
+        """发起退款（人工网关返回待后台审批）。"""
+        return PaymentService.gateway().refund(order, amount_fen)
