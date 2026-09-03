@@ -19,12 +19,11 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.knowledge import KnowledgePoint
-from app.models.pet import CoinLedger
+from app.domains.engagement.contracts import PetService
 
 router = APIRouter()
 
@@ -209,10 +208,9 @@ def knowledge_master(kp_id: int, req: MasterReq, db: Session = Depends(get_db)):
         raise HTTPException(404, "知识点不存在")
     granted = 0
     if req.all_correct:
-        db.add(CoinLedger(user_id=req.user_id, amount=3, reason=f"知识点掌握：{kp.title}"))
+        PetService.grant_coins(db, req.user_id, 3, f"知识点掌握：{kp.title}")
         db.commit()
         granted = 3
-    bal = int(db.query(func.coalesce(func.sum(CoinLedger.amount), 0)).filter(
-        CoinLedger.user_id == req.user_id).scalar() or 0)
+    bal = PetService.balance(db, req.user_id)
     msg = random.choice(ENCOURAGE) if granted else "再看看例子，连对自测就发金币～"
     return MasterOut(granted=granted, coins=bal, message=msg)
