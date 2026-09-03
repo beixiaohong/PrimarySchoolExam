@@ -21,6 +21,15 @@ from app.domains._lazy import resolve
 _EXPORTS = {
     "resolve_textbook_id": ("app.domains.content.routers.textbook", "resolve_textbook_id"),
     "_generate_quiz_from_text": ("app.domains.content.routers.classical", "_generate_quiz_from_text"),
+    # S2-M2 知识点标注服务（标注 CRUD / 队列 / 批量导入 / AI 预标注）
+    "get_kp_tree": ("app.domains.content.services.kp_annotation", "get_kp_tree"),
+    "create_or_update_kp": ("app.domains.content.services.kp_annotation", "create_or_update_kp"),
+    "get_annotation_queue": ("app.domains.content.services.kp_annotation", "get_annotation_queue"),
+    "submit_annotation": ("app.domains.content.services.kp_annotation", "submit_annotation"),
+    "batch_import_kp": ("app.domains.content.services.kp_annotation", "batch_import"),
+    "get_annotation_stats": ("app.domains.content.services.kp_annotation", "get_annotation_stats"),
+    "ai_annotate_questions": ("app.domains.content.services.kp_annotation", "ai_annotate_questions"),
+    "predict_kp_for_question": ("app.domains.content.services.kp_annotation", "predict_kp_for_question"),
 }
 
 __all__ = tuple(_EXPORTS)
