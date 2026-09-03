@@ -210,9 +210,9 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
 
     # 重做掌握 → 金币 +3（P2 金币宠物）
     try:
-        from app.domains.engagement.contracts import _grant_coins
+        from app.domains.engagement.contracts import PetService
         if any(u["status"] == "mastered" for u in updated):
-            _grant_coins(db, req.user_id, 3 * sum(1 for u in updated if u["status"] == "mastered"), "错题掌握")
+            PetService.grant_coins(db, req.user_id, 3 * sum(1 for u in updated if u["status"] == "mastered"), "错题掌握")
     except Exception:
         pass
     db.commit()

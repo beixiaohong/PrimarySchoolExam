@@ -230,11 +230,11 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
         ))
     # 答题发金币：每题答对 +1，全对额外 +10（P2 金币宠物）
     try:
-        from app.domains.engagement.contracts import _grant_coins
+        from app.domains.engagement.contracts import PetService
         if correct_count > 0:
-            _grant_coins(db, user_id, correct_count, "答题答对")
+            PetService.grant_coins(db, user_id, correct_count, "答题答对")
         if total > 0 and correct_count == total:
-            _grant_coins(db, user_id, 10, "全对奖励")
+            PetService.grant_coins(db, user_id, 10, "全对奖励")
     except Exception:
         pass
     db.commit()

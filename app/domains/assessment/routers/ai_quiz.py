@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.domains.family.contracts import MIDDLE_SUBJECTS
-from app.domains.engagement.contracts import _grant_coins
+from app.domains.engagement.contracts import PetService
 
 router = APIRouter(tags=["AI 趣味出题"])
 
@@ -101,13 +101,13 @@ def generate_quiz(req: QuizGenReq):
         if questions:
             # 钻石扣费：短会话
             try:
-                from app.domains.commerce.contracts import diamond as diamond_svc
+                from app.domains.commerce.contracts import DiamondService
                 db = SessionLocal()
                 try:
-                    diamond_svc.check_and_deduct(db, req.user_id,
-                                                  (resp or {}).get("prompt_tokens", 0),
-                                                  (resp or {}).get("completion_tokens", 0),
-                                                  reason="ai_quiz")
+                    DiamondService.consume(db, req.user_id,
+                                           (resp or {}).get("prompt_tokens", 0),
+                                           (resp or {}).get("completion_tokens", 0),
+                                           biz="ai_quiz")
                 finally:
                     db.close()
             except Exception:
@@ -192,10 +192,10 @@ def quiz_reward(req: QuizRewardReq, db: Session = Depends(get_db)):
 
     请求：{user_id, correct, total}；无需家长密码。
     返回：{ok, granted}（granted=0 表示未全对，不发放）。
-    副作用：仅当 correct==total 且 total>0 时调用 _grant_coins(+5, reason=趣味出题全对) 并落库。
+    副作用：仅当 correct==total 且 total>0 时调用 PetService.grant_coins(+5, reason=趣味出题全对) 并落库。
     """
     if req.total <= 0 or req.correct < req.total:
         return {"ok": True, "granted": 0}
-    _grant_coins(db, req.user_id, QUIZ_PAID, "趣味出题全对")
+    PetService.grant_coins(db, req.user_id, QUIZ_PAID, "趣味出题全对")
     db.commit()
     return {"ok": True, "granted": QUIZ_PAID}

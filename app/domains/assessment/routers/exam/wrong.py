@@ -318,8 +318,8 @@ def answer_unanswered(req, db: Session = Depends(get_db)):
         db.commit()
         # 答对发金币
         try:
-            from app.domains.engagement.contracts import _grant_coins
-            _grant_coins(db, req.user_id, 3, "未答题答对")
+            from app.domains.engagement.contracts import PetService
+            PetService.grant_coins(db, req.user_id, 3, "未答题答对")
         except Exception:
             pass
         return {"correct": True, "mastered": True, "message": "答对了！已标记为已掌握"}

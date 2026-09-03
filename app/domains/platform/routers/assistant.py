@@ -73,8 +73,8 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
     from app.models.exam import ExamAttempt
     from app.models.daily_task import DailyTask
     from app.models.badge import BadgeEarned
-    from app.domains.engagement.contracts import _balance
-    from app.domains.engagement.contracts import compute_tree_score
+    from app.domains.engagement.contracts import PetService
+    from app.domains.engagement.contracts import GrowthTreeService
 
     lines = []
     # 今日任务
@@ -115,8 +115,8 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
     try:
         badge_count = db.query(func.count(BadgeEarned.id)).filter(
             BadgeEarned.user_id == user_id).scalar() or 0
-        tree_score = compute_tree_score(db, user_id)
-        balance = _balance(db, user_id)
+        tree_score = GrowthTreeService.score(db, user_id)
+        balance = PetService.balance(db, user_id)
         lines.append(f"已获得 {badge_count} 枚徽章；成长树 {tree_score} 分；金币余额 {balance}")
     except Exception:
         pass
@@ -210,11 +210,11 @@ def assistant_chat(req: ChatReq):
         _log_usage(db, req.user_id, "assistant", True, resp)
         # 钻石扣费
         try:
-            from app.domains.commerce.contracts import diamond as diamond_svc
-            diamond_svc.check_and_deduct(db, req.user_id,
-                                          resp.get("prompt_tokens", 0),
-                                          resp.get("completion_tokens", 0),
-                                          reason="ai_assistant")
+            from app.domains.commerce.contracts import DiamondService
+            DiamondService.consume(db, req.user_id,
+                                   resp.get("prompt_tokens", 0),
+                                   resp.get("completion_tokens", 0),
+                                   biz="ai_assistant")
         except Exception:
             pass
     finally:

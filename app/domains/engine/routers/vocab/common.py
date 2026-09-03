@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.word import Word, WordBook
 from app.models.vocab import VocabProgress, VocabDailyLog
-from app.domains.engagement.contracts import _load_study_flags
+from app.domains.engagement.contracts import TaskService
 from app.services import semester as _semester
 from app.schemas.vocab import (
     VocabWordOut,
@@ -36,7 +36,7 @@ def _get_grade_books(db: Session, grade: int, user_id: Optional[str] = None) -> 
     累计统计（_career_book_ids）不做版本过滤，切换版本不丢历史学习量。
     """
     semesters = [_semester.current_semester()]
-    if user_id and _load_study_flags(db, user_id).get("include_next"):
+    if user_id and TaskService.study_flags(db, user_id).get("include_next"):
         semesters.append(_semester.next_semester())
 
     books = db.query(WordBook).filter(
@@ -71,7 +71,7 @@ def _career_book_ids(db: Session, grade: int, user_id: Optional[str] = None) -> 
         or_(WordBook.grade < grade, WordBook.semester <= cur),
     ).all()
     ids = [b.id for b in books]
-    if user_id and _load_study_flags(db, user_id).get("include_next"):
+    if user_id and TaskService.study_flags(db, user_id).get("include_next"):
         # 预支下学期：把当前年级的下一学期册也纳入累计池
         nxt = _semester.next_semester()
         extra = db.query(WordBook.id).filter(
@@ -86,7 +86,7 @@ def _career_book_ids(db: Session, grade: int, user_id: Optional[str] = None) -> 
 
 def _sync_unit_filter(db: Session, user_id: str, book_ids: List[int]):
     """课堂同步：sync_mode 开启时返回英语当前进度的 (book_id, unit)，否则 None"""
-    if not _load_study_flags(db, user_id).get("sync_mode"):
+    if not TaskService.study_flags(db, user_id).get("sync_mode"):
         return None
     from app.models.middle import TeachingProgress
     prog = db.query(TeachingProgress).filter(

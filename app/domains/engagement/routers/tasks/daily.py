@@ -142,8 +142,8 @@ def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db
     row.status = "done"
     # 心愿进度仅统计可选任务，强制任务手动确认不计入
     try:
-        from app.domains.engagement.routers.pet import _grant_coins
-        _grant_coins(db, req.user_id, 5, "完成任务")
+        from app.domains.engagement.contracts import PetService
+        PetService.grant_coins(db, req.user_id, 5, "完成任务")
     except Exception:
         pass
     db.commit()

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, get_db
 from app.models.essay import EssayGrade
 from app.domains.platform.contracts import ai as ai_svc
-from app.domains.commerce.contracts import check_and_deduct
+from app.domains.commerce.contracts import DiamondService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -126,8 +126,8 @@ def grade_essay(req: EssayGradeRequest):
         # 钻石计费（按 AI 实际用量；失败不阻断）
         if result and result.get("prompt_tokens") is not None:
             try:
-                check_and_deduct(db, req.user_id, result["prompt_tokens"],
-                                 result.get("completion_tokens", 0), reason="作文批改")
+                DiamondService.consume(db, req.user_id, result["prompt_tokens"],
+                                       result.get("completion_tokens", 0), biz="作文批改")
             except Exception:
                 pass
     finally:
@@ -176,8 +176,8 @@ def grade_short_answer(req: ShortAnswerGradeRequest):
         db = SessionLocal()
         try:
             try:
-                check_and_deduct(db, req.user_id, result["prompt_tokens"],
-                                 result.get("completion_tokens", 0), reason="简答判分")
+                DiamondService.consume(db, req.user_id, result["prompt_tokens"],
+                                       result.get("completion_tokens", 0), biz="简答判分")
             except Exception:
                 pass
         finally:

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.reading import ReadingPassage
 from app.domains.platform.contracts import ai as ai_svc
-from app.domains.commerce.contracts import check_and_deduct
+from app.domains.commerce.contracts import DiamondService
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +168,8 @@ def _grade_short(user_id: str, q: dict, user_answer: str) -> dict:
         db = SessionLocal()
         try:
             try:
-                check_and_deduct(db, user_id, result["prompt_tokens"],
-                                 result.get("completion_tokens", 0), reason="阅读简答判分")
+                DiamondService.consume(db, user_id, result["prompt_tokens"],
+                                       result.get("completion_tokens", 0), biz="阅读简答判分")
             except Exception:
                 pass
         finally:

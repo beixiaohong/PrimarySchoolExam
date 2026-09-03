@@ -174,8 +174,8 @@ def grade_answer(req: GradeReq, db: Session = Depends(get_db)):
         c.recheck_status = None
         # 讲清楚 → 金币 +10（P2 金币宠物）
         try:
-            from app.domains.engagement.contracts import _grant_coins
-            _grant_coins(db, req.user_id, 10, "小老师讲清楚")
+            from app.domains.engagement.contracts import PetService
+            PetService.grant_coins(db, req.user_id, 10, "小老师讲清楚")
         except Exception:
             pass
     else:

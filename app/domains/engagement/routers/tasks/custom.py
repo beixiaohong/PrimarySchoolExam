@@ -110,8 +110,8 @@ def confirm_custom_task(req: CustomTaskAction, db: Session = Depends(get_db)):
     task.confirmed_at = datetime.now()
     # 奖励金币
     try:
-        from app.pet import _grant_coins
-        _grant_coins(db, task.user_id, 5, "完成自定义任务")
+        from app.domains.engagement.contracts import PetService
+        PetService.grant_coins(db, task.user_id, 5, "完成自定义任务")
     except Exception:
         pass
     db.commit()

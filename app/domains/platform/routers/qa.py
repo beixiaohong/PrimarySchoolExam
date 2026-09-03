@@ -210,11 +210,11 @@ def qa_ask(req: AskReq):
             _log_usage(db, req.user_id, "qa_ask", True, result)
             # 钻石扣费
             try:
-                from app.domains.commerce.contracts import diamond as diamond_svc
-                diamond_svc.check_and_deduct(db, req.user_id,
-                                              result.get("prompt_tokens", 0),
-                                              result.get("completion_tokens", 0),
-                                              reason="ai_qa")
+                from app.domains.commerce.contracts import DiamondService
+                DiamondService.consume(db, req.user_id,
+                                       result.get("prompt_tokens", 0),
+                                       result.get("completion_tokens", 0),
+                                       biz="ai_qa")
             except Exception as e:
                 logger.warning("QA 钻石扣费失败: %s", e)
             return {

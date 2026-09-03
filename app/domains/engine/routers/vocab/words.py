@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.word import Word, WordBook
 from app.models.vocab import VocabProgress, VocabDailyLog
-from app.domains.engagement.contracts import get_daily_quota, _load_study_flags
+from app.domains.engagement.contracts import TaskService
 
 from . import router
 from .common import (
@@ -55,7 +55,7 @@ def get_today_words(
 
     due_today_total = len(review_progress)  # 实际到期总数（用于前端展示积压量）
     # 每轮复习额度由家长配置（默认 daily_review_words=10），避免一次推送几百词
-    review_quota = get_daily_quota(db, user_id, "daily_review_words")
+    review_quota = TaskService.daily_quota(db, user_id, "daily_review_words")
     if len(review_progress) > review_quota:
         # 优先复习 overdue 最久的（next_review_date 升序），取前 review_quota 个
         review_progress = sorted(review_progress,
@@ -83,7 +83,7 @@ def get_today_words(
     ).subquery()
 
     # 每轮新学额度由家长配置（默认 NEW_WORDS_PER_DAY）
-    remaining_new = get_daily_quota(db, user_id, "daily_new_words")
+    remaining_new = TaskService.daily_quota(db, user_id, "daily_new_words")
 
     new_words = []
     if remaining_new > 0:
@@ -93,7 +93,7 @@ def get_today_words(
             Word.book_id.in_(stage_ids),
             ~Word.id.in_(db.query(learned_word_ids))
         )
-        flags = _load_study_flags(db, user_id)
+        flags = TaskService.study_flags(db, user_id)
         sync = _sync_unit_filter(db, user_id, stage_ids)
         # xsc_bridge：六年级升初衔接，新学批次按 7:3 混入七年级词
         bridge_n = remaining_new * 3 // 10 if (grade == 6 and flags.get("xsc_bridge")) else 0

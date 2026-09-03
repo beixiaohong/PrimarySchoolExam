@@ -163,8 +163,8 @@ def mark_study_error_mastered(req: StudyErrorMasterRequest, db: Session = Depend
     error.mastered_at = date.today()
     # 错题掌握 → 金币 +3（P2 金币宠物）
     try:
-        from app.domains.engagement.contracts import _grant_coins
-        _grant_coins(db, req.user_id, 3, "错题掌握")
+        from app.domains.engagement.contracts import PetService
+        PetService.grant_coins(db, req.user_id, 3, "错题掌握")
     except Exception:
         pass
     db.commit()

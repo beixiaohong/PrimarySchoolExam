@@ -30,7 +30,7 @@ def complete_focus(req: FocusCompleteReq, db: Session = Depends(get_db)):
     请求：{user_id, minutes=10/15/25}；无需家长密码。
     返回：{ok, granted(2 或 0), limited?, day_count}（limited=true 表示已达每日上限）。
     副作用：写 focus_sessions；每日记录上限 FOCUS_DAILY_LIMIT(8)（防刷且保护视力），超限仍记 0 币；
-            记录成功后 _grant_coins(+2, reason=专注完成)，发币失败不阻断。
+            记录成功后 PetService.grant_coins(+2, reason=专注完成)，发币失败不阻断。
     """
     from app.models.focus import FocusSession
 
@@ -45,8 +45,8 @@ def complete_focus(req: FocusCompleteReq, db: Session = Depends(get_db)):
         return {"ok": True, "granted": 0, "limited": True, "day_count": day_count}
     db.add(FocusSession(user_id=req.user_id, minutes=req.minutes))
     try:
-        from .pet import _grant_coins
-        _grant_coins(db, req.user_id, FOCUS_PAID, "专注完成")
+        from app.domains.engagement.contracts import PetService
+        PetService.grant_coins(db, req.user_id, FOCUS_PAID, "专注完成")
     except Exception:
         pass
     db.commit()

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
-from app.domains.engagement.contracts import get_daily_quota, _load_study_flags
+from app.domains.engagement.contracts import TaskService
 from app.services import semester as _semester
 
 from . import router
@@ -56,20 +56,20 @@ def get_today_task(
 
     # 新学：不限制每日轮数，每轮按额度返回下一批未背篇目
     # 每轮新背额度由家长配置（默认 NEW_TEXTS_PER_DAY）
-    remaining = get_daily_quota(db, user_id, "daily_new_texts")
+    remaining = TaskService.daily_quota(db, user_id, "daily_new_texts")
 
     new_items = []
     if remaining > 0:
         # 学期解锁：只开「全」+ 当前学期篇目，include_next 预支下学期
         semesters = ["全", _semester.current_semester()]
-        if _load_study_flags(db, user_id).get("include_next"):
+        if TaskService.study_flags(db, user_id).get("include_next"):
             semesters.append(_semester.next_semester())
 
         learned_ids = db.query(ClassicalProgress.text_id).filter(
             ClassicalProgress.user_id == user_id
         ).subquery()
         # xsc_bridge：六年级升初衔接，新背批次按 7:3 混入七年级篇目
-        flags = _load_study_flags(db, user_id)
+        flags = TaskService.study_flags(db, user_id)
         bridge_n = remaining * 3 // 10 if (grade == 6 and flags.get("xsc_bridge")) else 0
         main_n = remaining - bridge_n
         candidates = db.query(ClassicalText).filter(

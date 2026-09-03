@@ -267,19 +267,19 @@ def chat_paid_first(user_id: str, system: str, user: str, max_tokens: int = 800,
     if cfg["api_key"]:
         try:
             from app.database import SessionLocal
-            from app.domains.commerce.contracts import get_balance, calc_cost, deduct
+            from app.domains.commerce.contracts import DiamondService
             # 余额预检（短会话，立即释放连接）
             with SessionLocal() as s:
-                balance = get_balance(s, user_id)
+                balance = DiamondService.balance(s, user_id)
             if balance > 0:
                 result = _call_provider("deepseek", cfg, system, user, max_tokens, history)
                 if result and result["text"].strip():
                     result["provider"] = "deepseek"
-                    cost = calc_cost(result.get("prompt_tokens", 0),
-                                     result.get("completion_tokens", 0))
+                    cost = DiamondService.cost(result.get("prompt_tokens", 0),
+                                               result.get("completion_tokens", 0))
                     if cost > 0:
                         with SessionLocal() as s:
-                            deduct(s, user_id, cost, reason=reason, ref_id=ref_id)
+                            DiamondService.charge(s, user_id, cost, biz=reason, ref_id=ref_id)
                     return result
                 logger.info("AI 付费链 deepseek 无有效输出（user=%s），降级免费链", user_id)
             else:
