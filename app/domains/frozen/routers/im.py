@@ -18,7 +18,7 @@ from app.database import get_db, SessionLocal
 from app.models.user import User
 from app.models.im import *  # Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim, ReadReceipt, *Type
 from app.schemas.im import *
-from app.services.im_crud import (
+from app.domains.frozen.services.im_crud import (
     get_private_chat,
     get_chat_by_id,
     update_read_receipt,

@@ -65,3 +65,8 @@ ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "false").strip().lower() in ("1", "t
 USER_TOKEN_TTL_HOURS = int(os.environ.get("USER_TOKEN_TTL_HOURS", "12"))
 # 同步学单元小测答案令牌的 HMAC 签名密钥（原硬编码于 sync_service.py，现外置以便轮换）
 QUIZ_SECRET = os.environ.get("QUIZ_SECRET", "zhixue_sync_quiz_v1")
+
+# ── D9 冻结域开关（S1-R 模块化搬迁）：im/ledger 已迁至 app/domains/frozen，
+# 默认开启保持现状；关闭后对应路由不挂载（/api/im、/api/ledger 及后台管理端点）。
+ENABLE_IM = os.environ.get("ENABLE_IM", "true").strip().lower() in ("1", "true", "yes", "on")
+ENABLE_LEDGER = os.environ.get("ENABLE_LEDGER", "true").strip().lower() in ("1", "true", "yes", "on")

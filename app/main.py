@@ -14,9 +14,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .database import init_db
-from .config import ENABLE_DOCS
+from .config import ENABLE_DOCS, ENABLE_IM, ENABLE_LEDGER
 from .migrations.runner import run_migrations
-from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, ledger, im, admin_panel, announcement, textbook, courses, knowledge, learning_goals
+from .routers import words, math, exam, phrases, vocab, classical, grammar, study, search, sync, reading, user, tasks, ai, mood, rewards, challenge, teach, goals, qa, parent, appeal, pet, tree, badges, cards, dictation, focus, ai_quiz, assistant, diamond, auth, weather, admin, grading, admin_panel, announcement, textbook, courses, knowledge, learning_goals
+# D9 冻结域（im/ledger）：已抽至 app/domains/frozen，受 ENABLE_IM/ENABLE_LEDGER 开关控制
+from .domains.frozen.routers import im as frozen_im, ledger as frozen_ledger
+from .domains.frozen.routers import admin_im as frozen_admin_im, admin_ledger as frozen_admin_ledger
 from .routers.auth import require_self
 from .routers.quiet_hours import check_quiet_hours
 from .services.init_data import ensure_initial_data
@@ -99,11 +102,19 @@ app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"], dependencies=user_auth_deps)
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
 app.include_router(tasks.confirm_router, prefix="/api/task-confirm", tags=["完成确认"], dependencies=user_auth_deps)
-# 账本(ledger)与即时通讯(im)：路由内部已用 require_user 鉴权，不挂全局 user_auth_deps
-app.include_router(ledger.router, prefix="/api/ledger", tags=["个人账本"])
-app.include_router(im.router, prefix="/api/im", tags=["即时通讯"])
-# 后台扩展功能（数据看板/账本·IM 管理/公告）：内部用 _require_admin 鉴权
+# 账本(ledger)与即时通讯(im)（D9 冻结域）：路由内部已用 require_user 鉴权，不挂全局 user_auth_deps；
+# 配置开关可整体关闭（默认开启），关闭后对应端点不再挂载
+if ENABLE_LEDGER:
+    app.include_router(frozen_ledger.router, prefix="/api/ledger", tags=["个人账本"])
+if ENABLE_IM:
+    app.include_router(frozen_im.router, prefix="/api/im", tags=["即时通讯"])
+# 后台扩展功能（数据看板/公告）：内部用 _require_admin 鉴权
 app.include_router(admin_panel.router, prefix="/api/admin", tags=["管理后台-扩展"])
+# D9 后台数据管理（账本/IM）：随各自开关挂载，端点路径与迁出前一致
+if ENABLE_LEDGER:
+    app.include_router(frozen_admin_ledger.router, prefix="/api/admin", tags=["管理后台-账本数据"])
+if ENABLE_IM:
+    app.include_router(frozen_admin_im.router, prefix="/api/admin", tags=["管理后台-IM数据"])
 # 学生端公告/站内信：内部用 require_user 鉴权
 app.include_router(announcement.router, prefix="/api/announcements", tags=["系统公告"])
 app.include_router(textbook.router, prefix="/api/textbook", tags=["教材版本"], dependencies=user_auth_deps)
