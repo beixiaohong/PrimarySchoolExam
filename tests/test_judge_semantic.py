@@ -15,7 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.services.judge import _local_semantic_correct, _fuzzy_match  # noqa: E402
+from app.domains.assessment.services.judge import _local_semantic_correct, _fuzzy_match  # noqa: E402
 
 # 应判对的确定性概念题（孩子表述含错别字/中文数字，但知识点正确）
 SHOULD_CORRECT = [

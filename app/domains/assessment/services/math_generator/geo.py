@@ -34,7 +34,7 @@ def _area_triangle():
     area = b * h / 2
     s = f"{area:.1f}" if area != int(area) else str(int(area))
     try:
-        from app.services.figure_renderer import render_triangle
+        from app.domains.assessment.services.figure_renderer import render_triangle
         img = render_triangle(b, h)
     except Exception:
         img = ""
@@ -44,7 +44,7 @@ def _area_parallelogram():
     """平行四边形面积（底×高），附配图"""
     b, h = random.randint(4, 20), random.randint(3, 15)
     try:
-        from app.services.figure_renderer import render_parallelogram
+        from app.domains.assessment.services.figure_renderer import render_parallelogram
         img = render_parallelogram(b, h)
     except Exception:
         img = ""
@@ -54,7 +54,7 @@ def _area_rect_both():
     """长方形面积与周长（同时考两个公式），附配图"""
     l, w = random.randint(5, 25), random.randint(3, 15)
     try:
-        from app.services.figure_renderer import render_rectangle
+        from app.domains.assessment.services.figure_renderer import render_rectangle
         img = render_rectangle(l, w)
     except Exception:
         img = ""
@@ -75,7 +75,7 @@ def _area_trapezoid():
     area = (a + b) * h / 2
     s = f"{area:.1f}" if area != int(area) else str(int(area))
     try:
-        from app.services.figure_renderer import render_trapezoid
+        from app.domains.assessment.services.figure_renderer import render_trapezoid
         img = render_trapezoid(a, b, h)
     except Exception:
         img = ""
@@ -86,7 +86,7 @@ def _area_circle():
     r = random.randint(2, 10)
     area = round(3.14 * r * r, 2)
     try:
-        from app.services.figure_renderer import render_circle
+        from app.domains.assessment.services.figure_renderer import render_circle
         img = render_circle(r)
     except Exception:
         img = ""
@@ -97,7 +97,7 @@ def _area_composite_sub():
     L, W = random.randint(10, 20), random.randint(8, 15)
     l, w = random.randint(3, L-3), random.randint(3, W-3)
     try:
-        from app.services.figure_renderer import render_composite_L
+        from app.domains.assessment.services.figure_renderer import render_composite_L
         img = render_composite_L(L, W, l, w)
     except Exception:
         img = ""
@@ -118,7 +118,7 @@ def _area_shaded():
     side = 2 * r
     shadow = round(side * side - 3.14 * r * r, 2)
     try:
-        from app.services.figure_renderer import render_composite_square_circle
+        from app.domains.assessment.services.figure_renderer import render_composite_square_circle
         img = render_composite_square_circle(side, r)
     except Exception:
         img = ""
@@ -154,7 +154,7 @@ def _area_house():
     area = w * h_rect + w * h_tri / 2
     s = f"{area:.1f}" if area != int(area) else str(int(area))
     try:
-        from app.services.figure_renderer import render_composite_rect_triangle
+        from app.domains.assessment.services.figure_renderer import render_composite_rect_triangle
         img = render_composite_rect_triangle(w, h_rect, h_tri)
     except Exception:
         img = ""
@@ -169,7 +169,7 @@ def _area_rect_semicircle():
     r = w / 2
     area = round(w * h + 3.14 * r * r / 2, 2)
     try:
-        from app.services.figure_renderer import render_composite_rect_semicircle
+        from app.domains.assessment.services.figure_renderer import render_composite_rect_semicircle
         img = render_composite_rect_semicircle(w, h)
     except Exception:
         img = ""
@@ -192,7 +192,7 @@ def _vol_cuboid():
     """长方体体积（长×宽×高），附配图"""
     a, b, c = random.randint(3, 12), random.randint(3, 12), random.randint(3, 12)
     try:
-        from app.services.figure_renderer import render_cuboid
+        from app.domains.assessment.services.figure_renderer import render_cuboid
         img = render_cuboid(a, b, c)
     except Exception:
         img = ""
@@ -222,7 +222,7 @@ def _vol_cylinder():
     r, h = random.randint(2, 8), random.randint(5, 20)
     v = round(3.14 * r * r * h, 2)
     try:
-        from app.services.figure_renderer import render_cylinder
+        from app.domains.assessment.services.figure_renderer import render_cylinder
         img = render_cylinder(r, h)
     except Exception:
         img = ""
@@ -233,7 +233,7 @@ def _vol_cone():
     r, h = random.randint(3, 8), random.randint(6, 18)
     v = round(3.14 * r * r * h / 3, 2)
     try:
-        from app.services.figure_renderer import render_cone
+        from app.domains.assessment.services.figure_renderer import render_cone
         img = render_cone(r, h)
     except Exception:
         img = ""
@@ -288,7 +288,7 @@ def _vol_cylinder_cone():
     v_cone = round(3.14 * r * r * h_cone / 3, 2)
     v_total = round(v_cyl + v_cone, 2)
     try:
-        from app.services.figure_renderer import render_composite_cylinder_cone
+        from app.domains.assessment.services.figure_renderer import render_composite_cylinder_cone
         img = render_composite_cylinder_cone(r, h_cyl, h_cone)
     except Exception:
         img = ""
@@ -306,7 +306,7 @@ def _vol_cuboid_hole():
     v_hole = round(3.14 * r * r * b, 2)
     v_remain = round(v_cuboid - v_hole, 2)
     try:
-        from app.services.figure_renderer import render_composite_cuboid_hole
+        from app.domains.assessment.services.figure_renderer import render_composite_cuboid_hole
         img = render_composite_cuboid_hole(a, b, c, r)
     except Exception:
         img = ""

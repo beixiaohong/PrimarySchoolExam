@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db, random_order
+from app.database import get_db, random_order
 
 router = APIRouter(tags=["dictation"])
 
@@ -29,8 +29,8 @@ def dictation_words(user_id: str = Query(...), count: int = Query(10, ge=3, le=2
     """
     from datetime import date
 
-    from ..models.vocab import VocabProgress
-    from ..models.word import Word
+    from app.models.vocab import VocabProgress
+    from app.models.word import Word
 
     today = date.today()
     picked = []
@@ -73,7 +73,7 @@ def dictation_texts(user_id: str = Query(...), count: int = Query(5, ge=1, le=10
     返回：{items:[{id, title, author, sentence, full}]}（每篇取首句，最多 count*2 篇里筛出 count 条）。
     副作用：只读，无写库。优先从已学篇目取，无则全库。
     """
-    from ..models.classical import ClassicalProgress, ClassicalText
+    from app.models.classical import ClassicalProgress, ClassicalText
 
     learned_ids = {r[0] for r in db.query(ClassicalProgress.text_id).filter(
         ClassicalProgress.user_id == user_id).limit(200).all()}

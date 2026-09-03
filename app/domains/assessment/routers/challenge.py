@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from app.database import get_db
 
 router = APIRouter()
 
@@ -52,7 +52,7 @@ def _math_quick(grade: int, n: int) -> list:
 
 def _word_quick(db: Session, grade: int, n: int) -> list:
     """单词快答：给英文选中文，4 选 1"""
-    from ..models.word import Word, WordBook
+    from app.models.word import Word, WordBook
     books = db.query(WordBook).filter(WordBook.grade == grade).all()
     if not books:
         books = db.query(WordBook).all()
@@ -97,7 +97,7 @@ def save_record(req: RecordReq, db: Session = Depends(get_db)):
     返回：{best, today_best, times}（个人最佳/今日最佳/参与次数）。
     副作用：写 challenge_records；correct/total 各夹取到 0~200 防异常值；无金币发放（成绩仅记录）。
     """
-    from ..models.sprint4 import ChallengeRecord
+    from app.models.sprint4 import ChallengeRecord
     if req.kind not in ("math", "word"):
         raise HTTPException(400, "kind 只能是 math/word")
     if req.correct < 0 or req.total < 0:
@@ -115,7 +115,7 @@ def save_record(req: RecordReq, db: Session = Depends(get_db)):
 
 
 def _records(db: Session, user_id: str, kind: str) -> dict:
-    from ..models.sprint4 import ChallengeRecord
+    from app.models.sprint4 import ChallengeRecord
     from datetime import date
     rows = db.query(ChallengeRecord).filter(
         ChallengeRecord.user_id == user_id, ChallengeRecord.kind == kind).all()

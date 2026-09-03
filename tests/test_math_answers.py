@@ -23,13 +23,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.services.math_generator.common import GENERATORS  # noqa: E402
-import app.services.math_generator.calc as calc_mod  # noqa: E402
-import app.services.math_generator.number as number_mod  # noqa: E402
-import app.services.math_generator.middle as middle_mod  # noqa: E402
-import app.services.math_generator.app as app_mod  # noqa: E402
-import app.services.math_generator.logic as logic_mod  # noqa: E402
-import app.services.math_generator.stat as stat_mod  # noqa: E402
+from app.domains.assessment.services.math_generator.common import GENERATORS  # noqa: E402
+import app.domains.assessment.services.math_generator.calc as calc_mod  # noqa: E402
+import app.domains.assessment.services.math_generator.number as number_mod  # noqa: E402
+import app.domains.assessment.services.math_generator.middle as middle_mod  # noqa: E402
+import app.domains.assessment.services.math_generator.app as app_mod  # noqa: E402
+import app.domains.assessment.services.math_generator.logic as logic_mod  # noqa: E402
+import app.domains.assessment.services.math_generator.stat as stat_mod  # noqa: E402
 import ast  # noqa: E402
 from fractions import Fraction  # noqa: E402
 from decimal import Decimal, ROUND_HALF_UP  # noqa: E402

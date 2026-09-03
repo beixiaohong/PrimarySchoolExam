@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.services.answer_check import fill_answer_correct, _cn_num_value  # noqa: E402
+from app.domains.assessment.services.answer_check import fill_answer_correct, _cn_num_value  # noqa: E402
 
 
 def test_cn_num_value():

@@ -43,7 +43,7 @@ def _seed_attempt(db, uid, subject, answered_correct, answered_wrong, blanks):
 def test_auto_difficulty_tiers(client):
     """自动定档：按最近交卷平均分划档（>=80拔高/70-80提高/60-70综合/<60基础）"""
     from app.database import SessionLocal
-    from app.routers.exam import _auto_difficulty
+    from app.domains.assessment.routers.exam import _auto_difficulty
     db = SessionLocal()
     try:
         # 全对 → 拔高
@@ -71,7 +71,7 @@ def test_auto_difficulty_tiers(client):
 def test_auto_difficulty_ignores_blanks(client):
     """平均分口径：去掉未作答的空题，不被空题拉低；整卷空题不计入平均"""
     from app.database import SessionLocal
-    from app.routers.exam import _auto_difficulty
+    from app.domains.assessment.routers.exam import _auto_difficulty
     db = SessionLocal()
     try:
         # 作答题全对但有大量空题：若空题计入会 40 分(基础)，正确口径应为 100 分(拔高)
@@ -87,7 +87,7 @@ def test_auto_difficulty_ignores_blanks(client):
 
 def test_wrong_type_quota_distribution(client):
     """错题题型配额：按错题数占比分配 n30 题量，总数 == n30，仅限合法题型"""
-    from app.routers.exam import _wrong_type_quotas
+    from app.domains.assessment.routers.exam import _wrong_type_quotas
     wrong_counts = {"calc_int_basic": 3, "word_problem": 1}
     valid = ["calc_int_basic", "word_problem", "other_type"]
     quotas = _wrong_type_quotas(4, wrong_counts, valid)

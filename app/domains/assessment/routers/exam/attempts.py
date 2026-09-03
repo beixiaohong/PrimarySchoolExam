@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models.exam import (
     ExamRecord, Question, WrongRecord, ExamAttempt, AttemptAnswer,
 )
-from app.services.answer_check import fill_answer_correct
+from app.domains.assessment.services.answer_check import fill_answer_correct
 
 
 def _fix_stored_answer(db: Session, qid: int, verdict: dict, r: dict):
@@ -155,7 +155,7 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
     # ── AI 判题复核：本地判错的题批量送 AI，AI 判对 → 改判正确 ──
     ai_approved: list = []
     if ai_items:
-        from app.services.judge import judge_wrong_items
+        from app.domains.assessment.services.judge import judge_wrong_items
         approved = judge_wrong_items(user_id, ai_items)
         for r in results:
             qid = r["question_id"]

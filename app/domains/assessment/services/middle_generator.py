@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from ..models.middle import MiddleQuestion
+from app.models.middle import MiddleQuestion
 
 # 初中新增六科（数学/英语/语文沿用既有出题器）
 MIDDLE_SUBJECTS = ["物理", "化学", "生物", "道德与法治", "历史", "地理"]

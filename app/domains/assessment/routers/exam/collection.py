@@ -11,7 +11,7 @@ from app.models.paper import PaperQuestion
 from app.schemas.exam import (
     CollectionPracticeQuestionOut, CollectionSubmitRequest,
 )
-from app.services.collection_practice import (
+from app.domains.assessment.services.collection_practice import (
     random_paper_questions, get_paper_questions_by_ids, collection_stats,
     mixed_practice,
 )

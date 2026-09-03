@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from app.database import get_db
 
 router = APIRouter()
 
@@ -59,7 +59,7 @@ def _card_out(c):
 def _source(db: Session, user_id: str, kind: str, record_id: int):
     """取错题来源快照（exam=WrongRecord→Question，study=StudyError）"""
     if kind == "exam":
-        from ..models.exam import Question, WrongRecord
+        from app.models.exam import Question, WrongRecord
         w = db.query(WrongRecord).filter(WrongRecord.id == record_id,
                                          WrongRecord.user_id == user_id).first()
         if not w:
@@ -69,7 +69,7 @@ def _source(db: Session, user_id: str, kind: str, record_id: int):
             raise HTTPException(404, "题目内容缺失")
         return q.question, q.answer
     if kind == "study":
-        from ..models.study_error import StudyError
+        from app.models.study_error import StudyError
         e = db.query(StudyError).filter(StudyError.id == record_id,
                                         StudyError.user_id == user_id).first()
         if not e:
@@ -86,7 +86,7 @@ def create_card(req: CreateReq, db: Session = Depends(get_db)):
     返回：讲解卡详情（_card_out）；超出数量/重复出/来源错误 返回 400/404。
     副作用：写 TeachingRecord（status=pending）。无需家长密码。
     """
-    from ..models.sprint4 import TeachingRecord
+    from app.models.sprint4 import TeachingRecord
     active_count = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == req.user_id,
         TeachingRecord.status.in_(ACTIVE_STATUS),
@@ -118,7 +118,7 @@ def get_active(user_id: str = Query(...), db: Session = Depends(get_db)):
     返回：{items[讲解卡详情]}。
     副作用：无（只读）。无需家长密码。
     """
-    from ..models.sprint4 import TeachingRecord
+    from app.models.sprint4 import TeachingRecord
     rows = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == user_id,
         TeachingRecord.status.in_(ACTIVE_STATUS),
@@ -135,7 +135,7 @@ def submit_answer(req: AnswerReq, db: Session = Depends(get_db)):
     副作用：置 status=answered、记 answered_at。无需家长密码。
     """
     from datetime import datetime
-    from ..models.sprint4 import TeachingRecord
+    from app.models.sprint4 import TeachingRecord
     c = db.query(TeachingRecord).filter(TeachingRecord.id == req.card_id,
                                         TeachingRecord.user_id == req.user_id).first()
     if not c:
@@ -159,7 +159,7 @@ def grade_answer(req: GradeReq, db: Session = Depends(get_db)):
     副作用：更新 TeachingRecord 状态机；答对发金币。无需家长密码。
     """
     from datetime import datetime
-    from ..models.sprint4 import TeachingRecord
+    from app.models.sprint4 import TeachingRecord
     c = db.query(TeachingRecord).filter(TeachingRecord.id == req.card_id,
                                         TeachingRecord.user_id == req.user_id).first()
     if not c:
@@ -193,7 +193,7 @@ def get_due(user_id: str = Query(...), db: Session = Depends(get_db)):
     返回：{items[讲解卡详情]}。
     副作用：无（只读）。无需家长密码。
     """
-    from ..models.sprint4 import TeachingRecord
+    from app.models.sprint4 import TeachingRecord
     rows = db.query(TeachingRecord).filter(
         TeachingRecord.user_id == user_id,
         TeachingRecord.status == "graded",
@@ -213,7 +213,7 @@ def recheck(req: RecheckReq, db: Session = Depends(get_db)):
     副作用：更新 TeachingRecord 状态机。无需家长密码。
     """
     from datetime import datetime
-    from ..models.sprint4 import TeachingRecord
+    from app.models.sprint4 import TeachingRecord
     c = db.query(TeachingRecord).filter(TeachingRecord.id == req.card_id,
                                         TeachingRecord.user_id == req.user_id).first()
     if not c:
@@ -243,7 +243,7 @@ def get_stats(user_id: str = Query(...), db: Session = Depends(get_db)):
     返回：{total, passed, teaching}。
     副作用：无（只读）。无需家长密码。
     """
-    from ..models.sprint4 import TeachingRecord
+    from app.models.sprint4 import TeachingRecord
     rows = db.query(TeachingRecord).filter(TeachingRecord.user_id == user_id).all()
     return {
         "total": len(rows),

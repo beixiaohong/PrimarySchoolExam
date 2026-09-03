@@ -26,7 +26,7 @@ def test_judge_records_system_issue(client, monkeypatch):
     # （它把函数替换为返回 [] 的 lambda），本用例要验证真实复核链路。
     # 注意：必须先 undo 再 import，否则绑定到的仍是打桩后的 lambda。
     monkeypatch.undo()
-    from app.services.judge import judge_wrong_items
+    from app.domains.assessment.services.judge import judge_wrong_items
 
     calls = {}
 

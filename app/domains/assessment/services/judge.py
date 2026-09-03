@@ -89,7 +89,7 @@ def ai_judge_status(user_id: str) -> str:
     供复查接口在真正调用前判断。不可用时应明确提示用户「AI 不可用/限频，无法复查」，
     而不是静默维持原判、还显示「AI 认为你错」（那是假复查）。只读探测，不计次。
     """
-    from ..services import ai as ai_svc
+    from app.services import ai as ai_svc
     if not ai_svc.ai_any_enabled():
         return "unavailable"
     if not ai_svc.rate_limit_peek(f"judge:{user_id}", JUDGE_RATE_LIMIT, 3600):
@@ -122,7 +122,7 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
     if mock == "none":
         return {}
 
-    from ..services import ai as ai_svc
+    from app.services import ai as ai_svc
     if not ai_svc.ai_any_enabled():
         logger.info("AI 判题复核跳过（未配置任何 Key，含 deepseek，user=%s）", user_id)
         return {}
@@ -131,8 +131,8 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
         return {}
 
     # 1) 缓存检查（force=True 时跳过，手动复审每次都真正调 AI）
-    from ..database import SessionLocal
-    from ..models.ai_usage import AiQa
+    from app.database import SessionLocal
+    from app.models.ai_usage import AiQa
     todo = list(items) if force else []
     if not force:
         db = SessionLocal()
@@ -348,7 +348,7 @@ def _record_system_issue(db, user_id: str, it: dict, verdict: dict):
     qid = it.get("question_id")
     if not qid:
         return
-    from ..models.judge_review import JudgeReviewIssue
+    from app.models.judge_review import JudgeReviewIssue
     user_answer = it.get("user_answer", "") or ""
     dup = db.query(JudgeReviewIssue).filter(
         JudgeReviewIssue.question_id == qid,
@@ -476,7 +476,7 @@ def _parse_verdicts(text: str) -> list:
 
 def _log_judge_usage(db, user_id: str, ok: bool, result: dict | None = None,
                      error: str = "", detail: str = ""):
-    from ..models.ai_usage import AIUsageLog
+    from app.models.ai_usage import AIUsageLog
     try:
         db.add(AIUsageLog(
             user_id=user_id,

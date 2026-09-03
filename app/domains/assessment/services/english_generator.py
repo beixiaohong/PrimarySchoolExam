@@ -16,8 +16,8 @@ from typing import List, Optional, Dict
 
 from sqlalchemy.orm import Session
 
-from ..models.word import Word, WordBook
-from ..models.phrase import Phrase, Sentence
+from app.models.word import Word, WordBook
+from app.models.phrase import Phrase, Sentence
 
 
 # ─── 数据获取（从数据库） ─────────────────────────────────────

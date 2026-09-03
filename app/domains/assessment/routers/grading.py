@@ -12,10 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import SessionLocal, get_db
-from ..models.essay import EssayGrade
-from ..services import ai as ai_svc
-from ..services.diamond import check_and_deduct
+from app.database import SessionLocal, get_db
+from app.models.essay import EssayGrade
+from app.services import ai as ai_svc
+from app.services.diamond import check_and_deduct
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -253,7 +253,7 @@ def rejudge(req: RejudgeRequest, db: Session = Depends(get_db)):
         }
 
     # —— 写回阶段：AI 调用已结束，重新开短会话（不再占用连接）——
-    from ..models.exam import Question, AttemptAnswer, ExamAttempt, WrongRecord
+    from app.models.exam import Question, AttemptAnswer, ExamAttempt, WrongRecord
     from ..services.answer_check import fill_answer_correct
     fixed = False
     credited = False

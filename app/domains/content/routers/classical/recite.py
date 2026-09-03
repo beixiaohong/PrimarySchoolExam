@@ -175,7 +175,7 @@ def submit_review(req: ReviewRequest, db: Session = Depends(get_db)):
     # AI 复审：对前端判错的篇目做二次确认
     ai_approved_tids: set = set()
     if req.wrong_items:
-        from app.services.judge import judge_wrong_items
+        from app.domains.assessment.services.judge import judge_wrong_items
         judge_items = []
         for wi in req.wrong_items:
             judge_items.append({
@@ -252,7 +252,7 @@ def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
 
     # AI 复审：对前端判错的篇目做二次确认（古诗文主要处理繁体/通假字/语序差异）
     if req.wrong_items:
-        from app.services.judge import judge_wrong_items
+        from app.domains.assessment.services.judge import judge_wrong_items
         judge_items = []
         for wi in req.wrong_items:
             judge_items.append({

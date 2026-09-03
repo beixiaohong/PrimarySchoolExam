@@ -57,9 +57,9 @@ def log(*a):
 # ---------------------------------------------------------------------------
 try:
     import app  # noqa
-    from app.services.math_generator.common import GENERATORS  # noqa
-    import app.services.math_generator  # noqa
-    from app.services.math_generator.common import GENERATORS
+    from app.domains.assessment.services.math_generator.common import GENERATORS  # noqa
+    import app.domains.assessment.services.math_generator  # noqa
+    from app.domains.assessment.services.math_generator.common import GENERATORS
 except Exception:
     log("!!! 导入 math_generator 失败 !!!")
     log(traceback.format_exc())

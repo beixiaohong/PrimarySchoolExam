@@ -27,7 +27,7 @@ def _check_answer(user_ans: str, correct_ans: str, options_json: str,
         return True
 
     # 填空题：容错判题（算式过程/单位/全角符号/顺序差异均可识别）
-    from app.services.answer_check import fill_answer_correct
+    from app.domains.assessment.services.answer_check import fill_answer_correct
     return fill_answer_correct(ua, ca, exact_answer)
 
 

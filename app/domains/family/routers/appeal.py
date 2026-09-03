@@ -224,7 +224,7 @@ def _approve_exam(db: Session, a: AnswerAppeal) -> bool:
             answer = base.filter(AttemptAnswer.user_answer == a.user_answer).first()
             if not answer:
                 # 放宽：规范化后比对（容忍全角/半角、空格、标点差异）
-                from app.services.answer_check import normalize_answer
+                from app.domains.assessment.services.answer_check import normalize_answer
                 ua_norm = normalize_answer(a.user_answer or "")
                 for cand in base.limit(50).all():
                     if normalize_answer(cand.user_answer or "") == ua_norm:

@@ -131,7 +131,7 @@ def wrong_practice(req: WrongPracticeRequest, db: Session = Depends(get_db)):
     - 支持按学科、题型筛选（数学/英语均可）
     - 每次练习后自动累加 practice_count
     """
-    from app.services.docx_service import build_wrong_practice_docx
+    from app.domains.assessment.services.docx_service import build_wrong_practice_docx
 
     q = db.query(WrongRecord).filter(
         WrongRecord.user_id == req.user_id,

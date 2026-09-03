@@ -291,7 +291,7 @@ def submit_grammar_answers(req: GrammarSubmitRequest, db: Session = Depends(get_
             is_correct = user_ans == correct_ans
         else:
             # 填空题：忽略大小写和首尾空格，并支持算式/格式容错（与前端即时反馈一致）
-            from app.services.answer_check import fill_answer_correct
+            from app.domains.assessment.services.answer_check import fill_answer_correct
             is_correct = fill_answer_correct(user_ans, correct_ans)
 
         if is_correct:

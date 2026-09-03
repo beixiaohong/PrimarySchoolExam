@@ -204,7 +204,7 @@ def client():
 @pytest.fixture(autouse=True)
 def no_ai_judge(monkeypatch):
     """全局禁用 AI 判题复核，避免测试触达外部 AI 服务"""
-    import app.services.judge as judge
+    import app.domains.assessment.services.judge as judge
     monkeypatch.setattr(judge, "judge_wrong_items", lambda user_id, items: [])
 
 

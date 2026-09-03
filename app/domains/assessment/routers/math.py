@@ -9,9 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models.problem_type import ProblemType, ProblemCategory
-from ..schemas.problem import (
+from app.database import get_db
+from app.models.problem_type import ProblemType, ProblemCategory
+from app.schemas.problem import (
     ProblemTypeCreate, ProblemTypeOut, CategoryOut,
     MathGenRequest, MathGenResponse,
 )
@@ -143,7 +143,7 @@ def generate_docx(req: MathGenRequest, db: Session = Depends(get_db)):
     """生成数学题并返回Word文档下载，同时将所有题目保存到数据库"""
     import json
     from ..services.docx_service import build_math_docx
-    from ..models.exam import ExamRecord, Question
+    from app.models.exam import ExamRecord, Question
 
     problems = generate_math_problems(
         grade=req.grade,

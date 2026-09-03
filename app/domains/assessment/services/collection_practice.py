@@ -13,8 +13,8 @@ from typing import Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import random_order
-from ..models.paper import PaperQuestion
+from app.database import random_order
+from app.models.paper import PaperQuestion
 
 
 def random_paper_questions(

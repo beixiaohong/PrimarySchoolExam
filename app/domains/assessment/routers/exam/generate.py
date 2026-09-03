@@ -14,7 +14,7 @@ from app.models.exam import (
     ExamRecord, Question, WrongRecord, ExamAttempt, AttemptAnswer,
 )
 from app.schemas.exam import ExamCreateRequest
-from app.services.middle_generator import MIDDLE_SUBJECTS
+from app.domains.assessment.services.middle_generator import MIDDLE_SUBJECTS
 
 
 def _auto_difficulty(db: Session, user_id: str, subject: str) -> str:
@@ -210,8 +210,8 @@ def _generate_math_exam(req: ExamCreateRequest) -> tuple:
     连接策略：题型可用性 + 错题分布所需 DB 查询包在短会话内；
     查询结束后关闭连接，后续 CPU 生成与 Word 构建完全不持连。
     """
-    from app.services.math_generator import generate_math_problems, _get_available_types
-    from app.services.docx_service import build_math_docx
+    from app.domains.assessment.services.math_generator import generate_math_problems, _get_available_types
+    from app.domains.assessment.services.docx_service import build_math_docx
 
     wrong_counts: Dict[str, int] = {}
     valid_types: List[str] = []
@@ -380,8 +380,8 @@ def _generate_english_exam(req: ExamCreateRequest, db: Optional[Session] = None)
     if db is None:
         with SessionLocal() as s:
             return _generate_english_exam(req, s)
-    from app.services.english_generator import generate_english_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
-    from app.services.docx_service import build_english_docx
+    from app.domains.assessment.services.english_generator import generate_english_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
+    from app.domains.assessment.services.docx_service import build_english_docx
 
     # 题型由系统按成绩自动分配（忽略客户端题型筛选）
     types_used = ALL_EXERCISE_TYPES[:]
@@ -425,8 +425,8 @@ def _generate_chinese_exam(req: ExamCreateRequest, db: Optional[Session] = None)
     if db is None:
         with SessionLocal() as s:
             return _generate_chinese_exam(req, s)
-    from app.services.chinese_generator import generate_chinese_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
-    from app.services.docx_service import build_english_docx
+    from app.domains.assessment.services.chinese_generator import generate_chinese_exam, TYPE_NAMES, ALL_EXERCISE_TYPES
+    from app.domains.assessment.services.docx_service import build_english_docx
 
     types_used = ALL_EXERCISE_TYPES[:]
 
@@ -470,8 +470,8 @@ def _generate_middle_exam(req: ExamCreateRequest, db: Optional[Session] = None) 
     if db is None:
         with SessionLocal() as s:
             return _generate_middle_exam(req, s)
-    from app.services.middle_generator import generate_middle_exam, TYPE_NAMES, MIDDLE_SUBJECTS
-    from app.services.docx_service import build_english_docx
+    from app.domains.assessment.services.middle_generator import generate_middle_exam, TYPE_NAMES, MIDDLE_SUBJECTS
+    from app.domains.assessment.services.docx_service import build_english_docx
     from app.services.semester import stage_label
 
     exercises = generate_middle_exam(
