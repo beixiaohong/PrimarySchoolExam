@@ -23,10 +23,21 @@ from app.domains.engine.services.mastery import (
 from app.models.exam import AttemptAnswer, ExamAttempt  # AttemptAnswer 经 attempt_id → ExamAttempt.user_id 关联用户
 from app.models.knowledge import KnowledgePoint
 from app.models.kp_map import QuestionKpMap
-from app.models.mastery import MasteryRecord
+from app.models.mastery import MasteryRecord, MasterySnapshot
 
 # 作答记录的题源固定为 questions 表（AttemptAnswer.question_id 外键指向 questions.id）
 _QA_SOURCE = "questions"
+
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger("engine.mastery_store")
+
+# 增量重算线程池：答题接口 fire-and-forget 投递，避免阻塞 HTTP 响应（07 §5.1.1 步骤2）。
+# 工作线程自开短会话、纯 DB 计算（无外部阻塞调用），持连铁律安全。
+_recompute_executor = ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="mastery-recompute")
 
 
 def build_answer_records(
@@ -202,7 +213,81 @@ def get_coverage_report(db: Session) -> dict:
     }
 
 
+def trigger_incremental_recompute(user_id: str) -> None:
+    """增量触发：异步（线程池）重算某用户掌握度。
+
+    设计（07 §5.1.1 + 持连铁律）：
+    - 由答题接口在「写库提交、释放请求连接」之后 fire-and-forget 调用；
+    - 工作线程自开短会话（不复用请求会话），纯 DB 计算，无外部阻塞调用；
+    - 不阻塞 HTTP 响应；异常仅记录日志，不影响主流程。
+    """
+    def _job():
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            recompute_user_mastery(db, user_id)
+        except Exception:
+            logger.exception("增量掌握度重算失败 user=%s", user_id)
+        finally:
+            db.close()
+
+    try:
+        _recompute_executor.submit(_job)
+    except Exception:
+        logger.exception("投递增量掌握度重算失败 user=%s", user_id)
+
+
+def generate_snapshots(db: Session, user_ids: Optional[List[str]] = None) -> int:
+    """生成当日掌握度快照（07 §5.1.1 步骤5，每日 01:30）。
+
+    对 mastery_records（可限定用户）按 uq_ms(user_id,kp_id,snap_date,algo_version) UPSERT；
+    delta = 本次 mastery − 该 (user,kp,algo) 最近一次快照 mastery（无则 0）。
+    纯 DB 写，无外部调用。返回生成的快照数。
+    """
+    from datetime import date
+
+    from sqlalchemy import func
+
+    today = date.today()
+    q = db.query(MasteryRecord)
+    if user_ids:
+        q = q.filter(MasteryRecord.user_id.in_(user_ids))
+    records = q.all()
+
+    made = 0
+    for r in records:
+        prev = (
+            db.query(MasterySnapshot.mastery)
+            .filter(
+                MasterySnapshot.user_id == r.user_id,
+                MasterySnapshot.kp_id == r.kp_id,
+                MasterySnapshot.algo_version == r.algo_version,
+            )
+            .order_by(MasterySnapshot.snap_date.desc())
+            .first()
+        )
+        prev_mastery = int(prev[0]) if prev else 0
+        delta = int(r.mastery) - prev_mastery
+
+        snap = db.query(MasterySnapshot).filter_by(
+            user_id=r.user_id, kp_id=r.kp_id,
+            snap_date=today, algo_version=r.algo_version,
+        ).first()
+        if snap is None:
+            snap = MasterySnapshot(
+                user_id=r.user_id, kp_id=r.kp_id,
+                snap_date=today, algo_version=r.algo_version,
+            )
+            db.add(snap)
+        snap.mastery = int(r.mastery)
+        snap.delta = delta
+        made += 1
+    db.commit()
+    return made
+
+
 __all__ = [
     "build_answer_records", "recompute_user_mastery",
-    "get_user_mastery_matrix", "get_coverage_report", "ALGO_VERSION",
+    "get_user_mastery_matrix", "get_coverage_report",
+    "trigger_incremental_recompute", "generate_snapshots", "ALGO_VERSION",
 ]

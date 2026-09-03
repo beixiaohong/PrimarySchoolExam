@@ -280,6 +280,16 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
         pass
     db.commit()
 
+    # ── S3-M5 增量掌握度触发（07 §5.1.1 步骤2）──
+    # 答题写库已提交、释放请求连接后，异步投递掌握度重算（fire-and-forget）。
+    # 工作线程自开短会话、纯 DB 计算（无外部阻塞调用），不阻塞响应、持连铁律安全。
+    try:
+        from app.domains.engine import contracts as engine_contracts
+        engine_contracts.trigger_incremental_recompute(user_id)
+    except Exception:
+        # 重算失败不影响交卷主流程
+        pass
+
     return {
         "exam_id": exam_id,
         "attempt_id": attempt.id,
