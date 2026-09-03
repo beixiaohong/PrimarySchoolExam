@@ -27,8 +27,9 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 from typing import Optional
+
+from app.config import BASE_DIR
 
 from . import sysconfig
 
@@ -171,7 +172,11 @@ def _load_env_file() -> None:
     if _env_loaded:
         return
     _env_loaded = True
-    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    # .env 一律锚定共享内核的 BASE_DIR（= 仓库根），不要用 __file__ 数层数：
+    # 本文件由 app/services/ 迁入 app/domains/platform/services/ 后深度 +1，
+    # 原来的 parent.parent.parent 会去找 app/domains/.env（不存在），
+    # 于是静默跳过加载（下方 exists() 为假），AI 密钥丢失但不报错。
+    env_path = BASE_DIR / ".env"
     try:
         if env_path.exists():
             for line in env_path.read_text(encoding="utf-8").splitlines():

@@ -7,7 +7,6 @@ import os
 import uuid
 import math
 import random
-from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")  # 无头模式，不需要显示器
@@ -16,11 +15,17 @@ import matplotlib.patches as patches
 from matplotlib.patches import FancyArrowPatch
 import numpy as np
 
+from app.config import OUTPUT_DIR
+
 # 中文字体设置
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
-FIGURE_DIR = Path(__file__).resolve().parent.parent.parent / "output" / "figures"
+# 产物目录一律锚定共享内核的 OUTPUT_DIR（= 仓库根 output/），不要用 __file__ 数层数：
+# 本文件由 app/services/ 迁入 app/domains/assessment/services/ 后深度 +1，
+# 原来的 parent.parent.parent 会指到 app/domains/output，图片虽然生成成功但
+# /output 静态挂载（app/main.py:180，指仓库根 output/）取不到，前端与 Word 全是死链。
+FIGURE_DIR = OUTPUT_DIR / "figures"
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
 

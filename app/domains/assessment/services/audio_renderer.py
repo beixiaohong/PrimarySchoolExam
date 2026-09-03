@@ -5,9 +5,13 @@
 """
 import asyncio
 import uuid
-from pathlib import Path
 
-AUDIO_DIR = Path(__file__).resolve().parent.parent.parent / "output" / "audio"
+from app.config import OUTPUT_DIR
+
+# 目录锚定共享内核的 OUTPUT_DIR（= 仓库根 output/），理由同 figure_renderer：
+# 迁入 app/domains/assessment/services/ 后 __file__ 深度 +1，数层数会指到 app/domains/output，
+# 而 /output 静态挂载指仓库根 output/，音频会全部变成死链。
+AUDIO_DIR = OUTPUT_DIR / "audio"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 
