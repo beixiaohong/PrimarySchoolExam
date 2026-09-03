@@ -15,10 +15,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models.appeal import AnswerAppeal
-from ..models.exam import AttemptAnswer, ExamAttempt, WrongRecord
-from ..services.ai import rate_limit
+from app.database import get_db
+from app.models.appeal import AnswerAppeal
+from app.models.exam import AttemptAnswer, ExamAttempt, WrongRecord
+from app.services.ai import rate_limit
 
 router = APIRouter()
 
@@ -274,9 +274,9 @@ def _approve_retry(db: Session, a: AnswerAppeal):
     """错题重练改判：该错题记录正确连击 +1（视为答对一次），累计 3 次自动掌握。"""
     if not a.record_id:
         raise HTTPException(400, "申诉缺少错题记录信息，无法改判")
-    from .study import MASTER_STREAK
+    from app.routers.study import MASTER_STREAK
     if a.record_kind == "study":
-        from ..models.study_error import StudyError
+        from app.models.study_error import StudyError
         rec = db.query(StudyError).filter(
             StudyError.id == a.record_id, StudyError.user_id == a.user_id).first()
         if not rec:

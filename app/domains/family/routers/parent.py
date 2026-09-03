@@ -19,8 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..services.ai import rate_limit
+from app.database import get_db
+from app.services.ai import rate_limit
 from app.domains.identity.services.parent_guard import ensure_parent_pwd
 
 router = APIRouter()
@@ -50,7 +50,7 @@ def _verify_pwd(pwd: str, stored: str) -> bool:
 
 
 def _get_password(db, user_id):
-    from ..models.parent import ParentPassword
+    from app.models.parent import ParentPassword
     return db.query(ParentPassword).filter_by(user_id=user_id).first()
 
 
@@ -134,7 +134,7 @@ def setup_password(req: SetupReq, db: Session = Depends(get_db)):
     a = (req.hint_answer or "").strip()
     if not q or not a:
         raise HTTPException(400, "请填写密保问题和答案（忘记密码时用于重置）")
-    from ..models.parent import ParentPassword
+    from app.models.parent import ParentPassword
     p = ParentPassword(
         user_id=req.user_id,
         password_hash=_hash_pwd(req.password),
@@ -226,7 +226,7 @@ def send_message(req: MessageReq, db: Session = Depends(get_db)):
         raise HTTPException(400, "留言最多 300 字")
     if not rate_limit(f"msg:{req.user_id}", 10, 60):
         raise HTTPException(429, "留言发太快啦，歇一歇")
-    from ..models.parent import ParentMessage
+    from app.models.parent import ParentMessage
     m = ParentMessage(user_id=req.user_id, content=content)
     db.add(m)
     db.commit()
@@ -241,7 +241,7 @@ def list_messages(user_id: str, db: Session = Depends(get_db)):
     返回：{unread, messages[{id, content, created_at, read}]}（最多 100 条，倒序）。
     副作用：无（只读）。无需家长密码。
     """
-    from ..models.parent import ParentMessage
+    from app.models.parent import ParentMessage
     rows = db.query(ParentMessage).filter_by(user_id=user_id).order_by(
         ParentMessage.id.desc()).limit(100).all()
     unread = db.query(ParentMessage).filter_by(
@@ -264,7 +264,7 @@ def mark_read(req: UserReq, db: Session = Depends(get_db)):
     返回：{ok: True}。
     副作用：将 read_at=None 的留言置为当前时间。无需家长密码。
     """
-    from ..models.parent import ParentMessage
+    from app.models.parent import ParentMessage
     db.query(ParentMessage).filter_by(user_id=req.user_id, read_at=None).update(
         {"read_at": datetime.now()})
     db.commit()
@@ -282,8 +282,8 @@ def child_stats(user_id: str, db: Session = Depends(get_db)):
            streak_days（连续学习天数）, week_tasks_done（本周完成任务数）}。
     统计窗口：本周一至今天。副作用：无（只读）。无需家长密码。
     """
-    from ..models.exam import ExamAttempt, WrongRecord
-    from ..models.daily_task import DailyTask
+    from app.models.exam import ExamAttempt, WrongRecord
+    from app.models.daily_task import DailyTask
     from app.domains.identity.routers.user import _streak
 
     monday = date.today() - timedelta(days=date.today().weekday())
@@ -324,7 +324,7 @@ def get_exam_settings(user_id: str, db: Session = Depends(get_db)):
     返回：{math_min, chi_min, eng_min, difficulty_min, difficulty_levels}。
     副作用：无（只读）。无需家长密码。
     """
-    from ..models.parent import ExamMinCount
+    from app.models.parent import ExamMinCount
     row = db.query(ExamMinCount).filter_by(user_id=user_id).first()
     if not row:
         return {"math_min": 5, "chi_min": 5, "eng_min": 5,
@@ -343,7 +343,7 @@ def save_exam_settings(req: ExamSettingsReq, request: Request, db: Session = Dep
     返回：{math_min, chi_min, eng_min, difficulty_min}（题数被夹到 1-50）。
     副作用：upsert exam_min_counts；题数越界时按 _bounded 收敛。需要家长密码。
     """
-    from ..models.parent import ExamMinCount
+    from app.models.parent import ExamMinCount
     ensure_parent_pwd(db, req.user_id, request)
 
     def _bounded(v):
@@ -377,8 +377,8 @@ def notices(user_id: str, db: Session = Depends(get_db)):
     返回：{unread_messages, pending_wishes（待确认）, pending_redeem（待兑现）, has_password}。
     副作用：无（只读）。无需家长密码。
     """
-    from ..models.parent import ParentMessage, ParentPassword
-    from ..models.reward import WishItem
+    from app.models.parent import ParentMessage, ParentPassword
+    from app.models.reward import WishItem
     unread = db.query(ParentMessage).filter_by(user_id=user_id, read_at=None).count()
     pending = db.query(WishItem).filter_by(
         user_id=user_id, status="pending").count()

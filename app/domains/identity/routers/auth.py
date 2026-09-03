@@ -24,7 +24,7 @@ from app.models.auth import AuthCode
 from app.models.user import User
 from app.services.mailer import mail_configured, send_email
 from app.services.sms import send_sms, sms_configured
-from app.routers.parent import _hash_pwd, _validate_pwd, _verify_pwd
+from app.domains.family.routers.parent import _hash_pwd, _validate_pwd, _verify_pwd
 from app.domains.identity.routers.user import _auto_upgrade_grade, _streak
 
 logger = logging.getLogger(__name__)

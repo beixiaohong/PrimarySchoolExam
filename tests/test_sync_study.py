@@ -7,7 +7,7 @@ from app.models.classical import ClassicalText
 from app.models.problem_type import ProblemType, ProblemCategory
 from app.models.sync import SyncQuizLog
 from app.models.daily_task import DailyTask
-from app.services.sync_service import _unsign
+from app.domains.family.services.sync_service import _unsign
 
 
 def _seed_english(db):

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.admin import Admin
-from app.routers.parent import _hash_pwd, _validate_pwd, _verify_pwd
+from app.domains.family.routers.parent import _hash_pwd, _validate_pwd, _verify_pwd
 
 from . import router
 from .common import TOKEN_TTL_HOURS, _require_admin

@@ -12,7 +12,7 @@ from app.models.diamond import DiamondAccount
 from app.models.makeup_card import MakeupCard
 from app.models.pet import CoinLedger
 from app.models.user import User, VipUser
-from app.routers.parent import _hash_pwd, _validate_pwd
+from app.domains.family.routers.parent import _hash_pwd, _validate_pwd
 
 from . import router
 from .common import _audit, _require_admin

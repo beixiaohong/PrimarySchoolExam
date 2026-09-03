@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from app.database import SessionLocal  # noqa: E402
 from app.models.admin import Admin  # noqa: E402
-from app.routers.parent import _hash_pwd, _validate_pwd  # noqa: E402
+from app.domains.family.routers.parent import _hash_pwd, _validate_pwd  # noqa: E402
 
 
 def main():

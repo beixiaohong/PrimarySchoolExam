@@ -21,13 +21,13 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from ..models.word import Word, WordBook
-from ..models.classical import ClassicalText
-from ..models.problem_type import ProblemType
-from ..models.middle import TeachingProgress, MiddleQuestion
-from ..models.sync import SyncQuizLog
-from ..services import semester as _semester
-from ..config import QUIZ_SECRET
+from app.models.word import Word, WordBook
+from app.models.classical import ClassicalText
+from app.models.problem_type import ProblemType
+from app.models.middle import TeachingProgress, MiddleQuestion
+from app.models.sync import SyncQuizLog
+from app.services import semester as _semester
+from app.config import QUIZ_SECRET
 
 # 初中六科（middle_questions 题库支撑的同步学学科）
 MIDDLE_SUBJECTS = ["物理", "化学", "生物", "道德与法治", "历史", "地理"]
@@ -347,7 +347,7 @@ def _chinese_practice(db: Session, grade: int, unit: str, count: int) -> dict:
 
 
 def _math_practice(db: Session, grade: int, unit: str, count: int) -> dict:
-    from ..services.math_generator import generate_math_problems
+    from app.services.math_generator import generate_math_problems
     _, chapter = unit.split("::", 1)
     codes = [p.code for p in db.query(ProblemType).filter(
         ProblemType.textbook_chapter == chapter).all()]
@@ -483,7 +483,7 @@ def _judge_one(subject: str, user_answer: str, correct_answer: str, options: lis
                 return options[idx].strip().lower() == ca.strip().lower()
         return ua.lower() == ca.lower()
     # 填空容错（算式/单位/全角符号/顺序差异）
-    from ..services.answer_check import fill_answer_correct
+    from app.services.answer_check import fill_answer_correct
     return fill_answer_correct(ua, ca)
 
 
@@ -493,7 +493,7 @@ def _mark_sync_task_done(db: Session, user_id: str, subject: str):
     code = code_map.get(subject)
     if not code:
         return
-    from ..models.daily_task import DailyTask
+    from app.models.daily_task import DailyTask
     today = date.today()
     row = db.query(DailyTask).filter(
         DailyTask.user_id == user_id,

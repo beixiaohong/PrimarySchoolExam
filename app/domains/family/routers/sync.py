@@ -10,8 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..services.sync_service import (
+from app.database import get_db
+from app.domains.family.services.sync_service import (
     build_overview, build_unit_points, build_unit_practice,
     generate_unit_quiz, judge_unit_quiz, MIDDLE_SUBJECTS,
 )
