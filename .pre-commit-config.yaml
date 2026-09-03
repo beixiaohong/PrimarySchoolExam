@@ -1,0 +1,19 @@
+# 本地静态护栏（S1-R Step 5，对应计划修订 6：无 CI，先用 pre-commit 强制，CI 建成后原样平移）
+#
+# 安装：  .venv\Scripts\pre-commit.exe install
+# 全量跑：.venv\Scripts\pre-commit.exe run --all-files
+# 规则本体在 .importlinter（纯 ASCII，import-linter 以 locale 编码读取该文件）
+#
+# 只挂一条钩子：依赖图检查必须全仓扫描（单文件粒度无意义），故 always_run + pass_filenames=false。
+# 不挂 pytest：130 项用例含真实 DB 读写，放进 commit 钩子会拖慢每次提交；测试门禁按计划在
+# 每域搬迁/改动的验收环节人工执行（要求 EXIT=0、130 项实跑、0 skip）。
+repos:
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter（九域独立性 + D9 密封）
+        entry: lint-imports
+        language: python
+        additional_dependencies: ["import-linter>=2.0"]
+        always_run: true
+        pass_filenames: false

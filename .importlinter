@@ -1,0 +1,111 @@
+# Static dependency guard (S1-R Step 5).
+# ASCII only on purpose: import-linter reads this file with the locale encoding
+# (GBK on this Windows box), so non-ASCII comments raise UnicodeDecodeError.
+# Chinese rationale lives in docs/data-ownership.md and docs/enterprise/02.
+#
+# Run locally : .venv\Scripts\lint-imports.exe
+# Run on commit: pre-commit run --all-files   (see .pre-commit-config.yaml)
+# No CI in this repo yet, so pre-commit enforces locally; the same config moves
+# to CI unchanged once CI exists (plan revision 6).
+#
+# Rule source: docs/enterprise/02 S1-4 and docs/enterprise/07 section 2.1 -
+# cross-domain calls may only go through the target domain's contracts.py.
+
+[importlinter]
+root_packages =
+    app
+
+# --- Contract 1: the nine domains are independent -------------------------
+# No direct dependency between any two domains. The only allowed cross-domain
+# edge is "-> target domain contracts"; a contracts module re-exporting its own
+# domain's implementation is an intra-domain edge and is not a violation.
+# Wildcard syntax (importlinter.domain.imports.ModuleExpression): `*` is a single
+# component, `**` is any depth, and the two cannot be mixed inside one expression
+# - hence `app.domains.**` (importer at any depth) -> `app.domains.*.contracts`.
+[importlinter:contract:domains-independence]
+name = Nine domains independent (cross-domain only via contracts.py)
+type = independence
+modules =
+    app.domains.identity
+    app.domains.content
+    app.domains.assessment
+    app.domains.engine
+    app.domains.engagement
+    app.domains.family
+    app.domains.commerce
+    app.domains.platform
+    app.domains.frozen
+# ignore_imports whitelists two kinds of edge (comments must stay outside the
+# multi-line value: configparser only treats a `#` at column 0 as a comment):
+#   1. any domain module -> any domain's contracts (the intended public API);
+#   2. app/routers/admin -> any domain's contracts. admin is the shared
+#      back-office assembly layer: every admin module registers routes on one
+#      shared `router` object, so splitting it per domain needs rewiring and is
+#      deferred to S1.5 together with the models/schemas move. Until then it may
+#      reach domains through contracts only, never their internals. Without this
+#      edge the contract reports 11 indirect chains, e.g.
+#      platform.routers.admin_panel -> app.routers.admin -> admin.assets -> commerce
+ignore_imports =
+    app.domains.** -> app.domains.*.contracts
+    app.routers.admin.** -> app.domains.*.contracts
+
+# --- Contract 2: D9 frozen domain is sealed -------------------------------
+# Listed separately so a violation names the real rule ("do not touch the
+# frozen domain") instead of a generic independence error. The composition root
+# app/main.py is not a source module, so mounting under ENABLE_IM/ENABLE_LEDGER
+# keeps working.
+[importlinter:contract:frozen-sealed]
+name = D9 frozen must not be imported by D1-D8 (app/main.py exempt)
+type = forbidden
+source_modules =
+    app.domains.identity
+    app.domains.content
+    app.domains.assessment
+    app.domains.engine
+    app.domains.engagement
+    app.domains.family
+    app.domains.commerce
+    app.domains.platform
+forbidden_modules =
+    app.domains.frozen
+
+# --- Contract 3 (deferred to S1.5): table-level data ownership ------------
+# Plan Step 5 also asked for "no cross-domain import of tables owned by another
+# domain in app.models". Measured against the current tree this cannot be a hard
+# gate in S1, for two reasons:
+#
+# 1) Granularity mismatch. The dependency graph is module level, so it cannot
+#    tell `from app.models.parent import ParentTaskSettings` (D5 own table) from
+#    `from app.models.parent import ParentMessage` (D6 table) - same module,
+#    different owners.
+# 2) Model files are themselves cross-domain mixed, and per plan revision 3 they
+#    stay in place as shared kernel during S1 (physical split deferred to S1.5):
+#      app/models/user.py    = users (D1) + vip_users (D7)
+#      app/models/admin.py   = admins (D1) + system_config, admin_operation_logs (D8)
+#      app/models/parent.py  = parent_passwords (D1) + parent_messages,
+#                              exam_min_counts (D6) + parent_task_settings (D5)
+#      app/models/ai_usage.py= ai_qa, weekly_reports (D8) + ai_usage_log (D7)
+#      app/models/sprint4.py = challenge_records (D3) + teaching_records (D2)
+#      app/models/middle.py  = middle_questions (D3) + teaching_progress (D2)
+#
+# Current volume: 316 `app.models.*` import lines inside app/domains/**,
+# collapsing to 101 distinct (domain -> model file) pairs over 102 files.
+# A file-level ban would therefore reject legitimate own-table access, so the
+# per-table registry in docs/data-ownership.md is the S1 enforcement vehicle
+# (review + this file), and the contract below is switched on in S1.5 once
+# app/domains/<domain>/models/ packages exist.
+#
+# [importlinter:contract:table-ownership-commerce]
+# name = Diamond tables are reachable from the commerce domain only
+# type = forbidden
+# source_modules =
+#     app.domains.identity
+#     app.domains.content
+#     app.domains.assessment
+#     app.domains.engine
+#     app.domains.engagement
+#     app.domains.family
+#     app.domains.platform
+#     app.domains.frozen
+# forbidden_modules =
+#     app.domains.commerce.models

@@ -1,3 +1,8 @@
 # 开发/测试依赖（生产环境不需要安装）
 pytest>=8.0
 httpx>=0.27
+
+# 静态护栏（S1-R Step 5）：九域独立性 + D9 密封，规则见 .importlinter
+# 装完执行 .venv\Scripts\pre-commit.exe install 挂上 commit 钩子
+import-linter>=2.0
+pre-commit>=3.5

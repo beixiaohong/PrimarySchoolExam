@@ -8,6 +8,8 @@
   内部使用短会话 —— 等 AI 判分期间不持有数据库连接（防连接池耗尽），故签名不含 `db`。
 - `MASTER_STREAK`：单题累计答对 3 次（或修正模式整组全对）即判定为已掌握的阈值常量，
   家校区申诉复核复用同一口径。
+- `review_service`：多 AI 联合校对服务模块对象（middle_question / reading_passage 双供应商
+  独立审阅 + 人工裁决），管理后台 `admin/review.py` 按模块使用。
 
 再导出为延迟解析（PEP 562）：学习引擎在模块级与函数体中反向引用内容域、测评域、平台域、
 商业域与激励域，契约层若在 import 期拉起实现模块会成环，延迟解析后调用方时序与改造前一致。
@@ -24,6 +26,7 @@ _EXPORTS = {
     "get_passages": ("app.domains.engine.services.reading_service", "get_passages"),
     "submit_reading_quiz": ("app.domains.engine.services.reading_service", "submit_reading_quiz"),
     "MASTER_STREAK": ("app.domains.engine.routers.study", "MASTER_STREAK"),
+    "review_service": ("app.domains.engine.services.review_service", None),
 }
 
 __all__ = tuple(_EXPORTS)

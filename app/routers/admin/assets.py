@@ -10,7 +10,7 @@ from app.models.diamond import DiamondAccount
 from app.models.makeup_card import MakeupCard
 from app.models.pet import CoinLedger
 from app.models.user import User
-from app.domains.commerce.services.diamond import grant as grant_diamond
+from app.domains.commerce.contracts import grant as grant_diamond
 
 from . import router
 from .common import _audit, _require_admin

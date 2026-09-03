@@ -704,7 +704,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
     # （在线接口仍保持 AI_THROTTLE_SEC 防限流；此处仅作用于本批处理进程）。
     if fill_answers_after:
         try:
-            import app.domains.platform.services.ai as _ai_mod
+            from app.domains.platform.contracts import ai as _ai_mod
             _ai_mod.AI_THROTTLE_SEC = 0.2
         except Exception:
             pass
@@ -856,7 +856,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
         # 批量补答案属离线定时任务（非在线请求路径），放宽全局节流以提升吞吐
         # （在线接口仍保持 AI_THROTTLE_SEC 防限流；此处仅作用于本批处理进程）。
         try:
-            import app.domains.platform.services.ai as _ai_mod
+            from app.domains.platform.contracts import ai as _ai_mod
             _ai_mod.AI_THROTTLE_SEC = 0.2
         except Exception:
             pass
