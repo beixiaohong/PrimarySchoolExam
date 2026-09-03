@@ -137,4 +137,7 @@ python -m pytest tests/ -q    # 58 用例，覆盖注册登录/任务/出卷判�
 | [DEPLOY.md](DEPLOY.md) | 服务器部署指南 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | 产品优化落地路线 |
 | [docs/enterprise/00-总纲.md](docs/enterprise/00-总纲.md) | **企业运营级升级方案集**（产品优化 / 模块拆分 / 岗位说明书 / 研发流程 / 产品团队，共 6 篇，仅方案） |
+| [docs/enterprise/06-PRD产品需求文档.md](docs/enterprise/06-PRD产品需求文档.md) | **PRD**：M0+M1 全部需求的功能点 / 业务规则 / 状态机 / 验收标准 / 埋点（需求评审依据） |
+| [docs/enterprise/07-技术实施方案.md](docs/enterprise/07-技术实施方案.md) | **技术实施方案**：域边界、数据模型与迁移 053–070、接口清单、关键技术方案、里程碑（开发对接依据） |
+| [docs/enterprise/08-迭代任务卡.md](docs/enterprise/08-迭代任务卡.md) | **迭代任务卡**：S1–S8（M0）+ M1-S1~S7 共 15 张 Sprint 卡，可直接排期上板（含依赖 DAG 与追溯） |
 | [docs/INDEX.md](docs/INDEX.md) | 文档总览与导航 |

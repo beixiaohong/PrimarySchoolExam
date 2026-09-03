@@ -23,3 +23,8 @@ log/
 qb_versions/
 data/
 .env.prod
+
+# 临时盘点 / 遗留脚本（勿提交）
+tools/_*.py
+endpoint_baseline.txt
+tools/endpoint_snapshot.py
