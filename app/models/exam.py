@@ -6,7 +6,8 @@ WrongRecord:  用户错题记录（哪个用户把哪道题标记为错题，支
 """
 from datetime import date, datetime
 
-from sqlalchemy import Column, Integer, String, DateTime, Date, Text, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import (Column, Integer, String, DateTime, Date, Text, Boolean,
+                        ForeignKey, UniqueConstraint, SmallInteger)
 from sqlalchemy.orm import relationship
 
 try:
@@ -204,6 +205,15 @@ class AttemptAnswer(Base):
                          comment="用户答案")
     is_correct = Column(Boolean, default=False,
                         comment="是否正确")
+
+    # ── S2-M1 扩展字段（07 §3.2.2：答题用时采集）──
+    started_at = Column(DateTime, nullable=True, comment="本题开始作答时间")
+    duration_ms = Column(Integer, default=0, comment="单题用时（毫秒），0=未采集")
+    seq = Column(Integer, default=0, comment="题序，便于还原答题过程")
+    difficulty = Column(SmallInteger, default=3,
+                        comment="题目难度 1-5（冗余，避免回查）")
+    created_at = Column(DateTime, nullable=True, default=datetime.now,
+                        comment="作答时间")
 
     attempt = relationship("ExamAttempt", back_populates="answers")
 

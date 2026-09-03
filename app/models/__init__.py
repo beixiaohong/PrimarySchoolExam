@@ -49,6 +49,7 @@ from .judge_review import JudgeReviewIssue
 from .textbook import TextbookVersion, UserTextbookPref
 from .online_course import OnlineCourse
 from .knowledge import KnowledgePoint
+from .kp_map import QuestionKpMap
 from .learning_goal import LearningGoal, LearningCheckin, LearningWeeklyReview
 
 __all__ = [

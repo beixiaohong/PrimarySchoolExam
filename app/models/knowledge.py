@@ -32,5 +32,15 @@ class KnowledgePoint(Base):
     source = Column(String(30), default="seed", comment="来源：seed=批量生成 / manual=后台录入")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
+    # ── S2-M1 扩展字段（07 §3.2.1：知识点树/层级/教材版本）──
+    parent_id = Column(Integer, default=0, index=True,
+                       comment="父知识点ID（层级，0=根）")
+    code = Column(String(64), default="", index=True, comment="知识点编码")
+    sort_order = Column(Integer, default=0, comment="同级排序")
+    status = Column(String(16), default="active",
+                    comment="状态：active/deprecated")
+    textbook_ver = Column(String(32), default="", comment="教材版本标识")
+    updated_at = Column(DateTime, nullable=True, comment="更新时间")
+
     def __repr__(self):
         return f"<KnowledgePoint {self.subject} G{self.grade} {self.title}>"
