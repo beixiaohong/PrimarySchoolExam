@@ -334,8 +334,14 @@ from app.models.im import Chat, Message, Friendship, RedPacket
 | D9 frozen | 17 | `db_im_chats` … `db_ledger_user_report_settings` |
 | **合计** | **85** | 与 `Base.metadata.tables` 实测数量一致 |
 
-复核命令（任一表名未出现在本文件即为悬空）：
+复核命令（任一表名未出现在本文件即为悬空）。PowerShell 下两个坑必须同时避开：
+① 反引号是 PowerShell 的转义符，字面写 `` ` `` 会被吃掉；② 外层用单引号时，内层双引号会在
+传递给原生程序时被剥除（报 `NameError: name 'docs' is not defined`）。故固定用
+**外层双引号 + 内层单引号 + `chr(96)` 拼反引号**：
 
 ```powershell
-.venv\Scripts\python.exe -c "import app.models; from app.database import Base; import pathlib; d=pathlib.Path('docs/data-ownership.md').read_text(encoding='utf-8'); miss=[t for t in Base.metadata.tables if ('`'+t+'`') not in d]; print('TOTAL', len(Base.metadata.tables), 'MISSING', miss)"
+.venv\Scripts\python.exe -c "import app.models; from app.database import Base; import pathlib; d=pathlib.Path('docs/data-ownership.md').read_text(encoding='utf-8'); ts=list(Base.metadata.tables); print('TOTAL', len(ts), 'MISSING', [t for t in ts if chr(96)+t+chr(96) not in d])"
 ```
+
+期望输出：`TOTAL 85 MISSING []`。若需同时校验「逐域行数与声明数一致 / 无虚构表名 / 无一表多域」，
+按上面思路再加上小节拆分与行数统计即可（本表登记时这三项均已脚本校验通过）。
