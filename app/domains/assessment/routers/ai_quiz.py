@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
-from app.domains.family.services.sync_service import MIDDLE_SUBJECTS
-from app.domains.engagement.routers.pet import _grant_coins
+from app.domains.family.contracts import MIDDLE_SUBJECTS
+from app.domains.engagement.contracts import _grant_coins
 
 router = APIRouter(tags=["AI 趣味出题"])
 
@@ -78,7 +78,7 @@ def generate_quiz(req: QuizGenReq):
     返回：{theme, count, questions:[{question,options,answer,explanation,fun}]}（questions 为空时抛 502）。
     副作用：最多重试 2 次解析 AI 输出；成功按 token 扣钻（reason=ai_quiz），扣费失败不阻断。
     """
-    from app.domains.platform.services.ai import chat_with
+    from app.domains.platform.contracts import chat_with
 
     if req.subject not in QUIZ_SUBJECTS:
         raise HTTPException(400, f"学科只能是 {('/'.join(QUIZ_SUBJECTS))}")
@@ -101,7 +101,7 @@ def generate_quiz(req: QuizGenReq):
         if questions:
             # 钻石扣费：短会话
             try:
-                from app.domains.commerce.services import diamond as diamond_svc
+                from app.domains.commerce.contracts import diamond as diamond_svc
                 db = SessionLocal()
                 try:
                     diamond_svc.check_and_deduct(db, req.user_id,

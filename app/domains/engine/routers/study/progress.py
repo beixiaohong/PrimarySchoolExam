@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from . import router
 from app.database import get_db
-from app.domains.identity.services.parent_guard import ensure_parent_pwd
+from app.domains.identity.contracts import ensure_parent_pwd
 from app.models.middle import TeachingProgress
 from app.models.word import Word, WordBook
 

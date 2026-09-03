@@ -10,7 +10,7 @@ import json
 import logging
 import time
 
-from app.domains.platform.services.ai import chat, ai_enabled, ai_any_enabled
+from app.domains.platform.contracts import chat, ai_enabled, ai_any_enabled
 
 logger = logging.getLogger("answer_generator")
 
@@ -40,7 +40,7 @@ def _build_user(q) -> str:
 def _deepseek_configured() -> bool:
     """DeepSeek Key 是否已配置（采集批量补答案的主用提供商）"""
     try:
-        from app.domains.platform.services import ai as _ai
+        from app.domains.platform.contracts import ai as _ai
         return bool(_ai._config_provider("deepseek").get("api_key"))
     except Exception:
         return False
@@ -59,7 +59,7 @@ def generate_answer_for(q, max_tokens: int = 400) -> str | None:
         return None
     if _deepseek_configured():
         try:
-            from app.domains.platform.services import ai as _ai
+            from app.domains.platform.contracts import ai as _ai
             ds_cfg = _ai._config_provider("deepseek")
             res = _ai._call_provider("deepseek", ds_cfg, _SYSTEM, user, max_tokens)
         except Exception as e:

@@ -11,8 +11,8 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.reading import ReadingPassage
-from app.domains.platform.services import ai as ai_svc
-from app.domains.commerce.services.diamond import check_and_deduct
+from app.domains.platform.contracts import ai as ai_svc
+from app.domains.commerce.contracts import check_and_deduct
 
 logger = logging.getLogger(__name__)
 

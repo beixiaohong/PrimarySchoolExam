@@ -107,7 +107,7 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
 
     if e.source_type == "classical":
         from app.models.classical import ClassicalText
-        from app.domains.content.routers.classical import _generate_quiz_from_text
+        from app.domains.content.contracts import _generate_quiz_from_text
         text = db.query(ClassicalText).filter(ClassicalText.id == e.source_id).first()
         if not text:
             raise HTTPException(404, "原篇目不存在")
@@ -173,7 +173,7 @@ def check_answer_api(req: CheckAnswerRequest, db: Session = Depends(get_db)):
         q = db.query(Question).filter(Question.id == req.qid).first()
         if not q:
             raise HTTPException(404, "题目不存在")
-        from app.domains.assessment.routers.exam import _check_answer
+        from app.domains.assessment.contracts import _check_answer
         ok = _check_answer(req.user_answer or "", (q.answer or "").strip(), q.options_json)
     elif req.kind == "grammar":
         from app.models.grammar import GrammarExercise
@@ -185,7 +185,7 @@ def check_answer_api(req: CheckAnswerRequest, db: Session = Depends(get_db)):
         if ex.options:
             ok = ua == ca  # 选择题按字母判
         else:
-            from app.domains.assessment.services.answer_check import fill_answer_correct
+            from app.domains.assessment.contracts import fill_answer_correct
             ok = ua == ca or fill_answer_correct(ua, ca)
     else:
         raise HTTPException(400, "kind 只能是 exam/grammar")

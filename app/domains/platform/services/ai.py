@@ -267,7 +267,7 @@ def chat_paid_first(user_id: str, system: str, user: str, max_tokens: int = 800,
     if cfg["api_key"]:
         try:
             from app.database import SessionLocal
-            from app.domains.commerce.services.diamond import get_balance, calc_cost, deduct
+            from app.domains.commerce.contracts import get_balance, calc_cost, deduct
             # 余额预检（短会话，立即释放连接）
             with SessionLocal() as s:
                 balance = get_balance(s, user_id)

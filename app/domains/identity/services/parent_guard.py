@@ -20,7 +20,7 @@ def ensure_parent_pwd(db: Session, user_id: str, request: Request) -> None:
     - 未设置家长密码：要求先设置（家长面板首次进入即引导）
     - 未携带密码头或密码错误：拒绝访问
     """
-    from app.domains.family.routers.parent import _verify_pwd
+    from app.domains.family.contracts import _verify_pwd
 
     p = _get_parent_password(db, user_id)
     if not p:

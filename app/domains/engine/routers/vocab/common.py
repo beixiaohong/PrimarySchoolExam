@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.word import Word, WordBook
 from app.models.vocab import VocabProgress, VocabDailyLog
-from app.domains.engagement.routers.tasks import _load_study_flags
+from app.domains.engagement.contracts import _load_study_flags
 from app.services import semester as _semester
 from app.schemas.vocab import (
     VocabWordOut,
@@ -44,7 +44,7 @@ def _get_grade_books(db: Session, grade: int, user_id: Optional[str] = None) -> 
         WordBook.semester.in_(semesters),
     ).all()
     if user_id:
-        from app.domains.content.routers.textbook import resolve_textbook_id
+        from app.domains.content.contracts import resolve_textbook_id
         tid = resolve_textbook_id(db, user_id, "英语", grade)
         if tid:
             version_books = db.query(WordBook).filter(

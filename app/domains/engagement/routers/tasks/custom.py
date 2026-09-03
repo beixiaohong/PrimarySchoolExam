@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.domains.identity.services.parent_guard import ensure_parent_pwd
+from app.domains.identity.contracts import ensure_parent_pwd
 from app.models.custom_task import CustomTask
 from app.models.parent_custom_task import ParentCustomTask
 from app.models.daily_task import DailyTask

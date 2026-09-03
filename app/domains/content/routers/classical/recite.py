@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.classical import ClassicalText, ClassicalProgress, ClassicalDailyLog
-from app.domains.engagement.routers.tasks import get_daily_quota, _load_study_flags
+from app.domains.engagement.contracts import get_daily_quota, _load_study_flags
 from app.services import semester as _semester
 
 from . import router
@@ -175,7 +175,7 @@ def submit_review(req: ReviewRequest, db: Session = Depends(get_db)):
     # AI 复审：对前端判错的篇目做二次确认
     ai_approved_tids: set = set()
     if req.wrong_items:
-        from app.domains.assessment.services.judge import judge_wrong_items
+        from app.domains.assessment.contracts import judge_wrong_items
         judge_items = []
         for wi in req.wrong_items:
             judge_items.append({
@@ -252,7 +252,7 @@ def dictate_texts(req: DictateRequest, db: Session = Depends(get_db)):
 
     # AI 复审：对前端判错的篇目做二次确认（古诗文主要处理繁体/通假字/语序差异）
     if req.wrong_items:
-        from app.domains.assessment.services.judge import judge_wrong_items
+        from app.domains.assessment.contracts import judge_wrong_items
         judge_items = []
         for wi in req.wrong_items:
             judge_items.append({

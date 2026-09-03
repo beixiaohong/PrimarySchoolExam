@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.domains.identity.routers.auth import require_self
+from app.domains.identity.contracts import require_self
 from app.models.user import User
 from app.models.learning_goal import LearningGoal, LearningCheckin, LearningWeeklyReview
 

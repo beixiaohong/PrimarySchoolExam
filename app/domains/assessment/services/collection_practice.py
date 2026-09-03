@@ -131,7 +131,7 @@ def ai_generate_questions(subject: str, grade: int = 7, count: int = 5,
     遵守连接池铁律：AI 调用在 db 会话外执行，不占连接。
     返回 [{question, options, answer, explanation}]，失败返回 []。
     """
-    from app.domains.platform.services.ai import chat_with
+    from app.domains.platform.contracts import chat_with
     stage = "初中" if str(subject) in ("物理", "化学", "生物", "道德与法治", "历史", "地理") else "小学"
     try:
         if int(grade) >= 7:

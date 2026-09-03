@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.appeal import AnswerAppeal
 from app.models.exam import AttemptAnswer, ExamAttempt, WrongRecord
-from app.domains.platform.services.ai import rate_limit
+from app.domains.platform.contracts import rate_limit
 
 router = APIRouter()
 
@@ -224,7 +224,7 @@ def _approve_exam(db: Session, a: AnswerAppeal) -> bool:
             answer = base.filter(AttemptAnswer.user_answer == a.user_answer).first()
             if not answer:
                 # 放宽：规范化后比对（容忍全角/半角、空格、标点差异）
-                from app.domains.assessment.services.answer_check import normalize_answer
+                from app.domains.assessment.contracts import normalize_answer
                 ua_norm = normalize_answer(a.user_answer or "")
                 for cand in base.limit(50).all():
                     if normalize_answer(cand.user_answer or "") == ua_norm:
@@ -274,7 +274,7 @@ def _approve_retry(db: Session, a: AnswerAppeal):
     """错题重练改判：该错题记录正确连击 +1（视为答对一次），累计 3 次自动掌握。"""
     if not a.record_id:
         raise HTTPException(400, "申诉缺少错题记录信息，无法改判")
-    from app.domains.engine.routers.study import MASTER_STREAK
+    from app.domains.engine.contracts import MASTER_STREAK
     if a.record_kind == "study":
         from app.models.study_error import StudyError
         rec = db.query(StudyError).filter(

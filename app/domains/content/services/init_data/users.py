@@ -21,7 +21,7 @@ def _seed_admin(db):
     """
     import logging
     from app.models.admin import Admin
-    from app.domains.family.routers.parent import _hash_pwd
+    from app.domains.family.contracts import _hash_pwd
 
     if db.query(Admin).count() > 0:
         return

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.word import Word, WordBook
 from app.models.vocab import VocabProgress, VocabDailyLog
-from app.domains.engagement.routers.tasks import get_daily_quota, _load_study_flags
+from app.domains.engagement.contracts import get_daily_quota, _load_study_flags
 
 from . import router
 from .common import (

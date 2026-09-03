@@ -26,7 +26,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models import ledger as model_ledger
 from app.schemas import ledger as ledger_schemas
-from app.domains.identity.routers.auth import require_user
+from app.domains.identity.contracts import require_user
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.task_confirm import TaskConfirm
-from app.domains.identity.services.parent_guard import ensure_parent_pwd
+from app.domains.identity.contracts import ensure_parent_pwd
 
 router = APIRouter()
 

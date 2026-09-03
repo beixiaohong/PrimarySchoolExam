@@ -73,8 +73,8 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
     from app.models.exam import ExamAttempt
     from app.models.daily_task import DailyTask
     from app.models.badge import BadgeEarned
-    from app.domains.engagement.routers.pet import _balance
-    from app.domains.engagement.routers.tree import compute_tree_score
+    from app.domains.engagement.contracts import _balance
+    from app.domains.engagement.contracts import compute_tree_score
 
     lines = []
     # 今日任务
@@ -210,7 +210,7 @@ def assistant_chat(req: ChatReq):
         _log_usage(db, req.user_id, "assistant", True, resp)
         # 钻石扣费
         try:
-            from app.domains.commerce.services import diamond as diamond_svc
+            from app.domains.commerce.contracts import diamond as diamond_svc
             diamond_svc.check_and_deduct(db, req.user_id,
                                           resp.get("prompt_tokens", 0),
                                           resp.get("completion_tokens", 0),

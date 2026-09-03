@@ -12,7 +12,7 @@ from .makeup_service import use_makeup_card as _use_makeup_card
 from .makeup_service import confirm_makeup as _confirm_makeup
 from .makeup_service import list_pending_makeup as _list_pending_makeup
 from app.database import get_db
-from app.domains.identity.services.parent_guard import ensure_parent_pwd
+from app.domains.identity.contracts import ensure_parent_pwd
 
 
 class MakeupConfirmRequest(BaseModel):

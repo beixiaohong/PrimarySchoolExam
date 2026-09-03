@@ -347,7 +347,7 @@ def _chinese_practice(db: Session, grade: int, unit: str, count: int) -> dict:
 
 
 def _math_practice(db: Session, grade: int, unit: str, count: int) -> dict:
-    from app.domains.assessment.services.math_generator import generate_math_problems
+    from app.domains.assessment.contracts import generate_math_problems
     _, chapter = unit.split("::", 1)
     codes = [p.code for p in db.query(ProblemType).filter(
         ProblemType.textbook_chapter == chapter).all()]
@@ -483,7 +483,7 @@ def _judge_one(subject: str, user_answer: str, correct_answer: str, options: lis
                 return options[idx].strip().lower() == ca.strip().lower()
         return ua.lower() == ca.lower()
     # 填空容错（算式/单位/全角符号/顺序差异）
-    from app.domains.assessment.services.answer_check import fill_answer_correct
+    from app.domains.assessment.contracts import fill_answer_correct
     return fill_answer_correct(ua, ca)
 
 

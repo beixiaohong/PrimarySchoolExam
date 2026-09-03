@@ -89,7 +89,7 @@ def ai_judge_status(user_id: str) -> str:
     供复查接口在真正调用前判断。不可用时应明确提示用户「AI 不可用/限频，无法复查」，
     而不是静默维持原判、还显示「AI 认为你错」（那是假复查）。只读探测，不计次。
     """
-    from app.domains.platform.services import ai as ai_svc
+    from app.domains.platform.contracts import ai as ai_svc
     if not ai_svc.ai_any_enabled():
         return "unavailable"
     if not ai_svc.rate_limit_peek(f"judge:{user_id}", JUDGE_RATE_LIMIT, 3600):
@@ -122,7 +122,7 @@ def judge_wrong_items(user_id: str, items: list, *, force: bool = False) -> dict
     if mock == "none":
         return {}
 
-    from app.domains.platform.services import ai as ai_svc
+    from app.domains.platform.contracts import ai as ai_svc
     if not ai_svc.ai_any_enabled():
         logger.info("AI 判题复核跳过（未配置任何 Key，含 deepseek，user=%s）", user_id)
         return {}

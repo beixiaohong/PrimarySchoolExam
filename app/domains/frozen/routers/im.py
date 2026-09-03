@@ -32,7 +32,7 @@ from app.domains.frozen.services.im_crud import (
     recall_message as recall_message_crud,
     delete_message as delete_message_crud,
 )
-from app.domains.identity.routers.auth import require_user
+from app.domains.identity.contracts import require_user
 
 import json
 import os

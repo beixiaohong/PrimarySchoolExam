@@ -22,9 +22,9 @@ from app.config import ALLOW_NICKNAME_LOGIN, USER_TOKEN_TTL_HOURS
 from app.database import get_db
 from app.models.auth import AuthCode
 from app.models.user import User
-from app.domains.platform.services.mailer import mail_configured, send_email
-from app.domains.platform.services.sms import send_sms, sms_configured
-from app.domains.family.routers.parent import _hash_pwd, _validate_pwd, _verify_pwd
+from app.domains.platform.contracts import mail_configured, send_email
+from app.domains.platform.contracts import send_sms, sms_configured
+from app.domains.family.contracts import _hash_pwd, _validate_pwd, _verify_pwd
 from app.domains.identity.routers.user import _auto_upgrade_grade, _streak
 
 logger = logging.getLogger(__name__)

@@ -51,7 +51,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
     # ── 防刷：exam 类题以后端重判为准（不信任前端 correct，避免看答案抄写刷掌握） ──
     exam_qids = [it.qid for it in req.results if it.kind == "exam" and it.qid]
     if exam_qids:
-        from app.domains.assessment.routers.exam import _check_answer as _exam_check
+        from app.domains.assessment.contracts import _check_answer as _exam_check
         q_map = {q.id: q for q in db.query(Question).filter(Question.id.in_(exam_qids)).all()}
         for it in req.results:
             if it.kind == "exam" and it.qid in q_map:
@@ -67,7 +67,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
         if not it.correct and (it.question or it.user_answer) and not it.batch
     ]
     if ai_items:
-        from app.domains.assessment.services.judge import judge_wrong_items
+        from app.domains.assessment.contracts import judge_wrong_items
         approved = judge_wrong_items(req.user_id, ai_items)
         for i, it in enumerate(req.results):
             if i in approved and approved[i].get("correct"):
@@ -210,7 +210,7 @@ def practice_submit(req: PracticeSubmitRequest, db: Session = Depends(get_db)):
 
     # 重做掌握 → 金币 +3（P2 金币宠物）
     try:
-        from app.domains.engagement.routers.pet import _grant_coins
+        from app.domains.engagement.contracts import _grant_coins
         if any(u["status"] == "mastered" for u in updated):
             _grant_coins(db, req.user_id, 3 * sum(1 for u in updated if u["status"] == "mastered"), "错题掌握")
     except Exception:
