@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal, get_db
 from app.models.essay import EssayGrade
 from app.domains.platform.services import ai as ai_svc
-from app.services.diamond import check_and_deduct
+from app.domains.commerce.services.diamond import check_and_deduct
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

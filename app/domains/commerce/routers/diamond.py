@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
+from app.database import get_db
+from app.config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
 from ..services import diamond as diamond_svc
-from .admin import _require_admin
+from app.routers.admin import _require_admin
 from app.domains.identity.routers.auth import require_self
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def adjust_diamonds(req: AdjustRequest, db: Session = Depends(get_db)):
     if req.amount == 0:
         raise HTTPException(400, "变动数量不能为 0")
     # 校验用户存在
-    from ..models.user import User
+    from app.models.user import User
     if not db.query(User).filter(User.user_id == req.user_id).first():
         raise HTTPException(404, f"用户 {req.user_id} 不存在")
     if req.amount > 0:
@@ -76,7 +76,7 @@ def get_ledger(
     db: Session = Depends(get_db),
 ):
     """返回用户最近的钻石收支记录"""
-    from ..models.diamond import DiamondLedger
+    from app.models.diamond import DiamondLedger
     records = (
         db.query(DiamondLedger)
         .filter(DiamondLedger.user_id == user_id)

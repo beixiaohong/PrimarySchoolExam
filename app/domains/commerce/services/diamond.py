@@ -7,7 +7,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from ..models.diamond import DiamondAccount, DiamondLedger
+from app.models.diamond import DiamondAccount, DiamondLedger
 
 logger = logging.getLogger("diamond")
 
@@ -96,7 +96,7 @@ def check_and_deduct(db: Session, user_id: str, prompt_tokens: int, completion_t
 
 def grant_all_existing(db: Session, amount: float = REGISTRATION_GIFT) -> int:
     """为所有现有用户赠送钻石（幂等：已有账户的不重复赠送）"""
-    from ..models.user import User
+    from app.models.user import User
     users = db.query(User).all()
     count = 0
     for u in users:

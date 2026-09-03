@@ -70,7 +70,7 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
 def _deduct_diamonds(db: Session, user_id: str, result: dict, feature: str) -> dict:
     """根据 AI 返回的 token 用量扣除钻石，返回扣费信息（失败不阻断主流程）"""
     try:
-        from app.services import diamond as diamond_svc
+        from app.domains.commerce.services import diamond as diamond_svc
         info = diamond_svc.check_and_deduct(
             db, user_id,
             result.get("prompt_tokens", 0), result.get("completion_tokens", 0),
@@ -83,7 +83,7 @@ def _deduct_diamonds(db: Session, user_id: str, result: dict, feature: str) -> d
 
 
 def _balance(db: Session, user_id: str) -> float:
-    from app.services import diamond as diamond_svc
+    from app.domains.commerce.services import diamond as diamond_svc
     try:
         return diamond_svc.get_balance(db, user_id)
     except Exception:

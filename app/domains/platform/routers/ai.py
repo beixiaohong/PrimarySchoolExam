@@ -105,7 +105,7 @@ def _log_usage(db: Session, user_id: str, feature: str, ok: bool,
 def _deduct_diamonds(db: Session, user_id: str, result: dict, feature: str) -> dict:
     """根据 AI 返回的 token 用量扣除钻石，返回扣费信息（失败不阻断主流程）"""
     try:
-        from app.services import diamond as diamond_svc
+        from app.domains.commerce.services import diamond as diamond_svc
         prompt_tokens = result.get("prompt_tokens", 0)
         completion_tokens = result.get("completion_tokens", 0)
         info = diamond_svc.check_and_deduct(db, user_id, prompt_tokens, completion_tokens,

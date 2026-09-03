@@ -16,7 +16,8 @@ from fastapi.responses import FileResponse
 from .database import init_db
 from .config import ENABLE_DOCS, ENABLE_IM, ENABLE_LEDGER
 from .migrations.runner import run_migrations
-from .routers import vocab, study, diamond, admin, learning_goals
+from .routers import vocab, study, admin, learning_goals
+from .domains.commerce.routers import diamond
 from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge

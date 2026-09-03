@@ -210,7 +210,7 @@ def assistant_chat(req: ChatReq):
         _log_usage(db, req.user_id, "assistant", True, resp)
         # 钻石扣费
         try:
-            from app.services import diamond as diamond_svc
+            from app.domains.commerce.services import diamond as diamond_svc
             diamond_svc.check_and_deduct(db, req.user_id,
                                           resp.get("prompt_tokens", 0),
                                           resp.get("completion_tokens", 0),

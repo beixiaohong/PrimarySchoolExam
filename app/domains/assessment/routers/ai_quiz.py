@@ -101,7 +101,7 @@ def generate_quiz(req: QuizGenReq):
         if questions:
             # 钻石扣费：短会话
             try:
-                from app.services import diamond as diamond_svc
+                from app.domains.commerce.services import diamond as diamond_svc
                 db = SessionLocal()
                 try:
                     diamond_svc.check_and_deduct(db, req.user_id,

@@ -75,7 +75,7 @@ def test_judge_records_system_issue(client, monkeypatch):
 # 2) chat_paid_first：deepseek 成功 → 扣钻石；钻石不足 → 降级免费链
 # ─────────────────────────────────────────────────────────────
 def test_chat_paid_first_uses_deepseek_and_deducts(client, monkeypatch):
-    from app.services.diamond import grant
+    from app.domains.commerce.services.diamond import grant
 
     uid = "付费链生"
     db = SessionLocal()
@@ -125,7 +125,7 @@ def test_chat_paid_first_falls_back_when_no_balance(client, monkeypatch):
     db = SessionLocal()
     try:
         # 不充值：注册赠送 10 钻石也存在，先扣光
-        from app.services.diamond import deduct
+        from app.domains.commerce.services.diamond import deduct
         db.close()
 
         def fake_call_provider(name, cfg, system, user, max_tokens, history=None):
@@ -147,7 +147,7 @@ def test_chat_paid_first_falls_back_when_no_balance(client, monkeypatch):
         # 为模拟「余额不足」，先创建账户并把余额扣到 0。
         db2 = SessionLocal()
         try:
-            from app.services.diamond import get_balance
+            from app.domains.commerce.services.diamond import get_balance
             get_balance(db2, uid)
             acc = db2.query(DiamondAccount).filter_by(user_id=uid).first()
             deduct(db2, uid, acc.balance, "clear")
