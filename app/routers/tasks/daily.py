@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from . import router
 from .service import _build_payload, _get_makeup_balance
 from app.database import get_db
-from app.services.parent_guard import ensure_parent_pwd
+from app.domains.identity.services.parent_guard import ensure_parent_pwd
 from app.models.makeup_card import MakeupCard, MakeupUsageLog
 from app.models.daily_task import DailyTask
 

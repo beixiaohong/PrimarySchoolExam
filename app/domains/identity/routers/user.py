@@ -10,11 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..config import ALLOW_NICKNAME_LOGIN
-from ..database import get_db
-from ..models.user import User
-from ..models.vocab import VocabDailyLog
-from ..models.classical import ClassicalDailyLog
+from app.config import ALLOW_NICKNAME_LOGIN
+from app.database import get_db
+from app.models.user import User
+from app.models.vocab import VocabDailyLog
+from app.models.classical import ClassicalDailyLog
 
 logger = logging.getLogger(__name__)
 
@@ -235,10 +235,10 @@ def get_titles(user_id: str, db: Session = Depends(get_db)):
            badges[], stats{...}}。
     副作用：无（只读）。无需家长密码。
     """
-    from ..models.exam import ExamAttempt, WrongRecord
-    from ..models.study_error import StudyError
-    from ..models.daily_task import DailyTask
-    from ..models.sprint4 import ChallengeRecord
+    from app.models.exam import ExamAttempt, WrongRecord
+    from app.models.study_error import StudyError
+    from app.models.daily_task import DailyTask
+    from app.models.sprint4 import ChallengeRecord
 
     total_exam = db.query(ExamAttempt).filter(ExamAttempt.user_id == user_id).all()
     study_errs = db.query(StudyError).filter(StudyError.user_id == user_id).all()

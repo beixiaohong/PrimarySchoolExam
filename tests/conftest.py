@@ -211,7 +211,7 @@ def no_ai_judge(monkeypatch):
 @pytest.fixture()
 def fake_mail(monkeypatch):
     """打桩邮件通道：捕获验证码明文（库内只存哈希，无法反查）"""
-    import app.routers.auth as auth_mod
+    import app.domains.identity.routers.auth as auth_mod
     sent = {}
 
     def _send(target, code, subject=""):

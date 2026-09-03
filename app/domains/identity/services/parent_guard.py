@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 
 def _get_parent_password(db: Session, user_id: str):
-    from ..models.parent import ParentPassword
+    from app.models.parent import ParentPassword
     return db.query(ParentPassword).filter_by(user_id=user_id).first()
 
 
@@ -20,7 +20,7 @@ def ensure_parent_pwd(db: Session, user_id: str, request: Request) -> None:
     - 未设置家长密码：要求先设置（家长面板首次进入即引导）
     - 未携带密码头或密码错误：拒绝访问
     """
-    from ..routers.parent import _verify_pwd
+    from app.routers.parent import _verify_pwd
 
     p = _get_parent_password(db, user_id)
     if not p:

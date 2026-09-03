@@ -15,7 +15,7 @@ from .constants import (
 )
 from .service import _load_settings, _load_study_flags
 from app.database import get_db
-from app.services.parent_guard import ensure_parent_pwd
+from app.domains.identity.services.parent_guard import ensure_parent_pwd
 from app.models.daily_task import DailyTask
 
 

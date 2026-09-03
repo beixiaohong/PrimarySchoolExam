@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..services.ai import rate_limit
-from ..services.parent_guard import ensure_parent_pwd
+from app.domains.identity.services.parent_guard import ensure_parent_pwd
 
 router = APIRouter()
 
@@ -284,7 +284,7 @@ def child_stats(user_id: str, db: Session = Depends(get_db)):
     """
     from ..models.exam import ExamAttempt, WrongRecord
     from ..models.daily_task import DailyTask
-    from .user import _streak
+    from app.domains.identity.routers.user import _streak
 
     monday = date.today() - timedelta(days=date.today().weekday())
     week_start = datetime.combine(monday, datetime.min.time())

@@ -10,7 +10,7 @@ from ..database import get_db
 from ..config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
 from ..services import diamond as diamond_svc
 from .admin import _require_admin
-from .auth import require_self
+from app.domains.identity.routers.auth import require_self
 
 logger = logging.getLogger(__name__)
 

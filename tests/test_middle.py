@@ -375,7 +375,7 @@ def test_xsc_bridge_mixes_grade7(client, monkeypatch):
 
 def test_promoted_flag_on_upgrade(client, monkeypatch):
     """9月1日自动升级后登录返回 promoted/new_grade"""
-    import app.routers.user as user_mod
+    import app.domains.identity.routers.user as user_mod
 
     uid = "升年级引导生"
     r = client.post("/api/user/login", json={"user_id": uid, "grade": 6})

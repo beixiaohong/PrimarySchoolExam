@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.user import User
 from ..models.announcement import Announcement
-from .auth import require_user
+from app.domains.identity.routers.auth import require_user
 
 logger = logging.getLogger(__name__)
 
