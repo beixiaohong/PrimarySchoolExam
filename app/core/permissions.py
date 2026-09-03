@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 PERMISSIONS = [
     {"code": "content:manage", "name": "内容管理", "group": "内容", "is_high_risk": False},
     {"code": "content:review", "name": "内容审核", "group": "内容", "is_high_risk": False},
+    {"code": "content:view", "name": "内容查看", "group": "内容", "is_high_risk": False},
+    {"code": "content:annotate", "name": "知识点标注", "group": "内容", "is_high_risk": False},
     {"code": "knowledge:manage", "name": "知识点管理", "group": "内容", "is_high_risk": False},
     {"code": "user:manage", "name": "用户管理", "group": "用户", "is_high_risk": False},
     {"code": "user:ban", "name": "用户封禁", "group": "用户", "is_high_risk": True},
@@ -50,7 +52,7 @@ ROLE_PERMISSIONS = {
     "super": [p["code"] for p in PERMISSIONS],
     # 普通管理员：运营子集（内容/用户/权益发放/审计查看/配置/看板），无财务/订单/权限管理
     "admin": [
-        "content:manage", "content:review", "knowledge:manage",
+        "content:manage", "content:review", "content:view", "content:annotate", "knowledge:manage",
         "user:manage", "benefit:grant_manual", "benefit:vip_manage", "benefit:grant",
         "audit:view", "config:manage", "dashboard:view", "analytics:view",
     ],
