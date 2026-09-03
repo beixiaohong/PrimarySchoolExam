@@ -28,3 +28,6 @@ data/
 tools/_*.py
 endpoint_baseline.txt
 tools/endpoint_snapshot.py
+
+# pre-commit 本地 venv 缓存（沙箱指向项目内可写目录，勿入库）
+.pc_cache/
