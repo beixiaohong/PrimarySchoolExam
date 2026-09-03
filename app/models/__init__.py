@@ -97,5 +97,6 @@ __all__ = [
     "OnlineCourse",
     "KnowledgePoint",
     "MasteryRecord", "MasterySnapshot",
+    "Product", "ProductBenefit", "Order", "PayTransaction",
     "LearningGoal", "LearningCheckin", "LearningWeeklyReview",
 ]
