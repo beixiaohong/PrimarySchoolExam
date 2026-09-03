@@ -33,8 +33,8 @@ from dotenv import load_dotenv
 load_dotenv(ROOT / ".env", override=False)
 
 import pymysql
-from app.services.question_parser import parse_paper
-from app.services.answer_generator import generate_answer_for, ai_enabled
+from app.domains.content.services.question_parser import parse_paper
+from app.domains.content.services.answer_generator import generate_answer_for, ai_enabled
 
 # ---------- 解析/解答 工具 ----------
 EXP_SPLIT_RE = re.compile(r'(解析|详解|【解析】|【详解】|解：|分析|点拨|思路)\s*[:：]?')

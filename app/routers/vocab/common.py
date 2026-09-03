@@ -44,7 +44,7 @@ def _get_grade_books(db: Session, grade: int, user_id: Optional[str] = None) -> 
         WordBook.semester.in_(semesters),
     ).all()
     if user_id:
-        from app.routers.textbook import resolve_textbook_id
+        from app.domains.content.routers.textbook import resolve_textbook_id
         tid = resolve_textbook_id(db, user_id, "英语", grade)
         if tid:
             version_books = db.query(WordBook).filter(

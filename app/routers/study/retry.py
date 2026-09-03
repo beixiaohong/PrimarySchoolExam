@@ -107,7 +107,7 @@ def retry_wrong(req: RetryRequest, db: Session = Depends(get_db)):
 
     if e.source_type == "classical":
         from app.models.classical import ClassicalText
-        from app.routers.classical import _generate_quiz_from_text
+        from app.domains.content.routers.classical import _generate_quiz_from_text
         text = db.query(ClassicalText).filter(ClassicalText.id == e.source_id).first()
         if not text:
             raise HTTPException(404, "原篇目不存在")

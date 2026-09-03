@@ -8,9 +8,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models.phrase import Phrase, Sentence
-from ..schemas.phrase import PhraseCreate, PhraseOut, SentenceCreate, SentenceOut
+from app.database import get_db
+from app.models.phrase import Phrase, Sentence
+from app.schemas.phrase import PhraseCreate, PhraseOut, SentenceCreate, SentenceOut
 
 router = APIRouter()
 

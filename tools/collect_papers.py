@@ -24,8 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.services.paper_crawler import run_collection, print_stats  # noqa: E402
-from app.services.answer_generator import fill_missing_answers, count_missing_answers  # noqa: E402
+from app.domains.content.services.paper_crawler import run_collection, print_stats  # noqa: E402
+from app.domains.content.services.answer_generator import fill_missing_answers, count_missing_answers  # noqa: E402
 from app.database import init_collection_db  # noqa: E402
 
 

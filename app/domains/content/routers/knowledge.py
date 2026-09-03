@@ -22,9 +22,9 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..models.knowledge import KnowledgePoint
-from ..models.pet import CoinLedger
+from app.database import get_db
+from app.models.knowledge import KnowledgePoint
+from app.models.pet import CoinLedger
 
 router = APIRouter()
 

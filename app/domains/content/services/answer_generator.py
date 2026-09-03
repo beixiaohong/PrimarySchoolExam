@@ -10,7 +10,7 @@ import json
 import logging
 import time
 
-from .ai import chat, ai_enabled, ai_any_enabled
+from app.services.ai import chat, ai_enabled, ai_any_enabled
 
 logger = logging.getLogger("answer_generator")
 
@@ -40,7 +40,7 @@ def _build_user(q) -> str:
 def _deepseek_configured() -> bool:
     """DeepSeek Key 是否已配置（采集批量补答案的主用提供商）"""
     try:
-        from . import ai as _ai
+        from app.services import ai as _ai
         return bool(_ai._config_provider("deepseek").get("api_key"))
     except Exception:
         return False
@@ -59,7 +59,7 @@ def generate_answer_for(q, max_tokens: int = 400) -> str | None:
         return None
     if _deepseek_configured():
         try:
-            from . import ai as _ai
+            from app.services import ai as _ai
             ds_cfg = _ai._config_provider("deepseek")
             res = _ai._call_provider("deepseek", ds_cfg, _SYSTEM, user, max_tokens)
         except Exception as e:
@@ -97,8 +97,8 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
     避免「持 DB 连接等外部阻塞调用」导致连接池耗尽（曾致全站卡死）。
     """
     import types as _types
-    from ..database import collection_session
-    from ..models.paper import PaperQuestion
+    from app.database import collection_session
+    from app.models.paper import PaperQuestion
 
     if not ai_any_enabled():
         logger.warning("AI 不可用，跳过答案补全")
@@ -176,8 +176,8 @@ def fill_missing_answers(limit: int | None = None, grade: str | None = None,
 
 def count_missing_answers(grade: str | None = None, subject: str | None = None) -> int:
     """统计仍有缺失答案的题目数（供采集后核对 / 刷题前确保全覆盖）。"""
-    from ..database import collection_session
-    from ..models.paper import PaperQuestion
+    from app.database import collection_session
+    from app.models.paper import PaperQuestion
     with collection_session() as s:
         q = s.query(PaperQuestion).filter(
             (PaperQuestion.correct_answer == None) | (PaperQuestion.correct_answer == "")

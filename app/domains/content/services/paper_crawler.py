@@ -29,7 +29,7 @@ from sqlalchemy import select, func
 from app.config import BASE_DIR
 from app.database import collection_session, init_collection_db
 from app.models.paper import Paper, PaperQuestion
-from app.services.question_parser import parse_paper
+from app.domains.content.services.question_parser import parse_paper
 
 # ========== 跨日去重注册表（持久化已抓 URL，确保「之前没抓过的」跨天生效） ==========
 # 每日 SQLite 数据文件是「当天」独立的（见 tools/collect_daily.py），因此不能用
@@ -711,7 +711,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
         # 开局先补一次当日库内「已入库但尚未有答案」的试卷（含本日早些时候已采集、
         # 或因中断续跑遗留的卷子），保证随采随补、可断点续传。
         try:
-            from app.services.answer_generator import fill_missing_answers
+            from app.domains.content.services.answer_generator import fill_missing_answers
             print("🤖 开局先补当日库内已有试卷的缺失答案...")
             fill_missing_answers()
         except BaseException as e:
@@ -804,7 +804,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
                             # 时若中途中断导致整批卷子无答案；AI 调用期间不持 DB 连接）。
                             if fill_answers_after:
                                 try:
-                                    from app.services.answer_generator import fill_missing_answers
+                                    from app.domains.content.services.answer_generator import fill_missing_answers
                                     fill_missing_answers(paper_ids=[paper_id])
                                 except BaseException as e:
                                     print(f"  ⚠️ 该卷答案补全异常（不影响入库）: {type(e).__name__}: {e}")
@@ -852,7 +852,7 @@ def run_collection(once=False, daily_limit=DAILY_MAX_PAPERS,
     # 采集后优先为新卷补全 AI 答案（受每日上限约束，避免无限制消耗）
     # 单独 try 包裹：AI 补全异常绝不影响已采集试卷。
     if fill_answers_after and new_paper_ids:
-        from app.services.answer_generator import fill_missing_answers
+        from app.domains.content.services.answer_generator import fill_missing_answers
         # 批量补答案属离线定时任务（非在线请求路径），放宽全局节流以提升吞吐
         # （在线接口仍保持 AI_THROTTLE_SEC 防限流；此处仅作用于本批处理进程）。
         try:

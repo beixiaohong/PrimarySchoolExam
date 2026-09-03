@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import get_db
-from ..services.reading_service import get_passages, submit_reading_quiz
+from app.database import get_db
+from app.services.reading_service import get_passages, submit_reading_quiz
 
 router = APIRouter()
 

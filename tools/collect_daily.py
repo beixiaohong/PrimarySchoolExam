@@ -33,7 +33,7 @@ TODAY = datetime.now().strftime("%Y-%m-%d")
 DAILY_DB = ROOT / "data" / f"collected_{TODAY}.sqlite"
 os.environ["STAGING_DB_URL"] = f"sqlite:///{DAILY_DB}"
 
-from app.services.paper_crawler import run_collection, print_stats, seed_registry_from_staging  # noqa: E402
+from app.domains.content.services.paper_crawler import run_collection, print_stats, seed_registry_from_staging  # noqa: E402
 
 
 def main():

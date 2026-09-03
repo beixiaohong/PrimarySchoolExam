@@ -11,9 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from ..database import get_db
-from ..models.word import Word, WordBook
-from ..schemas.word import (
+from app.database import get_db
+from app.models.word import Word, WordBook
+from app.schemas.word import (
     WordCreate, WordUpdate, WordOut, WordBookOut, WordImportResult,
 )
 

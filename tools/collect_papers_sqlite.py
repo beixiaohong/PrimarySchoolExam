@@ -17,8 +17,8 @@
           已有来源答案不覆盖；限流时连续失败即优雅放弃，绝不死循环刷接口
 - 入库：试卷转 HTML 富文本（base64 内联图片）存 papers / paper_questions
 
-复用既有能力：app.services.paper_crawler 的爬取/下载/转换/年份过滤/分类重排，
-app.services.question_parser 的题文解析，app.services.answer_generator 的单题 AI 补全。
+复用既有能力：app.domains.content.services.paper_crawler 的爬取/下载/转换/年份过滤/分类重排，
+app.domains.content.services.question_parser 的题文解析，app.domains.content.services.answer_generator 的单题 AI 补全。
 存储层为独立 SQLite，不触碰 MySQL 共享层。
 """
 import argparse
@@ -38,11 +38,11 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.database import Base  # noqa: E402
 from app.models.paper import Paper, PaperQuestion  # noqa: E402
-from app.services.question_parser import parse_paper  # noqa: E402
-from app.services.answer_generator import generate_answer_for, ai_enabled  # noqa: E402
+from app.domains.content.services.question_parser import parse_paper  # noqa: E402
+from app.domains.content.services.answer_generator import generate_answer_for, ai_enabled  # noqa: E402
 
 # ── 复用采集原语（爬取/下载/转换/年份过滤/分类重排）──
-from app.services.paper_crawler import (  # noqa: E402
+from app.domains.content.services.paper_crawler import (  # noqa: E402
     get_paper_list, get_download_url, download_file, extract_and_clean,
     convert_document_to_html, _select_exam_doc, _safe_remove, ensure_dir,
     KEEP_EXTENSIONS, DOWNLOAD_DIR, EXTRACT_DIR, CLEAN_DIR, TEMP_HTML_DIR,
