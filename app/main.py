@@ -18,7 +18,7 @@ from .config import ENABLE_DOCS, ENABLE_IM, ENABLE_LEDGER
 from .migrations.runner import run_migrations
 from .routers import admin
 from .domains.engine.routers import vocab, study, learning_goals, mastery
-from .domains.commerce.routers import diamond
+from .domains.commerce.routers import diamond, store
 from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
@@ -117,6 +117,7 @@ app.include_router(focus.router, prefix="/api/focus", tags=["番茄专注钟"], 
 app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"], dependencies=[*user_auth_deps, Depends(check_quiet_hours)])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"], dependencies=user_auth_deps)
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
+app.include_router(store.router, prefix="/api", tags=["用户端交易"])
 app.include_router(tasks.confirm_router, prefix="/api/task-confirm", tags=["完成确认"], dependencies=user_auth_deps)
 # 账本(ledger)与即时通讯(im)（D9 冻结域）：路由内部已用 require_user 鉴权，不挂全局 user_auth_deps；
 # 配置开关可整体关闭（默认开启），关闭后对应端点不再挂载
