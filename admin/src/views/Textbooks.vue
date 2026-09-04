@@ -1,7 +1,7 @@
 <template>
   <div>
     <h2>教材版本管理</h2>
-    <p class="tip">每年级每科目单独配置教材版本；用户端未选择时默认取排序最靠前（id 最小）的启用版本。词库（内容管理）可按版本绑定。</p>
+    <p class="tip">每年级每科目单独配置教材版本；用户端未选择时默认取排序最靠前（id 最小）的启用版本。地区留空为「全国通用」，填省份后仅该省用户默认命中（如上海→沪教版）。词库（内容管理）可按版本绑定。</p>
 
     <div class="toolbar">
       <el-select v-model="filter.subject" placeholder="学科" style="width: 130px" clearable @change="load">
@@ -10,6 +10,9 @@
         <el-option label="英语" value="英语" />
       </el-select>
       <el-input-number v-model="filter.grade" :min="0" :max="9" controls-position="right" style="width: 110px" placeholder="年级" @change="load" />
+      <el-select v-model="filter.region" placeholder="地区" style="width: 130px" clearable @change="load">
+        <el-option v-for="r in regionOptions" :key="r.code" :label="r.name" :value="r.code" />
+      </el-select>
       <el-button type="primary" @click="openEdit()">新增版本</el-button>
     </div>
 
@@ -18,6 +21,12 @@
       <el-table-column prop="subject" label="学科" width="80" />
       <el-table-column prop="grade" label="年级" width="80" />
       <el-table-column prop="name" label="版本名" min-width="140" />
+      <el-table-column label="地区" width="110">
+        <template #default="{ row }">
+          <el-tag v-if="row.region" type="warning" size="small">{{ regionName(row.region) }}</el-tag>
+          <el-tag v-else type="info" size="small">全国通用</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="sort_order" label="排序" width="80" />
       <el-table-column label="启用" width="80">
         <template #default="{ row }">
@@ -49,6 +58,12 @@
         <el-form-item label="版本名">
           <el-input v-model="form.name" placeholder="如：人教版 / 北师大版 / 外研版" />
         </el-form-item>
+        <el-form-item label="地区">
+          <el-select v-model="form.region" style="width: 100%">
+            <el-option v-for="r in regionOptions" :key="r.code" :label="r.name" :value="r.code" />
+          </el-select>
+          <span class="hint">留空=全国通用；填省份后仅该省默认命中</span>
+        </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="form.sort_order" :min="0" :max="9999" />
           <span class="hint">数字越小越靠前（默认选中）</span>
@@ -69,29 +84,44 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 
 const rows = ref([])
-const filter = ref({ subject: '', grade: 0 })
+const filter = ref({ subject: '', grade: 0, region: '' })
 const editOpen = ref(false)
 const saving = ref(false)
 const cur = ref({})
-const form = ref({ subject: '英语', grade: 6, name: '', sort_order: 0, enabled: true, remark: '' })
+const form = ref({ subject: '英语', grade: 6, name: '', sort_order: 0, enabled: true, region: '', remark: '' })
+const regions = ref([])
+
+// 地区下拉：全国通用（''）+ 省码字典
+const regionOptions = computed(() => [{ code: '', name: '全国通用' }, ...regions.value])
+
+function regionName(code) {
+  const hit = regions.value.find(r => r.code === code)
+  return hit ? hit.name : code
+}
 
 async function load() {
   const params = {}
   if (filter.value.subject) params.subject = filter.value.subject
   if (filter.value.grade > 0) params.grade = filter.value.grade
+  if (filter.value.region) params.region = filter.value.region
   const d = await api.get('/api/admin/textbooks', { params })
   rows.value = (d && d.items) || []
+}
+
+async function loadRegions() {
+  const d = await api.get('/api/admin/textbooks/regions')
+  regions.value = (d && d.regions) || []
 }
 
 function openEdit(row) {
   cur.value = row || {}
   form.value = row
-    ? { subject: row.subject, grade: row.grade, name: row.name, sort_order: row.sort_order, enabled: !!row.enabled, remark: row.remark || '' }
-    : { subject: filter.value.subject || '英语', grade: filter.value.grade || 6, name: '', sort_order: 0, enabled: true, remark: '' }
+    ? { subject: row.subject, grade: row.grade, name: row.name, sort_order: row.sort_order, enabled: !!row.enabled, region: row.region || '', remark: row.remark || '' }
+    : { subject: filter.value.subject || '英语', grade: filter.value.grade || 6, name: '', sort_order: 0, enabled: true, region: filter.value.region || '', remark: '' }
   editOpen.value = true
 }
 
@@ -127,7 +157,7 @@ async function remove(row) {
   }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadRegions() })
 </script>
 
 <style scoped>

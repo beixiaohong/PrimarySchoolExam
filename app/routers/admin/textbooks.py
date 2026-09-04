@@ -30,16 +30,18 @@ class TextbookReq(BaseModel):
     remark: str = ""
 
 
-@router.get("/textbooks", summary="教材版本列表（按学科+年级筛选）")
-def list_textbooks(subject: str = "", grade: int = 0,
+@router.get("/textbooks", summary="教材版本列表（按学科+年级+地区筛选）")
+def list_textbooks(subject: str = "", grade: int = 0, region: str = "",
                    db: Session = Depends(get_db),
                    admin: Admin = Depends(_require_admin)):
-    """教材版本列表。参数：subject（可选，如 英语）、grade（可选，>0 时过滤）。"""
+    """教材版本列表。参数：subject（可选）、grade（可选，>0 过滤）、region（可选，省份代码）。"""
     q = db.query(TextbookVersion)
     if subject:
         q = q.filter(TextbookVersion.subject == subject)
     if grade > 0:
         q = q.filter(TextbookVersion.grade == grade)
+    if region:
+        q = q.filter(TextbookVersion.region == region)
     rows = q.order_by(TextbookVersion.subject, TextbookVersion.grade,
                       TextbookVersion.sort_order, TextbookVersion.id).all()
     return {"total": len(rows), "items": [{
