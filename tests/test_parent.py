@@ -86,6 +86,30 @@ def test_message_flow(client):
     assert r.json()["unread"] == 0
 
 
+def test_notices_todo_counts(client):
+    """提醒汇总：新增家长待办计数字段 + todo_total 恒等于各项之和 + 原有字段不受影响"""
+    _setup_idempotent(client)
+    r = client.get("/api/parent/notices", params={"user_id": UID})
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    # 原有 4 字段仍在（HomeView notice-bar 依赖，口径不变）
+    for k in ("unread_messages", "pending_wishes", "pending_redeem"):
+        assert k in body and isinstance(body[k], int)
+    assert "has_password" in body and isinstance(body["has_password"], bool)
+
+    # 新增 4 个家长待办计数字段存在且为非负 int
+    for k in ("pending_task_confirms", "pending_makeups",
+              "pending_appeals", "todo_total"):
+        assert k in body and isinstance(body[k], int) and body[k] >= 0
+
+    # todo_total 恒等于 5 项之和（今日任务确认 + 补签 + 申诉 + 待确认心愿 + 待兑现心愿）
+    assert body["todo_total"] == (
+        body["pending_task_confirms"] + body["pending_makeups"]
+        + body["pending_appeals"] + body["pending_wishes"] + body["pending_redeem"]
+    )
+
+
 def _setup_idempotent(client):
     """已设置过则跳过（测试间共享同一用户）"""
     r = client.get("/api/parent/status", params={"user_id": UID})

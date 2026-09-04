@@ -14,6 +14,10 @@
 - `TaskService.daily_quota(db, uid, key)` / `TaskService.study_flags(db, uid)`：家长任务设置读取
   （收口 content/classical.recite、engine/vocab、engine/study.dashboard 对 `get_daily_quota`、
   `_load_study_flags` 的直连）。
+- `TaskService.pending_task_confirms(db, uid)` / `TaskService.pending_makeups(db, uid)`：家长待办计数
+  （供 family/parent.py 的 `/api/parent/notices` 聚合家长待办角标；`pending_makeups` 内部复用
+  `makeup_service.list_pending_makeup` 保证与 `/api/tasks/makeup/pending` 返回条数恒等，family 不
+  直接 import engagement 内部，避免破域独立契约）。
 - 其余为存量符号的显式再导出（延迟解析，名字与实现一致以便逐步替换），带下划线者
   属域内私有 helper 被跨域引用形成的契约债，S1.5 实现内聚后去除。
 
@@ -87,3 +91,26 @@ class TaskService:
         """读学习开关（include_next 预习下学期 / sync_mode 课堂同步 / xsc_bridge 小升初衔接）"""
         from app.domains.engagement.routers.tasks import _load_study_flags
         return _load_study_flags(db, uid)
+
+    @staticmethod
+    def pending_task_confirms(db, uid: str) -> int:
+        """今日待家长确认的手动任务数。
+
+        口径：DailyTask.user_id==uid AND task_date==today AND status=='pending_confirm' AND manual==True，
+        与家长面板「今日任务确认」列表逐条一致（列表按 t.manual && t.status=='pending_confirm' 渲染）。
+        必须限定 task_date==today，否则角标会含历史遗留而列表不显示，两者对不上。
+        """
+        from datetime import date
+        from app.models.daily_task import DailyTask
+        return db.query(DailyTask).filter(
+            DailyTask.user_id == uid,
+            DailyTask.task_date == date.today(),
+            DailyTask.status == "pending_confirm",
+            DailyTask.manual == True,  # noqa: E712
+        ).count()
+
+    @staticmethod
+    def pending_makeups(db, uid: str) -> int:
+        """待家长确认的补签申请数（复用 list_pending_makeup，与 /api/tasks/makeup/pending 条数恒等）"""
+        from app.domains.engagement.routers.tasks.makeup_service import list_pending_makeup
+        return len(list_pending_makeup(db, uid))

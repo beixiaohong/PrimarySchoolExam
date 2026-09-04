@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.domains.platform.contracts import rate_limit
 from app.domains.identity.contracts import ensure_parent_pwd
+from app.domains.engagement.contracts import TaskService
 
 router = APIRouter()
 
@@ -369,25 +370,42 @@ def save_exam_settings(req: ExamSettingsReq, request: Request, db: Session = Dep
 
 # ═══════════════════ 提醒汇总（孩子端首页提醒条 / 家长端待办） ═══════════════════
 
-@router.get("/notices", summary="提醒汇总：未读留言 + 待确认/待兑现心愿 + 家长密码状态")
+@router.get("/notices", summary="提醒汇总：未读留言 + 待确认/待兑现心愿 + 家长待办计数 + 家长密码状态")
 def notices(user_id: str, db: Session = Depends(get_db)):
-    """提醒汇总：未读留言数 + 待确认/待兑现心愿数 + 是否已设家长密码。
+    """提醒汇总：孩子端首页提醒条 + 家长端待办角标。
 
     参数（Query）：user_id。
-    返回：{unread_messages, pending_wishes（待确认）, pending_redeem（待兑现）, has_password}。
-    副作用：无（只读）。无需家长密码。
+    返回：{
+        unread_messages, pending_wishes（待确认）, pending_redeem（待兑现）, has_password,
+            —— 孩子端首页提醒条（HomeView notice-bar）依赖，口径不变；
+        pending_task_confirms（今日待确认手动任务）, pending_makeups（补签待确认）,
+        pending_appeals（申诉待处理）, todo_total（家长待办合计 = 前三项 + pending_wishes + pending_redeem）,
+            —— 家长端待办角标（本次新增）。
+    }。
+    副作用：无（只读）。无需家长密码（todo_total 对孩子也可见，用于提醒去找家长，文案不透露具体内容）。
+    跨域计数走 D5 契约 TaskService（pending_task_confirms / pending_makeups），family 不直接 import engagement 内部。
     """
     from app.models.parent import ParentMessage, ParentPassword
     from app.models.reward import WishItem
+    from app.models.appeal import AnswerAppeal
     unread = db.query(ParentMessage).filter_by(user_id=user_id, read_at=None).count()
     pending = db.query(WishItem).filter_by(
         user_id=user_id, status="pending").count()
     to_redeem = db.query(WishItem).filter_by(
         user_id=user_id, status="pending_redeem").count()
     has_password = db.query(ParentPassword).filter_by(user_id=user_id).first() is not None
+    # 家长待办计数：今日任务确认 / 补签待确认走 D5 契约（与列表同源），申诉待处理同域直查
+    task_confirms = TaskService.pending_task_confirms(db, user_id)
+    makeups = TaskService.pending_makeups(db, user_id)
+    appeals = db.query(AnswerAppeal).filter_by(user_id=user_id, status="pending").count()
+    todo_total = task_confirms + makeups + appeals + pending + to_redeem
     return {
         "unread_messages": unread,
         "pending_wishes": pending,
         "pending_redeem": to_redeem,
         "has_password": has_password,
+        "pending_task_confirms": task_confirms,
+        "pending_makeups": makeups,
+        "pending_appeals": appeals,
+        "todo_total": todo_total,
     }
