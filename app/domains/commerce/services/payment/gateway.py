@@ -18,6 +18,9 @@ class PaymentIntent:
     amount_fen: int
     expire_at: Optional[datetime]
     tips: str = ""
+    wechat_qr: str = ""
+    alipay_qr: str = ""
+    cs_contact: str = ""
 
 
 @dataclass

@@ -12,6 +12,8 @@
 """
 import os
 
+from app.config import (RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR,
+                        RECHARGE_CS_CONTACT)
 from .gateway import (ConfirmPayload, ConfirmResult, PaymentIntent,
                       PaymentStatus, RefundResult)
 
@@ -20,7 +22,8 @@ class ManualGateway:
     """人工支付网关：核销以运营操作为准，无外部通道。"""
 
     def create_payment(self, order) -> PaymentIntent:
-        qr_url = os.environ.get("PAYMENT_QR_URL", "")
+        # qr_url 优先取 PAYMENT_QR_URL 环境变量覆盖项，否则取微信收款码
+        qr_url = os.environ.get("PAYMENT_QR_URL", "").strip() or RECHARGE_WECHAT_QR
         memo = (order.order_no or "")[-6:]
         return PaymentIntent(
             qr_url=qr_url,
@@ -28,6 +31,9 @@ class ManualGateway:
             amount_fen=int(order.amount_fen or 0),
             expire_at=order.expire_at,
             tips="请务必在付款备注中填写订单号后 6 位",
+            wechat_qr=RECHARGE_WECHAT_QR,
+            alipay_qr=RECHARGE_ALIPAY_QR,
+            cs_contact=RECHARGE_CS_CONTACT,
         )
 
     def query_payment(self, order) -> PaymentStatus:

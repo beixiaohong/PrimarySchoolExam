@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_RATE
+from app.config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_CS_QR, RECHARGE_RATE
 from ..services import diamond as diamond_svc
 from app.routers.admin import _require_admin
 from app.domains.identity.contracts import require_self
@@ -109,5 +109,6 @@ def recharge_config():
         "wechat_qr": RECHARGE_WECHAT_QR,
         "alipay_qr": RECHARGE_ALIPAY_QR,
         "cs_contact": RECHARGE_CS_CONTACT,
+        "cs_qr": RECHARGE_CS_QR,
         "rate": RECHARGE_RATE,
     }

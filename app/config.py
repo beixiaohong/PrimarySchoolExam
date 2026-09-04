@@ -55,6 +55,7 @@ ALLOW_NICKNAME_LOGIN = os.environ.get("ALLOW_NICKNAME_LOGIN", "false").strip().l
 RECHARGE_WECHAT_QR = os.environ.get("RECHARGE_WECHAT_QR", "/qr/wx.png").strip()    # 微信收款二维码
 RECHARGE_ALIPAY_QR = os.environ.get("RECHARGE_ALIPAY_QR", "/qr/zfb.jpg").strip()   # 支付宝收款二维码
 RECHARGE_CS_CONTACT = os.environ.get("RECHARGE_CS_CONTACT", "beidou669").strip()  # 客服联系方式（微信号 / QQ 等），需自行填写
+RECHARGE_CS_QR = os.environ.get("RECHARGE_CS_QR", "/qr/kefu.png").strip()         # 客服二维码（仅在登录后的客服页/支付弹窗展示）
 RECHARGE_RATE = 1  # 汇率：1 元 = RECHARGE_RATE 钻石（固定 1:1）
 
 # ── 文档与鉴权（安全） ──

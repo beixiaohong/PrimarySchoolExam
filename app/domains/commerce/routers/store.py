@@ -90,6 +90,9 @@ class _PaymentInfo(BaseModel):
     tips: str
     expire_at: datetime
     seconds_left: int
+    wechat_qr: str = ""
+    alipay_qr: str = ""
+    cs_contact: str = ""
 
 
 class _CreateOrderReq(BaseModel):
@@ -324,4 +327,7 @@ def get_payment_info(
         tips=intent.tips,
         expire_at=intent.expire_at or o.expire_at,
         seconds_left=seconds_left,
+        wechat_qr=getattr(intent, 'wechat_qr', ''),
+        alipay_qr=getattr(intent, 'alipay_qr', ''),
+        cs_contact=getattr(intent, 'cs_contact', ''),
     )
