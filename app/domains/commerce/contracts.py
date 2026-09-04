@@ -41,9 +41,13 @@ _EXPORTS = {
     "ConfirmPayload": ("app.domains.commerce.services.payment.gateway", "ConfirmPayload"),
     "ConfirmResult": ("app.domains.commerce.services.payment.gateway", "ConfirmResult"),
     "RefundResult": ("app.domains.commerce.services.payment.gateway", "RefundResult"),
+    # 订单状态机（S4-M3 / 07 §5.2.2）：对外契约入口
+    "OrderService": ("app.domains.commerce.services.order_service", "OrderService"),
+    "OrderTransitionError": ("app.domains.commerce.services.order_service", "OrderTransitionError"),
+    "ALLOWED_TRANSITIONS": ("app.domains.commerce.services.order_service", "ALLOWED_TRANSITIONS"),
 }
 
-__all__ = ("DiamondService", "PaymentService") + tuple(_EXPORTS)
+__all__ = ("DiamondService", "PaymentService", "OrderService") + tuple(_EXPORTS)
 
 
 def __getattr__(name):
