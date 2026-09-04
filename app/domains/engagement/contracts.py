@@ -36,7 +36,7 @@ _EXPORTS = {
     "_balance": ("app.domains.engagement.routers.pet", "_balance"),
 }
 
-__all__ = ("PetService", "GrowthTreeService", "TaskService") + tuple(_EXPORTS)
+__all__ = ("PetService", "GrowthTreeService", "TaskService", "MakeupService") + tuple(_EXPORTS)
 
 
 def __getattr__(name):
@@ -114,3 +114,17 @@ class TaskService:
         """待家长确认的补签申请数（复用 list_pending_makeup，与 /api/tasks/makeup/pending 条数恒等）"""
         from app.domains.engagement.routers.tasks.makeup_service import list_pending_makeup
         return len(list_pending_makeup(db, uid))
+
+
+class MakeupService:
+    """补签卡发放对外唯一入口（S4 商品履约）。
+
+    与 `_grant_makeup_card`（打卡场景每次 1 张 + 每日去重）不同：
+    `grant` 支持批量 n 张、不受每日去重，专供商品订单履约调用。
+    """
+
+    @staticmethod
+    def grant(db, uid: str, n: int, reason: str = "purchase") -> int:
+        """发放 n 张补签卡，返回发放后的余额。"""
+        from app.domains.engagement.routers.tasks.service import grant_makeup_cards
+        return grant_makeup_cards(db, uid, n, reason=reason)

@@ -64,3 +64,4 @@ class VipUser(Base):
     user_id = Column(String(50), primary_key=True, comment="用户名（主键，与 users.user_id 对应）")
     note = Column(String(100), nullable=False, default="", comment="备注（开通原因/有效期说明）")
     created_at = Column(DateTime, default=datetime.now, comment="加入 VIP 时间")
+    expire_at = Column(DateTime, nullable=True, comment="到期时间；NULL=永久有效")

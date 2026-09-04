@@ -52,7 +52,10 @@ def _load_vip_users() -> set:
         from app.database import SessionLocal
         db = SessionLocal()
         try:
-            rows = db.execute(text("SELECT user_id FROM vip_users")).fetchall()
+            rows = db.execute(text(
+                "SELECT user_id FROM vip_users "
+                "WHERE expire_at IS NULL OR expire_at > NOW()"
+            )).fetchall()
             return {r[0] for r in rows}
         finally:
             db.close()

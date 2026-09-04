@@ -243,6 +243,31 @@ def _grant_makeup_card(db: Session, user_id: str) -> bool:
     return n > 0
 
 
+def grant_makeup_cards(db: Session, user_id: str, n: int, reason: str = "purchase") -> int:
+    """商品履约：批量发放 n 张补签卡（不受每日去重，支持购买场景）。
+
+    与 _grant_makeup_card 的区别：
+    - 不检查 last_grant_date（无每日去重），购买多少张就发多少张；
+    - 支持批量 n 张（_grant_makeup_card 固定 1 张）；
+    - 返回发放后的余额。
+    原 _grant_makeup_card 保持不动（打卡逻辑零影响）。
+    """
+    if n <= 0:
+        card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
+        return card.balance if card else 0
+    card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
+    if not card:
+        db.add(MakeupCard(user_id=user_id, balance=0, total_earned=0, total_used=0))
+        db.commit()
+    db.query(MakeupCard).filter(MakeupCard.user_id == user_id).update({
+        "balance": MakeupCard.balance + n,
+        "total_earned": MakeupCard.total_earned + n,
+    }, synchronize_session=False)
+    db.commit()
+    card = db.query(MakeupCard).filter(MakeupCard.user_id == user_id).first()
+    return card.balance if card else 0
+
+
 # ═══════════════ 构建返回数据 ═══════════════
 
 def _build_payload(db: Session, user_id: str) -> dict:
