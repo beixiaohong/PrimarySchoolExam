@@ -36,6 +36,11 @@ _EXPORTS = {
     # 系统配置与免打扰
     "sysconfig": ("app.domains.platform.services.sysconfig", None),
     "check_quiet_hours": ("app.domains.platform.routers.quiet_hours", "check_quiet_hours"),
+    # IP 地理位置（S6：BigDataCloud；教材版本地区适配 / 地区解析 / 天气共用）
+    "ip_geolocation": ("app.domains.platform.services.ip_geolocation", None),
+    "get_geo_by_ip": ("app.domains.platform.services.ip_geolocation", "get_geo_by_ip"),
+    "get_geo_by_request": ("app.domains.platform.services.ip_geolocation", "get_geo_by_request"),
+    "get_client_ip": ("app.domains.platform.services.ip_geolocation", "get_client_ip"),
     # RBAC 角色分配服务（S1-B8：角色权限集变更 + 管理员角色分配，含 BR-PERM-04 互斥校验）
     "rbac": ("app.domains.platform.services.rbac", None),
     "rbac_list_roles": ("app.domains.platform.services.rbac", "list_roles"),

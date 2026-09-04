@@ -19,7 +19,7 @@ from .migrations.runner import run_migrations
 from .routers import admin
 from .domains.engine.routers import vocab, study, learning_goals, mastery
 from .domains.commerce.routers import diamond, store
-from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement
+from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement, region
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
 from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus
@@ -94,6 +94,7 @@ app.include_router(search.router, prefix="/api/search", tags=["搜题智能解�
 app.include_router(sync.router, prefix="/api/sync", tags=["同步学"], dependencies=user_auth_deps)
 app.include_router(reading.router, prefix="/api/reading", tags=["阅读理解专项"], dependencies=user_auth_deps)
 app.include_router(weather.router, prefix="/api/weather", tags=["天气"], dependencies=user_auth_deps)
+app.include_router(region.router, prefix="/api/region", tags=["地区解析"], dependencies=user_auth_deps)
 app.include_router(admin.router, prefix="/api/admin", tags=["管理后台"])
 app.include_router(user.router, prefix="/api/user", tags=["用户系统"], dependencies=user_auth_deps)
 app.include_router(auth.router, prefix="/api/auth", tags=["用户认证"])

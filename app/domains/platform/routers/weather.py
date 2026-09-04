@@ -2,8 +2,10 @@
 
 - 和风天气 GeoAPI 查城市 → /v7/weather/now 实时 + /v7/weather/3d 三日预报
 - 无 Redis：进程内 dict 缓存（key=城市，TTL 4 小时）
-- 城市解析顺序：query city → users.city（传 user_id 时）→ IP 定位（ipinfo.io）→ 默认城市
-- 配置从 .env 读：QWEATHER_API_KEY、QWEATHER_API_HOST、IPINFO_API_TOKEN
+- 城市解析顺序：query city → users.city（传 user_id 时）→ IP 定位（BigDataCloud）→ 默认城市
+- 配置从 .env / system_config 读：QWEATHER_API_KEY、QWEATHER_API_HOST
+- S6：IP 定位从 ipinfo.io 切换到 BigDataCloud IP Geolocation（更细：国家/省/市/经纬度），
+  备用 ipinfo.io 兼容（BDC 失败时降级；同进程内 ip_geolocation.get_geo_by_ip 已封装）。
 """
 import logging
 import os
@@ -17,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
 from app.models.user import User
-from ..services import sysconfig
+from ..services import ip_geolocation, sysconfig
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +36,8 @@ def _api_host() -> str:
     return sysconfig.get("QWEATHER_API_HOST") or "api.qweather.com"
 
 
-def _ipinfo_token() -> str:
-    return sysconfig.get("IPINFO_API_TOKEN")
-
 _CACHE_TTL = 4 * 3600      # 天气缓存 4 小时
-_IP_CACHE_TTL = 4 * 3600   # IP 定位缓存 4 小时
 _weather_cache: dict = {}
-_ip_cache: dict = {}
 
 
 def weather_configured() -> bool:
@@ -54,36 +51,15 @@ class CitySaveReq(BaseModel):
 
 # ═══════════════ 城市解析 ═══════════════
 
-def _get_client_ip(request: Request) -> str:
-    """从请求中获取客户端真实 IP"""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-    return request.client.host if request.client else ""
-
-
 def _get_city_by_ip(ip: str) -> str:
-    """通过 ipinfo.io 解析 IP 所在城市，失败回退默认城市"""
-    now = time.time()
-    if ip in _ip_cache:
-        city, ts = _ip_cache[ip]
-        if now - ts < _IP_CACHE_TTL:
-            return city
-    try:
-        url = f"https://ipinfo.io/{ip}/json"
-        token = _ipinfo_token()
-        if token:
-            url += f"?token={token}"
-        data = requests.get(url, timeout=5).json()
-        city = data.get("city") or DEFAULT_CITY
-        _ip_cache[ip] = (city, now)
-        return city
-    except Exception:
-        logger.warning("IP 定位失败（ip=%s），回退默认城市", ip)
+    """通过 BigDataCloud IP Geolocation 解析 IP 所在城市（ip_geolocation 已缓存 4h）；
+    失败回退默认城市。"""
+    if not ip:
         return DEFAULT_CITY
+    geo = ip_geolocation.get_geo_by_ip(ip)
+    if geo and geo.city:
+        return geo.city
+    return DEFAULT_CITY
 
 
 # ═══════════════ 和风天气调用 ═══════════════
@@ -144,7 +120,7 @@ def get_current_weather(request: Request, city: str = None, user_id: str = None)
             user = s.query(User).filter(User.user_id == user_id.strip()).first()
             target = (user.city or "").strip() if user else ""
     if not target:
-        target = _get_city_by_ip(_get_client_ip(request))
+        target = _get_city_by_ip(ip_geolocation.get_client_ip(request))
 
     cached = _weather_cache.get(target)
     if cached:

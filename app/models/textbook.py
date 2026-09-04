@@ -25,6 +25,8 @@ class TextbookVersion(Base):
     name = Column(String(50), nullable=False, comment="版本名，如 人教版/北师大版/外研版")
     sort_order = Column(Integer, default=0, comment="排序权重（小在前，默认选最小）")
     enabled = Column(Boolean, default=True, comment="是否启用")
+    region = Column(String(8), nullable=False, default="",
+                    comment="省份代码（chinaAdminCode 前 2 位，如 11=北京 31=上海；空=全国通用）")
     remark = Column(String(200), default="", comment="备注")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 

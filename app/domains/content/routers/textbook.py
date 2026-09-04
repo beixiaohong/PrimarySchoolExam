@@ -5,33 +5,54 @@
 - PUT  /api/textbook/prefs                     保存用户选择 {user_id, subject, textbook_id}
 
 helper resolve_textbook_id：供词汇等模块按用户教材版本过滤取词（未配置取默认）。
+S6 增强：按用户所在省份（IP 解析）优先匹配本地版本（TextbookVersion.region），
+未配置省份时回退全国通用版本（region=''）。
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.textbook import TextbookVersion, UserTextbookPref
+from app.domains.platform.contracts import get_geo_by_request
 
 router = APIRouter()
 
 SUBJECTS = ("数学", "语文", "英语")
 
 
-def _default_version(db: Session, subject: str, grade: int) -> Optional[TextbookVersion]:
-    """该学科年级的默认版本：sort_order 最小，其次 id 最小；未启用不参与默认。"""
-    return (db.query(TextbookVersion)
-            .filter(TextbookVersion.subject == subject,
-                    TextbookVersion.grade == grade,
-                    TextbookVersion.enabled == True)  # noqa: E712
+def _default_version(db: Session, subject: str, grade: int,
+                     province_code: str = "") -> Optional[TextbookVersion]:
+    """该学科年级的默认版本：
+    1) province_code 非空时优先匹配 region=province_code 的版本；
+    2) 否则回退 region='' 的全国通用版本；
+    取 sort_order 最小，其次 id 最小；未启用不参与默认。
+    """
+    q = (db.query(TextbookVersion)
+         .filter(TextbookVersion.subject == subject,
+                 TextbookVersion.grade == grade,
+                 TextbookVersion.enabled == True))  # noqa: E712
+    if province_code:
+        # 优先本省版本
+        local = (q.filter(TextbookVersion.region == province_code)
+                 .order_by(TextbookVersion.sort_order, TextbookVersion.id)
+                 .first())
+        if local:
+            return local
+    # 回退全国通用版本
+    return (q.filter(TextbookVersion.region == "")
             .order_by(TextbookVersion.sort_order, TextbookVersion.id)
             .first())
 
 
-def resolve_textbook_id(db: Session, user_id: str, subject: str, grade: int) -> Optional[int]:
-    """返回用户该学科应使用的版本 id：优先用户选择（且启用），否则默认版本；无则 None。"""
+def resolve_textbook_id(db: Session, user_id: str, subject: str, grade: int,
+                        province_code: str = "") -> Optional[int]:
+    """返回用户该学科应使用的版本 id：
+    用户选择（且启用）→ 用户省份版本（region=province_code）→ 通用默认（region=''）。
+    province_code 为空时跳过省份匹配（兼容未传 IP 的内部调用）。
+    """
     if subject not in SUBJECTS:
         return None
     pref = db.query(UserTextbookPref).filter(
@@ -45,7 +66,7 @@ def resolve_textbook_id(db: Session, user_id: str, subject: str, grade: int) -> 
         ).first()
         if t:
             return t.id
-    d = _default_version(db, subject, grade)
+    d = _default_version(db, subject, grade, province_code=province_code)
     return d.id if d else None
 
 
@@ -64,7 +85,7 @@ def list_versions(subject: str = Query(..., description="学科"),
             .all())
     return {"versions": [{
         "id": t.id, "name": t.name, "subject": t.subject, "grade": t.grade,
-        "sort_order": t.sort_order,
+        "sort_order": t.sort_order, "region": t.region or "",
     } for t in rows]}
 
 
@@ -75,20 +96,27 @@ class PrefReq(BaseModel):
 
 
 @router.get("/prefs", summary="各学科当前生效教材版本")
-def get_prefs(user_id: str = Query(..., description="用户名"),
+def get_prefs(request: Request,
+              user_id: str = Query(..., description="用户名"),
               grade: int = Query(6, description="年级"),
               db: Session = Depends(get_db)):
-    """返回每学科当前生效版本（用户选择或默认）；未配置任何版本时 textbook_id=0。"""
+    """返回每学科当前生效版本（用户选择 → 用户省份版本 → 通用默认）；
+    province_code 来自 IP 解析（缓存）；未配置任何版本时 textbook_id=0。"""
+    geo = get_geo_by_request(request)
+    province_code = geo.province_code if geo else ""
     result = []
     for subject in SUBJECTS:
-        tid = resolve_textbook_id(db, user_id, subject, grade)
+        tid = resolve_textbook_id(db, user_id, subject, grade,
+                                  province_code=province_code)
         name = ""
         if tid:
             t = db.get(TextbookVersion, tid)
             name = t.name if t else ""
         result.append({"subject": subject, "grade": grade,
-                       "textbook_id": tid or 0, "textbook_name": name})
-    return {"prefs": result}
+                       "textbook_id": tid or 0, "textbook_name": name,
+                       "region": province_code or ""})
+    return {"prefs": result, "province_code": province_code or "",
+            "country_code": geo.country_code if geo else ""}
 
 
 @router.put("/prefs", summary="保存用户教材版本选择")
