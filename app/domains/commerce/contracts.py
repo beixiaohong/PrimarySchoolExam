@@ -47,7 +47,7 @@ _EXPORTS = {
     "ALLOWED_TRANSITIONS": ("app.domains.commerce.services.order_service", "ALLOWED_TRANSITIONS"),
 }
 
-__all__ = ("DiamondService", "PaymentService", "OrderService") + tuple(_EXPORTS)
+__all__ = ("DiamondService", "PaymentService", "OrderService", "FulfillmentService") + tuple(_EXPORTS)
 
 
 def __getattr__(name):
@@ -134,3 +134,17 @@ class PaymentService:
     def refund(order, amount_fen: int):
         """发起退款（人工网关返回待后台审批）。"""
         return PaymentService.gateway().refund(order, amount_fen)
+
+
+class FulfillmentService:
+    """权益自动履约对外入口（S4 商城支付闭环）。
+
+    消费 order.benefit_snapshot 发放权益，成功后 PAID → FULFILLED。
+    幂等：已 FULFILLED 直接返回；失败保持 PAID。
+    """
+
+    @staticmethod
+    def fulfill(db, order):
+        """执行履约，返回 {"ok", "skipped", "error"}。"""
+        from app.domains.commerce.services.fulfillment import fulfill_order
+        return fulfill_order(db, order)

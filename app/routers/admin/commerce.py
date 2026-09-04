@@ -36,7 +36,7 @@ from app.models.commerce_order import Order
 from app.models.commerce_payment import PayTransaction
 from app.models.commerce_product import Product, ProductBenefit
 from app.domains.commerce.contracts import (OrderService, OrderTransitionError,
-                                              ConfirmPayload)
+                                              ConfirmPayload, FulfillmentService)
 
 from . import router
 from .common import _audit
@@ -335,6 +335,14 @@ def admin_confirm_payment(
     _audit(db, admin, "order_confirm_payment", f"order:{o.order_no}",
            f"核销实收={req.received_fen}分 流水={req.external_no}",
            amount_fen=req.received_fen)
+    # 核销成功后自动履约
+    result = FulfillmentService.fulfill(db, o)
+    if not result.get("ok"):
+        db.refresh(o)
+        resp = _order_to_dict(o)
+        resp["fulfill_error"] = result.get("error", "履约失败")
+        return resp
+    db.refresh(o)
     return _order_to_dict(o)
 
 
@@ -363,6 +371,14 @@ def admin_approve_order(
         raise HTTPException(400, str(e))
     _audit(db, admin, "order_approve", f"order:{o.order_no}",
            "大额审批通过", amount_fen=int(o.amount_fen or 0))
+    # 审批通过后自动履约
+    result = FulfillmentService.fulfill(db, o)
+    if not result.get("ok"):
+        db.refresh(o)
+        resp = _order_to_dict(o)
+        resp["fulfill_error"] = result.get("error", "履约失败")
+        return resp
+    db.refresh(o)
     return _order_to_dict(o)
 
 
@@ -442,3 +458,29 @@ def admin_reverse_order(
     _audit(db, admin, "order_reverse", f"order:{o.order_no}",
            f"冲正 原因={req.reason}", amount_fen=int(o.amount_fen or 0))
     return _order_to_dict(o)
+
+
+@router.post("/commerce/orders/{order_id}/regrant-benefit",
+             summary="补发权益（履约失败后手动重试）")
+def admin_regrant_benefit(
+    order_id: int,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(require_perm("order:confirm_payment")),
+):
+    """手动补发权益：对 PAID 状态订单重新触发履约流程。
+
+    权限沿用 order:confirm_payment；幂等（已 FULFILLED 直接返回）。
+    """
+    o = db.query(Order).filter(Order.id == order_id).first()
+    if not o:
+        raise HTTPException(404, "订单不存在")
+    if o.status not in ("PAID", "FULFILLED"):
+        raise HTTPException(400, f"当前状态 {o.status} 不可补发（须 PAID 或 FULFILLED）")
+    result = FulfillmentService.fulfill(db, o)
+    _audit(db, admin, "order_regrant_benefit", f"order:{o.order_no}",
+           f"补发权益 ok={result.get('ok')} skipped={result.get('skipped')}")
+    db.refresh(o)
+    resp = _order_to_dict(o)
+    if not result.get("ok"):
+        resp["fulfill_error"] = result.get("error", "履约失败")
+    return resp

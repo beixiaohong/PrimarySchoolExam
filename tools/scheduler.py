@@ -52,6 +52,28 @@ JOBS = [
         "command": ["tools/backfill_paper_answers.py"],
         "timeout": 10800,              # 每晚最多约 3000 题（智谱 ~2s/题）
     },
+    {
+        "name": "close_expired_orders",
+        "kind": "daily",
+        "at": "00:15",
+        "valid_from": "2026-09-05",
+        "valid_until": None,
+        "max_runs": None,
+        "weekday": None,
+        "command": ["tools/close_expired_orders.py"],
+        "timeout": 120,
+    },
+    {
+        "name": "vip_expire_downgrade",
+        "kind": "daily",
+        "at": "02:00",
+        "valid_from": "2026-09-05",
+        "valid_until": None,
+        "max_runs": None,
+        "weekday": None,
+        "command": ["tools/vip_expire_downgrade.py"],
+        "timeout": 120,
+    },
 ]
 
 
