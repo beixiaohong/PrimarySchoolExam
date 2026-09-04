@@ -19,6 +19,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# 关键：把项目根目录加入 sys.path，否则 `import app` 会报 No module named 'app'
+# （Python 默认只把脚本所在目录 tools/ 加入 sys.path，而 app/ 在项目根下）
+sys.path.insert(0, str(ROOT))
+
 # 1. 检查数据库
 print("=" * 60)
 print("【1/4】数据库关键表数据量检查（只读）")
@@ -28,34 +32,65 @@ try:
     from app.database import SessionLocal
     from sqlalchemy import text
     db = SessionLocal()
-    tables = [
-        # 用户与基础数据
-        "users",
-        # 教材版本（S6 新增 region 列）
-        "textbook_versions",
-        # 充值订单（S4）
-        "commerce_orders", "commerce_products",
-        # RBAC（S1）
-        "roles", "permissions", "admin_users",
-        # 审计（S1）
-        "audit_logs",
-        # 知识点标注（S2）
-        "kp_annotations", "knowledge_points",
-        # 掌握度（S3）
-        "user_kp_mastery",
-        # 任务（S 0）
-        "tasks", "daily_task_progress",
+    # 先列出库里所有真实表名，只对存在的表做 COUNT，避免刷屏报错
+    exist = {row[0] for row in db.execute(text("SHOW TABLES")).fetchall()}
+    print(f"（库内共 {len(exist)} 张表）\n")
+
+    # 候选表名 → 说明；只统计真实存在的
+    candidates = [
+        ("users", "用户（用户管理页）"),
+        ("admin_users", "管理员账号"),
+        ("vip_users", "VIP 用户"),
+        ("textbook_versions", "教材版本（S6）"),
+        ("commerce_products", "商品（充值订单·S4）"),
+        ("commerce_orders", "订单（充值订单·S4）"),
+        ("commerce_payments", "支付流水（S4）"),
+        ("commerce_refunds", "退款（S4）"),
+        ("roles", "角色（RBAC·S1）"),
+        ("permissions", "权限点（RBAC·S1）"),
+        ("role_permissions", "角色-权限关联"),
+        ("admin_roles", "管理员-角色关联"),
+        ("audit_logs", "审计日志（S1）"),
+        ("knowledge_points", "知识点树（S2）"),
+        ("kp_annotations", "知识点标注（S2）"),
+        ("user_kp_mastery", "掌握度（S3）"),
+        ("daily_tasks", "每日任务配置"),
+        ("task_progress", "任务进度"),
+        ("diamond_accounts", "钻石账户"),
     ]
-    for t in tables:
+    for t, desc in candidates:
+        if t not in exist:
+            print(f"  {t:<22} [表不存在]  {desc}")
+            continue
         try:
-            r = db.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar()
-            print(f"  {t:<28} {r:>8} 行")
+            r = db.execute(text(f"SELECT COUNT(*) FROM `{t}`")).scalar()
+            flag = "" if r else "   ← 空！"
+            print(f"  {t:<22} {r:>8} 行  {desc}{flag}")
         except Exception as e:
-            print(f"  {t:<28} [ERR] {str(e)[:60]}")
+            print(f"  {t:<22} [ERR] {str(e)[:50]}   {desc}")
+
+    # 关键字段存在性（教材版本 region 列 = 迁移 061）
+    print("\n--- 关键字段检查 ---")
+    checks = [
+        ("textbook_versions", "region", "迁移 061（教材省份适配）"),
+        ("commerce_orders", "status", "迁移 057（订单状态机）"),
+        ("users", "is_active", "用户停用字段"),
+    ]
+    for tbl, col, desc in checks:
+        if tbl not in exist:
+            print(f"  {tbl}.{col:<12} [表不存在]  {desc}")
+            continue
+        n = db.execute(text(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=:t AND COLUMN_NAME=:c"
+        ), {"t": tbl, "c": col}).scalar()
+        mark = "✓ 存在" if n else "✗ 缺失 → 需跑迁移"
+        print(f"  {tbl}.{col:<12} {mark}   {desc}")
+
     db.close()
 except Exception as e:
     print(f"  [DB 连接失败] {e}")
-    sys.exit(1)
+    print("  → 继续检查 dist（不中断）")
 
 
 # 2. 检查 admin/dist 时间戳
