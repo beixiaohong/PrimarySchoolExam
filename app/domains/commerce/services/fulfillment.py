@@ -100,7 +100,8 @@ def _fulfill_vip_days(db: Session, order: Order, days: int) -> None:
         # 叠加续期：已过期从今起算，未过期在原到期日上累加
         base = vip.expire_at if (vip.expire_at and vip.expire_at > now) else now
         vip.expire_at = base + timedelta(days=days)
-        vip.note = (vip.note or "") + f" +order_{order.order_no}"
+        # note 仅保留最近一笔订单引用（String(100) 有限，历史由 orders 表追溯）
+        vip.note = f"renew order_{order.order_no}"
     db.flush()
 
 

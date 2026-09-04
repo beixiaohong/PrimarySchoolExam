@@ -165,7 +165,7 @@
 | `diamond_accounts` | `diamond.py` | commerce(14)、后台装配层(15) | 资金相关，文档 02 要求独立备份与审计 |
 | `diamond_ledger` | `diamond.py` | commerce(9)、后台装配层(22) | 完整流水表，装配层引用多于属主域（充值/发放后台） |
 | `ai_usage_log` | `ai_usage.py` | 后台装配层(14)、platform(8)、assessment(2) | **属主域零引用**：实际由 D8 AI 网关写入（经 `DiamondService.consume` 计费后记日志），与 D8 的 `ai_qa`/`weekly_reports` 同文件混放 |
-| `vip_users` | `user.py` | 后台装配层(15)、platform(2 ORM + 1 裸 SQL) | **属主域零引用**；`platform/services/ai.py:54` 用裸 SQL `SELECT user_id FROM vip_users` 取 VIP 名单（§6.2）。与 D1 的 `users` 同文件混放 |
+| `vip_users` | `user.py` | commerce(履约写入)、后台装配层(15)、platform(2 ORM + 1 裸 SQL) | D7 履约服务写入（VIP 天数叠加续期，含 `expire_at` 到期语义）；`platform/services/ai.py` 裸 SQL 已加到期过滤（`expire_at IS NULL OR expire_at > NOW()`） |
 
 ### 2.8 D8 平台与运营域（platform）— 6 表
 
@@ -274,7 +274,7 @@
 | `content/services/question_parser.py:388` | `papers` | D2 | 属主域自用，合规 |
 | `engagement/routers/tasks/service.py:34,77` | `parent_task_settings` | D5 | 属主域自用，但**绕过了 ORM 模型**（`ParentTaskSettings` 零引用） |
 | `engagement/routers/tasks/settings.py:209,212,214` | `parent_task_settings` | D5 | 同上（exists/UPDATE/INSERT upsert） |
-| `platform/services/ai.py:54` | `vip_users` | **D7** | **跨域**：D8 AI 网关裸 SQL 直读 D7 的 VIP 名单，模块级护栏完全看不见这条边 |
+| `platform/services/ai.py:54` | `vip_users` | **D7** | **跨域**：D8 AI 网关裸 SQL 直读 D7 的 VIP 名单，已加 `expire_at` 到期过滤，仍为裸 SQL，S1.5 收口 |
 
 ### 6.3 D8 → D9 数据层穿透（护栏契约 2 覆盖不到的部分）
 
