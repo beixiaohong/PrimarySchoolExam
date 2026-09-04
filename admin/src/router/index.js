@@ -14,6 +14,11 @@ const routes = [
   { path: '/announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
   { path: '/textbooks', name: 'textbooks', component: () => import('../views/Textbooks.vue') },
   { path: '/content', name: 'content', component: () => import('../views/Content.vue') },
+  { path: '/commerce', name: 'commerce', component: () => import('../views/Commerce.vue') },
+  { path: '/rbac', name: 'rbac', component: () => import('../views/Rbac.vue') },
+  { path: '/audit', name: 'audit', component: () => import('../views/Audit.vue') },
+  { path: '/annotation', name: 'annotation', component: () => import('../views/Annotation.vue') },
+  { path: '/mastery', name: 'mastery', component: () => import('../views/Mastery.vue') },
 ]
 
 // hash 模式：客户端路由形如 /admin#/users，避免服务端 SPA 回退冲突。
