@@ -59,6 +59,7 @@ export const NAV_GROUPS = [
     items: [
       { tab: 'stats', label: '学习统计', icon: 'stats' },
       { tab: 'settings', label: '设置', icon: 'settings' },
+      { tab: 'parent', label: '家长管理', icon: 'parent', badge: 'parent' },
     ],
   },
 ]

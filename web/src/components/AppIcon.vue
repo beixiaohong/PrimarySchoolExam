@@ -31,6 +31,7 @@ const ICONS = {
   dict: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13" width="4" height="7" rx="1.6"/><rect x="17" y="13" width="4" height="7" rx="1.6"/>',
   stats: '<path d="M4 20V10M9 20V4M14 20v-7M19 20v-11"/>',
   settings: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
+  parent: '<circle cx="7" cy="7" r="2.5"/><path d="M2.6 15.5c0-2.6 2-4.4 4.4-4.4s4.4 1.8 4.4 4.4"/><circle cx="17" cy="7" r="2.5"/><path d="M12.6 15.5c0-2.6 2-4.4 4.4-4.4s4.4 1.8 4.4 4.4"/><circle cx="12" cy="16.5" r="1.7"/><path d="M9.4 21.5c0-1.5 1.2-2.6 2.6-2.6s2.6 1.1 2.6 2.6"/>',
   // —— 任务域图标（B3 批次2：首页今日任务卡 / 复习队列）——
   abc: '<path d="M4 18 7 6l3 12"/><path d="M5 14h4"/><path d="M14 18v-6a2.3 2.3 0 0 1 4.6 0v6"/><path d="M14 14.5h4"/>',
   repeat: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',

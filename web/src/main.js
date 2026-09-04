@@ -27,6 +27,7 @@ import AiquizView from './views/AiquizView.vue'
 import AssistantView from './views/AssistantView.vue'
 import WalletView from './views/WalletView.vue'
 import SettingsView from './views/SettingsView.vue'
+import ParentView from './views/ParentView.vue'
 import CoursesView from './views/CoursesView.vue'
 import AntiCheatInput from './components/AntiCheatInput.vue'
 // B3 全站图标统一：内联 SVG 图标集（nav.js / App.vue 侧边栏 & TabBar 统一引用）
@@ -79,6 +80,7 @@ app.component('AiquizView', AiquizView)
 app.component('AssistantView', AssistantView)
 app.component('WalletView', WalletView)
 app.component('SettingsView', SettingsView)
+app.component('ParentView', ParentView)
 app.component('CoursesView', CoursesView)
 app.component('AntiCheatInput', AntiCheatInput)
 app.component('AppIcon', AppIcon)

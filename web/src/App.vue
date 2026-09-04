@@ -113,6 +113,7 @@
             <span v-if="it.badge==='wrong' && wrongBadge>0" class="badge">{{wrongBadge}}</span>
             <span v-if="it.badge==='pet' && petProfile && petLeveledUp" class="badge badge-gold">升级</span>
             <span v-if="it.badge==='badge' && badgeNew.length" class="badge badge-gold">新</span>
+            <span v-if="it.badge==='parent' && parentTodoTotal>0" class="badge badge-gold">{{parentTodoTotal}}</span>
           </button>
           <!-- 场景折叠父节点：点击展开/收起，子项缩进展示 -->
           <template v-else>
@@ -197,6 +198,9 @@
 <wallet-view v-if="tab==='wallet'"></wallet-view>
       
 <settings-view v-if="tab==='settings'"></settings-view>
+
+      <!-- ═══════════ 家长管理（从设置页独立成 tab：4 态门禁 + 5 类折叠面板） ═══════════ -->
+<parent-view v-if="tab==='parent'"></parent-view>
 
       <SearchView v-if="tab==='search'"></SearchView>
       <SyncView v-if="tab==='sync'"></SyncView>
