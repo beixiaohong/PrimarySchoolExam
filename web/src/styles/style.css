@@ -1145,8 +1145,8 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .pay-memo-code{background:#F5F7FA;padding:4px 10px;border-radius:6px;font-size:16px;font-weight:700;letter-spacing:1px}
 .pay-qrs{display:flex;gap:12px;justify-content:center;margin:12px 0;flex-wrap:wrap}
 .pay-qr{text-align:center}
-.pqrtitle{font-size:13px;font-weight:600;margin-bottom:4px}
-.pqrimg{width:140px;height:140px;border-radius:8px;border:1px solid var(--border,#ececf4);object-fit:contain}
+.pqr-title{font-size:13px;font-weight:600;margin-bottom:4px}
+.pqr-img{width:140px;height:140px;border-radius:8px;border:1px solid var(--border,#ececf4);object-fit:contain}
 .pqr-broken{font-size:12px;color:#999;padding:20px 0}
 .pay-qr-empty{text-align:center;color:#999;padding:20px;font-size:13px}
 .pay-tips{text-align:center;font-size:12px;color:var(--text-2,#8a8fa3);margin:8px 0}
