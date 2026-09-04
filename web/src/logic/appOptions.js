@@ -25,8 +25,7 @@ const appOptions = {
       // 全局统计
       streakDays: 0, totalTodo: 0, avgScore: 0,
       masteredTotal: 0, wrongBadge: 0, diamonds: 0,
-      // 钻石充值（手动充值：扫码付款 + 客服核对账户后发放）
-      rechargeOpen: false, rechargeCfg: null, rechargePkg: 0, rechargeCopied: false, rechargeQrOpen: false,
+      rechargeCopied: false,   // 支付弹窗复制按钮状态（商城复用）
       // 首页
       dashboard: null, todayTasks: [],
       rejudging: false,          // AI 重判进行中（当前做题题）
@@ -692,36 +691,6 @@ const appOptions = {
       this.api(`/api/diamond/balance?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.diamonds = d.balance || 0; })
         .catch(() => { this.diamonds = 0; });
-    },
-    // 打开钻石购买弹窗并加载充值配置（收款二维码/客服/汇率）
-    openRecharge() {
-      this.rechargeOpen = true;
-      this.rechargeQrOpen = false;
-      if (!this.rechargeCfg) {
-        this.api('/api/diamond/recharge/config')
-          .then(c => { this.rechargeCfg = c || null; })
-          .catch(() => { this.rechargeCfg = null; });
-      }
-    },
-    closeRecharge() { this.rechargeOpen = false; this.rechargeCopied = false; this.rechargeQrOpen = false; },
-    // 选择充值套餐（点击即展示对应收款二维码）
-    selectRechargePkg(n) { this.rechargePkg = n; this.rechargeCopied = false; },
-    // 展开 / 收起「收款 / 客服二维码」（默认收起，仅显示客服微信号；点击展开）
-    toggleRechargeQr() { this.rechargeQrOpen = !this.rechargeQrOpen; },
-    copyRechargeAccount() {
-      const acc = this.user || '';
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(acc).then(() => { this.rechargeCopied = true; });
-          return;
-        }
-      } catch (e) { /* 忽略，走降级 */ }
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = acc; document.body.appendChild(ta); ta.select();
-        document.execCommand('copy'); document.body.removeChild(ta);
-        this.rechargeCopied = true;
-      } catch (e) { this.rechargeCopied = false; }
     },
     loadPetLedger() {
       if (!this.user) return;

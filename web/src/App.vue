@@ -202,6 +202,9 @@
       <!-- ═══════════ 家长管理（从设置页独立成 tab：4 态门禁 + 5 类折叠面板） ═══════════ -->
 <parent-view v-if="tab==='parent'"></parent-view>
 
+      <!-- ═══════════ 帮助与客服 ═══════════ -->
+<support-view v-if="tab==='support'"></support-view>
+
       <SearchView v-if="tab==='search'"></SearchView>
       <SyncView v-if="tab==='sync'"></SyncView>
       <KnowledgeView v-if="tab==='kp'"></KnowledgeView>
@@ -749,53 +752,6 @@
   </div>
 </div>
 
-<!-- ═══════════ 购买钻石弹窗 ═══════════ -->
-<div class="modal-mask" :class="{on: rechargeOpen}">
-  <div class="modal modal-recharge">
-    <div class="modal-head"><h2>💎 购买钻石</h2><span class="tag tag-blue">1 元 = 1 钻石</span></div>
-    <div class="modal-body">
-      <p class="rc-tip">选择充值数量，扫码付款后请在<strong>转账留言 / 备注</strong>中填写你的账号，客服核对后为你发放钻石。</p>
-      <div class="recharge-pkgs">
-        <button v-for="p in [10,30,50,100,200]" :key="p" class="rc-pkg" :class="{on: rechargePkg===p}" @click="selectRechargePkg(p)">
-          <span class="rc-pkg-num">{{p}}</span>
-          <span class="rc-pkg-price">¥{{p * (rechargeCfg ? rechargeCfg.rate : 1)}}</span>
-        </button>
-      </div>
-
-      <div class="recharge-account">
-        <span class="rc-acc-label">付款留言请填写账号：</span>
-        <code class="rc-acc-value">{{user}}</code>
-        <button class="btn btn-ghost btn-sm" @click="copyRechargeAccount()">{{rechargeCopied ? '已复制 ✓' : '复制'}}</button>
-      </div>
-
-      <div class="recharge-cs">
-        <div class="cs-head" @click="toggleRechargeQr()">
-          <span v-if="rechargeCfg && rechargeCfg.cs_contact">📞 客服微信：<b>{{rechargeCfg.cs_contact}}</b></span>
-          <span v-else>📞 付款后请联系客服，提供「付款截图 + 账号」即可发放钻石。</span>
-          <span class="cs-toggle">{{ rechargeQrOpen ? '收起 ▴' : '查看收款二维码 ▾' }}</span>
-        </div>
-        <div class="cs-detail" v-if="rechargeQrOpen">
-          <div class="recharge-qrs" v-if="rechargePkg">
-            <div class="rc-qr">
-              <div class="rc-qr-title">💚 微信支付</div>
-              <img v-if="rechargeCfg && rechargeCfg.wechat_qr" :src="rechargeCfg.wechat_qr" alt="微信收款码" class="rc-qr-img">
-              <div v-else class="rc-qr-empty">请联系客服获取微信收款码</div>
-            </div>
-            <div class="rc-qr">
-              <div class="rc-qr-title">🔵 支付宝</div>
-              <img v-if="rechargeCfg && rechargeCfg.alipay_qr" :src="rechargeCfg.alipay_qr" alt="支付宝收款码" class="rc-qr-img">
-              <div v-else class="rc-qr-empty">请联系客服获取支付宝收款码</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-primary" @click="closeRecharge()">我知道了</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast" :class="{on: toast.show}">{{toast.msg}}</div>
 
 </div>
@@ -805,6 +761,7 @@
 import appOptions from './logic/appOptions.js'
 import { NAV_GROUPS, TABBAR, ALL_TABS } from './nav.js'
 import { useWalletStore } from './stores/wallet.js'
+import { useShopStore } from './stores/shop.js'
 
 // 根组件：承载登录、App Shell（侧边栏/顶栏）、各业务页面切换与全部业务逻辑的「壳」。
 // 绝大多数数据/方法来自 logic/appOptions.js 这个 mixin（通过展开合并），本文件只做三件事：
@@ -819,9 +776,10 @@ export default {
     return { ...appOptions.data.call(this), NAV_GROUPS, TABBAR, homeGoals: [], openNav: {} }
   },
   setup() {
-    // 钱包 store 仅在 App 级创建一次，供钱包页与各任务卡共用
+    // 钱包 store 与商城 store 在 App 级创建，供视图共用
     const wallet = useWalletStore()
-    return { wallet }
+    const shop = useShopStore()
+    return { wallet, shop }
   },
   methods: {
     ...appOptions.methods,
@@ -829,7 +787,11 @@ export default {
     // 进入钱包则拉取钱包；最后把当前 tab 同步进 URL，支持深链/刷新保持页面
     goTab(t) {
       appOptions.methods.goTab.call(this, t)
-      if (t === 'wallet') this.wallet.load(this.user, this.makeupCards)
+      if (t === 'wallet') {
+        this.wallet.load(this.user, this.makeupCards)
+        this.shop.loadProducts()
+        this.shop.loadOrders()
+      }
       this._syncRoute(t)
     },
     // B2 导航收敛：场景折叠父节点的展开/收起。openNav 仅记录「手动收起」(false)，
@@ -868,7 +830,11 @@ export default {
     '$route.params.tab'(t) {
       if (t && ALL_TABS.includes(t) && t !== this.tab && this.user) {
         appOptions.methods.goTab.call(this, t)
-        if (t === 'wallet') this.wallet.load(this.user, this.makeupCards)
+        if (t === 'wallet') {
+          this.wallet.load(this.user, this.makeupCards)
+          this.shop.loadProducts()
+          this.shop.loadOrders()
+        }
       }
     },
     // 二期 C1：进入首页「今日」子页时拉取今日目标
@@ -890,7 +856,11 @@ export default {
     const t = this.$route && this.$route.params.tab
     if (t && ALL_TABS.includes(t) && t !== this.tab) {
       appOptions.methods.goTab.call(this, t)
-      if (t === 'wallet') this.wallet.load(this.user, this.makeupCards)
+      if (t === 'wallet') {
+        this.wallet.load(this.user, this.makeupCards)
+        this.shop.loadProducts()
+        this.shop.loadOrders()
+      }
     }
     // 二期 C1：默认在首页「今日」时加载今日目标卡
     if (this.tab === 'home' && this.homeSub === 'today') this.loadHomeGoals()

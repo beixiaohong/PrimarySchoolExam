@@ -1108,3 +1108,47 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .bind-guide{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:linear-gradient(135deg,#EEF3FF,#F8FAFF);border:1.5px solid #CFDCF9;border-radius:14px;padding:12px 16px;margin-top:12px;font-size:13px;color:#3A4A7B}
 .bind-guide .bg-btn{border:none;background:#4E7CF6;color:#fff;font-size:12px;font-weight:700;padding:7px 14px;border-radius:999px;cursor:pointer;transition:.15s}
 .bind-guide .bg-btn:hover{background:#3A66E0}
+
+/* ═══════════ S4 商城 / 支付弹窗 ═══════════ */
+.shop-section{margin-top:14px}
+.shop-section h3{margin:0 0 10px;font-size:15px}
+.shop-empty{text-align:center;padding:24px 0;color:var(--text-2,#8a8fa3)}
+.shop-empty .em{font-size:32px;margin-bottom:6px}
+.shop-group{margin-bottom:12px}
+.sg-title{font-size:13px;font-weight:700;color:var(--text-2,#8a8fa3);margin-bottom:6px}
+.sg-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.shop-card{background:var(--card,#fff);border:1px solid var(--border,#ececf4);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.sc-name{font-weight:700;font-size:14px}
+.sc-sub{font-size:12px;color:var(--text-2,#8a8fa3)}
+.sc-benefits{display:flex;flex-wrap:wrap;gap:4px}
+.sc-tag{font-size:11px;background:#EEF3FF;color:#4E7CF6;border-radius:6px;padding:2px 6px}
+.sc-price{display:flex;align-items:baseline;gap:6px}
+.sp-now{font-size:18px;font-weight:800;color:#E5484D}
+.sp-orig{font-size:12px;color:#999;text-decoration:line-through}
+/* 订单行 */
+.order-row{border-bottom:1px solid var(--border,#ececf4);padding:10px 0}
+.order-row:last-child{border-bottom:none}
+.or-top{display:flex;justify-content:space-between;font-size:14px;font-weight:600}
+.or-mid{display:flex;justify-content:space-between;font-size:13px;color:var(--text-2,#8a8fa3);margin-top:4px}
+.or-bot{margin-top:6px;display:flex;gap:8px}
+.or-status{font-size:12px;padding:2px 8px;border-radius:6px}
+.st-PENDING_PAYMENT{background:#FFF3E0;color:#E65100}
+.st-PAID{background:#E8F5E9;color:#2E7D32}
+.st-FULFILLED{background:#E3F2FD;color:#1565C0}
+.st-CLOSED{background:#F5F5F5;color:#999}
+.st-REFUNDING{background:#FFF8E1;color:#F57F17}
+.st-REFUNDED{background:#FCE4EC;color:#C62828}
+/* 支付弹窗 */
+.modal-pay{max-width:420px}
+.pay-amount{text-align:center;font-size:28px;font-weight:800;color:#E5484D;margin:8px 0}
+.pay-memo{display:flex;align-items:center;gap:8px;justify-content:center;margin:8px 0;font-size:14px}
+.pay-memo-code{background:#F5F7FA;padding:4px 10px;border-radius:6px;font-size:16px;font-weight:700;letter-spacing:1px}
+.pay-qrs{display:flex;gap:12px;justify-content:center;margin:12px 0;flex-wrap:wrap}
+.pay-qr{text-align:center}
+.pqrtitle{font-size:13px;font-weight:600;margin-bottom:4px}
+.pqrimg{width:140px;height:140px;border-radius:8px;border:1px solid var(--border,#ececf4);object-fit:contain}
+.pqr-broken{font-size:12px;color:#999;padding:20px 0}
+.pay-qr-empty{text-align:center;color:#999;padding:20px;font-size:13px}
+.pay-tips{text-align:center;font-size:12px;color:var(--text-2,#8a8fa3);margin:8px 0}
+.pay-countdown{text-align:center;font-size:14px;font-weight:600;color:#E65100;margin:6px 0}
+.pay-order-no{text-align:center;font-size:11px;color:#999;margin:4px 0}
