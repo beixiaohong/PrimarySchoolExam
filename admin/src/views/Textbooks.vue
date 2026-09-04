@@ -108,12 +108,12 @@ async function load() {
   if (filter.value.subject) params.subject = filter.value.subject
   if (filter.value.grade > 0) params.grade = filter.value.grade
   if (filter.value.region) params.region = filter.value.region
-  const d = await api.get('/api/admin/textbooks', { params })
+  const { data: d } = await api.get('/api/admin/textbooks', { params })
   rows.value = (d && d.items) || []
 }
 
 async function loadRegions() {
-  const d = await api.get('/api/admin/textbooks/regions')
+  const { data: d } = await api.get('/api/admin/textbooks/regions')
   regions.value = (d && d.regions) || []
 }
 

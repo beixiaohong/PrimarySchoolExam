@@ -264,7 +264,7 @@ async function loadProducts() {
   if (pFilter.value.status) params.status = pFilter.value.status
   if (pFilter.value.type) params.type = pFilter.value.type
   if (pFilter.value.keyword) params.keyword = pFilter.value.keyword
-  const d = await api.get('/api/admin/commerce/products', { params })
+  const { data: d } = await api.get('/api/admin/commerce/products', { params })
   products.value = (d && d.items) || []
   pTotal.value = (d && d.total) || 0
 }
@@ -322,7 +322,7 @@ async function loadOrders() {
   if (oFilter.value.status) params.status = oFilter.value.status
   if (oFilter.value.user_id) params.user_id = oFilter.value.user_id
   if (oFilter.value.order_no) params.order_no = oFilter.value.order_no
-  const d = await api.get('/api/admin/commerce/orders', { params })
+  const { data: d } = await api.get('/api/admin/commerce/orders', { params })
   orders.value = (d && d.items) || []
   oTotal.value = (d && d.total) || 0
 }
@@ -330,7 +330,7 @@ async function loadOrders() {
 async function openDetail(row) {
   oCur.value = row
   try {
-    const d = await api.get(`/api/admin/commerce/orders/${row.id}`)
+    const { data: d } = await api.get(`/api/admin/commerce/orders/${row.id}`)
     oDetail.value = d
     oDetailOpen.value = true
   } catch (e) { ElMessage.error(e.response?.data?.message || e.message || '加载详情失败') }

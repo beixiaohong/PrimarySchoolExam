@@ -139,7 +139,7 @@ async function load() {
   if (filter.value.subject) params.subject = filter.value.subject
   if (filter.value.vip) params.vip = filter.value.vip
   if (filter.value.active) params.active = filter.value.active
-  const d = await api.get('/api/admin/users', { params })
+  const { data: d } = await api.get('/api/admin/users', { params })
   rows.value = (d && d.items) || []
   total.value = (d && d.total) || 0
 }

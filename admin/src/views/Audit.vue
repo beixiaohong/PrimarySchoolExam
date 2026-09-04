@@ -78,7 +78,7 @@ async function load() {
     if (kw.value.admin) params.admin_name = kw.value.admin
     if (kw.value.target_type) params.target_type = kw.value.target_type
   }
-  const d = await api.get(url, { params })
+  const { data: d } = await api.get(url, { params })
   rows.value = (d && d.items) || []
   total.value = (d && d.total) || 0
 }

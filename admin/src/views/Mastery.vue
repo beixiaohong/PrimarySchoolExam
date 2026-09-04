@@ -64,14 +64,14 @@ const userData = ref(null)
 const userLoading = ref(false)
 
 async function loadCov() {
-  const d = await api.get('/api/admin/mastery/coverage')
+  const { data: d } = await api.get('/api/admin/mastery/coverage')
   cov.value = d
 }
 async function loadUser() {
   if (!userId.value.trim()) { ElMessage.warning('请输入 user_id'); return }
   userLoading.value = true
   try {
-    const d = await api.get(`/api/admin/mastery/users/${encodeURIComponent(userId.value.trim())}`)
+    const { data: d } = await api.get(`/api/admin/mastery/users/${encodeURIComponent(userId.value.trim())}`)
     userData.value = d
   } catch (e) { ElMessage.error(e.response?.data?.message || e.message || '查询失败') }
   finally { userLoading.value = false }

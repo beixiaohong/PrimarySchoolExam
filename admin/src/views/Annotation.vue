@@ -142,7 +142,7 @@ const saving = ref(false)
 async function loadQueue() {
   const params = { page: qPage.value, page_size: qSize.value, source_table: qFilter.value.source_table }
   if (qFilter.value.subject) params.subject = qFilter.value.subject
-  const d = await api.get('/api/admin/content/annotation/queue', { params })
+  const { data: d } = await api.get('/api/admin/content/annotation/queue', { params })
   queue.value = ((d && (d.items || d.queue)) || []).map(x => ({ ...x, _kpIds: x.kp_ids || [], _saving: false }))
   qTotal.value = (d && d.total) || queue.value.length
 }
@@ -151,7 +151,7 @@ async function loadKpTree() {
   const params = {}
   if (tFilter.value.subject) params.subject = tFilter.value.subject
   if (tFilter.value.grade > 0) params.grade = tFilter.value.grade
-  const d = await api.get('/api/admin/content/kp/tree', { params })
+  const { data: d } = await api.get('/api/admin/content/kp/tree', { params })
   kpOptions.value = (d && d.tree) || []
 }
 
@@ -181,7 +181,7 @@ async function batchSubmit() {
 const aiOpen = ref(false), aiList = ref([])
 async function aiPredict(row) {
   try {
-    const d = await api.post('/api/admin/content/annotation/ai-predict', {
+    const { data: d } = await api.post('/api/admin/content/annotation/ai-predict', {
       source_table: qFilter.value.source_table, question_id: row.id,
     })
     aiList.value = (d && d.predictions) || []
@@ -196,7 +196,7 @@ async function loadTree() {
   const params = {}
   if (tFilter.value.subject) params.subject = tFilter.value.subject
   if (tFilter.value.grade > 0) params.grade = tFilter.value.grade
-  const d = await api.get('/api/admin/content/kp/tree', { params })
+  const { data: d } = await api.get('/api/admin/content/kp/tree', { params })
   tree.value = (d && d.tree) || []
   kpOptions.value = tree.value
 }
@@ -220,7 +220,7 @@ async function saveKp() {
 // 统计
 const stats = ref(null)
 async function loadStats() {
-  const d = await api.get('/api/admin/content/annotation/stats', { params: { source_table: qFilter.value.source_table } })
+  const { data: d } = await api.get('/api/admin/content/annotation/stats', { params: { source_table: qFilter.value.source_table } })
   stats.value = d
 }
 

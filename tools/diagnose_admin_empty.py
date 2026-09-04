@@ -263,7 +263,9 @@ def main():
         ("/api/admin/commerce", "充值订单"),
         ("/api/admin/rbac", "角色权限"),
         ("/api/admin/audit", "审计日志"),
-        ("/api/admin/annotation", "标注工作台"),
+        # 注意：标注工作台挂在 content 域下，路径是 /api/admin/content/annotation
+        # （早期写成 /api/admin/annotation 会误报「dist 缺页面」）
+        ("/api/admin/content/annotation", "标注工作台"),
         ("/api/admin/mastery", "掌握度报表"),
         ("/api/admin/users", "用户管理"),
     ]

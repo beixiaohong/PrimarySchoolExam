@@ -369,11 +369,11 @@ async function loadBooks() {
   const params = {}
   if (bookFilter.value.grade) params.grade = bookFilter.value.grade
   if (bookFilter.value.kw) params.keyword = bookFilter.value.kw
-  const d = await api.get('/api/admin/books', { params })
+  const { data: d } = await api.get('/api/admin/books', { params })
   books.value = (d && d.items) || []
 }
 async function loadTextbookOptions() {
-  const d = await api.get('/api/admin/textbooks', { params: { subject: '英语' } })
+  const { data: d } = await api.get('/api/admin/textbooks', { params: { subject: '英语' } })
   textbookOptions.value = (d && d.items) || []
 }
 function openBook(row) {
@@ -408,7 +408,7 @@ function openBookWords(row) {
 async function loadWords() {
   const params = { page: wordPage.value, page_size: wordPageSize.value }
   if (wordKw.value) params.keyword = wordKw.value
-  const d = await api.get(`/api/admin/books/${curBook.value.id}/words`, { params })
+  const { data: d } = await api.get(`/api/admin/books/${curBook.value.id}/words`, { params })
   words.value = (d && d.items) || []
   wordTotal.value = (d && d.total) || 0
 }
@@ -437,7 +437,7 @@ async function removeWord(row) {
 async function doImport() {
   saving.value = true
   try {
-    const d = await api.post(`/api/admin/books/${curBook.value.id}/words/import`, { text: importText.value })
+    const { data: d } = await api.post(`/api/admin/books/${curBook.value.id}/words/import`, { text: importText.value })
     ElMessage.success(`导入 ${d.added} 个，跳过 ${d.skipped} 个`)
     importOpen.value = false
     importText.value = ''
@@ -455,7 +455,7 @@ const clForm = ref({ title: '', author: '', dynasty: '', text_type: 'poem', grad
 async function loadClassicals() {
   const params = {}
   if (clKw.value) params.keyword = clKw.value
-  const d = await api.get('/api/admin/classicals', { params })
+  const { data: d } = await api.get('/api/admin/classicals', { params })
   classicals.value = (d && d.items) || []
 }
 function openClassical(row) {
@@ -491,7 +491,7 @@ const grForm = ref({ name: '', code: '', grade: 3, category: '时态', descripti
 async function loadGrammar() {
   const params = {}
   if (grKw.value) params.keyword = grKw.value
-  const d = await api.get('/api/admin/grammar-points', { params })
+  const { data: d } = await api.get('/api/admin/grammar-points', { params })
   grammars.value = (d && d.items) || []
 }
 function openGrammar(row) {
@@ -534,7 +534,7 @@ async function loadKp() {
   if (kpFilter.value.subject) params.subject = kpFilter.value.subject
   if (kpFilter.value.grade) params.grade = kpFilter.value.grade
   if (kpKw.value) params.keyword = kpKw.value
-  const d = await api.get('/api/admin/kp-points', { params })
+  const { data: d } = await api.get('/api/admin/kp-points', { params })
   kps.value = (d && d.items) || []
   kpTotal.value = (d && d.total) || 0
 }
@@ -573,12 +573,12 @@ const paperDetail = ref({})
 async function loadPapers() {
   const params = { page: paperPage.value, page_size: paperPageSize.value }
   if (paperKw.value) params.keyword = paperKw.value
-  const d = await api.get('/api/admin/collected-papers', { params })
+  const { data: d } = await api.get('/api/admin/collected-papers', { params })
   papers.value = (d && d.items) || []
   paperTotal.value = (d && d.total) || 0
 }
 async function viewPaper(row) {
-  const d = await api.get(`/api/admin/collected-papers/${row.id}`)
+  const { data: d } = await api.get(`/api/admin/collected-papers/${row.id}`)
   paperDetail.value = d || {}
   paperDetailOpen.value = true
 }
@@ -598,7 +598,7 @@ const courseForm = ref({ title: '', subject: '', grade: 0, video_url: '', cover_
 async function loadCourses() {
   const params = {}
   if (courseKw.value) params.keyword = courseKw.value
-  const d = await api.get('/api/admin/courses', { params })
+  const { data: d } = await api.get('/api/admin/courses', { params })
   courses.value = (d && d.items) || []
 }
 function openCourse(row) {

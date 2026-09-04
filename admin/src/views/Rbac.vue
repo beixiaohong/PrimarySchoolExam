@@ -80,7 +80,7 @@ const admins = ref([])
 const userKw = ref('')
 
 async function loadRoles() {
-  const d = await api.get('/api/admin/rbac/roles')
+  const { data: d } = await api.get('/api/admin/rbac/roles')
   // 兼容两种返回结构：{roles: {super: [...], admin: [...], ops: [...]}} 或 {super,admin,ops}
   const r = (d && d.roles) || d || {}
   roles.value = Object.keys(r).map(name => ({ name, permissions: r[name] || [] }))
@@ -88,7 +88,7 @@ async function loadRoles() {
 }
 
 async function loadPerms() {
-  const d = await api.get('/api/admin/rbac/permissions')
+  const { data: d } = await api.get('/api/admin/rbac/permissions')
   perms.value = (d && (d.permissions || d.items)) || []
 }
 
@@ -116,7 +116,7 @@ async function loadAdmins() {
   const params = { page: 1, page_size: 50 }
   if (userKw.value) params.keyword = userKw.value
   try {
-    const d = await api.get('/api/admin/users', { params })
+    const { data: d } = await api.get('/api/admin/users', { params })
     admins.value = ((d && d.items) || []).map(a => ({ ...a, _newRole: a.role || '' }))
   } catch (e) { /* RBAC 启用时可能无用户列表权限，忽略 */ admins.value = [] }
 }
