@@ -12,6 +12,7 @@
   GET /reports/summary。其余统计/看板端点全部保留。
 """
 from sqlalchemy import func, extract
+from decimal import Decimal
 import logging
 import json
 import csv
@@ -43,25 +44,29 @@ def _adjust_balance(db: Session, transaction_type, amount, from_account_id,
     - 支出：from_account.balance -= amount
     - 收入：from_account.balance += amount
     - 转账：from_account.balance -= amount, to_account.balance += amount
+
+    注：balance 列为 Numeric(15,2)，MySQL 驱动返回 Decimal；amount 为 float，
+    直接混算会 TypeError，故统一转 Decimal（经 str 避免浮点尾差）后运算。
     """
     from_account = db.query(model_ledger.Account).filter(
         model_ledger.Account.id == from_account_id
     ).first()
     if from_account is None:
         return
+    delta = Decimal(str(amount)) * multiplier
     t = transaction_type
     if t == model_ledger.TransactionType.EXPENSE:
-        from_account.balance -= amount * multiplier
+        from_account.balance -= delta
     elif t == model_ledger.TransactionType.INCOME:
-        from_account.balance += amount * multiplier
+        from_account.balance += delta
     elif t == model_ledger.TransactionType.TRANSFER:
-        from_account.balance -= amount * multiplier
+        from_account.balance -= delta
         if to_account_id:
             to_account = db.query(model_ledger.Account).filter(
                 model_ledger.Account.id == to_account_id
             ).first()
             if to_account:
-                to_account.balance += amount * multiplier
+                to_account.balance += delta
 
 
 def _advance_next_run(next_run: datetime, frequency: str, now: datetime) -> datetime:
@@ -850,8 +855,10 @@ def create_recurring(user_id: str, rt: ledger_schemas.RecurringTransactionCreate
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     next_run = rt.next_run or datetime.now()
+    rt_data = rt.model_dump()
+    rt_data.pop("next_run", None)  # 避免与下方显式 next_run 重复赋值（TypeError）
     db_rt = model_ledger.RecurringTransaction(
-        **rt.model_dump(), user_id=current_user.user_id, next_run=next_run, is_active=True
+        **rt_data, user_id=current_user.user_id, next_run=next_run, is_active=True
     )
     db.add(db_rt)
     db.commit()

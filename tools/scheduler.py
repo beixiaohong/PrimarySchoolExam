@@ -81,6 +81,19 @@ JOBS = [
         "command": ["tools/vip_expire_downgrade.py"],
         "timeout": 120,
     },
+    {
+        # 账本周期交易每日自动执行（B9）：全量扫描到期周期交易，生成账单并联动余额。
+        # 幂等：执行后 next_run 推进到未来，重跑不产生重复账单。
+        "name": "ledger_recurring_daily",
+        "kind": "daily",
+        "at": "01:00",
+        "valid_from": "2026-09-08",
+        "valid_until": None,
+        "max_runs": None,
+        "weekday": None,
+        "command": ["tools/run_due_recurring.py"],
+        "timeout": 600,
+    },
 ]
 
 
