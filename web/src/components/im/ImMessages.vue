@@ -131,18 +131,24 @@
       <span v-for="e in emojis" :key="e" @click="ctx.imEmoji(e)">{{ e }}</span>
     </div>
 
-    <!-- 红包弹窗 -->
-    <el-dialog v-model="ctx.imRedPacketDialog" title="发红包（钻石）" width="360">
-      <div class="im-rp-form">
-        <label>总钻石数：<input v-model="ctx.imRedPacketForm.total_diamond" type="number" min="0.01" step="0.01" /></label>
-        <label>份数：<input v-model="ctx.imRedPacketForm.count" type="number" min="1" /></label>
-        <label>祝福语：<input v-model="ctx.imRedPacketForm.blessing" maxlength="20" placeholder="恭喜发财" /></label>
+    <!-- 红包弹窗（自研 modal——web 学生端未接入 element-plus，勿用 el-dialog） -->
+    <div v-if="ctx.imRedPacketDialog" class="im-rp-mask" @click.self="ctx.imRedPacketDialog = false">
+      <div class="im-rp-dialog">
+        <div class="im-rp-dialog-head">
+          <span>发红包（钻石）</span>
+          <button class="im-rp-x" @click="ctx.imRedPacketDialog = false">×</button>
+        </div>
+        <div class="im-rp-form">
+          <label>总钻石数：<input v-model="ctx.imRedPacketForm.total_diamond" type="number" min="0.01" step="0.01" /></label>
+          <label>份数：<input v-model="ctx.imRedPacketForm.count" type="number" min="1" /></label>
+          <label>祝福语：<input v-model="ctx.imRedPacketForm.blessing" maxlength="20" placeholder="恭喜发财" /></label>
+        </div>
+        <div class="im-rp-dialog-foot">
+          <button @click="ctx.imRedPacketDialog = false">取消</button>
+          <button class="primary" @click="ctx.imSendRedPacket">塞钱</button>
+        </div>
       </div>
-      <template #footer>
-        <button @click="ctx.imRedPacketDialog = false">取消</button>
-        <button class="primary" @click="ctx.imSendRedPacket">塞钱</button>
-      </template>
-    </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -296,6 +302,22 @@ export default {
 .im-rp-form { display: flex; flex-direction: column; gap: 12px; }
 .im-rp-form label { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
 .im-rp-form input { width: 180px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 4px 8px; }
-.el-dialog button { border: 1px solid #dcdfe6; background: #fff; padding: 4px 14px; border-radius: 4px; cursor: pointer; }
-.el-dialog button.primary { background: #409eff; color: #fff; border-color: #409eff; }
+
+/* 自研红包弹窗（原 el-dialog，web 未接 element-plus） */
+.im-rp-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 999;
+  display: flex; align-items: center; justify-content: center;
+}
+.im-rp-dialog {
+  width: 360px; max-width: 92vw; background: #fff; border-radius: 12px;
+  padding: 18px 20px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.18);
+}
+.im-rp-dialog-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; font-size: 15px; margin-bottom: 14px;
+}
+.im-rp-x { border: 0; background: transparent; font-size: 18px; cursor: pointer; color: #909399; line-height: 1; }
+.im-rp-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.im-rp-dialog-foot button { border: 1px solid #dcdfe6; background: #fff; padding: 4px 14px; border-radius: 4px; cursor: pointer; }
+.im-rp-dialog-foot button.primary { background: #409eff; color: #fff; border-color: #409eff; }
 </style>
