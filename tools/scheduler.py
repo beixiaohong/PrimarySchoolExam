@@ -11,6 +11,7 @@
 
 能力：
 - 任务类型：once（一次性）/ daily（每日）/ weekly（每周）
+- 停用开关：enabled=False 可临时停用某任务（保留配置，改回 True 即恢复；比删定义更安全）
 - 限制次数：max_runs（None=不限）；有效期：valid_from / valid_until（日期，到期自动停）
 - 幂等：用 tools/.scheduler_state.json 记录每个任务的 last_run 与 run_count，
   cron 高频触发（每 15 分钟）也不会重复执行；若某天服务器在指定时刻宕机，
@@ -31,7 +32,10 @@ LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".scheduler
 # ---- 任务定义（新增定时/采集/汇总类任务在此追加）---------------------------
 JOBS = [
     {
+        # 【已停用 2026-09-05】数据源已枯竭，连续多日无新内容生成，暂停以免白烧 AI 额度。
+        # 恢复：把下面的 enabled 改回 True（或删掉该行），再确认 valid_from/valid_until 仍在有效期内。
         "name": "seed_junior_grade7",
+        "enabled": False,             # 显式停用开关：False 时调度器直接跳过，不判断时间/次数
         "kind": "daily",              # once | daily | weekly
         "at": "01:00",                # HH:MM，当天到达该时刻后触发
         "valid_from": "2026-08-25",   # 可选，YYYY-MM-DD
@@ -42,7 +46,10 @@ JOBS = [
         "timeout": 10800,             # 单任务超时（秒）：大纲拆细后 ~80 次 AI 调用，放宽到 3h
     },
     {
+        # 【已停用 2026-09-05】缺答案题目已补完（连续多日无新增补答案），暂停以免白烧 AI 额度。
+        # 恢复：把下面的 enabled 改回 True（或删掉该行）。脚本幂等，只会补 correct_answer 为空的题。
         "name": "backfill_paper_answers",
+        "enabled": False,
         "kind": "daily",
         "at": "01:00",
         "valid_from": "2026-08-27",
@@ -98,6 +105,8 @@ def _parse_hm(s):
 
 
 def _job_due(job, now, st):
+    if job.get("enabled") is False:
+        return False, "已停用（enabled=False）"
     vf = job.get("valid_from")
     vu = job.get("valid_until")
     if vf and now.date() < date.fromisoformat(vf):
