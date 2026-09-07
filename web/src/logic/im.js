@@ -13,8 +13,6 @@
 //   客户端状态机：connecting → open → reconnecting/closed，断线 3/9/27s 退避重连。
 //   入口：imConnectWS()；切换 tab 时不主动断开（允许后台收消息 + 角标提醒）。
 
-import { message as elMessage } from 'element-plus'
-
 // ──────────────────── data ────────────────────
 export function imData() {
   return {
@@ -201,7 +199,7 @@ export const imMethods = {
     this.imSending = true
     try {
       // IM 没有 /messages POST（走 WS），REST 暂无兜底；显示错误
-      elMessage.warning('正在连接中，请稍后再试')
+      this.showToast('正在连接中，请稍后再试')
     } finally {
       this.imSending = false
     }
@@ -216,7 +214,7 @@ export const imMethods = {
   // ───── 上传（图片 / 文件） ─────
   async imUploadFile(file) {
     if (!this.imActiveChatId) {
-      elMessage.warning('请先选择会话')
+      this.showToast('请先选择会话')
       return
     }
     this.imUploading = true
@@ -246,10 +244,10 @@ export const imMethods = {
           file_size: d.file_size,
         }))
       } else {
-        elMessage.warning('正在连接中，请稍后再试')
+        this.showToast('正在连接中，请稍后再试')
       }
     } catch (e) {
-      elMessage.error(e.message || '上传失败')
+      this.showToast(e.message || '上传失败')
     } finally {
       this.imUploading = false
     }
@@ -271,11 +269,11 @@ export const imMethods = {
   async imStartRec() {
     if (this.imRecording) return
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      elMessage.error('当前环境不支持录音（请使用 HTTPS 访问）')
+      this.showToast('当前环境不支持录音（请使用 HTTPS 访问）')
       return
     }
     if (!window.MediaRecorder) {
-      elMessage.error('浏览器不支持 MediaRecorder，请升级浏览器')
+      this.showToast('浏览器不支持 MediaRecorder，请升级浏览器')
       return
     }
     try {
@@ -297,7 +295,7 @@ export const imMethods = {
         if (this.imRecDuration >= 60000) this.imStopRec()  // 60s 上限
       }, 200)
     } catch (e) {
-      elMessage.error('无法获取麦克风：' + (e.message || e))
+      this.showToast('无法获取麦克风：' + (e.message || e))
     }
   },
 
@@ -318,7 +316,7 @@ export const imMethods = {
         const ext = mime.includes('mp4') ? '.m4a' : mime.includes('ogg') ? '.ogg' : '.webm'
         const blob = new Blob(this.imRecChunks, { type: mime })
         if (!send || blob.size < 1000) {
-          elMessage.info(send ? '说话时间太短' : '已取消')
+          this.showToast(send ? '说话时间太短' : '已取消')
           this.imRecChunks = []
           resolve()
           return
@@ -342,14 +340,14 @@ export const imMethods = {
       await this.api(`/api/im/messages/${encodeURIComponent(messageId)}/recall`, { method: 'POST' })
       const m = this.imMessages.find(x => x.id === messageId)
       if (m) { m.recalled = true; m.content = '（消息已撤回）' }
-    } catch (e) { elMessage.error(e.message || '撤回失败') }
+    } catch (e) { this.showToast(e.message || '撤回失败') }
   },
 
   async imDelete(messageId) {
     try {
       await this.api(`/api/im/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' })
       this.imMessages = this.imMessages.filter(x => x.id !== messageId)
-    } catch (e) { elMessage.error(e.message || '删除失败') }
+    } catch (e) { this.showToast(e.message || '删除失败') }
   },
 
   imStartEdit(messageId) {
@@ -360,7 +358,7 @@ export const imMethods = {
     const m = this.imMessages.find(x => x.id === messageId)
     if (!m) return
     const v = (m._draft || '').trim()
-    if (!v) { elMessage.warning('内容不能为空'); return }
+    if (!v) { this.showToast('内容不能为空'); return }
     try {
       await this.api(`/api/im/messages/${encodeURIComponent(messageId)}`, {
         method: 'PUT', body: JSON.stringify({ content: v }),
@@ -368,21 +366,21 @@ export const imMethods = {
       m.content = v
       m.edited_at = new Date().toISOString()
       m._editing = false
-    } catch (e) { elMessage.error(e.message || '编辑失败') }
+    } catch (e) { this.showToast(e.message || '编辑失败') }
   },
 
   // ───── 红包（D5：钻石） ─────
   imOpenRedPacket() {
-    if (!this.imActiveChatId) { elMessage.warning('请先选择会话'); return }
+    if (!this.imActiveChatId) { this.showToast('请先选择会话'); return }
     this.imRedPacketDialog = true
     this.imRedPacketForm = { total_diamond: '', count: '', blessing: '' }
   },
   async imSendRedPacket() {
     const f = this.imRedPacketForm
     const td = Number(f.total_diamond), cn = Number(f.count)
-    if (!td || td <= 0) { elMessage.warning('请输入红包总钻石数'); return }
-    if (!cn || cn < 1) { elMessage.warning('请输入红包份数'); return }
-    if (td < cn * 0.01) { elMessage.warning('每份至少 0.01 钻石'); return }
+    if (!td || td <= 0) { this.showToast('请输入红包总钻石数'); return }
+    if (!cn || cn < 1) { this.showToast('请输入红包份数'); return }
+    if (td < cn * 0.01) { this.showToast('每份至少 0.01 钻石'); return }
     const total_milli = Math.round(td * 1000)  // 元 → 毫钻
     try {
       await this.api('/api/im/red-packets', {
@@ -394,16 +392,16 @@ export const imMethods = {
           blessing_words: f.blessing || '',
         }),
       })
-      elMessage.success('红包已发送')
+      this.showToast('红包已发送')
       this.imRedPacketDialog = false
-    } catch (e) { elMessage.error(e.message || '发送失败') }
+    } catch (e) { this.showToast(e.message || '发送失败') }
   },
 
   async imClaimPacket(redPacketId) {
     try {
       const d = await this.api(`/api/im/red-packets/${encodeURIComponent(redPacketId)}/claim`, { method: 'POST' })
       const diamond = (d.amount || 0) / 1000
-      elMessage.success(`抢到 ${diamond.toFixed(2)} 钻石`)
+      this.showToast(`抢到 ${diamond.toFixed(2)} 钻石`)
       // 刷新红包消息的剩余个数
       const m = this.imMessages.find(x => x.red_packet_id === redPacketId)
       if (m && m._red_packet) {
@@ -411,7 +409,7 @@ export const imMethods = {
         m._red_packet.remaining_amount = d.remaining_amount
         m._red_packet.status = d.remaining_count === 0 ? 'finished' : 'active'
       }
-    } catch (e) { elMessage.error(e.message || '抢红包失败') }
+    } catch (e) { this.showToast(e.message || '抢红包失败') }
   },
 
   // ───── 好友 / 搜索 / 添加 ─────
@@ -440,16 +438,16 @@ export const imMethods = {
   async imAddFriend(uid) {
     try {
       await this.api('/api/im/friends/add', { method: 'POST', body: JSON.stringify({ target_user_id: uid }) })
-      elMessage.success('好友申请已发送')
-    } catch (e) { elMessage.error(e.message || '申请失败') }
+      this.showToast('好友申请已发送')
+    } catch (e) { this.showToast(e.message || '申请失败') }
   },
 
   async imAcceptFriend(friendshipId) {
     try {
       await this.api(`/api/im/friends/accept/${encodeURIComponent(friendshipId)}`, { method: 'POST' })
-      elMessage.success('已接受')
+      this.showToast('已接受')
       this.imLoadFriends()
-    } catch (e) { elMessage.error(e.message || '操作失败') }
+    } catch (e) { this.showToast(e.message || '操作失败') }
   },
 
   // ───── 创建会话 ─────
@@ -465,11 +463,11 @@ export const imMethods = {
       }
       this.imOpenChat(this.imChats.find(c => c.id === chat.id) || chat)
       this.imGoTab('chats')
-    } catch (e) { elMessage.error(e.message || '发起私聊失败') }
+    } catch (e) { this.showToast(e.message || '发起私聊失败') }
   },
 
   async imCreateGroup(name, memberIds) {
-    if (!name || !memberIds || !memberIds.length) { elMessage.warning('请填写群名并选择成员'); return }
+    if (!name || !memberIds || !memberIds.length) { this.showToast('请填写群名并选择成员'); return }
     try {
       const chat = await this.api('/api/im/chats', {
         method: 'POST',
@@ -478,7 +476,7 @@ export const imMethods = {
       this.imChats = [chat, ...this.imChats]
       this.imOpenChat(chat)
       this.imGoTab('chats')
-    } catch (e) { elMessage.error(e.message || '建群失败') }
+    } catch (e) { this.showToast(e.message || '建群失败') }
   },
 
   // ───── 群公告 ─────
@@ -489,9 +487,9 @@ export const imMethods = {
         method: 'PUT',
         body: JSON.stringify({ content: this.imAnnouncement }),
       })
-      elMessage.success('已更新群公告')
+      this.showToast('已更新群公告')
       this.imEditingAnnouncement = false
-    } catch (e) { elMessage.error(e.message || '更新失败') }
+    } catch (e) { this.showToast(e.message || '更新失败') }
   },
 
   // ───── 黑名单 ─────
@@ -501,16 +499,16 @@ export const imMethods = {
   async imBlock(uid) {
     try {
       await this.api(`/api/im/friends/${encodeURIComponent(uid)}/block`, { method: 'POST' })
-      elMessage.success('已拉黑')
+      this.showToast('已拉黑')
       this.imLoadBlocked()
-    } catch (e) { elMessage.error(e.message || '操作失败') }
+    } catch (e) { this.showToast(e.message || '操作失败') }
   },
   async imUnblock(uid) {
     try {
       await this.api(`/api/im/friends/${encodeURIComponent(uid)}/block`, { method: 'DELETE' })
-      elMessage.success('已解除')
+      this.showToast('已解除')
       this.imLoadBlocked()
-    } catch (e) { elMessage.error(e.message || '操作失败') }
+    } catch (e) { this.showToast(e.message || '操作失败') }
   },
 
   // ───── WebSocket ─────
@@ -543,7 +541,7 @@ export const imMethods = {
         }, this.imWSReconnectDelay)
       }
     } catch (e) {
-      elMessage.error('WebSocket 启动失败：' + (e.message || e))
+      this.showToast('WebSocket 启动失败：' + (e.message || e))
     }
   },
 
@@ -602,7 +600,7 @@ export const imMethods = {
         break
       }
       case 'error': {
-        elMessage.warning(msg.message || '消息发送失败')
+        this.showToast(msg.message || '消息发送失败')
         break
       }
       default: break
