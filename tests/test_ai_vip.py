@@ -111,9 +111,10 @@ class TestLoadVipUsers:
             _cleanup_vip(db, *uids.keys())
 
     def test_just_expired_excluded(self, db):
-        """刚好到期（expire_at = NOW() - 1 秒）应排除"""
+        """刚好到期（expire_at = NOW() - 10 秒）应排除"""
         uid = "vip_just_expired"
-        _seed_vip(db, uid, expire_at=datetime.now() - timedelta(seconds=1))
+        # 使用 10 秒前以确保 MySQL NOW() 与 Python datetime.now() 的时钟偏差不会影响测试
+        _seed_vip(db, uid, expire_at=datetime.now() - timedelta(seconds=10))
         try:
             result = ai_svc._load_vip_users()
             assert uid not in result

@@ -72,6 +72,13 @@ QUIZ_SECRET = os.environ.get("QUIZ_SECRET", "zhixue_sync_quiz_v1")
 ENABLE_IM = os.environ.get("ENABLE_IM", "true").strip().lower() in ("1", "true", "yes", "on")
 ENABLE_LEDGER = os.environ.get("ENABLE_LEDGER", "true").strip().lower() in ("1", "true", "yes", "on")
 
+# ── IM 语音转码（D6 决策：语音消息后端统一转 MP3）──
+# 服务器需预装 ffmpeg（apt install -y ffmpeg）。未安装或转码失败时自动降级：
+# 按浏览器原格式（webm/mp4）保存，<audio> 原生可播，功能不中断。
+FFMPEG_PATH = os.environ.get("FFMPEG_PATH", "ffmpeg").strip()
+FFPROBE_PATH = os.environ.get("FFPROBE_PATH", "ffprobe").strip()
+FFMPEG_TIMEOUT = int(os.environ.get("FFMPEG_TIMEOUT", "15"))
+
 # ── S1 后台 RBAC（权限严格模式，默认关闭=灰度放行存量后台）──
 # RBAC_STRICT=true 时后台高危操作按权限点校验，无权限返回 403；
 # 默认 false：仅做登录鉴权，权限点校验跳过，避免影响既有后台调用。开启前须先为存量管理员赋权。

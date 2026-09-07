@@ -6,12 +6,14 @@
 前端由本应用同源托管，故未启用 CORSMiddleware；若前后端分离部署需跨域，请在此自行添加。
 """
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from sqlalchemy import text
 
 from .database import init_db
 from .config import ENABLE_DOCS, ENABLE_IM, ENABLE_LEDGER
@@ -19,7 +21,7 @@ from .migrations.runner import run_migrations
 from .routers import admin
 from .domains.engine.routers import vocab, study, learning_goals, mastery
 from .domains.commerce.routers import diamond, store
-from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement, region
+from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement, region, metrics, compliance
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
 from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus
@@ -35,6 +37,7 @@ from .logging_setup import apply_logging
 # S1 可观测性：request-id / 结构化日志 / 统一异常信封
 from .core.logging import install_structured_logging
 from .core.middleware import request_context_middleware, register_exception_handlers
+from .core.slow_query import install_slow_query_listener
 
 # 应用导入即配置日志：按天+大小滚动，输出到 log/（控制台 + 文件双写）
 apply_logging()
@@ -72,6 +75,9 @@ app = FastAPI(
 install_structured_logging()
 register_exception_handlers(app)
 app.middleware("http")(request_context_middleware)
+# OBS-05 慢查询日志（SQLAlchemy event，> 500ms 记录 warning）
+from .database import engine as _db_engine
+install_slow_query_listener(_db_engine)
 
 # 业务路由统一鉴权：除登录入口 /api/auth 与管理员 /api/admin 外，全部要求登录会话 token。
 # 严格账号绑定：require_self 在登录校验基础上，强制请求中的 user_id == 当前登录账号，
@@ -140,6 +146,10 @@ app.include_router(courses.router, prefix="/api/courses", tags=["网课"], depen
 # 学习目标管理台（有终点/有总量）：路由内部已用 require_self 鉴权，不挂全局 user_auth_deps 以免重复校验
 app.include_router(learning_goals.router, prefix="/api/learning-goals", tags=["学习目标管理台"])
 app.include_router(mastery.router, prefix="/api/mastery", tags=["掌握度"], dependencies=user_auth_deps)
+# OBS-04 运营指标（无需登录，内部看板调用）
+app.include_router(metrics.router, prefix="/api", tags=["运营指标"])
+# CMP 合规底座（监护人同意 / 数据导出删除）
+app.include_router(compliance.router, prefix="/api/compliance", tags=["合规"], dependencies=user_auth_deps)
 
 # 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
 # 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。
@@ -217,7 +227,31 @@ def index():
     )
 
 
+# 应用启动时间戳（用于 /health 计算 uptime）
+_start_time = time.time()
+
+
 @app.get("/health", tags=["系统"])
 def health():
-    """健康检查接口"""
-    return {"status": "ok"}
+    """健康检查增强版（OBS-03）：DB 连接 + 迁移版本 + uptime。"""
+    from .database import SessionLocal
+    checks: dict = {"db": "unknown", "migrations": "unknown"}
+    status = "ok"
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        checks["db"] = "ok"
+    except Exception as e:
+        checks["db"] = f"error: {e}"
+        status = "degraded"
+    try:
+        row = db.execute(text(
+            "SELECT version FROM schema_migrations ORDER BY id DESC LIMIT 1"
+        )).first()
+        checks["migrations"] = row[0] if row else "none"
+    except Exception:
+        checks["migrations"] = "unknown"
+    finally:
+        db.close()
+    checks["uptime_sec"] = round(time.time() - _start_time, 1)
+    return {"status": status, "checks": checks}
