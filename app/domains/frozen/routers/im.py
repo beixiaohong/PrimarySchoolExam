@@ -212,6 +212,7 @@ async def get_friends(
         if friend:
             friends.append(UserResponse(
                 id=str(friend.user_id),
+                user_id=str(friend.user_id),
                 username=friend.user_id,
                 email=friend.email,
                 nickname=friend.nickname,
@@ -348,8 +349,22 @@ async def create_chat(
     db.commit()
     db.refresh(db_chat)
 
-    member = GroupMember(chat_id=db_chat.id, user_id=current_user.user_id, is_admin=True)
-    db.add(member)
+    # 建群者作为群主（admin）
+    creator_uid = str(current_user.user_id)
+    db.add(GroupMember(chat_id=db_chat.id, user_id=creator_uid, is_admin=True))
+
+    # 初始成员：过滤出真实存在的用户（跳过自己 / 无效 id / 去重）
+    added = 0
+    seen = {creator_uid}
+    for uid in (chat.member_ids or []):
+        uid = str(uid)
+        if not uid or uid in seen:
+            continue
+        if not db.query(User).filter(User.user_id == uid).first():
+            continue
+        db.add(GroupMember(chat_id=db_chat.id, user_id=uid, is_admin=False))
+        seen.add(uid)
+        added += 1
     db.commit()
 
     return ChatResponse(
@@ -359,7 +374,7 @@ async def create_chat(
         avatar=db_chat.avatar,
         description=db_chat.description,
         created_at=db_chat.created_at,
-        member_count=1,
+        member_count=1 + added,
     )
 
 
@@ -1032,6 +1047,7 @@ async def get_user_profile(
     """获取当前用户资料"""
     return UserResponse(
         id=str(current_user.user_id),
+        user_id=str(current_user.user_id),
         username=current_user.user_id,
         email=current_user.email or '',
         nickname=current_user.nickname or '',
@@ -1072,6 +1088,7 @@ async def update_user_profile(
 
     return UserResponse(
         id=str(current_user.user_id),
+        user_id=str(current_user.user_id),
         username=current_user.user_id,
         email=current_user.email or '',
         nickname=current_user.nickname or '',
@@ -1104,6 +1121,7 @@ async def search_users(
     for u in users:
         result.append({
             "id": str(u.user_id),
+            "user_id": str(u.user_id),
             "username": u.user_id,
             "nickname": u.nickname,
             "avatar": u.avatar,

@@ -98,7 +98,9 @@ export const imComputed = {
     if (c.chat_type === 'private') {
       const me = String(this.user)
       const peer = (c.members || []).find(m => String(m.user_id) !== me)
-      return peer ? peer.nickname : (c.name || '私聊')
+      // 新建私聊时 members 只有 user_id、昵称待后端返回时再回退到后端给的名字
+      if (peer && peer.nickname) return peer.nickname
+      return c.name || '私聊'
     }
     return c.name || '群聊'
   },

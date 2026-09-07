@@ -21,8 +21,14 @@ FriendshipCreate = FriendAddRequest
 
 # ───────────────── 用户资料响应 ─────────────────
 class UserResponse(BaseModel):
-    """用户资料响应模型：返回用户公开资料（含积分与在线状态）。"""
+    """用户资料响应模型：返回用户公开资料（含积分与在线状态）。
+
+    user_id 与 id 同值（业务主键 user_id 的字符串形态）。
+    前端 IM 各面板统一以 user_id 取用户标识，必须两个字段都给，
+    否则搜索/好友/黑名单等列表的「私聊/加好友」动作拿到 undefined。
+    """
     id: str
+    user_id: Optional[str] = None
     username: Optional[str] = None
     email: Optional[str] = None
     nickname: Optional[str] = None
@@ -39,6 +45,7 @@ class ChatCreate(BaseModel):
     chat_type: str = Field(..., description="private / group")
     description: Optional[str] = None
     target_user_id: Optional[str] = None
+    member_ids: Optional[list[str]] = None
 
 
 class ChatResponse(BaseModel):

@@ -318,3 +318,46 @@ def test_ac_i15_expired_red_packet_refund(client):
         assert rp_row.status.value == "expired"
     finally:
         db.close()
+
+
+# ──────────────── 联系人动作契约回归（2026-09-07 修复） ────────────────
+
+def test_contact_actions_contract(client):
+    """修复回归：搜索/好友列表返回含 user_id；加好友契约字段 addressee_username；
+    建群 member_ids 真实入群。
+
+    背景：后端用户对象只返回 id（前端统一读 user_id → undefined），ChatCreate
+    缺 member_ids 且建群逻辑从不加成员 → 私聊/加好友/建群三个动作全部失败。
+    """
+    db = _db(client)
+    me = "im_act_me"; a = "im_act_a"; b = "im_act_b"
+    _ensure_user(client, me, "我")
+    _ensure_user(client, a, "甲")
+    _ensure_user(client, b, "乙")
+
+    # 1) 搜索返回含 user_id（前端私聊/加好友取此值，之前只有 id → undefined）
+    r = client.get("/api/im/users/search" + _q(me, "q=" + a))
+    assert r.status_code == 200, r.text
+    hits = r.json()
+    assert any(str(x.get("user_id")) == a for x in hits), hits
+    assert any(str(x.get("id")) == a for x in hits)
+
+    # 2) 加好友：契约字段 addressee_username（可收 user_id/邮箱/昵称）
+    r = client.post("/api/im/friends/add" + _q(me), json={"addressee_username": a})
+    assert r.status_code == 200, r.text
+    # 接收方视角能看到待处理申请
+    r = client.get("/api/im/friends/pending" + _q(a))
+    assert r.status_code == 200, r.text
+    assert any(str(p.get("user_id")) == me for p in r.json()), r.json()
+
+    # 3) 建群带 member_ids → 成员真实入群（member_count = 群主 + 2 成员）
+    r = client.post("/api/im/chats" + _q(me), json={
+        "chat_type": "group", "name": "契约测试群", "member_ids": [a, b],
+    })
+    assert r.status_code == 200, r.text
+    chat = r.json()
+    assert chat["member_count"] == 3, chat
+    r = client.get(f"/api/im/chats/{chat['id']}/members" + _q(me))
+    assert r.status_code == 200, r.text
+    uids = {str(m["user_id"]) for m in r.json()}
+    assert uids == {me, a, b}, uids
