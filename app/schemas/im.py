@@ -65,6 +65,10 @@ class MessageResponse(BaseModel):
     file_name: Optional[str] = None
     file_size: Optional[int] = None
     created_at: Optional[datetime] = None
+    # 红包消息关联的红包 id（前端据此调用领取接口；非红包消息为 None）
+    red_packet_id: Optional[str] = None
+    # 编辑时间（非空表示「已编辑」，与 WS 广播 message_edited 对齐）
+    edited_at: Optional[datetime] = None
 
 
 # ───────────────── 红包 ─────────────────

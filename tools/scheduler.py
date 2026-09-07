@@ -94,6 +94,19 @@ JOBS = [
         "command": ["tools/run_due_recurring.py"],
         "timeout": 600,
     },
+    {
+        # IM 红包过期原路退回（B12）：24h 未领完的剩余钻石退回发送者。
+        # 与账本周期交易错峰 10 分钟，避免同刻并发。幂等：状态置 EXPIRED 后不再命中。
+        "name": "im_red_packet_expire",
+        "kind": "daily",
+        "at": "01:10",
+        "valid_from": "2026-09-08",
+        "valid_until": None,
+        "max_runs": None,
+        "weekday": None,
+        "command": ["tools/expire_red_packets.py"],
+        "timeout": 300,
+    },
 ]
 
 

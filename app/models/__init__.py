@@ -43,7 +43,7 @@ from .content_review import ContentReview
 from .parent_custom_task import ParentCustomTask
 from .task_confirm import TaskConfirm
 from .ledger import Bill, Account, Location, Merchant, Person, Project, Category, NotificationLog, UserReportSettings, RecurringTransaction
-from .im import Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim, ReadReceipt
+from .im import Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim, ReadReceipt, SensitiveWord, SensitiveHit
 from .announcement import Announcement
 from .judge_review import JudgeReviewIssue
 from .textbook import TextbookVersion, UserTextbookPref
@@ -52,6 +52,10 @@ from .knowledge import KnowledgePoint
 from .kp_map import QuestionKpMap
 from .mastery import MasteryRecord, MasterySnapshot
 from .learning_goal import LearningGoal, LearningCheckin, LearningWeeklyReview
+from .compliance import GuardianConsent, DataExportRequest, DataDeletionRequest
+from .commerce_product import Product, ProductBenefit
+from .commerce_order import Order
+from .commerce_payment import PayTransaction
 
 __all__ = [
     "Word", "WordBook",
@@ -91,6 +95,7 @@ __all__ = [
     "Bill", "Account", "Location", "Merchant", "Person", "Project", "Category",
     "NotificationLog", "UserReportSettings", "RecurringTransaction",
     "Chat", "Message", "Friendship", "GroupMember", "RedPacket", "RedPacketClaim", "ReadReceipt",
+    "SensitiveWord", "SensitiveHit",
     "Announcement",
     "JudgeReviewIssue",
     "TextbookVersion", "UserTextbookPref",
@@ -99,4 +104,5 @@ __all__ = [
     "MasteryRecord", "MasterySnapshot",
     "Product", "ProductBenefit", "Order", "PayTransaction",
     "LearningGoal", "LearningCheckin", "LearningWeeklyReview",
+    "GuardianConsent", "DataExportRequest", "DataDeletionRequest",
 ]

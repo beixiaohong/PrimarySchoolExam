@@ -19,6 +19,12 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 from app.models.user import User  # 确保 "User" 在映射注册表中可被关系解析
 
+# 红包资产换算（D5 决策：红包改用钻石）
+# 红包金额字段（total_amount / remaining_amount / claim.amount）为 Integer，
+# 单位是「毫钻」：1 钻石 = 1000 毫钻。整型存储可让拼手气红包精确配平
+# （各份之和严格等于总额），避免 Float 产生 0.01 级缺口。
+DIAMOND_SCALE = 1000
+
 
 # ───────────────── 枚举类型 ─────────────────
 class MessageType(PyEnum):
@@ -180,3 +186,47 @@ class ReadReceipt(Base):
     chat = relationship("Chat")
     user = relationship("User", foreign_keys=[user_id])
     last_read_message = relationship("Message", foreign_keys=[last_read_message_id])
+
+
+class SensitiveLevel(PyEnum):
+    """敏感词命中动作：reject=拒绝发送 / replace=替换为 *** 后放行。
+
+    默认用 reject（小学生产品从严）。运营期可视误杀情况对个别词降级为 replace。
+    """
+    REJECT = "reject"
+    REPLACE = "replace"
+
+
+class SensitiveWord(Base):
+    """敏感词库（D4 决策：后台可维护）。
+
+    word 唯一；is_active=False 时等同删除（保留历史命中可追溯）。
+    level 决定命中动作，见 `SensitiveLevel`。
+    """
+    __tablename__ = "db_im_sensitive_words"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    word = Column(String(50), nullable=False, unique=True, index=True, comment="敏感词")
+    level = Column(String(20), nullable=False, default=SensitiveLevel.REJECT.value,
+                   comment="命中动作：reject=拒绝 / replace=打码")
+    category = Column(String(30), default="", comment="分类（辱骂/广告/违规等）")
+    is_active = Column(Boolean, default=True, index=True, comment="停用后不再参与匹配")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SensitiveHit(Base):
+    """敏感词命中记录（供后台审计与统计）。
+
+    命中即写；replace 动作记录打码后的原文（raw_content 存原文便于复核）。
+    """
+    __tablename__ = "db_im_sensitive_hits"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), nullable=False, index=True, comment="命中用户")
+    chat_id = Column(String(36), comment="所属会话（可空：群名/公告等场景）")
+    scene = Column(String(30), default="message", comment="场景：message/group_name/announcement/blessing")
+    word = Column(String(50), comment="命中的词")
+    raw_content = Column(Text, comment="原文（便于人工复核）")
+    action = Column(String(20), comment="实际动作：reject/replace")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

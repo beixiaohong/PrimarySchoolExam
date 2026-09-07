@@ -33,8 +33,17 @@ from app.domains.frozen.services.im_crud import (
     delete_message as delete_message_crud,
 )
 from app.domains.identity.contracts import require_user
+from app.domains.frozen.services.voice_transcode import (
+    AUDIO_MIME_TYPES,
+    MAX_AUDIO_SIZE,
+    is_audio,
+    transcode_to_mp3,
+    TranscodeError,
+)
+from app.domains.frozen.services.sensitive import check_text, record_hit
 
 import json
+import logging
 import os
 import uuid
 import random
@@ -42,6 +51,33 @@ import shutil
 import mimetypes
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+# 红包单位换算见 app/models/im.py 的 DIAMOND_SCALE（1 钻石 = 1000 毫钻），
+# 由 `from app.models.im import *` 一并导入，此处不重复定义以免两处真相。
+
+
+def _guard_text(db, text, scene: str, user_id: str, chat_id=None):
+    """敏感词统一校验入口（D4）。
+
+    - 命中 reject → 记审计 + 抛 400（调用方事务随之回滚，消息/群名不入库）；
+    - 命中 replace → 记审计 + 返回打码后文本；
+    - 无命中 → 原样返回。
+
+    需过滤的写入面：消息正文（WS/REST）、群名、群简介、群公告、红包祝福语、编辑消息。
+    """
+    if not text:
+        return text
+    ok, action, word, out = check_text(db, text, scene=scene)
+    if not ok:
+        record_hit(user_id, chat_id, scene, word, text, "reject")
+        raise HTTPException(status_code=400, detail="内容包含不当词语，请修改后再试")
+    if action == "replace":
+        record_hit(user_id, chat_id, scene, word, text, "replace")
+        return out
+    return text
+
 
 router = APIRouter()
 
@@ -296,6 +332,12 @@ async def create_chat(
     if not chat.name:
         raise HTTPException(status_code=422, detail="群聊需要设置名称")
 
+    # 敏感词过滤（D4）：群名 / 群简介
+    _guard_text(db, chat.name, "group_name", str(current_user.user_id), None)
+    if chat.description:
+        chat.description = _guard_text(db, chat.description, "group_desc",
+                                       str(current_user.user_id), None)
+
     db_chat = Chat(
         name=chat.name,
         chat_type=chat.chat_type,
@@ -396,6 +438,11 @@ async def get_messages(
     result = []
     for message in messages:
         sender = db.query(User).filter(User.user_id == message.sender_id).first()
+        # 红包消息：回填 red_packet_id，供前端调用领取/查看记录接口
+        rp_id = None
+        if message.message_type == MessageType.RED_PACKET:
+            rp = db.query(RedPacket.id).filter(RedPacket.message_id == message.id).first()
+            rp_id = str(rp[0]) if rp else None
         result.append(MessageResponse(
             id=str(message.id),
             chat_id=str(message.chat_id),
@@ -407,6 +454,8 @@ async def get_messages(
             file_name=message.file_name,
             file_size=message.file_size,
             created_at=message.created_at,
+            red_packet_id=rp_id,
+            edited_at=getattr(message, "edited_at", None),
         ))
     return result
 
@@ -418,36 +467,66 @@ async def create_red_packet(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    """创建红包（扣除积分，广播红包消息）"""
-    if current_user.points < red_packet.total_amount:
-        raise HTTPException(status_code=400, detail="Insufficient points")
+    """创建红包（扣**钻石**，广播红包消息）。
 
-    current_user.points -= red_packet.total_amount
+    D5 决策：红包资产由 `users.points` 改为钻石体系。
+    - 内部单位「毫钻」：1 钻石 = 1000 毫钻（见 `DIAMOND_SCALE`）；
+    - 跨域一律经 `app.domains.commerce.contracts`，**禁止**直连 `services/diamond.py`；
+    - 落库失败会原路退回已扣钻石，避免资损。
+    """
+    # 函数内 import：与项目既有跨域调用写法一致（grimp 仍能识别为合法 contracts 边）
+    from app.domains.commerce.contracts import DiamondService
 
-    message = Message(
-        chat_id=red_packet.chat_id,
-        sender_id=current_user.user_id,
-        content=f"[红包] {red_packet.blessing_words}",
-        message_type=MessageType.RED_PACKET,
-    )
-    db.add(message)
-    db.commit()
-    db.refresh(message)
+    total = int(red_packet.total_amount or 0)
+    count = int(red_packet.total_count or 0)
+    if total <= 0 or count <= 0:
+        raise HTTPException(status_code=400, detail="红包金额与个数必须大于 0")
+    if total < count:
+        raise HTTPException(status_code=400, detail="每份红包至少 0.001 钻石，请提高金额或减少个数")
 
-    db_red_packet = RedPacket(
-        sender_id=current_user.user_id,
-        chat_id=red_packet.chat_id,
-        message_id=message.id,
-        total_amount=red_packet.total_amount,
-        total_count=red_packet.total_count,
-        remaining_amount=red_packet.total_amount,
-        remaining_count=red_packet.total_count,
-        blessing_words=red_packet.blessing_words,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
-    )
-    db.add(db_red_packet)
-    db.commit()
-    db.refresh(db_red_packet)
+    # 敏感词过滤（D4）：红包祝福语
+    blessing = _guard_text(db, red_packet.blessing_words or "", "blessing",
+                           str(current_user.user_id), str(red_packet.chat_id))
+
+    uid = str(current_user.user_id)
+    diamonds = total / DIAMOND_SCALE
+    if not DiamondService.charge(db, uid, diamonds, biz="im_red_packet"):
+        raise HTTPException(status_code=400, detail="钻石余额不足")
+
+    try:
+        message = Message(
+            chat_id=red_packet.chat_id,
+            sender_id=current_user.user_id,
+            content=f"[红包] {blessing}",
+            message_type=MessageType.RED_PACKET,
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+
+        db_red_packet = RedPacket(
+            sender_id=current_user.user_id,
+            chat_id=red_packet.chat_id,
+            message_id=message.id,
+            total_amount=total,
+            total_count=count,
+            remaining_amount=total,
+            remaining_count=count,
+            blessing_words=blessing,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+        )
+        db.add(db_red_packet)
+        db.commit()
+        db.refresh(db_red_packet)
+    except Exception:
+        # 落库失败 → 原路退回已扣钻石（独立提交，避免连带丢失）
+        db.rollback()
+        try:
+            DiamondService.grant(db, uid, diamonds, biz="im_red_packet_refund")
+            db.commit()
+        except Exception:
+            logger.exception("[red_packet] 创建失败且钻石退回异常 user=%s", uid)
+        raise
 
     await manager.broadcast_to_chat(
         json.dumps({
@@ -485,8 +564,17 @@ async def claim_red_packet(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    """领取红包（随机分配金额，广播领取通知）"""
-    red_packet = db.query(RedPacket).filter(RedPacket.id == red_packet_id).first()
+    """领取红包（拼手气随机分配，入账**钻石**，广播领取通知）。
+
+    B11（资损红线）：对红包行加 `with_for_update()` 行锁，并发领取被串行化，
+    防止「多人同抢最后一个」导致超发。锁在事务提交（grant 内部 commit）时释放。
+    """
+    from app.domains.commerce.contracts import DiamondService
+
+    # 行锁：同一红包的并发领取串行执行
+    red_packet = db.query(RedPacket).filter(
+        RedPacket.id == red_packet_id
+    ).with_for_update().first()
     if not red_packet:
         raise HTTPException(status_code=404, detail="Red packet not found")
 
@@ -529,11 +617,14 @@ async def claim_red_packet(
 
     red_packet.remaining_amount -= claim_amount
     red_packet.remaining_count -= 1
-    current_user.points += claim_amount
 
     if red_packet.remaining_count == 0:
         red_packet.status = RedPacketStatus.FINISHED
 
+    # 入账钻石（毫钻 → 钻石）。注意：grant 内部会 commit，
+    # 故把「扣减剩余 + 写领取记录」全部放在它之前，保证同一次提交落库。
+    DiamondService.grant(db, str(current_user.user_id), claim_amount / DIAMOND_SCALE,
+                         biz="im_red_packet_claim")
     db.commit()
 
     await manager.broadcast_to_chat(
@@ -548,7 +639,8 @@ async def claim_red_packet(
     )
 
     return {
-        "amount": claim_amount,
+        "amount": claim_amount,                              # 毫钻（整型，对账口径）
+        "amount_diamond": claim_amount / DIAMOND_SCALE,      # 钻石（前端展示口径）
         "remaining_count": red_packet.remaining_count,
         "remaining_amount": red_packet.remaining_amount,
     }
@@ -685,6 +777,24 @@ async def handle_message(message_data: dict, user_id: str, nickname: str):
         ).first()
         if not membership:
             return
+
+        # ── 敏感词过滤（D4）：文本消息落库前校验，REST 与 WS 双通道共用 check_text ──
+        if message_type == MessageType.TEXT and content:
+            ok, action, word, out = check_text(db, content, scene="message")
+            if not ok:
+                record_hit(user_id, chat_id, "message", word, content, "reject")
+                # 仅回发给发送者（不广播），前端据此提示并保留输入内容
+                await manager.send_personal_message(json.dumps({
+                    "type": "error",
+                    "code": "sensitive_rejected",
+                    "message": "消息包含不当内容，请修改后重试",
+                    "chat_id": str(chat_id),
+                }), user_id)
+                return
+            if action == "replace":
+                record_hit(user_id, chat_id, "message", word, content, "replace")
+                content = out
+
         message = Message(
             chat_id=chat_id,
             sender_id=user_id,
@@ -1050,6 +1160,9 @@ async def edit_message(
     if msg.message_type != MessageType.TEXT:
         raise HTTPException(status_code=400, detail="只能编辑文本消息")
 
+    # 敏感词过滤（D4）：编辑后的正文同样受控（含打码后回写）
+    content = _guard_text(db, content, "message", str(current_user.user_id), str(msg.chat_id))
+
     msg.content = content
     msg.edited_at = datetime.now(timezone.utc)
     db.commit()
@@ -1149,6 +1262,9 @@ async def update_announcement(
     current_user: User = Depends(require_user),
 ):
     """更新群公告（仅管理员）"""
+    # 敏感词过滤（D4）：群公告
+    content = _guard_text(db, content, "announcement", str(current_user.user_id), chat_id)
+
     chat = update_announcement_crud(db, chat_id, str(current_user.user_id), content)
     if not chat:
         raise HTTPException(status_code=403, detail="无权限或聊天室不存在")
@@ -1203,6 +1319,7 @@ async def get_unread_count(
 
 
 # ───────────────── IM 文件上传 ─────────────────
+# 图片/文档沿用原白名单；音频（语音消息）为 D6 决策新增，转码后统一存 MP3。
 ALLOWED_MIME_TYPES = {
     "image/jpeg", "image/png", "image/gif", "image/webp",
     "application/pdf", "text/plain",
@@ -1210,37 +1327,70 @@ ALLOWED_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+} | AUDIO_MIME_TYPES
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB（非音频）
+# 音频单独限 2MB：60s 语音 webm 通常 < 1MB，留一倍余量；转码后 MP3 约 480KB/60s
 
 
 @router.post("/upload/file")
 async def upload_im_file(
     file: UploadFile = File(...),
     current_user: User = Depends(require_user),
+    db: Session = Depends(get_db),
 ):
-    """IM 文件上传（MIME 白名单 + 大小限制，存到 output/im_uploads/）"""
-    if file.content_type not in ALLOWED_MIME_TYPES:
+    """IM 文件上传（MIME 白名单 + 大小限制，存到 output/im_uploads/）。
+
+    音频（语音消息）额外做**统一转码为 MP3**：各浏览器 MediaRecorder 产物不一致
+    （webm / mp4），转码后跨端播放一致。转码失败按原格式保存降级，不阻断发送。
+
+    ⚠️ 铁律：ffmpeg 属外部阻塞调用，转码前先 `db.close()` 释放连接（见 voice_transcode.py 说明）。
+    """
+    ctype = (file.content_type or "").split(";")[0].strip().lower()
+    if ctype not in ALLOWED_MIME_TYPES:
         raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file.content_type}")
 
+    is_aud = is_audio(ctype)
+    limit = MAX_AUDIO_SIZE if is_aud else MAX_FILE_SIZE
+    limit_mb = limit // 1024 // 1024
+
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail=f"文件大小超过限制({MAX_FILE_SIZE // 1024 // 1024}MB)")
+    if len(content) > limit:
+        raise HTTPException(status_code=400, detail=f"文件大小超过限制({limit_mb}MB)")
 
     os.makedirs(UPLOAD_ROOT, exist_ok=True)
-    ext = mimetypes.guess_extension(file.content_type) or ".bin"
+    ext = mimetypes.guess_extension(ctype) or ".bin"
     unique_name = f"{uuid.uuid4()}{ext}"
     file_path = os.path.join(UPLOAD_ROOT, unique_name)
 
     with open(file_path, "wb") as f:
         f.write(content)
 
+    duration_ms = None
+    transcoded = False
+    if is_aud:
+        # ── 外部阻塞调用前释放 DB 会话（持连做外部调用曾致全站卡死，见提交 267c32c）──
+        db.close()
+        try:
+            mp3_path, dur = transcode_to_mp3(file_path, UPLOAD_ROOT)
+            file_path = mp3_path
+            unique_name = os.path.basename(mp3_path)
+            ctype = "audio/mpeg"
+            duration_ms = int((dur or 0) * 1000) or None
+            transcoded = True
+        except TranscodeError as e:
+            # 降级：保留原始 webm/mp4，前端 <audio> 仍可播放
+            logger.warning("[im/upload] 语音转码降级（按原格式保存）: %s", e)
+        except Exception:
+            logger.exception("[im/upload] 语音转码异常，按原格式保存")
+
     file_url = f"/output/im_uploads/{unique_name}"
     return {
         "file_url": file_url,
         "file_name": file.filename,
-        "file_size": len(content),
-        "content_type": file.content_type,
+        "file_size": os.path.getsize(file_path),
+        "content_type": ctype,
+        "duration_ms": duration_ms,      # 语音时长（毫秒）；转码不可用时为 None
+        "transcoded": transcoded,        # False = 未转码（原格式），功能不受影响
     }
 
 
