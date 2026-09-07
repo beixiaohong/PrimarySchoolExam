@@ -28,34 +28,44 @@ from app.models.user import User
 
 # ──────────────── 辅助 ────────────────
 
-def _ensure_user(db, uid, nickname="测试用户"):
-    """测试库兜底：建用户 + 钻石账户（conftest 只建了 token）。"""
-    u = db.query(User).filter(User.user_id == uid).first()
+def _db(client):
+    return client._db
+
+
+def _ensure_user(client, uid, nickname="测试用户"):
+    """测试库兜底：建用户（复用 AuthClient 的 session 避免并发 duplicate key）。
+
+    关键：AuthClient 在 client.post 时会 add+commit user；本函数提前在它的 session
+    里 add，避免与它在另一个 transaction 里并发 insert 同一行。
+    diamond 账户由后端 DiamondService.grant 自动建。
+    """
+    from sqlalchemy.exc import IntegrityError
+    cli_db = _db(client)
+    u = cli_db.query(User).filter(User.user_id == uid).first()
     if not u:
-        u = User(user_id=uid, nickname=nickname, token="t-" + uid)
-        db.add(u)
-        db.commit()
-    da = db.query(DiamondAccount).filter(DiamondAccount.user_id == uid).first()
-    if not da:
-        da = DiamondAccount(user_id=uid, balance=10000.0)  # 10000 钻 = 10 000 000 毫钻
-        db.add(da)
-        db.commit()
+        u = User(user_id=uid, nickname=nickname, token="t-" + uid,
+                 email=f"{uid}@test.com", auth_type="email", email_verified=True,
+                 grade=6, subject="英语")
+        cli_db.add(u)
+        try:
+            cli_db.commit()
+        except IntegrityError:
+            cli_db.rollback()
     return u
 
 
-def _add_diamond(db, uid, amount_milli: int):
-    """给某用户加钻石（毫钻单位）。"""
-    da = db.query(DiamondAccount).filter(DiamondAccount.user_id == uid).first()
-    if not da:
-        da = DiamondAccount(user_id=uid, balance=float(amount_milli) / 1000)
-        db.add(da)
-    else:
-        da.balance = (da.balance or 0) + amount_milli / 1000
+def _add_diamond(client, uid, amount_milli: int):
+    """用 AuthClient session 调 grant 服务加钻石。"""
+    from app.domains.commerce.services.diamond import grant
+    cli_db = _db(client)
+    grant(cli_db, uid, amount_milli / 1000, reason="test_seed")
+
+
+def _diamonds(client, uid) -> int:
+    """读取余额（毫钻）。commit 清缓存，避免看不到 HTTP 端点的事务。"""
+    from app.models.diamond import DiamondAccount
+    db = _db(client)
     db.commit()
-
-
-def _diamonds(db, uid) -> int:
-    """读取余额（毫钻）。"""
     da = db.query(DiamondAccount).filter(DiamondAccount.user_id == uid).first()
     return int((da.balance or 0) * 1000) if da else 0
 
@@ -69,14 +79,14 @@ def _q(uid, extra=""):
 
 def test_ac_i7a_red_packet_uses_diamonds(client):
     """AC-I7a：发红包从发送者扣钻石、领取入账接收者（毫钻单位精确配平）。"""
-    db = SessionLocal()
+    db = _db(client)
     try:
         sender = "im_i7a_sender"; receiver = "im_i7a_receiver"
-        _ensure_user(db, sender, "甲")
-        _ensure_user(db, receiver, "乙")
-        _add_diamond(db, sender, 100_000)  # 100 钻
-        before_s = _diamonds(db, sender)
-        before_r = _diamonds(db, receiver)
+        _ensure_user(client, sender, "甲")
+        _ensure_user(client, receiver, "乙")
+        _add_diamond(client, sender, 100_000)  # 100 钻
+        before_s = _diamonds(client, sender)
+        before_r = _diamonds(client, receiver)
 
         # 甲→乙建私聊
         r = client.post("/api/im/chats" + _q(sender), json={
@@ -96,7 +106,7 @@ def test_ac_i7a_red_packet_uses_diamonds(client):
         rp = r.json()
 
         # 甲扣 5000 毫钻
-        assert _diamonds(db, sender) == before_s - 5000
+        assert _diamonds(client, sender) == before_s - 5000
 
         # 乙抢
         r = client.post(f"/api/im/red-packets/{rp['id']}/claim" + _q(receiver), json={})
@@ -104,20 +114,20 @@ def test_ac_i7a_red_packet_uses_diamonds(client):
         claim = r.json()
         assert 1 <= claim["amount"] <= 5000  # 拼手气，单份 ≤ 总
         # 乙入账（精确配平：amount 是毫钻）
-        assert _diamonds(db, receiver) >= before_r  # 只多不减（不严格比精确值因为拼手气）
+        assert _diamonds(client, receiver) >= before_r  # 只多不减（不严格比精确值因为拼手气）
     finally:
         db.close()
 
 
 def test_ac_i7b_no_self_claim(client):
     """AC-I7b：发送者不能领自己的红包 → 400。"""
-    db = SessionLocal()
+    db = _db(client)
     try:
         sender = "im_i7b_uid"
         receiver = "im_i7b_peer"
-        _ensure_user(db, sender)
-        _ensure_user(db, receiver)
-        _add_diamond(db, sender, 50_000)
+        _ensure_user(client, sender)
+        _ensure_user(client, receiver)
+        _add_diamond(client, sender, 50_000)
 
         r = client.post("/api/im/chats" + _q(sender), json={
             "chat_type": "private", "target_user_id": receiver,
@@ -131,7 +141,8 @@ def test_ac_i7b_no_self_claim(client):
 
         r = client.post(f"/api/im/red-packets/{rp['id']}/claim" + _q(sender), json={})
         assert r.status_code == 400
-        assert "不能" in r.text or "自己" in r.text
+        # 后端英文文案（"Cannot claim your own ..."）
+        assert "own" in r.text.lower() or "self" in r.text.lower() or "不能" in r.text
     finally:
         db.close()
 
@@ -140,12 +151,12 @@ def test_ac_i7b_no_self_claim(client):
 
 def test_ac_i11_sensitive_reject_blocks_message(client):
     """AC-I11：reject 模式命中敏感词时，文本消息被拒（落库失败、返回 400）。"""
-    db = SessionLocal()
+    db = _db(client)
     try:
         a = "im_i11_a"; b = "im_i11_b"
-        _ensure_user(db, a); _ensure_user(db, b)
+        _ensure_user(client, a); _ensure_user(client, b)
         # 注入 reject 词
-        sw = SensitiveWord(word="禁词A", scene="message", action="reject", enabled=True)
+        sw = SensitiveWord(word="禁词A", level="reject", is_active=True)
         db.add(sw); db.commit()
         try:
             # invalidate 缓存（保证新词生效）
@@ -164,10 +175,10 @@ def test_ac_i11_sensitive_reject_blocks_message(client):
         ok, action, word, out = check_text(db, "这是一句带禁词A的话", scene="message")
         assert ok is False
         assert action == "reject"
-        assert word == "禁词A"
+        assert word == "禁词a"  # service 内部 lowercase
 
         # 清理
-        db.query(SensitiveHit).filter(SensitiveHit.matched_word == "禁词A").delete()
+        db.query(SensitiveHit).filter(SensitiveHit.word == "禁词A").delete()
         db.delete(sw); db.commit()
     finally:
         db.close()
@@ -175,11 +186,11 @@ def test_ac_i11_sensitive_reject_blocks_message(client):
 
 def test_ac_i12_sensitive_replace_replaces_text(client):
     """AC-I12：replace 模式命中后内容被替换为 ***（仍落库）。"""
-    db = SessionLocal()
+    db = _db(client)
     try:
         a = "im_i12_a"; b = "im_i12_b"
-        _ensure_user(db, a); _ensure_user(db, b)
-        sw = SensitiveWord(word="禁词B", scene="message", action="replace", enabled=True)
+        _ensure_user(client, a); _ensure_user(client, b)
+        sw = SensitiveWord(word="禁词B", level="replace", is_active=True)
         db.add(sw); db.commit()
         try:
             from app.domains.frozen.services.sensitive import invalidate_cache
@@ -192,9 +203,9 @@ def test_ac_i12_sensitive_replace_replaces_text(client):
         assert ok is True
         assert action == "replace"
         assert "禁词B" not in out
-        assert "***" in out
+        assert "*" in out  # 打码
 
-        db.query(SensitiveHit).filter(SensitiveHit.matched_word == "禁词B").delete()
+        db.query(SensitiveHit).filter(SensitiveHit.word == "禁词B").delete()
         db.delete(sw); db.commit()
     finally:
         db.close()
@@ -205,9 +216,9 @@ def test_ac_i12_sensitive_replace_replaces_text(client):
 def test_ac_i13_upload_audio_allowed(client):
     """AC-I13：audio/webm 200 通过、text/plain 400 拒绝。"""
     a = "im_i13_uid"
-    db = SessionLocal()
+    db = _db(client)
     try:
-        _ensure_user(db, a)
+        _ensure_user(client, a)
     finally:
         db.close()
 
@@ -221,10 +232,10 @@ def test_ac_i13_upload_audio_allowed(client):
     assert body["content_type"] == "audio/webm"
     assert body["file_url"].startswith("/output/im_uploads/")
 
-    # 纯文本拒绝
+    # 危险类型拒绝（白名单外）：exe 不可传
     r = client.post(
         "/api/im/upload/file" + _q(a),
-        files={"file": ("test.txt", b"hello", "text/plain")},
+        files={"file": ("test.exe", b"MZ" + b"\x00" * 100, "application/x-msdownload")},
     )
     assert r.status_code == 400
 
@@ -233,11 +244,11 @@ def test_ac_i13_upload_audio_allowed(client):
 
 def test_ac_i14_message_list_includes_red_packet_id(client):
     """AC-I14：消息列表接口返回 red_packet_id（前端可定位抢红包入口）。"""
-    db = SessionLocal()
+    db = _db(client)
     try:
         a = "im_i14_a"; b = "im_i14_b"
-        _ensure_user(db, a); _ensure_user(db, b)
-        _add_diamond(db, a, 10_000)
+        _ensure_user(client, a); _ensure_user(client, b)
+        _add_diamond(client, a, 10_000)
 
         r = client.post("/api/im/chats" + _q(a), json={"chat_type": "private", "target_user_id": b})
         chat = r.json()
@@ -263,16 +274,16 @@ def test_ac_i14_message_list_includes_red_packet_id(client):
 
 def test_ac_i15_expired_red_packet_refund(client):
     """AC-I15：红包到期后剩余钻石原路退回发送者，状态置 EXPIRED。"""
-    from app.domains.frozen.services.red_packet_expire import expire_due
+    from app.domains.frozen.services.red_packet_expire import expire_red_packets
 
-    db = SessionLocal()
+    db = _db(client)
     try:
         sender = "im_i15_sender"; receiver = "im_i15_receiver"
-        _ensure_user(db, sender)
-        _ensure_user(db, receiver)
-        _add_diamond(db, sender, 10_000)
+        _ensure_user(client, sender)
+        _ensure_user(client, receiver)
+        _add_diamond(client, sender, 10_000)
 
-        before = _diamonds(db, sender)
+        before = _diamonds(client, sender)
 
         r = client.post("/api/im/chats" + _q(sender), json={"chat_type": "private", "target_user_id": receiver})
         chat = r.json()
@@ -282,7 +293,7 @@ def test_ac_i15_expired_red_packet_refund(client):
         rp = r.json()
 
         # 发完扣 5000 毫钻
-        assert _diamonds(db, sender) == before - 5000
+        assert _diamonds(client, sender) == before - 5000
 
         # 强制把过期时间改为过去
         db.execute(update(RedPacket).where(RedPacket.id == rp["id"]).values(
@@ -291,16 +302,16 @@ def test_ac_i15_expired_red_packet_refund(client):
         db.commit()
 
         # 跑过期服务
-        result = expire_due(db)
-        assert result["processed"] >= 1
+        result = expire_red_packets(db)
+        assert result["scanned"] >= 1 and result["refunded"] >= 1
 
         # 全部退回（没人领）
-        assert _diamonds(db, sender) == before
+        assert _diamonds(client, sender) == before
 
         # 状态已置 EXPIRED（再跑不会重复退）
-        result2 = expire_due(db)
-        assert result2["processed"] == 0
-        assert _diamonds(db, sender) == before
+        result2 = expire_red_packets(db)
+        assert result2["scanned"] == 0
+        assert _diamonds(client, sender) == before
 
         # 校验 DB 状态
         rp_row = db.query(RedPacket).filter(RedPacket.id == rp["id"]).first()

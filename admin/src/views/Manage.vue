@@ -138,18 +138,17 @@
             <el-table :data="sensitiveWords" border size="small" v-loading="loading">
               <el-table-column prop="id" label="ID" width="60" />
               <el-table-column prop="word" label="敏感词" min-width="120" />
-              <el-table-column prop="scene" label="场景" width="100" />
-              <el-table-column prop="action" label="动作" width="80">
+              <el-table-column prop="level" label="动作" width="80">
                 <template #default="{ row }">
-                  <el-tag :type="row.action==='reject'?'danger':(row.action==='replace'?'warning':'info')" size="small">
-                    {{ row.action==='reject'?'拒绝':row.action==='replace'?'替换':'放行' }}
+                  <el-tag :type="row.level==='reject'?'danger':'warning'" size="small">
+                    {{ row.level==='reject'?'拒绝':'打码' }}
                   </el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="category" label="分类" width="100" />
               <el-table-column label="启用" width="80">
                 <template #default="{ row }">
-                  <el-switch v-model="row.enabled" @change="toggleWord(row)" />
+                  <el-switch v-model="row.is_active" @change="toggleWord(row)" />
                 </template>
               </el-table-column>
               <el-table-column label="操作" width="120" fixed="right">
@@ -165,15 +164,9 @@
               <template #header><span style="font-weight:600">{{ wordForm.id?'编辑敏感词':'新增敏感词' }}</span></template>
               <el-form :model="wordForm" label-width="60px" size="small">
                 <el-form-item label="词语"><el-input v-model="wordForm.word" placeholder="如：脏话" /></el-form-item>
-                <el-form-item label="场景">
-                  <el-select v-model="wordForm.scene" style="width:100%">
-                    <el-option label="消息" value="message" /><el-option label="群名" value="group_name" />
-                    <el-option label="群公告" value="announcement" /><el-option label="红包祝福" value="blessing" />
-                  </el-select>
-                </el-form-item>
                 <el-form-item label="动作">
-                  <el-select v-model="wordForm.action" style="width:100%">
-                    <el-option label="替换为 *" value="replace" /><el-option label="拒绝发送" value="reject" />
+                  <el-select v-model="wordForm.level" style="width:100%">
+                    <el-option label="打码后放行" value="replace" /><el-option label="拒绝发送" value="reject" />
                   </el-select>
                 </el-form-item>
                 <el-form-item label="分类"><el-input v-model="wordForm.category" placeholder="如：脏话/广告/政治" /></el-form-item>
@@ -192,8 +185,8 @@
           <el-table-column prop="user_id" label="用户" min-width="110" />
           <el-table-column prop="chat_id" label="会话" min-width="160" show-overflow-tooltip />
           <el-table-column prop="scene" label="场景" width="100" />
-          <el-table-column prop="matched_word" label="命中词" min-width="100" />
-          <el-table-column prop="original_text" label="原文" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="word" label="命中词" min-width="100" />
+          <el-table-column prop="raw_content" label="原文" min-width="180" show-overflow-tooltip />
           <el-table-column prop="action" label="动作" width="80" />
           <el-table-column prop="created_at" label="时间" width="160" />
         </el-table>
@@ -236,7 +229,7 @@ const msgQuery = ref({ chat_id: '', user_id: '', keyword: '', message_type: '' }
 const sensitiveWords = ref([])
 const sensitiveHits = ref({ total: 0, items: [] })
 const imStats = ref(null)
-const wordForm = ref({ id: null, word: '', scene: 'message', action: 'replace', category: '' })
+const wordForm = ref({ id: null, word: '', level: 'replace', category: '' })
 
 async function loadBills() {
   const { data } = await api.get('/api/admin/ledger/bills', { params: { skip: (billsPage.value - 1) * 50, limit: 50 } })
@@ -324,18 +317,18 @@ async function delMsg(id) {
 }
 
 function editWord(w) {
-  wordForm.value = { id: w.id, word: w.word, scene: w.scene, action: w.action, category: w.category || '' }
+  wordForm.value = { id: w.id, word: w.word, level: w.level, category: w.category || '' }
 }
-function resetWordForm() { wordForm.value = { id: null, word: '', scene: 'message', action: 'replace', category: '' } }
+function resetWordForm() { wordForm.value = { id: null, word: '', level: 'replace', category: '' } }
 async function saveWord() {
   const f = wordForm.value
   if (!f.word) { ElMessage.warning('请填写敏感词'); return }
   try {
     if (f.id) {
-      await api.put(`/api/admin/im/sensitive-words/${f.id}`, { action: f.action, category: f.category, enabled: true })
+      await api.put(`/api/admin/im/sensitive-words/${f.id}`, { level: f.level, category: f.category, is_active: true })
       ElMessage.success('已更新')
     } else {
-      await api.post('/api/admin/im/sensitive-words', { word: f.word, scene: f.scene, action: f.action, category: f.category, enabled: true })
+      await api.post('/api/admin/im/sensitive-words', { word: f.word, level: f.level, category: f.category, is_active: true })
       ElMessage.success('已新增')
     }
     resetWordForm()
@@ -346,9 +339,9 @@ async function saveWord() {
 }
 async function toggleWord(w) {
   try {
-    await api.put(`/api/admin/im/sensitive-words/${w.id}`, { enabled: w.enabled })
+    await api.put(`/api/admin/im/sensitive-words/${w.id}`, { is_active: w.is_active })
   } catch (e) {
-    w.enabled = !w.enabled  // 失败回滚
+    w.is_active = !w.is_active  // 失败回滚
     ElMessage.error('操作失败')
   }
 }

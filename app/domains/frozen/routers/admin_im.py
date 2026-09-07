@@ -152,20 +152,19 @@ def delete_message(message_id: str, admin: "Admin" = Depends(_require_admin), db
 
 @router.get("/im/sensitive-words", summary="敏感词列表")
 def list_sensitive_words(
-    scene: str = Query(None, description="message/group_name/blessing/announcement"),
+    is_active: bool = Query(None, description="按启用状态过滤"),
     skip: int = 0, limit: int = 200,
     admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
     """分页查询敏感词词库。"""
     q = db.query(SensitiveWord)
-    if scene:
-        q = q.filter(SensitiveWord.scene == scene)
+    if is_active is not None:
+        q = q.filter(SensitiveWord.is_active == is_active)
     total = q.count()
     rows = q.order_by(SensitiveWord.id.desc()).offset(skip).limit(limit).all()
     return {"total": total, "items": [
-        {"id": w.id, "word": w.word, "scene": w.scene,
-         "action": w.action.value if w.action else None,
-         "category": w.category, "enabled": w.enabled,
+        {"id": w.id, "word": w.word,
+         "level": w.level, "category": w.category, "is_active": w.is_active,
          "created_at": w.created_at.isoformat() if w.created_at else None}
         for w in rows]}
 
@@ -174,30 +173,28 @@ def list_sensitive_words(
 def create_sensitive_word(
     payload: dict, admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
-    """新增一条敏感词。word 唯一，重复时 409。"""
+    """新增一条敏感词。word 全局唯一，重复时 409。"""
     word = (payload.get("word") or "").strip()
     if not word:
         raise HTTPException(400, "敏感词不能为空")
-    if db.query(SensitiveWord).filter(SensitiveWord.word == word, SensitiveWord.scene == payload.get("scene", "message")).first():
-        raise HTTPException(409, "该场景下敏感词已存在")
+    if db.query(SensitiveWord).filter(SensitiveWord.word == word).first():
+        raise HTTPException(409, "该敏感词已存在")
     w = SensitiveWord(
         word=word,
-        scene=payload.get("scene", "message"),
-        action=payload.get("action", "replace"),
-        category=payload.get("category"),
-        enabled=payload.get("enabled", True),
+        level=payload.get("level", "reject"),
+        category=payload.get("category", ""),
+        is_active=payload.get("is_active", True),
     )
     db.add(w)
     db.commit()
     db.refresh(w)
-    _audit(db, admin, "sensitive_word_create", str(w.id), f"word={w.word} scene={w.scene}")
-    # 触发缓存失效：下次发消息会重新读词表
+    _audit(db, admin, "sensitive_word_create", str(w.id), f"word={w.word} level={w.level}")
     try:
         from app.domains.frozen.services.sensitive import invalidate_cache
         invalidate_cache()
     except Exception:
         pass
-    return {"id": w.id, "word": w.word, "scene": w.scene, "action": w.action.value if w.action else None}
+    return {"id": w.id, "word": w.word, "level": w.level, "is_active": w.is_active}
 
 
 @router.put("/im/sensitive-words/{word_id}", summary="更新敏感词")
@@ -205,18 +202,18 @@ def update_sensitive_word(
     word_id: int, payload: dict,
     admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
-    """更新敏感词的 action / enabled / category。"""
+    """更新敏感词的 level / is_active / category。"""
     w = db.query(SensitiveWord).filter(SensitiveWord.id == word_id).first()
     if not w:
         raise HTTPException(404, "敏感词不存在")
-    if "action" in payload and payload["action"]:
-        w.action = payload["action"]
-    if "enabled" in payload:
-        w.enabled = bool(payload["enabled"])
+    if "level" in payload and payload["level"]:
+        w.level = payload["level"]
+    if "is_active" in payload:
+        w.is_active = bool(payload["is_active"])
     if "category" in payload:
         w.category = payload["category"]
     db.commit()
-    _audit(db, admin, "sensitive_word_update", str(w.id), f"action={w.action.value} enabled={w.enabled}")
+    _audit(db, admin, "sensitive_word_update", str(w.id), f"level={w.level} is_active={w.is_active}")
     try:
         from app.domains.frozen.services.sensitive import invalidate_cache
         invalidate_cache()
@@ -261,7 +258,7 @@ def list_sensitive_hits(
     rows = q.order_by(SensitiveHit.created_at.desc()).offset(skip).limit(limit).all()
     return {"total": total, "items": [
         {"id": h.id, "user_id": h.user_id, "chat_id": h.chat_id, "scene": h.scene,
-         "matched_word": h.matched_word, "original_text": h.original_text,
+         "word": h.word, "raw_content": h.raw_content,
          "action": h.action, "created_at": h.created_at.isoformat() if h.created_at else None}
         for h in rows]}
 

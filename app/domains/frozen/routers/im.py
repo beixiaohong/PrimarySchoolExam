@@ -581,7 +581,11 @@ async def claim_red_packet(
     if red_packet.status != RedPacketStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Red packet is not active")
 
-    if red_packet.expires_at < datetime.now(timezone.utc):
+    # MySQL DATETIME 列读回是 naive，统一按 UTC 比较避免 TypeError
+    rp_exp = red_packet.expires_at
+    if rp_exp and rp_exp.tzinfo is None:
+        rp_exp = rp_exp.replace(tzinfo=timezone.utc)
+    if rp_exp and rp_exp < datetime.now(timezone.utc):
         red_packet.status = RedPacketStatus.EXPIRED
         db.commit()
         raise HTTPException(status_code=400, detail="Red packet has expired")
