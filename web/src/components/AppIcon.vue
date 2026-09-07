@@ -23,6 +23,8 @@ const ICONS = {
   badges: '<circle cx="12" cy="9" r="5"/><path d="M9 13.5 7.5 21 12 18.5 16.5 21 15 13.5"/>',
   cards: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.4"/><path d="M21 16l-5-5L7 20"/>',
   wallet: '<path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2"/><rect x="3" y="9" width="18" height="11" rx="2.5"/><circle cx="16.5" cy="14.5" r="1.3"/>',
+  // 记账本（账本域 tab='ledger'，紧邻钱包）：翻开的账册 + 金额横线
+  ledger: '<path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4Z"/><path d="M5 4a2 2 0 0 0-2 2v1h2"/><path d="M10 8h5M10 12h5"/><path d="M10 16h3"/>',
   qa: '<circle cx="12" cy="12" r="9"/><path d="M9.2 9.3a2.8 2.8 0 0 1 5.3 1.1c0 1.9-2.5 2.6-2.5 2.6"/><path d="M12 17h.01"/>',
   aiquiz: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="9" cy="9" r="1.1"/><circle cx="15" cy="15" r="1.1"/><circle cx="15" cy="9" r="1.1"/><circle cx="9" cy="15" r="1.1"/>',
   assistant: '<rect x="5" y="8" width="14" height="11" rx="2.5"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1.4"/><circle cx="9" cy="11" r="1"/><circle cx="15" cy="11" r="1"/><path d="M9.5 14h5"/>',

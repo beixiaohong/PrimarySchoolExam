@@ -196,6 +196,9 @@
 
       <!-- ═══════════ 钱包（P5 新增） ═══════════ -->
 <wallet-view v-if="tab==='wallet'"></wallet-view>
+
+      <!-- ═══════════ 记账本（D2 决策：紧邻钱包入口） ═══════════ -->
+<ledger-view v-if="tab==='ledger'"></ledger-view>
       
 <settings-view v-if="tab==='settings'"></settings-view>
 

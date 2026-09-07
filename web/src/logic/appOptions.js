@@ -5,11 +5,14 @@
 // 家长管理（tab='parent'）的 data/computed/methods 已抽到 ./parent.js，下方用展开运算符合并（不用 mixin 数组，
 // 因 App.vue 是手工展开 appOptions，混入 mixin 数组会改变合并语义；展开后 this 仍绑定同一实例）。
 import { parentData, parentComputed, parentMethods } from './parent.js';
+// 个人账本（tab='ledger'）：D2 决策入口紧邻钱包；业务全在 logic/ledger.js（与 parent.js 同构）
+import { ledgerData, ledgerComputed, ledgerMethods } from './ledger.js';
 
 const appOptions = {
   data() {
     return {
       ...parentData(),   // 家长管理 data（studyFlags/parentPhase/pwdForm/taskDialog 等，见 logic/parent.js）
+      ...ledgerData(),   // 个人账本 data（ledgerTab/ledgerForm/ledgerBills/六维数据等，见 logic/ledger.js）
       // 登录
       user: '', userName: '', token: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
       promotedInfo: null,   // 升年级引导弹窗（登录响应 promoted）
@@ -143,6 +146,7 @@ const appOptions = {
 
   computed: {
     ...parentComputed,   // 家长管理 computed（teachUnitOptions/teachProgressText/mandatorySummary/parentTodoTotal/parentOpen）
+    ...ledgerComputed,   // 个人账本 computed（分类级联/账单分组/环形图/月度柱，见 logic/ledger.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码
       const a = (this.username || '').trim();
@@ -323,6 +327,7 @@ const appOptions = {
 
   methods: {
     ...parentMethods,   // 家长管理 methods（47 个，见 logic/parent.js；与本对象剩余键交集必须为空）
+    ...ledgerMethods,   // 个人账本 methods（记账/账单/分析/六维 CRUD/周期交易，见 logic/ledger.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -519,6 +524,7 @@ const appOptions = {
       }
       if (t === 'assistant') this.loadAssistantProfile();
       if (t === 'stats') this.loadStats();
+      if (t === 'ledger') this.initLedger();   // 个人账本：拉六维 + 当前 tab 数据（见 logic/ledger.js）
       if (t === 'settings') { this.loadTextbookPrefs(); }
       if (t === 'parent') { this.initParentPanel(); this.loadNotices(); }
       if (t === 'courses') this.loadCourses();

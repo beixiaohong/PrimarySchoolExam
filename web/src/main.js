@@ -26,6 +26,8 @@ import FocusView from './views/FocusView.vue'
 import AiquizView from './views/AiquizView.vue'
 import AssistantView from './views/AssistantView.vue'
 import WalletView from './views/WalletView.vue'
+// 个人账本（tab='ledger'）：4 个内部 tab，业务在 logic/ledger.js，子组件在 components/ledger/
+import LedgerView from './views/LedgerView.vue'
 import SettingsView from './views/SettingsView.vue'
 import ParentView from './views/ParentView.vue'
 import SupportView from './views/SupportView.vue'
@@ -80,6 +82,7 @@ app.component('FocusView', FocusView)
 app.component('AiquizView', AiquizView)
 app.component('AssistantView', AssistantView)
 app.component('WalletView', WalletView)
+app.component('LedgerView', LedgerView)
 app.component('SettingsView', SettingsView)
 app.component('ParentView', ParentView)
 app.component('SupportView', SupportView)
