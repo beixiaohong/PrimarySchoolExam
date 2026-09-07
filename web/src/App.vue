@@ -114,6 +114,7 @@
             <span v-if="it.badge==='pet' && petProfile && petLeveledUp" class="badge badge-gold">升级</span>
             <span v-if="it.badge==='badge' && badgeNew.length" class="badge badge-gold">新</span>
             <span v-if="it.badge==='parent' && parentTodoTotal>0" class="badge badge-gold">{{parentTodoTotal}}</span>
+            <span v-if="it.badge==='im' && imUnreadTotal>0" class="badge">{{imUnreadTotal}}</span>
           </button>
           <!-- 场景折叠父节点：点击展开/收起，子项缩进展示 -->
           <template v-else>
@@ -198,7 +199,10 @@
 <wallet-view v-if="tab==='wallet'"></wallet-view>
 
       <!-- ═══════════ 记账本（D2 决策：紧邻钱包入口） ═══════════ -->
-<ledger-view v-if="tab==='ledger'"></ledger-view>
+      <ledger-view v-if="tab==='ledger'"></ledger-view>
+
+      <!-- ═══════════ IM 即时通讯（D2 决策：沟通类工具放工具组） ═══════════ -->
+      <im-view v-if="tab==='im'"></im-view>
       
 <settings-view v-if="tab==='settings'"></settings-view>
 

@@ -54,6 +54,8 @@ export const NAV_GROUPS = [
       { tab: 'search', label: '搜题', icon: 'search' },
       { tab: 'focus', label: '专注钟', icon: 'focus' },
       { tab: 'dict', label: '听写磨耳朵', icon: 'dict' },
+      // IM 即时通讯（D2 决策：沟通类工具放在工具组；移动 TabBar 6 项已满仅桌面可见）
+      { tab: 'im', label: '消息', icon: 'im', badge: 'im' },
     ],
   },
   {
