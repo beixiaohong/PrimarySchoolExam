@@ -14,6 +14,8 @@
 | [项目说明书](./项目说明书.md) | **「文件 → 作用」速查** | 新成员 / 接手者 | 顶层文件、后端模块清单、前端、测试、运维脚本、高频改动入口 |
 | [DEPLOY.md](../DEPLOY.md) | **部署上线指南** | 运维 / 开发者 | 服务器环境、一键部署脚本、前端构建、Nginx/systemd、健康检查 |
 | [ROADMAP.md](./ROADMAP.md) | **规划与进度** | 产品 / 开发者 | 版本里程碑、已完成/进行中功能、已知问题与下一步 |
+| **[IM与账本功能产品文档](./IM与账本功能产品文档.md)** | **账本 & IM 现状规格（已实现）** | 产品 / 接手者 | D9 冻结域两个模块的数据模型（17 表）、83 个端点全清单、业务规则（余额联动/拼手气红包/WS 协议）、架构与开关、已知缺口 |
+| **[IM与账本前端实现方案](./IM与账本前端实现方案.md)** | **账本 & IM 前端与后台要怎么建** | 产品 / 前端 / 后端 | 需求基线与非目标、账本记账+分析设计、IM 单聊/群聊/文字图片语音设计、WS 客户端状态机、后台管理升级；**6 项决策已确认**（HTTPS / 导航挨钱包 / 周期交易自动执行 / 敏感词过滤 / 红包改钻石 / 语音后端转码）、16 项后端改动、七期实施计划与验收标准 |
 | [企业级方案集](./enterprise/00-总纲.md) | **企业运营级升级方案** | 决策层 / 管理者 / 新成员 | 现状体检、竞品与合规对标、差距矩阵；产品优化路线、模块拆分、岗位说明书、研发流程规范、产品团队职责（共 6 篇，仅方案不含实现） |
 | **[PRD 产品需求文档](./enterprise/06-PRD产品需求文档.md)** | **做成什么样算对** | 产品 / 研发 / QA / 设计 | M0+M1 全部需求的功能点（FR）、业务规则（BR）、状态机、验收标准（AC）、埋点、非功能需求 |
 | **[技术实施方案](./enterprise/07-技术实施方案.md)** | **用什么结构做、分几步做** | 架构 / 研发 / QA | 现状资产盘点、域边界、数据模型与迁移 053–070、接口清单、关键技术方案、里程碑与工作量、开发 Action Item |
@@ -51,7 +53,7 @@ README.md（是什么 / 怎么跑）
 | --- | --- | --- |
 | 任务系统 | [tasks-module.md](./tasks-module.md) | 模块收敛在 `app/routers/tasks/` 包内（constants/service/progress/makeup_service + 5 个薄路由），端点 21 条（`/api/tasks/*` 18 + `/api/task-confirm/*` 3）。强制任务按学科整体替换默认；家长自定义任务行 `custom:N` 生命周期自管理 |
 | 采集与题库 | `services/paper_crawler.py`、`question_parser.py`、`tools/collect_daily.py` | 采集结果入 `papers` / `paper_questions`，与出题式 `questions` / `exam_records` 解耦；按 `source_url` 去重，富文本以 HTML + base64 图片保存 |
-| IM 与账本 | `routers/im.py`、`routers/ledger.py` | 外部模块迁移而来，表名统一 `db_` 前缀隔离；IM 含 WebSocket 端点 |
+| IM 与账本 | **[IM与账本功能产品文档](./IM与账本功能产品文档.md)**（现状）<br>**[IM与账本前端实现方案](./IM与账本前端实现方案.md)**（待建） | 外部模块迁移而来，表名统一 `db_` 前缀隔离；IM 含 WebSocket 端点。<br>现状：后端 83 端点（账本 42+6 / IM 29+1WS+6）已完整，**学生端零 UI、零测试**，属 D9 冻结域；前端实现方案 6 项决策已确认，待开发（红包将改用钻石、语音后端转 MP3、新增敏感词过滤） |
 | 学生端优化 | [user-app-optimization-plan.md](./user-app-optimization-plan.md) | 拆分 `appOptions.js`（3,643 行）为「壳 provide + View inject」 |
 | 管理端优化 | [admin-optimization-plan.md](./admin-optimization-plan.md) | 后台功能增强与结构治理 |
 | 治理总纲 | [优化建议书.md](./优化建议书.md) | 双系统/重复实现/死代码/上帝文件等混乱点的清理方案 |
