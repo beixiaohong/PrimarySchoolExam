@@ -297,9 +297,27 @@ server {
 
     client_max_body_size 50m;
 
+    # WebSocket（IM 即时通讯）：必须显式升级协议
+    # 缺失 Upgrade/Connection 头时，浏览器 wss 握手拿不到 101，前端会一直提示
+    # 「正在连接中，请稍后再试」（消息走 WS 发送）。长连接超时也要放大，否则约
+    # 每 2 分钟被 nginx 掐断一次。
+    location /api/im/ws/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
     # 主应用（孩子端 + API）
     location / {
         proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

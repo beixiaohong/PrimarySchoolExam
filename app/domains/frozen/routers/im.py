@@ -476,6 +476,37 @@ async def get_messages(
 
 
 # ───────────────── 红包系统 ─────────────────
+@router.post("/chats/{chat_id}/messages", response_model=MessageResponse)
+async def send_message_rest(
+    chat_id: str,
+    payload: MessageCreate,
+    current_user: User = Depends(require_user),
+):
+    """REST 兜底发消息：WS 不可用（如反代未开 WebSocket 升级）时前端降级走此接口。
+
+    复用 handle_message，与 WS 通道共用同一套成员校验 / 敏感词过滤 / 落库 / 广播，
+    两条链路行为一致。刻意不注入 db 依赖：落库由 handle_message 内部短会话完成，
+    广播为内存操作，避免「持 DB 连接等外部调用」。
+    """
+    res = await handle_message(
+        {
+            "chat_id": chat_id,
+            "content": payload.content,
+            "message_type": payload.message_type,
+            "file_path": payload.file_path,
+            "file_name": payload.file_name,
+            "file_size": payload.file_size,
+        },
+        str(current_user.user_id),
+        current_user.nickname or "",
+    )
+    if res is None:
+        raise HTTPException(status_code=403, detail="不是该会话成员，无法发送")
+    if isinstance(res, dict) and res.get("rejected"):
+        raise HTTPException(status_code=400, detail=res.get("message", "消息包含不当内容"))
+    return MessageResponse(**res)
+
+
 @router.post("/red-packets")
 async def create_red_packet(
     red_packet: RedPacketCreate,
@@ -776,10 +807,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 async def handle_message(message_data: dict, user_id: str, nickname: str):
-    """处理消息发送（权限校验 + 落库 + 广播，全程短会话）"""
+    """处理消息发送（权限校验 + 落库 + 广播，全程短会话）。
+
+    返回：成功 → 消息 dict（可直接按 MessageResponse 返回）；
+          非成员 → None；敏感词拦截 → {"rejected": True, "message": ...}。
+    供 WS 通道与 REST 兜底端点共用，保证两条链路行为一致。
+    """
     chat_id = message_data.get("chat_id")
     if not chat_id:
-        return
+        return None
     content = message_data.get("content")
     mt = message_data.get("message_type", MessageType.TEXT.value)
     message_type = mt if isinstance(mt, MessageType) else MessageType(mt)
@@ -795,7 +831,7 @@ async def handle_message(message_data: dict, user_id: str, nickname: str):
             GroupMember.user_id == user_id,
         ).first()
         if not membership:
-            return
+            return None
 
         # ── 敏感词过滤（D4）：文本消息落库前校验，REST 与 WS 双通道共用 check_text ──
         if message_type == MessageType.TEXT and content:
@@ -809,7 +845,7 @@ async def handle_message(message_data: dict, user_id: str, nickname: str):
                     "message": "消息包含不当内容，请修改后重试",
                     "chat_id": str(chat_id),
                 }), user_id)
-                return
+                return {"rejected": True, "message": "消息包含不当内容，请修改后重试"}
             if action == "replace":
                 record_hit(user_id, chat_id, "message", word, content, "replace")
                 content = out
@@ -847,6 +883,18 @@ async def handle_message(message_data: dict, user_id: str, nickname: str):
         }),
         chat_id,
     )
+    return {
+        "id": msg_id,
+        "chat_id": str(chat_id),
+        "sender_id": str(user_id),
+        "sender_nickname": nickname,
+        "content": content,
+        "message_type": message_type.value,
+        "file_path": file_path,
+        "file_name": file_name,
+        "file_size": file_size,
+        "created_at": created_iso,
+    }
 
 
 async def handle_typing(message_data: dict, user_id: str):

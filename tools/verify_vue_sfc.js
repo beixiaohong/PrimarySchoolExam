@@ -13,6 +13,7 @@ const targets = [
   'web/src/App.vue',
   'web/src/views/LedgerView.vue',
   'web/src/views/ImView.vue',
+  'web/src/views/WalletView.vue',
   'web/src/components/ledger/LedgerRecord.vue',
   'web/src/components/ledger/LedgerBills.vue',
   'web/src/components/ledger/LedgerAnalysis.vue',

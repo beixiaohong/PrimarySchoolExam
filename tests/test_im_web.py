@@ -361,3 +361,56 @@ def test_contact_actions_contract(client):
     assert r.status_code == 200, r.text
     uids = {str(m["user_id"]) for m in r.json()}
     assert uids == {me, a, b}, uids
+
+
+def test_rest_send_message_fallback(client):
+    """WS 不可用时的 REST 兜底发消息：落库 + 可回查 + 非成员 403 + 敏感词 400。
+
+    背景：线上 nginx 未开启 WebSocket 升级时 WS 握手失败，前端 imSend 降级走
+    POST /api/im/chats/{chat_id}/messages，需与 WS 通道行为一致。
+    """
+    me = "im_rest_me"; peer = "im_rest_peer"
+    _ensure_user(client, me, "丙")
+    _ensure_user(client, peer, "丁")
+
+    # 建私聊
+    r = client.post("/api/im/chats" + _q(me), json={
+        "chat_type": "private", "target_user_id": peer,
+    })
+    assert r.status_code == 200, r.text
+    chat_id = r.json()["id"]
+
+    # 1) 正常发送（REST 兜底）
+    r = client.post(f"/api/im/chats/{chat_id}/messages" + _q(me),
+                    json={"content": "REST 兜底消息", "message_type": "text"})
+    assert r.status_code == 200, r.text
+    msg = r.json()
+    assert msg["chat_id"] == chat_id and msg["sender_id"] == me
+    assert msg["content"] == "REST 兜底消息"
+
+    # 2) 消息可回查
+    r = client.get(f"/api/im/chats/{chat_id}/messages" + _q(me))
+    assert r.status_code == 200, r.text
+    assert any(m["id"] == msg["id"] for m in r.json())
+
+    # 3) 非成员发送 → 403
+    other = "im_rest_other"
+    _ensure_user(client, other, "路人")
+    r = client.post(f"/api/im/chats/{chat_id}/messages" + _q(other),
+                    json={"content": "我不该进得来"})
+    assert r.status_code == 403, r.text
+
+    # 4) 敏感词 → 400（与 WS reject 一致）
+    db = _db(client)
+    db.query(SensitiveWord).filter(SensitiveWord.word == "敏感词测试").delete()
+    db.add(SensitiveWord(word="敏感词测试", category="test", level="reject", is_active=True))
+    db.commit()
+    # 敏感词服务有进程内缓存，新增/改动词后必须失效缓存才会生效
+    try:
+        from app.domains.frozen.services.sensitive import invalidate_cache
+        invalidate_cache()
+    except Exception:
+        pass
+    r = client.post(f"/api/im/chats/{chat_id}/messages" + _q(me),
+                    json={"content": "这是敏感词测试内容"})
+    assert r.status_code == 400, r.text

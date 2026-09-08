@@ -197,11 +197,18 @@ export const imMethods = {
       this.imDraft = ''
       return
     }
-    // REST 降级（无 WS）：仍调通，留作最后兜底
+    // REST 兜底（反代未开 WebSocket 升级时 WS 连不上，走 HTTP 仍可发送）
     this.imSending = true
     try {
-      // IM 没有 /messages POST（走 WS），REST 暂无兜底；显示错误
-      this.showToast('正在连接中，请稍后再试')
+      const m = await this.api(`/api/im/chats/${encodeURIComponent(this.imActiveChatId)}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ content, message_type: 'text' }),
+      })
+      this.imMessages = [...this.imMessages, { ...m, is_self: true }]
+      this.imDraft = ''
+      this.$nextTick(() => this.imScrollToBottom())
+    } catch (e) {
+      this.showToast(e.message || '发送失败')
     } finally {
       this.imSending = false
     }
@@ -246,7 +253,19 @@ export const imMethods = {
           file_size: d.file_size,
         }))
       } else {
-        this.showToast('正在连接中，请稍后再试')
+        // REST 兜底：同样落库 + 广播，保证 WS 不可用时文件/图片也能发出
+        const m = await this.api(`/api/im/chats/${encodeURIComponent(this.imActiveChatId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({
+            content: mt === 'image' ? '[图片]' : '[文件]',
+            message_type: mt,
+            file_path: d.file_url,
+            file_name: d.file_name,
+            file_size: d.file_size,
+          }),
+        })
+        this.imMessages = [...this.imMessages, { ...m, is_self: true }]
+        this.$nextTick(() => this.imScrollToBottom())
       }
     } catch (e) {
       this.showToast(e.message || '上传失败')

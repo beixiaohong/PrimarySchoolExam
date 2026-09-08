@@ -60,6 +60,18 @@ class ChatResponse(BaseModel):
 
 
 # ───────────────── 消息 ─────────────────
+class MessageCreate(BaseModel):
+    """发送消息请求：供 WS 不可用时的 REST 兜底通道使用。
+
+    字段与 WS 的 message 帧保持一致（chat_id 走路径参数）。
+    """
+    content: Optional[str] = None
+    message_type: str = "text"
+    file_path: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
+
+
 class MessageResponse(BaseModel):
     """消息响应模型：含发送者、内容、消息类型与文件附件信息。"""
     id: str

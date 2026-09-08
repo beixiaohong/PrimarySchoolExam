@@ -5,7 +5,7 @@
     <div class="wallet-cards">
       <div class="wallet-card wc-diamond">
         <div class="wc-ico">💎</div>
-        <div class="wc-num">{{appCtx.wallet.diamonds}}</div>
+        <div class="wc-num">{{ (appCtx.wallet && appCtx.wallet.diamonds) || appCtx.diamonds || 0 }}</div>
         <div class="wc-label">钻石</div>
       </div>
       <div class="wallet-card wc-coin">
@@ -139,6 +139,13 @@ const TYPE_LABEL = { diamond: '💎 钻石', membership: '👑 会员', coupon: 
 export default {
   name: 'WalletView',
   inject: ['appCtx'],
+  // 兜底：深链/刷新直接进入钱包页时 goTab('wallet') 未必触发，这里进入即拉一次，
+  // 避免钻石/金币余额停留在初始 0（表现为「余额没显示出来」）
+  mounted() {
+    if (this.appCtx.user) {
+      this.appCtx.wallet.load(this.appCtx.user, this.appCtx.makeupCards)
+    }
+  },
   computed: {
     shop() { return this.appCtx.shop },
     productGroups() {
