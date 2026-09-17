@@ -23,6 +23,12 @@ const targets = [
   'web/src/components/im/ImContacts.vue',
   'web/src/components/im/ImSettings.vue',
   'web/src/components/im/ImGroupInfo.vue',
+  // 小说站独立入口（web/novel.html + src/novel/*，独立 Vue 应用）
+  'web/src/novel/App.vue',
+  'web/src/novel/views/HomeView.vue',
+  'web/src/novel/views/ShelfView.vue',
+  'web/src/novel/views/BookView.vue',
+  'web/src/novel/views/ReaderView.vue',
 ];
 
 let totalErrors = 0;

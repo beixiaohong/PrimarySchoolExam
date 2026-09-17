@@ -15,6 +15,7 @@
           <el-menu-item index="/announcements">系统公告</el-menu-item>
           <el-menu-item index="/textbooks">教材版本</el-menu-item>
           <el-menu-item index="/content">内容管理</el-menu-item>
+          <el-menu-item index="/novel">小说站</el-menu-item>
           <el-menu-item index="/commerce">充值订单</el-menu-item>
           <el-menu-item index="/annotation">标注工作台</el-menu-item>
           <el-menu-item index="/mastery">掌握度报表</el-menu-item>

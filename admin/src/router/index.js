@@ -14,6 +14,7 @@ const routes = [
   { path: '/announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
   { path: '/textbooks', name: 'textbooks', component: () => import('../views/Textbooks.vue') },
   { path: '/content', name: 'content', component: () => import('../views/Content.vue') },
+  { path: '/novel', name: 'novel', component: () => import('../views/Novel.vue') },
   { path: '/commerce', name: 'commerce', component: () => import('../views/Commerce.vue') },
   { path: '/rbac', name: 'rbac', component: () => import('../views/Rbac.vue') },
   { path: '/audit', name: 'audit', component: () => import('../views/Audit.vue') },
