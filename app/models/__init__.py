@@ -55,6 +55,7 @@ from .learning_goal import LearningGoal, LearningCheckin, LearningWeeklyReview
 from .compliance import GuardianConsent, DataExportRequest, DataDeletionRequest
 from .commerce_product import Product, ProductBenefit
 from .commerce_order import Order
+from .novel import Novel, NovelChapter, NovelReadProgress
 from .commerce_payment import PayTransaction
 
 __all__ = [
@@ -105,4 +106,5 @@ __all__ = [
     "Product", "ProductBenefit", "Order", "PayTransaction",
     "LearningGoal", "LearningCheckin", "LearningWeeklyReview",
     "GuardianConsent", "DataExportRequest", "DataDeletionRequest",
+    "Novel", "NovelChapter", "NovelReadProgress",
 ]

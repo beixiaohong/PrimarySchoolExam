@@ -24,6 +24,7 @@ from .domains.commerce.routers import diamond, store
 from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement, region, metrics, compliance
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
+from .domains.content.routers import novel as novel_reader
 from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus
 # D9 冻结域（im/ledger）：已抽至 app/domains/frozen，受 ENABLE_IM/ENABLE_LEDGER 开关控制
 from .domains.frozen.routers import im as frozen_im, ledger as frozen_ledger
@@ -141,6 +142,8 @@ if ENABLE_IM:
     app.include_router(frozen_admin_im.router, prefix="/api/admin", tags=["管理后台-IM数据"])
 # 学生端公告/站内信：内部用 require_user 鉴权
 app.include_router(announcement.router, prefix="/api/announcements", tags=["系统公告"])
+# 小说站：内容门户，游客可读（不挂 user_auth_deps）；仅进度/书架接口内部要求登录
+app.include_router(novel_reader.router, prefix="/api/novel", tags=["小说站"])
 app.include_router(textbook.router, prefix="/api/textbook", tags=["教材版本"], dependencies=user_auth_deps)
 app.include_router(courses.router, prefix="/api/courses", tags=["网课"], dependencies=user_auth_deps)
 # 学习目标管理台（有终点/有总量）：路由内部已用 require_self 鉴权，不挂全局 user_auth_deps 以免重复校验
@@ -229,6 +232,31 @@ def index():
 
 # 应用启动时间戳（用于 /health 计算 uptime）
 _start_time = time.time()
+
+
+@app.get("/novel", tags=["系统"], include_in_schema=False)
+@app.get("/novel/", tags=["系统"], include_in_schema=False)
+def novel_index():
+    """小说站独立入口：返回 Vite 多页构建产物 web/dist/novel.html。
+
+    与学生学习端（/）完全分离：独立 HTML 入口 + 独立 Vue 实例与 hash 路由，
+    互不影响；共用 /assets 下的构建产物（content hash 命名，可安全缓存）。
+    """
+    novel_file = WEB_DIST_DIR / "novel.html"
+    if novel_file.exists():
+        return FileResponse(
+            novel_file,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "小说站未构建：请执行 `cd web && npm run build` 生成 web/dist/novel.html。"},
+    )
 
 
 @app.get("/health", tags=["系统"])

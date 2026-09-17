@@ -30,6 +30,8 @@ _EXPORTS = {
     "get_annotation_stats": ("app.domains.content.services.kp_annotation", "get_annotation_stats"),
     "ai_annotate_questions": ("app.domains.content.services.kp_annotation", "ai_annotate_questions"),
     "predict_kp_for_question": ("app.domains.content.services.kp_annotation", "predict_kp_for_question"),
+    # 小说站 TXT 解析（编码探测 + 自动分章 / 流式分块），后台导入走此入口
+    "parse_novel_txt": ("app.domains.content.services.novel_splitter", "parse_txt"),
 }
 
 __all__ = tuple(_EXPORTS)

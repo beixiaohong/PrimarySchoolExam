@@ -29,6 +29,7 @@ from . import audit
 from . import annotation
 from . import mastery
 from . import commerce
+from . import novel
 
 # 重新导出所有原始顶层名字（含下划线辅助函数）
 from .common import *        # logger, TOKEN_TTL_HOURS, CONFIG_GROUPS, SECRET_HINTS, _require_admin, _audit
@@ -48,3 +49,4 @@ from .audit import *          # 审计日志/高危操作查询接口（S1-B9）
 from .annotation import *      # 知识点标注工作台接口（S2-M4）
 from .mastery import *        # 掌握度后台查询接口（S3-M4）
 from .commerce import *        # 交易域后台接口（S4-M5）
+from .novel import *           # 小说站后台接口（TXT 上传导入 / 章节维护）
