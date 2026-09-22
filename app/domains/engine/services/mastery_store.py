@@ -20,10 +20,10 @@ from app.domains.engine.services.mastery import (
     MasteryParams,
     compute_mastery,
 )
-from app.models.exam import AttemptAnswer, ExamAttempt  # AttemptAnswer 经 attempt_id → ExamAttempt.user_id 关联用户
+from app.models.exam import AttemptAnswer, ExamAttempt, Question  # AttemptAnswer 经 attempt_id → ExamAttempt.user_id 关联用户
 from app.models.knowledge import KnowledgePoint
 from app.models.kp_map import QuestionKpMap
-from app.models.mastery import MasteryRecord, MasterySnapshot
+from app.models.mastery import MasteryRecord, MasterySnapshot, MasteryPractice
 
 # 作答记录的题源固定为 questions 表（AttemptAnswer.question_id 外键指向 questions.id）
 _QA_SOURCE = "questions"
@@ -71,6 +71,20 @@ def build_answer_records(
             kp_id=kp_id,
         )
         grouped.setdefault(kp_id, []).append(rec)
+
+    # 智能推题练习也计入掌握度（闭环）：每条 mastery_practice 直接归属其 kp_id，
+    # 与真实考试作答同等对待（纯 DB 读，无外部调用）。
+    for pr in db.query(MasteryPractice).filter(MasteryPractice.user_id == user_id).all():
+        if not pr.kp_id:
+            continue
+        rec = AnswerRecord(
+            answered_at=pr.answered_at or datetime.now(),
+            is_correct=bool(pr.is_correct),
+            duration_ms=int(pr.duration_ms or 0),
+            difficulty=int(pr.difficulty or 3),
+            kp_id=pr.kp_id,
+        )
+        grouped.setdefault(pr.kp_id, []).append(rec)
     return grouped
 
 
@@ -122,6 +136,35 @@ def recompute_user_mastery(
 
     db.commit()
     return len(grouped)
+
+
+def record_mastery_practice(
+    db: Session, user_id: str, items: List[Dict[str, object]]
+) -> int:
+    """记录智能推题练习结果并落库（MVP#1 闭环写入）。
+
+    items: [{question_id, kp_id, is_correct, duration_ms, difficulty}, ...]
+    纯 DB 写，无外部调用；调用方负责提交后触发增量重算（trigger_incremental_recompute）。
+    返回写入条数。
+    """
+    now = datetime.now()
+    n = 0
+    for it in items:
+        qid = int(it.get("question_id") or 0)
+        if not qid:
+            continue
+        db.add(MasteryPractice(
+            user_id=user_id,
+            kp_id=int(it.get("kp_id") or 0),
+            question_id=qid,
+            is_correct=1 if it.get("is_correct") else 0,
+            duration_ms=int(it.get("duration_ms") or 0),
+            difficulty=int(it.get("difficulty") or 3),
+            answered_at=now,
+        ))
+        n += 1
+    db.commit()
+    return n
 
 
 def _level_bucket(level: str) -> str:
@@ -213,6 +256,139 @@ def get_coverage_report(db: Session) -> dict:
     }
 
 
+def recommend_questions_by_mastery(
+    db: Session, user_id: str,
+    limit: int = 30, per_kp: int = 5,
+    min_mastery: int = 0, max_mastery: int = 79,
+) -> dict:
+    """按知识点智能推题（MVP#1 核心）：依据用户掌握度，从薄弱/基本掌握的知识点
+    抽取针对性练习题目。
+
+    - 选点：`mastery_records` 中 mastery ∈ [min,max]（默认 <80：未掌握/薄弱/基本掌握），
+      优先最薄弱（mastery 升序）；
+    - 取题：经 `question_kp_map(source='questions')` 取该 kp 题目，主知识点优先；
+    - 去重：排除用户已答对过的题（AttemptAnswer.is_correct），避免无效重复；
+    - 限流：每 kp 最多 per_kp 题、总量 limit，确定性选取（主>副、难度升序、题号升序）。
+    纯 DB 读，无外部调用，持连安全。
+    """
+    weak = (
+        db.query(MasteryRecord)
+        .filter(MasteryRecord.user_id == user_id,
+                MasteryRecord.mastery >= min_mastery,
+                MasteryRecord.mastery <= max_mastery)
+        .order_by(MasteryRecord.mastery.asc(), MasteryRecord.kp_id.asc())
+        .all()
+    )
+    if not weak:
+        return {"user_id": user_id, "weak_kp_count": 0, "total": 0, "groups": []}
+
+    weak_kp_ids = [w.kp_id for w in weak]
+
+    # 知识点标题（一次 IN 查询）
+    kp_titles: Dict[int, str] = {}
+    if weak_kp_ids:
+        for kp in db.query(KnowledgePoint).filter(KnowledgePoint.id.in_(weak_kp_ids)).all():
+            kp_titles[kp.id] = kp.title
+
+    # 已答对题（排除，避免重复推已会题）
+    answered_correct = {
+        r[0] for r in (
+            db.query(AttemptAnswer.question_id)
+            .join(ExamAttempt, ExamAttempt.id == AttemptAnswer.attempt_id)
+            .filter(ExamAttempt.user_id == user_id,
+                    AttemptAnswer.is_correct.is_(True))
+            .all()
+        )
+    }
+
+    # 取题：kp -> 候选题（主知识点优先）
+    kp_questions: Dict[int, List[dict]] = {}
+    if weak_kp_ids:
+        maps = (
+            db.query(QuestionKpMap.question_id, QuestionKpMap.kp_id,
+                     QuestionKpMap.is_primary, QuestionKpMap.weight)
+            .filter(QuestionKpMap.source_table == _QA_SOURCE,
+                    QuestionKpMap.kp_id.in_(weak_kp_ids),
+                    QuestionKpMap.status == "active")
+            .all()
+        )
+        wanted = list(dict.fromkeys(m.question_id for m in maps
+                                    if m.question_id not in answered_correct))
+        qmap = {q.id: q for q in db.query(Question).filter(Question.id.in_(wanted)).all()
+                } if wanted else {}
+        for m in maps:
+            q = qmap.get(m.question_id)
+            if q is None:
+                continue
+            kp_questions.setdefault(m.kp_id, []).append({
+                "question_id": q.id,
+                "subject": q.subject,
+                "type_code": q.type_code or "",
+                "type_name": q.type_name or "",
+                "difficulty": int(q.difficulty or 1),
+                "question": q.question,
+                "options_json": q.options_json or "",
+                "answer": q.answer or "",
+                "image_path": q.image_path or "",
+                "is_primary": int(m.is_primary),
+            })
+
+    # 限流 + 组装（按最薄弱的知识点优先）
+    groups = []
+    total = 0
+    for w in weak:
+        items = kp_questions.get(w.kp_id)
+        if not items:
+            continue
+        items.sort(key=lambda x: (-x["is_primary"], x["difficulty"], x["question_id"]))
+        items = items[:per_kp]
+        total += len(items)
+        groups.append({
+            "kp_id": w.kp_id,
+            "kp_title": kp_titles.get(w.kp_id, ""),
+            "mastery": int(w.mastery),
+            "level": w.level,
+            "questions": items,
+        })
+        if total >= limit:
+            break
+
+    return {"user_id": user_id, "weak_kp_count": len(weak), "total": total, "groups": groups}
+
+
+def get_mastery_graph(
+    db: Session, user_id: str, subject: Optional[str] = None, grade: Optional[int] = None
+) -> dict:
+    """知识点图谱（MVP#1）：返回 KP 层级树（parent_id）+ 每个 KP 的掌握度（若有）。
+
+    供前端渲染「知识点图谱」并按掌握度着色。纯 DB 读，无外部调用。
+    subject 必填（限定范围，避免一次性返回全量知识点）；grade 可选进一步收窄。
+    """
+    q = db.query(KnowledgePoint)
+    if subject:
+        q = q.filter(KnowledgePoint.subject == subject)
+    if grade is not None:
+        q = q.filter(KnowledgePoint.grade == grade)
+    kps = q.all()
+
+    mmap = {m.kp_id: m for m in db.query(MasteryRecord).filter_by(user_id=user_id).all()}
+    nodes = []
+    for kp in kps:
+        m = mmap.get(kp.id)
+        nodes.append({
+            "kp_id": kp.id,
+            "parent_id": int(kp.parent_id or 0),
+            "subject": kp.subject,
+            "grade": int(kp.grade or 0),
+            "unit": kp.unit or "",
+            "title": kp.title,
+            "difficulty": int(kp.difficulty or 1),
+            "mastery": int(m.mastery) if m else None,
+            "level": m.level if m else None,
+        })
+    return {"user_id": user_id, "subject": subject, "grade": grade, "nodes": nodes}
+
+
 def trigger_incremental_recompute(user_id: str) -> None:
     """增量触发：异步（线程池）重算某用户掌握度。
 
@@ -287,7 +463,8 @@ def generate_snapshots(db: Session, user_ids: Optional[List[str]] = None) -> int
 
 
 __all__ = [
-    "build_answer_records", "recompute_user_mastery",
+    "build_answer_records", "recompute_user_mastery", "record_mastery_practice",
+    "recommend_questions_by_mastery", "get_mastery_graph",
     "get_user_mastery_matrix", "get_coverage_report",
     "trigger_incremental_recompute", "generate_snapshots", "ALGO_VERSION",
 ]

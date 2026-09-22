@@ -15,13 +15,22 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.domains.identity.contracts import require_self
+from app.domains.assessment.contracts import _check_answer
 from app.domains.engine.services.mastery import ALGO_VERSION
-from app.domains.engine.services.mastery_store import recompute_user_mastery
-from app.models.exam import AttemptAnswer, ExamAttempt
+from app.domains.engine.services.mastery_store import (
+    recompute_user_mastery,
+    recommend_questions_by_mastery,
+    get_mastery_graph,
+    record_mastery_practice,
+    trigger_incremental_recompute,
+)
+from app.models.exam import AttemptAnswer, ExamAttempt, Question
 from app.models.knowledge import KnowledgePoint
 from app.models.kp_map import QuestionKpMap
 from app.models.mastery import MasteryRecord
 from app.models.user import User
+from pydantic import BaseModel
+from typing import List
 
 router = APIRouter()
 
@@ -159,3 +168,68 @@ def mastery_recompute(
             403, "仅可触发本人掌握度重算；他人重算请走后台 /api/admin/mastery/* 接口")
     n = recompute_user_mastery(db, target)
     return {"user_id": target, "recomputed_kps": n, "algo_version": ALGO_VERSION}
+
+
+# ═════════════════════════════════════════════════════════
+# 智能推题 / 知识点图谱（MVP#1 · 掌握度模型 + 知识点图谱）
+# ═════════════════════════════════════════════════════════
+
+class MasteryPracticeItem(BaseModel):
+    question_id: int
+    kp_id: int = 0
+    user_answer: str = ""
+    is_correct: bool = False  # 仅前端初判；exam 题由后端 _check_answer 重判
+
+
+class MasteryPracticeReq(BaseModel):
+    user_id: str = ""
+    items: List[MasteryPracticeItem]
+
+
+@router.get("/recommend", summary="按知识点智能推题（薄弱/基本掌握针对性练习）")
+def mastery_recommend(
+    current_user: User = Depends(require_self),
+    db: Session = Depends(get_db),
+    limit: int = Query(30, ge=1, le=100, description="返回题目总量上限"),
+    per_kp: int = Query(5, ge=1, le=20, description="单个知识点最多题目数"),
+):
+    """依据本人掌握度，从薄弱/基本掌握知识点抽取针对性练习题（闭环：练后提交 /practice 更新掌握度）。"""
+    return recommend_questions_by_mastery(db, current_user.user_id, limit=limit, per_kp=per_kp)
+
+
+@router.get("/graph", summary="知识点图谱（层级 + 掌握度着色）")
+def mastery_graph(
+    subject: str = Query(..., description="学科，如 数学/语文/英语"),
+    grade: int = Query(..., description="年级 7-9"),
+    current_user: User = Depends(require_self),
+    db: Session = Depends(get_db),
+):
+    """返回该学科+年级下知识点层级树，并附本人掌握度（用于图谱着色）。"""
+    return get_mastery_graph(db, current_user.user_id, subject=subject, grade=grade)
+
+
+@router.post("/practice", summary="提交智能推题练习（闭环：写库并触发掌握度重算）")
+def mastery_practice(
+    req: MasteryPracticeReq,
+    current_user: User = Depends(require_self),
+    db: Session = Depends(get_db),
+):
+    """提交智能推题作答：后端对 exam 题重判（防作弊），写入 mastery_practice 并触发增量重算。"""
+    target = req.user_id or current_user.user_id
+    if target != current_user.user_id:
+        raise HTTPException(403, "仅可提交本人练习结果")
+    qids = [it.question_id for it in req.items if it.question_id]
+    if qids:
+        qmap = {q.id: q for q in db.query(Question).filter(Question.id.in_(qids)).all()}
+        for it in req.items:
+            q = qmap.get(it.question_id)
+            if q:
+                it.is_correct = bool(_check_answer(
+                    it.user_answer or "", (q.answer or "").strip(), q.options_json))
+    n = record_mastery_practice(db, target, [
+        {"question_id": it.question_id, "kp_id": it.kp_id,
+         "is_correct": bool(it.is_correct), "duration_ms": 0, "difficulty": 3}
+        for it in req.items
+    ])
+    trigger_incremental_recompute(target)
+    return {"accepted": n, "user_id": target, "recomputed": True}

@@ -34,6 +34,9 @@ _EXPORTS = {
     "build_answer_records": ("app.domains.engine.services.mastery_store", "build_answer_records"),
     "get_user_mastery_matrix": ("app.domains.engine.services.mastery_store", "get_user_mastery_matrix"),
     "get_coverage_report": ("app.domains.engine.services.mastery_store", "get_coverage_report"),
+    "recommend_questions_by_mastery": ("app.domains.engine.services.mastery_store", "recommend_questions_by_mastery"),
+    "get_mastery_graph": ("app.domains.engine.services.mastery_store", "get_mastery_graph"),
+    "record_mastery_practice": ("app.domains.engine.services.mastery_store", "record_mastery_practice"),
     "trigger_incremental_recompute": ("app.domains.engine.services.mastery_store", "trigger_incremental_recompute"),
     "generate_snapshots": ("app.domains.engine.services.mastery_store", "generate_snapshots"),
 }

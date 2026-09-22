@@ -88,3 +88,31 @@ class MasterySnapshot(Base):
 
     def __repr__(self):
         return f"<MasterySnapshot {self.user_id} kp:{self.kp_id} {self.snap_date} m:{self.mastery}>"
+
+
+class MasteryPractice(Base):
+    """智能推题练习记录（MVP#1 闭环）：用户针对推荐薄弱知识点题目的作答。
+
+    并入掌握度重算输入（mastery_store.build_answer_records），与真实考试作答
+    AttemptAnswer 同等对待，使「薄弱点 → 推题 → 练 → 掌握度更新」形成闭环。
+    """
+    __tablename__ = "mastery_practice"
+    __table_args__ = (
+        Index("idx_mp_user_kp", "user_id", "kp_id"),
+        Index("idx_mp_user_q", "user_id", "question_id"),
+        Index("idx_mp_q", "question_id"),
+        {"comment": "智能推题练习记录：闭环驱动掌握度重算"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键自增")
+    user_id = Column(String(64), nullable=False, comment="用户ID")
+    kp_id = Column(Integer, nullable=False, default=0, comment="目标知识点ID（0=未指定）")
+    question_id = Column(Integer, nullable=False, comment="题目ID")
+    is_correct = Column(SmallInteger, nullable=False, default=0, comment="是否答对 0/1")
+    duration_ms = Column(Integer, nullable=False, default=0, comment="用时(ms)，0=无用时数据")
+    difficulty = Column(Integer, nullable=False, default=3, comment="题目难度 1-5")
+    answered_at = Column(DateTime, nullable=False, default=datetime.now, comment="作答时间")
+    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+
+    def __repr__(self):
+        return f"<MasteryPractice {self.user_id} q:{self.question_id} ok:{self.is_correct}>"
