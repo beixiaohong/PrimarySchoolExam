@@ -56,6 +56,7 @@
           <parent-study-config></parent-study-config>
           <parent-reward-panel></parent-reward-panel>
           <parent-msg-panel></parent-msg-panel>
+          <parent-report-panel></parent-report-panel>
           <parent-data-panel></parent-data-panel>
           </template>
 
@@ -79,9 +80,10 @@ import ParentStudyConfig from '../components/parent/ParentStudyConfig.vue'
 import ParentRewardPanel from '../components/parent/ParentRewardPanel.vue'
 import ParentMsgPanel from '../components/parent/ParentMsgPanel.vue'
 import ParentDataPanel from '../components/parent/ParentDataPanel.vue'
+import ParentReportPanel from '../components/parent/ParentReportPanel.vue'
 export default {
   name: 'ParentView',
   inject: ['appCtx'],
-  components: { ParentTodoPanel, ParentStudyConfig, ParentRewardPanel, ParentMsgPanel, ParentDataPanel },
+  components: { ParentTodoPanel, ParentStudyConfig, ParentRewardPanel, ParentMsgPanel, ParentReportPanel, ParentDataPanel },
 }
 </script>

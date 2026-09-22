@@ -30,6 +30,14 @@ export function parentData() {
     parentMsg: '', sentMsgs: [],
     examMin: { math_min: 5, chi_min: 5, eng_min: 5 },
     childStats: { week_attempts: 0, week_avg_score: 0, unmastered_wrong: 0, streak_days: 0, week_tasks_done: 0 },
+    // 家长学习报告（/api/parent/report）：可选周/月/30天窗口的多维报告
+    reportRange: 'week',
+    parentReport: {
+      range: 'week', range_label: '本周',
+      summary: { total_attempts: 0, avg_score: 0, avg_correct_rate: 0, unmastered_wrong: 0,
+                 streak_days: 0, tasks_done: 0, focus_minutes: 0, active_days: 0 },
+      by_subject: [], trend: [], weak_points: [],
+    },
     // 家长待处理申诉 + 补签（家长面板待办）
     pendingAppeals: [],
     showAllPending: false,    // 待处理申诉是否展开全部（避免一次渲染过多卡顿）
@@ -251,7 +259,7 @@ export const parentMethods = {
       this._resetPwdForm();
       this.parentPhase = 'open';
       sessionStorage.setItem('zx_parent_pwd', pwd);
-      this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); this.loadParentCourses();
+      this.loadParentPanel(); this.loadChildStats(); this.loadParentReport(this.reportRange); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); this.loadParentCourses();
       this.showToast('家长密码已设置，家长管理已解锁 🔓');
     }).catch(e => this.showToast(e.message));
   },
@@ -264,7 +272,7 @@ export const parentMethods = {
       this._resetPwdForm();
       this.parentPhase = 'open';
       sessionStorage.setItem('zx_parent_pwd', pwd);
-      this.loadParentPanel(); this.loadChildStats(); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); this.loadParentCourses();
+      this.loadParentPanel(); this.loadChildStats(); this.loadParentReport(this.reportRange); this.loadExamSettings(); this.loadSentMsgs(); this.loadDailyTasks(); this.loadParentCourses();
       this.showToast('欢迎回来，家长 👋');
     }).catch(e => this.showToast(e.message));
   },
@@ -298,6 +306,13 @@ export const parentMethods = {
   loadChildStats() {
     this.api(`/api/parent/child-stats?user_id=${encodeURIComponent(this.user)}`)
       .then(d => { this.childStats = d || this.childStats; })
+      .catch(() => {});
+  },
+  loadParentReport(range) {
+    // 家长学习报告：切换窗口（week/month/30d）时重新拉取 /api/parent/report
+    this.reportRange = range || this.reportRange;
+    this.api(`/api/parent/report?user_id=${encodeURIComponent(this.user)}&range=${encodeURIComponent(this.reportRange)}`)
+      .then(d => { this.parentReport = d || this.parentReport; })
       .catch(() => {});
   },
   loadExamSettings() {

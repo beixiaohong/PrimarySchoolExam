@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -312,6 +313,155 @@ def child_stats(user_id: str, db: Session = Depends(get_db)):
         "unmastered_wrong": wrong,
         "streak_days": _streak(db, user_id),
         "week_tasks_done": tasks_done,
+    }
+
+
+# ═══════════════════ 家长学习报告 ═══════════════════
+
+@router.get("/report", summary="家长学习报告（可选时间窗：周/月/30天，含分科/趋势/薄弱点）")
+def study_report(user_id: str, range: str = "week", db: Session = Depends(get_db)):
+    """家长学习报告：在 child-stats 基础上扩展为可选时间窗的多维报告。
+
+    参数（Query）：user_id、range（week=本周一至今天 / month=本月1日至今 / 30d=近30天）。
+    返回：{
+      range, range_label,
+      summary: {total_attempts, avg_score, avg_correct_rate, unmastered_wrong,
+                streak_days, tasks_done, focus_minutes, active_days},
+      by_subject: [{subject, attempts, avg_score, correct_rate, wrong_count}],
+      trend: [{date, attempts, avg_score}],            # 按天
+      weak_points: [{kp_title, subject, unit, wrong_count}],  # 未掌握错题归因 top5
+    }。
+    说明：unmastered_wrong / weak_points 为累计口径（薄弱点具长期性），其余指标按 range 窗口统计。
+    副作用：无（只读）。无需家长密码（家长模式下可见；对孩子端不暴露入口）。
+    """
+    from collections import defaultdict
+    from datetime import date as _date
+    from app.models.exam import ExamAttempt, ExamRecord, Question, WrongRecord
+    from app.models.daily_task import DailyTask
+    from app.models.focus import FocusSession
+    from app.models.kp_map import QuestionKpMap
+    from app.models.knowledge import KnowledgePoint
+    from app.domains.identity.contracts import _streak
+
+    today = _date.today()
+    if range == "month":
+        start = today.replace(day=1)
+        label = f"{today.month}月累计"
+    elif range == "30d":
+        start = today - timedelta(days=29)
+        label = "近30天"
+    else:  # week
+        start = today - timedelta(days=today.weekday())
+        label = "本周"
+    start_dt = datetime.combine(start, datetime.min.time())
+
+    attempts = db.query(ExamAttempt).filter(
+        ExamAttempt.user_id == user_id,
+        ExamAttempt.created_at >= start_dt,
+    ).all()
+    exam_ids = {a.exam_id for a in attempts}
+    exam_sub = {e.id: e.subject for e in
+                db.query(ExamRecord).filter(ExamRecord.id.in_(exam_ids)).all()} if exam_ids else {}
+
+    total = len(attempts)
+    avg_score = round(sum(a.score or 0 for a in attempts) / total, 1) if total else 0
+    total_correct = sum(a.correct or 0 for a in attempts)
+    total_q = sum(a.total or 0 for a in attempts)
+    avg_correct_rate = round(total_correct / total_q * 100, 1) if total_q else 0
+    unmastered = db.query(WrongRecord).filter_by(
+        user_id=user_id, is_mastered=False).count()
+    streak = _streak(db, user_id)
+    tasks_done = db.query(DailyTask).filter(
+        DailyTask.user_id == user_id, DailyTask.status == "done",
+        DailyTask.task_date >= start,
+    ).count()
+    focus_minutes = db.query(func.sum(FocusSession.minutes)).filter(
+        FocusSession.user_id == user_id, FocusSession.created_at >= start_dt,
+    ).scalar() or 0
+    active_days = len({a.created_at.date() for a in attempts})
+
+    # ── 分科明细（做题按 exam→subject 关联；错题按窗口内 WrongRecord→Question.subject）──
+    subj_buckets = defaultdict(lambda: {"attempts": 0, "score_sum": 0,
+                                         "correct": 0, "q": 0})
+    for a in attempts:
+        s = exam_sub.get(a.exam_id, "其他")
+        b = subj_buckets[s]
+        b["attempts"] += 1
+        b["score_sum"] += (a.score or 0)
+        b["correct"] += (a.correct or 0)
+        b["q"] += (a.total or 0)
+    wrong_in = db.query(WrongRecord).filter(
+        WrongRecord.user_id == user_id, WrongRecord.wrong_at >= start_dt).all()
+    wq_ids = {w.question_id for w in wrong_in}
+    wq_sub = {q.id: q.subject for q in
+              db.query(Question).filter(Question.id.in_(wq_ids)).all()} if wq_ids else {}
+    subj_wrong = defaultdict(int)
+    for w in wrong_in:
+        subj_wrong[wq_sub.get(w.question_id, "其他")] += 1
+    by_subject = []
+    for s, b in subj_buckets.items():
+        by_subject.append({
+            "subject": s,
+            "attempts": b["attempts"],
+            "avg_score": round(b["score_sum"] / b["attempts"], 1) if b["attempts"] else 0,
+            "correct_rate": round(b["correct"] / b["q"] * 100, 1) if b["q"] else 0,
+            "wrong_count": subj_wrong.get(s, 0),
+        })
+    by_subject.sort(key=lambda x: x["attempts"], reverse=True)
+
+    # ── 每日趋势 ──
+    days = (today - start).days + 1
+    date_list = [start + timedelta(days=i) for i in range(days)]
+    by_day = defaultdict(list)
+    for a in attempts:
+        by_day[a.created_at.date()].append(a)
+    trend = []
+    for d in date_list:
+        da = by_day.get(d, [])
+        trend.append({
+            "date": d.strftime("%m-%d"),
+            "attempts": len(da),
+            "avg_score": round(sum(x.score or 0 for x in da) / len(da), 1) if da else 0,
+        })
+
+    # ── 薄弱知识点（未掌握错题归因 top5，累计口径）──
+    weak = []
+    if unmastered:
+        wrecs = db.query(WrongRecord).filter_by(
+            user_id=user_id, is_mastered=False).all()
+        wqids = {w.question_id for w in wrecs}
+        if wqids:
+            maps = db.query(QuestionKpMap).filter_by(
+                source_table="questions", status="active").filter(
+                QuestionKpMap.question_id.in_(wqids)).all()
+            kp_count = defaultdict(int)
+            for m in maps:
+                kp_count[m.kp_id] += 1
+            if kp_count:
+                kps = {k.id: k for k in db.query(KnowledgePoint).filter(
+                    KnowledgePoint.id.in_(list(kp_count))).all()}
+                wk = [{"kp_title": kps[k].title, "subject": kps[k].subject,
+                       "unit": getattr(kps[k], "unit", ""), "wrong_count": c}
+                      for k, c in kp_count.items() if k in kps]
+                wk.sort(key=lambda x: x["wrong_count"], reverse=True)
+                weak = wk[:5]
+
+    return {
+        "range": range,
+        "range_label": label,
+        "summary": {
+            "total_attempts": total,
+            "avg_score": avg_score,
+            "avg_correct_rate": avg_correct_rate,
+            "unmastered_wrong": unmastered,
+            "streak_days": streak,
+            "tasks_done": tasks_done,
+            "focus_minutes": int(focus_minutes),
+            "active_days": active_days,
+        },
+        "by_subject": by_subject,
+        "trend": trend,
+        "weak_points": weak,
     }
 
 
