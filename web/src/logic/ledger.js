@@ -145,6 +145,10 @@ export const ledgerComputed = {
     const pct = Math.round((row.spent / row.budget) * 100);
     return `「${row.project_name}」预算 ${this.ledgerFmt(row.budget)} 元，已用 ${this.ledgerFmt(row.spent)} 元（${pct}%）`;
   },
+  // 超预算项目列表（顶部「预算提醒」横幅用；无预算或未超支返回空）
+  ledgerBudgetOverruns() {
+    return (this.ledgerBudget || []).filter(b => b && b.budget > 0 && b.spent > b.budget);
+  },
   // 账单按日期分组（保持后端 transaction_time 倒序）
   ledgerBillGroups() {
     const groups = [];
@@ -220,6 +224,34 @@ export const ledgerMethods = {
   ledgerFmt(n) {
     return (Number(n) || 0).toFixed(2);
   },
+  async ledgerExportCsv() {
+    // 导出本人全部交易为 CSV（后端 /api/ledger/users/{uid}/export/csv 返回文件流）。
+    // 自带 Bearer 鉴权：直接 window.location 会丢掉 token 触发 403，故用 fetch+blob 下载。
+    const url = `/api/ledger/users/${encodeURIComponent(this.user)}/export/csv`;
+    const tk = (typeof localStorage !== 'undefined') ? localStorage.getItem('zx_token') : '';
+    const headers = {};
+    if (tk) headers['Authorization'] = 'Bearer ' + tk;
+    try {
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        let msg = '导出失败';
+        try { const j = await res.json(); msg = j.message || msg; } catch (e) { /* 非 JSON 响应忽略 */ }
+        return this.showToast(msg);
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      const u = URL.createObjectURL(blob);
+      a.href = u;
+      a.download = `账本导出_${this.user}_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(u), 1000);
+      this.showToast('已导出 CSV ✅');
+    } catch (e) {
+      this.showToast('导出失败：' + (e && e.message ? e.message : e));
+    }
+  },
   ledgerTypeLabel(t) {
     return { income: '收入', expense: '支出', transfer: '转账' }[t] || t || '';
   },
@@ -262,6 +294,7 @@ export const ledgerMethods = {
         this.ledgerRecentCats = JSON.parse(localStorage.getItem('zx_ledger_recent_cats') || '[]');
       } catch (e) { this.ledgerRecentCats = []; }
       this.loadLedgerTabData();
+      this.loadLedgerBudget();   // 顶部「预算提醒」横幅需 budget 数据，与当前 tab 无关，统一预拉
     } finally {
       this.ledgerLoading = false;
     }

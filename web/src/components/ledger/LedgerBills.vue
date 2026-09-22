@@ -42,6 +42,7 @@
         <input v-model="appCtx.ledgerBillFilter.keyword" class="fill-input ldg-kw" maxlength="50" placeholder="备注关键词" @keyup.enter="appCtx.ledgerReloadBills()">
         <button class="btn btn-primary btn-sm" @click="appCtx.ledgerReloadBills()">查询</button>
         <button class="btn btn-ghost btn-sm" @click="appCtx.ledgerResetBillFilter()">重置</button>
+        <button class="btn btn-ghost btn-sm" @click="appCtx.ledgerExportCsv()">⬇️ 导出 CSV</button>
       </div>
     </div>
 

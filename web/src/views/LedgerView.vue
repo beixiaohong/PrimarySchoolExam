@@ -10,6 +10,11 @@
         <span class="more" v-else>零花钱收支，自己管</span>
       </div>
 
+      <!-- 预算提醒横幅：任一项目超支即提示（数据来自 statistics/budget） -->
+      <div v-if="appCtx.ledgerBudgetOverruns.length" class="ldg-budget-alert">
+        ⚠️ 预算提醒：<template v-for="(b, i) in appCtx.ledgerBudgetOverruns" :key="'ba' + b.project_id"><template v-if="i">、</template>{{ b.project_name }} 已超 {{ appCtx.ledgerFmt(b.spent - b.budget) }} 元</template>
+      </div>
+
       <div class="ldg-tabs">
         <button v-for="t in tabs" :key="t.k" class="ldg-tab" :class="{ on: appCtx.ledgerTab === t.k }"
                 @click="appCtx.ledgerGoTab(t.k)">{{ t.label }}</button>
@@ -110,6 +115,7 @@ export default {
 .ldg-tab:hover { background: #f3f0fc; }
 .ldg-tab.on { background: #8b7cf6; border-color: #8b7cf6; color: #fff; font-weight: 600; }
 .ldg-empty { text-align: center; color: #999; padding: 32px 0; font-size: 14px; }
+.ldg-budget-alert { background: #fdecec; color: #c0392b; border: 1px solid #f5c6c6; border-radius: 10px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
 .ldg-dialog { width: min(420px, 92vw); }
 .ldg-dialog-body { max-height: 60vh; overflow-y: auto; padding: 4px 0; }
 .ldg-field { margin-bottom: 10px; }
