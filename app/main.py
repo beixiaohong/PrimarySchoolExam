@@ -10,7 +10,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy import text
@@ -191,13 +191,10 @@ def admin_index():
     """
     if ADMIN_INDEX.exists():
         return FileResponse(ADMIN_INDEX)
-    from fastapi.responses import JSONResponse
-    return JSONResponse(
+    raise HTTPException(
         status_code=503,
-        content={
-            "detail": "管理后台未构建：请先在服务器执行 `cd admin && npm ci && npm run build` "
-                      "生成 admin/dist，然后重启应用。",
-        },
+        detail="管理后台未构建：请先在服务器执行 `cd admin && npm ci && npm run build` "
+               "生成 admin/dist，然后重启应用。",
     )
 
 # 静态资源（图片、音频）
@@ -223,10 +220,9 @@ def index():
                 "Expires": "0",
             },
         )
-    from fastapi.responses import JSONResponse
-    return JSONResponse(
+    raise HTTPException(
         status_code=404,
-        content={"detail": "前端未构建：请先执行 `cd web && npm run build` 生成 web/dist。"},
+        detail="前端未构建：请先执行 `cd web && npm run build` 生成 web/dist。",
     )
 
 
@@ -252,10 +248,9 @@ def novel_index():
                 "Expires": "0",
             },
         )
-    from fastapi.responses import JSONResponse
-    return JSONResponse(
+    raise HTTPException(
         status_code=404,
-        content={"detail": "小说站未构建：请执行 `cd web && npm run build` 生成 web/dist/novel.html。"},
+        detail="小说站未构建：请执行 `cd web && npm run build` 生成 web/dist/novel.html。",
     )
 
 

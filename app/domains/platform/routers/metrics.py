@@ -6,24 +6,32 @@
 设计取舍：
 - 仅聚合「今日」与「昨日」数据，避免大范围 COUNT 拖库；
 - 对大表查询加 LIMIT 兜底，单请求 < 200ms 可控；
-- 无需鉴权（内部看板调用），如需外部暴露可后续加 admin 鉴权。
+- 需后台管理员鉴权（`Depends(_require_admin)`），避免运营敏感数据（用户量/订单/AI token）公网暴露。
 """
 import logging
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.auth import _require_admin
 
 router = APIRouter()
 logger = logging.getLogger("app.metrics")
 
+# 仅允许聚合白名单内的业务表，杜绝 `text(table)` 拼接带来的注入面。
+_ALLOWED_TABLES = {"exam_attempts", "ai_usage_log", "orders", "users"}
+_ALLOWED_TIME_COLS = {"created_at"}
+
 
 def _count_today(db: Session, table: str, time_col: str = "created_at",
                  user_col: str | None = None) -> dict:
-    """统计今日 / 昨日某表的行数（及去重用户数）。"""
+    """统计今日 / 昨日某表的行数（及去重用户数）。表名/时间列强制白名单。"""
+    if table not in _ALLOWED_TABLES or time_col not in _ALLOWED_TIME_COLS:
+        logger.warning("metrics._count_today 拒绝非白名单表/列：%s/%s", table, time_col)
+        return {"count": None, "distinct_users": None}
     today = date.today()
     yesterday = today - timedelta(days=1)
 
@@ -47,7 +55,8 @@ def _count_today(db: Session, table: str, time_col: str = "created_at",
     return {"today": _query(today), "yesterday": _query(yesterday)}
 
 
-@router.get("/metrics", summary="运营指标快照（OBS-04）")
+@router.get("/metrics", summary="运营指标快照（OBS-04）",
+            dependencies=[Depends(_require_admin)])
 def metrics(db: Session = Depends(get_db)):
     """实时运营指标：DAU / 答题量 / AI 调用 / 订单量。"""
     result: dict = {"generated_at": datetime.now().isoformat()}

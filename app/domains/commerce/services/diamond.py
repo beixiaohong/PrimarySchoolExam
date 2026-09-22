@@ -41,14 +41,21 @@ def calc_cost(prompt_tokens: int, completion_tokens: int) -> float:
 
 
 def deduct(db: Session, user_id: str, amount: float, reason: str = "", ref_id: int = 0) -> bool:
-    """扣除钻石，返回是否成功（余额不足返回 False）"""
+    """扣除钻石，返回是否成功（余额不足返回 False）。
+
+    并发安全：SELECT 加 `WITH FOR UPDATE` 行锁，避免「读余额→判断→改→提交」的
+    读改写竞态（同一用户多笔 AI 扣费并发时可能双双通过余额判断导致超发/负余额）。
+    与红包领取锁（frozen/routers/im.py）保持一致做法。
+    """
     if amount <= 0:
         return True
-    acc = db.query(DiamondAccount).filter(DiamondAccount.user_id == user_id).first()
+    acc = db.query(DiamondAccount).filter(
+        DiamondAccount.user_id == user_id).with_for_update().first()
     if not acc:
         # 首次扣费，先创建账户并赠送
         get_balance(db, user_id)
-        acc = db.query(DiamondAccount).filter(DiamondAccount.user_id == user_id).first()
+        acc = db.query(DiamondAccount).filter(
+            DiamondAccount.user_id == user_id).with_for_update().first()
     if acc.balance < amount:
         return False
     acc.balance = round(acc.balance - amount, 2)
@@ -62,8 +69,12 @@ def deduct(db: Session, user_id: str, amount: float, reason: str = "", ref_id: i
 
 
 def grant(db: Session, user_id: str, amount: float, reason: str = "admin_grant") -> float:
-    """充值钻石，返回新余额"""
-    acc = db.query(DiamondAccount).filter(DiamondAccount.user_id == user_id).first()
+    """充值钻石，返回新余额。
+
+    并发安全：SELECT 加 `WITH FOR UPDATE` 行锁，避免并发赠送覆盖余额。
+    """
+    acc = db.query(DiamondAccount).filter(
+        DiamondAccount.user_id == user_id).with_for_update().first()
     if not acc:
         acc = DiamondAccount(user_id=user_id, balance=0.0)
         db.add(acc)

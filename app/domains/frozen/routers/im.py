@@ -10,8 +10,8 @@ IM即时通讯系统 - FastAPI路由（适配至「智学学堂」FastAPI 应用
   绝不把会话跨 WS 生命周期持有；broadcast_to_chat 内部自行开短会话。
 - 文件上传改用标准 open()/shutil，存到 output/im_uploads/。
 """
-from fastapi import Depends, APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, File, Form
-from sqlalchemy.orm import Session
+from fastapi import Depends, APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect, File, Form, Query
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 
 from app.database import get_db, SessionLocal
@@ -433,11 +433,11 @@ async def get_chats(
 async def get_messages(
     chat_id: str,
     skip: int = 0,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    """获取聊天消息列表"""
+    """获取聊天消息列表（limit 上限 200，防止一次拉取整表）"""
     membership = db.query(GroupMember).filter(
         GroupMember.chat_id == chat_id,
         GroupMember.user_id == current_user.user_id,
@@ -445,19 +445,24 @@ async def get_messages(
     if not membership:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    messages = db.query(Message).filter(
+    # 一次查询带出 sender（joinedload），避免逐条查 User 的 N+1
+    messages = db.query(Message).options(joinedload(Message.sender)).filter(
         Message.chat_id == chat_id,
         Message.is_deleted == False,
     ).order_by(Message.created_at.desc()).offset(skip).limit(limit).all()
 
+    # 红包消息批量取 red_packet_id（一次 IN 查询，替代逐条查）
+    rp_msg_ids = [m.id for m in messages if m.message_type == MessageType.RED_PACKET]
+    rp_map: dict = {}
+    if rp_msg_ids:
+        rp_rows = db.query(RedPacket.id, RedPacket.message_id).filter(
+            RedPacket.message_id.in_(rp_msg_ids)).all()
+        rp_map = {msg_id: str(rp_id) for rp_id, msg_id in rp_rows}
+
     result = []
     for message in messages:
-        sender = db.query(User).filter(User.user_id == message.sender_id).first()
-        # 红包消息：回填 red_packet_id，供前端调用领取/查看记录接口
-        rp_id = None
-        if message.message_type == MessageType.RED_PACKET:
-            rp = db.query(RedPacket.id).filter(RedPacket.message_id == message.id).first()
-            rp_id = str(rp[0]) if rp else None
+        sender = message.sender
+        rp_id = rp_map.get(message.id)
         result.append(MessageResponse(
             id=str(message.id),
             chat_id=str(message.chat_id),

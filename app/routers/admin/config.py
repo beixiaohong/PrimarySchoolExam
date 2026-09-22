@@ -9,6 +9,7 @@ from app.domains.platform.contracts import sysconfig
 
 from . import router
 from .common import CONFIG_GROUPS, SECRET_HINTS, _audit, _require_admin
+from app.core.permissions import require_perm
 
 
 class ConfigSaveReq(BaseModel):
@@ -52,7 +53,9 @@ def list_config(db: Session = Depends(get_db), admin: Admin = Depends(_require_a
     return {"groups": groups}
 
 
-@router.post("/config", summary="保存三方配置（写入 system_config，60s 内生效）")
+@router.post("/config", summary="保存三方配置（写入 system_config，60s 内生效）",
+            dependencies=[Depends(require_perm("config:manage", audit_action="保存系统配置",
+                                               high_risk=True, audit_target_type="config"))])
 def save_config(req: ConfigSaveReq, db: Session = Depends(get_db),
                 admin: Admin = Depends(_require_admin)):
     """保存三方配置到 system_config（优先级高于 .env，保存后立即失效缓存），并落审计日志。

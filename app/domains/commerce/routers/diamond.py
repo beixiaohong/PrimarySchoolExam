@@ -10,6 +10,7 @@ from app.database import get_db
 from app.config import RECHARGE_WECHAT_QR, RECHARGE_ALIPAY_QR, RECHARGE_CS_CONTACT, RECHARGE_CS_QR, RECHARGE_RATE
 from ..services import diamond as diamond_svc
 from app.routers.admin import _require_admin
+from app.core.permissions import require_perm
 from app.domains.identity.contracts import require_self
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,10 @@ class AdjustRequest(BaseModel):
     reason: str = Field("admin_adjust", description="原因说明")
 
 
-@router.post("/adjust", summary="增减钻石（管理接口，需管理员）", dependencies=[Depends(_require_admin)])
+@router.post("/adjust", summary="增减钻石（管理接口，需管理员）",
+            dependencies=[Depends(_require_admin),
+                          Depends(require_perm("benefit:grant_manual", audit_action="钻石调整",
+                                               high_risk=True, audit_target_type="asset"))])
 def adjust_diamonds(req: AdjustRequest, db: Session = Depends(get_db)):
     """管理员增减用户钻石。amount 为正时增加，为负时扣除。"""
     if req.amount == 0:
@@ -62,7 +66,10 @@ class GrantAllRequest(BaseModel):
     amount: float = Field(1000000.0, description="赠送数量")
 
 
-@router.post("/grant-all", summary="为所有用户赠送钻石（首次初始化，需管理员）", dependencies=[Depends(_require_admin)])
+@router.post("/grant-all", summary="为所有用户赠送钻石（首次初始化，需管理员）",
+            dependencies=[Depends(_require_admin),
+                          Depends(require_perm("benefit:grant_manual", audit_action="钻石全员赠送",
+                                               high_risk=True, audit_target_type="asset"))])
 def grant_all(req: GrantAllRequest, db: Session = Depends(get_db)):
     """为所有尚未创建钻石账户的用户赠送指定数量钻石"""
     count = diamond_svc.grant_all_existing(db, req.amount)

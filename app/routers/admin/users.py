@@ -16,6 +16,7 @@ from app.domains.family.contracts import _hash_pwd, _validate_pwd
 
 from . import router
 from .common import _audit, _require_admin
+from app.core.permissions import require_perm
 
 
 class AccountReq(BaseModel):
@@ -205,7 +206,9 @@ class ActiveReq(BaseModel):
     active: bool  # True=启用 / False=停用
 
 
-@router.post("/users/{user_id}/active", summary="停用/启用账号")
+@router.post("/users/{user_id}/active", summary="停用/启用账号",
+            dependencies=[Depends(require_perm("user:manage", audit_action="账号停用/启用",
+                                               high_risk=True, audit_target_type="user"))])
 def toggle_user_active(user_id: str, req: ActiveReq, db: Session = Depends(get_db),
                        admin: Admin = Depends(_require_admin)):
     """停用/启用账号：停用后该账号无法登录、已签发 token 立即失效。
@@ -223,7 +226,9 @@ def toggle_user_active(user_id: str, req: ActiveReq, db: Session = Depends(get_d
     return {"ok": True, "active": req.active}
 
 
-@router.post("/users/account", summary="账号处理（重置密码/改绑解绑邮箱手机/重置为昵称态）")
+@router.post("/users/account", summary="账号处理（重置密码/改绑解绑邮箱手机/重置为昵称态）",
+            dependencies=[Depends(require_perm("user:manage", audit_action="账号处理",
+                                               high_risk=True, audit_target_type="user"))])
 def handle_account(req: AccountReq, db: Session = Depends(get_db),
                    admin: Admin = Depends(_require_admin)):
     """账号处理：重置登录密码、改绑/解绑邮箱手机、重置为纯昵称态，并记审计日志。
@@ -276,7 +281,9 @@ def handle_account(req: AccountReq, db: Session = Depends(get_db),
     return {"ok": True, "detail": detail}
 
 
-@router.put("/users/{user_id}", summary="修改用户资料（昵称/年级/学科/城市/邮箱/手机）")
+@router.put("/users/{user_id}", summary="修改用户资料（昵称/年级/学科/城市/邮箱/手机）",
+            dependencies=[Depends(require_perm("user:manage", audit_action="修改用户资料",
+                                               audit_target_type="user"))])
 def update_user_profile(user_id: str, req: UserProfileUpdate,
                         db: Session = Depends(get_db),
                         admin: Admin = Depends(_require_admin)):

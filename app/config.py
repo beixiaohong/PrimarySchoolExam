@@ -79,9 +79,10 @@ FFMPEG_PATH = os.environ.get("FFMPEG_PATH", "ffmpeg").strip()
 FFPROBE_PATH = os.environ.get("FFPROBE_PATH", "ffprobe").strip()
 FFMPEG_TIMEOUT = int(os.environ.get("FFMPEG_TIMEOUT", "15"))
 
-# ── S1 后台 RBAC（权限严格模式，默认关闭=灰度放行存量后台）──
+# ── S1 后台 RBAC（权限严格模式，默认开启）──
 # RBAC_STRICT=true 时后台高危操作按权限点校验，无权限返回 403；
-# 默认 false：仅做登录鉴权，权限点校验跳过，避免影响既有后台调用。开启前须先为存量管理员赋权。
-RBAC_STRICT = os.environ.get("RBAC_STRICT", "false").strip().lower() in ("1", "true", "yes", "on")
+# 角色权限已在迁移 060 种子（super=全部，admin=运营子集不含财务/订单/RBAC，ops=只读）。
+# 如需临时回退灰度（如某后台操作被误拦），设环境变量 RBAC_STRICT=false 即可即时降级，无需改码。
+RBAC_STRICT = os.environ.get("RBAC_STRICT", "true").strip().lower() in ("1", "true", "yes", "on")
 # 结构化日志开关（默认开启；文件处理器输出 JSON，控制台保持可读）
 STRUCTURED_LOGS = os.environ.get("STRUCTURED_LOGS", "true").strip().lower() in ("1", "true", "yes", "on")
