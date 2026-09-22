@@ -7,7 +7,40 @@
         <button @click="fontSize = Math.max(14, fontSize - 1)">A-</button>
         <button @click="fontSize = Math.min(26, fontSize + 1)">A+</button>
         <button @click="cycleTheme">{{ themeText }}</button>
+        <button @click="showBookmarks = !showBookmarks">🔖 书签</button>
       </div>
+    </div>
+
+    <!-- 书签面板（登录用户可用；未登录提示登录） -->
+    <div class="nv-bookmarks" v-if="showBookmarks">
+      <div class="nv-bm-head">
+        <strong>书签</strong>
+        <span class="nv-bm-close" @click="showBookmarks = false">✕</span>
+      </div>
+      <template v-if="!isLogin()">
+        <div class="nv-muted">登录后可添加书签并跨设备同步。</div>
+      </template>
+      <template v-else>
+        <div class="nv-bm-add">
+          <input v-model="bookmarkNote" class="nv-bm-input" placeholder="便签（可选）" />
+          <button class="nv-btn nv-btn-sm" @click="addBookmark">
+            🔖 第 {{ currentIdx }}{{ unitText }} 加书签
+          </button>
+        </div>
+        <div class="nv-bm-list" v-if="bookmarks.length">
+          <div class="nv-bm-item" v-for="b in bookmarks" :key="b.id">
+            <div class="nv-bm-info">
+              <span class="nv-bm-idx">#{{ b.chapter_idx }}{{ unitText }}</span>
+              <span class="nv-bm-note" v-if="b.note">{{ b.note }}</span>
+            </div>
+            <div class="nv-bm-ops">
+              <button class="nv-link" @click="jumpTo(b.chapter_idx)">跳转</button>
+              <button class="nv-link nv-danger" @click="removeBookmark(b.id)">删除</button>
+            </div>
+          </div>
+        </div>
+        <div class="nv-muted" v-else>还没有书签，读到精彩处点上方按钮收藏吧。</div>
+      </template>
     </div>
 
     <div class="nv-reader-body">
@@ -18,7 +51,10 @@
       </div>
 
       <template v-for="s in segs" :key="s.idx">
-        <h3 class="nv-seg-title" v-if="s.title">{{ s.title }}</h3>
+        <h3 class="nv-seg-title" v-if="s.title">
+          {{ s.title }}
+          <span v-if="bookmarkSet.has(s.idx)" class="nv-bm-flag" title="已加书签">🔖</span>
+        </h3>
         <div class="nv-seg-text" :style="{ fontSize: fontSize + 'px' }">{{ s.content }}</div>
       </template>
 
@@ -123,8 +159,50 @@ function ensureObserver() {
   io.observe(sentinel.value)
 }
 
+// ───────────────── 书签（需登录） ─────────────────
+const showBookmarks = ref(false)
+const bookmarks = ref([])
+const bookmarkNote = ref('')
+const currentIdx = computed(() => segs.value.length ? segs.value[segs.value.length - 1].idx : 1)
+// 已加书签的章/段号集合，用于在正文中渲染 🔖 标记
+const bookmarkSet = computed(() => new Set((bookmarks.value || []).map((b) => b.chapter_idx)))
+
+async function loadBookmarks() {
+  if (!isLogin()) { bookmarks.value = []; return }
+  try {
+    bookmarks.value = await api.bookmarks(id.value)
+  } catch (e) { bookmarks.value = [] }
+}
+
+async function addBookmark() {
+  if (!isLogin()) { alert('请先登录后再添加书签'); return }
+  try {
+    await api.addBookmark(id.value, currentIdx.value, bookmarkNote.value.trim())
+    bookmarkNote.value = ''
+    await loadBookmarks()
+  } catch (e) { alert('添加失败：' + e.message) }
+}
+
+async function removeBookmark(bid) {
+  try {
+    await api.deleteBookmark(id.value, bid)
+    await loadBookmarks()
+  } catch (e) { alert('删除失败：' + e.message) }
+}
+
+function jumpTo(idx) {
+  // 从指定章/段重新加载（清空已读段落并定位）
+  segs.value = []
+  nextIdx.value = idx
+  hasMore.value = true
+  startFrom.value = idx
+  window.scrollTo(0, 0)
+  loadMore()
+}
+
 onMounted(async () => {
   await loadMeta()
+  await loadBookmarks()
   window.scrollTo(0, 0)
   await loadMore()
 })

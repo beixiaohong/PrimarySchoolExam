@@ -90,6 +90,12 @@ class ShelfUpdate(BaseModel):
     in_shelf: bool = True
 
 
+class BookmarkCreate(BaseModel):
+    """添加书签：标记到某一章/段，可附便签"""
+    chapter_idx: int = Field(1, ge=1, description="书签所在章/段号（从 1 开始）")
+    note: str = ""
+
+
 # ───────────────── 后台：导入 / 编辑 ─────────────────
 class NovelImportResult(BaseModel):
     """TXT 导入结果（后台上传后立即回显，便于确认是否成功分章）"""

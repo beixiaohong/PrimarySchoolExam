@@ -57,6 +57,16 @@ export const api = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chapter_idx: chapterIdx }),
   }),
+  // ── 书签（需登录）──
+  bookmarks: (id) => request(`/api/novel/${id}/bookmarks`),
+  addBookmark: (id, chapterIdx, note = '') => request(`/api/novel/${id}/bookmarks`, {}, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chapter_idx: chapterIdx, note }),
+  }),
+  deleteBookmark: (id, bid) => request(`/api/novel/${id}/bookmarks/${bid}`, {}, {
+    method: 'DELETE',
+  }),
 }
 
 export const isLogin = () => !!localStorage.getItem(TOKEN_KEY)

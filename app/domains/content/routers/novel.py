@@ -21,12 +21,12 @@ from sqlalchemy.orm import Session
 
 from app.config import BASE_DIR
 from app.database import get_db
-from app.models.novel import Novel, NovelChapter, NovelReadProgress
+from app.models.novel import Novel, NovelChapter, NovelBookmark, NovelReadProgress
 from app.models.user import User
-from app.schemas.novel import (CategoryItem, ChapterBrief, ChapterContent,
-                               ChapterListResponse, NovelBrief,
-                               NovelDetail, NovelListResponse,
-                               ProgressUpdate, ReadResponse, ShelfUpdate)
+from app.schemas.novel import (BookmarkCreate, CategoryItem, ChapterBrief,
+                               ChapterContent, ChapterListResponse, NovelBrief,
+                               NovelDetail, NovelListResponse, ProgressUpdate,
+                               ReadResponse, ShelfUpdate)
 
 logger = logging.getLogger(__name__)
 
@@ -291,3 +291,67 @@ def toggle_shelf(novel_id: int, body: ShelfUpdate,
         p.in_shelf = body.in_shelf
     db.commit()
     return {"ok": True, "in_shelf": body.in_shelf}
+
+
+# ───────────────── 书签（需登录） ─────────────────
+@router.get("/{novel_id}/bookmarks", summary="我的书签列表（需登录）")
+def list_bookmarks(novel_id: int, user: User = Depends(_require_user),
+                   db: Session = Depends(get_db)):
+    """返回本人在该书的书签，按章/段号升序；用于阅读器侧边栏与跳转。"""
+    n = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not n:
+        raise HTTPException(404, "小说不存在")
+    rows = (db.query(NovelBookmark)
+            .filter(NovelBookmark.user_id == user.user_id,
+                    NovelBookmark.novel_id == novel_id)
+            .order_by(NovelBookmark.chapter_idx.asc(), NovelBookmark.id.asc())
+            .all())
+    return [{
+        "id": b.id,
+        "novel_id": b.novel_id,
+        "chapter_idx": b.chapter_idx,
+        "note": b.note or "",
+        "created_at": b.created_at,
+    } for b in rows]
+
+
+@router.post("/{novel_id}/bookmarks", summary="添加/更新书签（需登录）")
+def add_bookmark(novel_id: int, body: BookmarkCreate,
+                 user: User = Depends(_require_user),
+                 db: Session = Depends(get_db)):
+    """在该章/段打书签；同一 (user, novel, chapter_idx) 已存在则改为更新便签。"""
+    n = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not n:
+        raise HTTPException(404, "小说不存在")
+    existing = (db.query(NovelBookmark)
+                .filter(NovelBookmark.user_id == user.user_id,
+                        NovelBookmark.novel_id == novel_id,
+                        NovelBookmark.chapter_idx == body.chapter_idx)
+                .first())
+    if existing:
+        existing.note = body.note or ""
+        b = existing
+    else:
+        b = NovelBookmark(user_id=user.user_id, novel_id=novel_id,
+                          chapter_idx=body.chapter_idx, note=body.note or "")
+        db.add(b)
+    db.commit()
+    db.refresh(b)
+    return {"ok": True, "id": b.id, "chapter_idx": b.chapter_idx,
+            "note": b.note or ""}
+
+
+@router.delete("/{novel_id}/bookmarks/{bid}", summary="删除书签（需登录）")
+def delete_bookmark(novel_id: int, bid: int,
+                    user: User = Depends(_require_user),
+                    db: Session = Depends(get_db)):
+    b = (db.query(NovelBookmark)
+         .filter(NovelBookmark.id == bid,
+                 NovelBookmark.user_id == user.user_id,
+                 NovelBookmark.novel_id == novel_id)
+         .first())
+    if not b:
+        raise HTTPException(404, "书签不存在")
+    db.delete(b)
+    db.commit()
+    return {"ok": True}

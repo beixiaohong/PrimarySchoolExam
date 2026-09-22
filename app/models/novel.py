@@ -115,4 +115,31 @@ class NovelReadProgress(Base):
         return f"<NovelReadProgress {self.user_id}@{self.novel_id}#{self.chapter_idx}>"
 
 
-__all__ = ["Novel", "NovelChapter", "NovelReadProgress"]
+class NovelBookmark(Base):
+    """阅读书签（登录用户；游客不写库）
+
+    同一 (user_id, novel_id, chapter_idx) 唯一，便于「在同一章再次标记 = 更新便签」
+    而不会产生重复书签。仅有 (id, user_id, novel_id) 三列约束无法表达「按章去重」，
+    故把 chapter_idx 纳入唯一键。
+    """
+    __tablename__ = "db_novel_bookmarks"
+    __table_args__ = (
+        UniqueConstraint("user_id", "novel_id", "chapter_idx",
+                         name="uq_bookmark_user_novel_idx"),
+        {"comment": "小说书签：读者在某一章/段做的标记，可附便签"},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
+    user_id = Column(String(50), nullable=False, index=True, comment="用户账号")
+    novel_id = Column(Integer, nullable=False, index=True, comment="小说 id")
+    chapter_idx = Column(Integer, default=1, comment="书签所在章/段号（从 1 开始）")
+    note = Column(String(500), default="", comment="便签（可选）")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.now,
+                        onupdate=datetime.now, comment="更新时间")
+
+    def __repr__(self):
+        return f"<NovelBookmark {self.user_id}@{self.novel_id}#{self.chapter_idx}>"
+
+
+__all__ = ["Novel", "NovelChapter", "NovelReadProgress", "NovelBookmark"]
