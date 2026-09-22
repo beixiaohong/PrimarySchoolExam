@@ -1,5 +1,6 @@
 """自我超越、错因聚合分析相关端点"""
 from datetime import date, datetime, timedelta
+from collections import defaultdict
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Query
@@ -12,6 +13,8 @@ from app.models.study_error import StudyError
 from app.models.exam import WrongRecord, Question, ExamAttempt
 from app.models.vocab import VocabDailyLog
 from app.models.classical import ClassicalDailyLog
+from app.models.kp_map import QuestionKpMap
+from app.models.knowledge import KnowledgePoint
 
 
 @router.get("/self-compare", summary="自我超越：最近两次做题/今昨背诵/本周错题对比")
@@ -164,4 +167,65 @@ def analyze_errors(
     }
 
 
-__all__ = ["self_compare", "analyze_errors"]
+@router.get("/errors/by-kp", summary="错题知识点归因（弱项诊断）")
+def errors_by_kp(
+    user_id: str = Query(..., description="用户名"),
+    subject: Optional[str] = Query(None, description="学科筛选（缺省全部）"),
+    limit: int = Query(20, ge=1, le=50, description="返回知识点数量上限"),
+    db: Session = Depends(get_db),
+):
+    """把「错题本」按知识点聚合，定位薄弱知识点（错题归因的「知识点」维度）。
+
+    与掌握度模型（/api/mastery/heatmap 由真实作答推导）互补：
+    本端点直接从「错题本」出发，回答「我哪些知识点错得最多」，驱动针对性复习。
+    数据依赖 question_kp_map 标注；未标注的题目不计入 by_kp（仍计入 total_wrong）。
+    """
+    q = db.query(WrongRecord).filter(
+        WrongRecord.user_id == user_id,
+    ).join(Question)
+    if subject:
+        q = q.filter(Question.subject == subject)
+    # 仅未掌握错题参与弱项归因（NULL 与 False 均纳入）
+    wrong_recs = q.filter(WrongRecord.is_mastered != True).all()  # noqa: E712
+    qids = [r.question_id for r in wrong_recs]
+    if not qids:
+        return {"total_wrong": 0, "mapped_wrong": 0, "by_kp": []}
+
+    # 批量取题→知识点映射（仅 questions 题源、active）
+    maps = db.query(QuestionKpMap).filter(
+        QuestionKpMap.source_table == "questions",
+        QuestionKpMap.question_id.in_(qids),
+        QuestionKpMap.status == "active",
+    ).all()
+    kp_ids = {m.kp_id for m in maps}
+    kps = {k.id: k for k in db.query(KnowledgePoint).filter(
+        KnowledgePoint.id.in_(kp_ids)).all()} if kp_ids else {}
+
+    # 统计：一题可能映射多个知识点，每个知识点各计一次
+    agg = defaultdict(lambda: {"wrong": 0, "qids": set()})
+    for m in maps:
+        agg[m.kp_id]["wrong"] += 1
+        agg[m.kp_id]["qids"].add(m.question_id)
+
+    by_kp = []
+    for kp_id, d in agg.items():
+        kp = kps.get(kp_id)
+        by_kp.append({
+            "kp_id": kp_id,
+            "kp_title": kp.title if kp else f"知识点#{kp_id}",
+            "subject": kp.subject if kp else "",
+            "unit": kp.unit if kp else "",
+            "wrong_count": d["wrong"],
+            "pending_count": len(d["qids"]),
+            "question_ids": sorted(d["qids"]),
+        })
+    by_kp.sort(key=lambda x: (-x["wrong_count"], x["kp_title"]))
+
+    return {
+        "total_wrong": len(wrong_recs),
+        "mapped_wrong": sum(len(d["qids"]) for d in agg.values()),
+        "by_kp": by_kp[:limit],
+    }
+
+
+__all__ = ["self_compare", "analyze_errors", "errors_by_kp"]

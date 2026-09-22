@@ -2,7 +2,7 @@
 import json
 import random
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import Depends, HTTPException, Query
@@ -29,6 +29,7 @@ def mark_wrong(exam_id: int, req: MarkWrongRequest, db: Session = Depends(get_db
     """
     questions = _locate_questions(db, exam_id, req.question_ids, req.seqs)
     now = datetime.now()
+    due = date.today() + timedelta(days=1)  # 间隔重复：首次排期明天进入复习队列（闭环真正自动）
     marked = 0
     for q in questions:
         existing = db.query(WrongRecord).filter(
@@ -41,11 +42,13 @@ def mark_wrong(exam_id: int, req: MarkWrongRequest, db: Session = Depends(get_db
             existing.mastered_at = None
             existing.correct_streak = 0  # 重新标错：连击清零，闭环重新开始
             existing.wrong_at = now
+            existing.next_review_date = due  # 重新排期：重做仍错 → 进复习队列
         else:
             db.add(WrongRecord(
                 user_id=req.user_id,
                 question_id=q.id,
                 wrong_at=now,
+                next_review_date=due,  # 自动排期：错题一进本即进间隔重复队列
             ))
         marked += 1
     db.commit()
