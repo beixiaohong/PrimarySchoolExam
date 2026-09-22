@@ -176,6 +176,12 @@ def client():
             _pc.execute(text("DROP TABLE IF EXISTS `__pytest_wprobe`"))
         app_cm = TestClient(app)
         c = app_cm.__enter__()
+        # 测试与系统时间解耦：夜间静默（22:30–07:00）会拦截刷题/背诵等动作端点，
+        # 若不禁用，夜间跑测试必然大面积 403（与业务代码无关，纯时间依赖）。
+        # 这里把该依赖覆写为空操作，仅作用于测试进程，零生产影响；
+        # 静默特性本身的正确性由 tests/test_quiet_hours.py 单元测试保证。
+        from app.domains.platform.routers.quiet_hours import check_quiet_hours
+        app.dependency_overrides[check_quiet_hours] = lambda: None
     except (OperationalError, DatabaseError) as e:
         pytest.skip(
             f"测试库 '{_test_db}' 不可用（{e}）。\n"
@@ -199,6 +205,19 @@ def client():
     finally:
         db.close()
         app_cm.__exit__(None, None, None)
+
+
+@pytest.fixture(scope="session")
+def admin_headers(client):
+    """后台管理员鉴权头。
+
+    /api/metrics 等运营敏感端点走 `_require_admin`（避免运营数据公网暴露），
+    测试必须显式携带管理员 token，否则 401。默认管理员账号由系统初始化注入。
+    """
+    r = client.post("/api/admin/login",
+                    json={"username": "admin", "password": "Admin@123"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
 @pytest.fixture(autouse=True)

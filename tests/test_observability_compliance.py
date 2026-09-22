@@ -51,50 +51,59 @@ class TestHealthEndpoint:
 # ── OBS-04: /api/metrics 运营指标 ──
 
 class TestMetricsEndpoint:
-    """运营指标端点测试"""
+    """运营指标端点测试
 
-    def test_metrics_returns_200(self, client):
-        """指标端点返回 200"""
+    注：/api/metrics 走 `_require_admin`（运营敏感数据不公网暴露），
+    故所有请求必须携带管理员 token（conftest 的 admin_headers 夹具）。
+    """
+
+    def test_metrics_requires_admin(self, client):
+        """未携带管理员 token → 401（防止运营数据泄露）"""
         resp = client.get("/api/metrics")
+        assert resp.status_code == 401
+
+    def test_metrics_returns_200(self, client, admin_headers):
+        """指标端点返回 200"""
+        resp = client.get("/api/metrics", headers=admin_headers)
         assert resp.status_code == 200
 
-    def test_metrics_has_generated_at(self, client):
+    def test_metrics_has_generated_at(self, client, admin_headers):
         """指标包含生成时间"""
-        resp = client.get("/api/metrics")
+        resp = client.get("/api/metrics", headers=admin_headers)
         data = resp.json()
         assert "generated_at" in data
 
-    def test_metrics_has_dau(self, client):
+    def test_metrics_has_dau(self, client, admin_headers):
         """指标包含 DAU"""
-        resp = client.get("/api/metrics")
+        resp = client.get("/api/metrics", headers=admin_headers)
         data = resp.json()
         assert "dau" in data
         # DAU 应该是整数或 None
         assert data["dau"] is None or isinstance(data["dau"], int)
 
-    def test_metrics_has_answers(self, client):
+    def test_metrics_has_answers(self, client, admin_headers):
         """指标包含答题量"""
-        resp = client.get("/api/metrics")
+        resp = client.get("/api/metrics", headers=admin_headers)
         data = resp.json()
         assert "answers" in data
 
-    def test_metrics_has_ai_calls(self, client):
+    def test_metrics_has_ai_calls(self, client, admin_headers):
         """指标包含 AI 调用量"""
-        resp = client.get("/api/metrics")
+        resp = client.get("/api/metrics", headers=admin_headers)
         data = resp.json()
         assert "ai_calls" in data
 
-    def test_metrics_has_total_users(self, client):
+    def test_metrics_has_total_users(self, client, admin_headers):
         """指标包含总用户数"""
-        resp = client.get("/api/metrics")
+        resp = client.get("/api/metrics", headers=admin_headers)
         data = resp.json()
         assert "total_users" in data
         # 总用户数应该是整数或 None（查询失败时）
         assert data["total_users"] is None or isinstance(data["total_users"], int)
 
-    def test_metrics_has_migration_version(self, client):
+    def test_metrics_has_migration_version(self, client, admin_headers):
         """指标包含迁移版本"""
-        resp = client.get("/api/metrics")
+        resp = client.get("/api/metrics", headers=admin_headers)
         data = resp.json()
         assert "migration_version" in data
 
