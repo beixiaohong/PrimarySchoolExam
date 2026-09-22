@@ -67,6 +67,17 @@ export const api = {
   deleteBookmark: (id, bid) => request(`/api/novel/${id}/bookmarks/${bid}`, {}, {
     method: 'DELETE',
   }),
+  // ── 社区（评论 + 榜单）──
+  rank: (top = 10) => request('/api/novel/rank', { top }),
+  comments: (id, params) => request(`/api/novel/${id}/comments`, params),
+  addComment: (id, content, chapterIdx = 0) => request(`/api/novel/${id}/comments`, {}, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, chapter_idx: chapterIdx }),
+  }),
+  deleteComment: (id, cid) => request(`/api/novel/${id}/comments/${cid}`, {}, {
+    method: 'DELETE',
+  }),
 }
 
 export const isLogin = () => !!localStorage.getItem(TOKEN_KEY)

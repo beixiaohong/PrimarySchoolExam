@@ -142,4 +142,30 @@ class NovelBookmark(Base):
         return f"<NovelBookmark {self.user_id}@{self.novel_id}#{self.chapter_idx}>"
 
 
-__all__ = ["Novel", "NovelChapter", "NovelReadProgress", "NovelBookmark"]
+class NovelComment(Base):
+    """小说读者评论（社区 UGC）。
+
+    status: active=展示 / deleted=已删除（软删，保留行避免关联的阅读进度/书签统计抖动）。
+    chapter_idx=0 表示「全书短评」，>0 表示针对某章/段的评论。
+    """
+
+    __tablename__ = "db_novel_comments"
+    __table_args__ = (
+        Index("idx_nc_novel_created", "novel_id", "created_at"),
+        {"comment": "小说站社区：读者书评/短评，按 (novel_id, created_at) 倒序展示"},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
+    user_id = Column(String(50), nullable=False, index=True, comment="评论者账号")
+    novel_id = Column(Integer, nullable=False, index=True, comment="小说 id")
+    chapter_idx = Column(Integer, default=0, comment="关联章/段号（0=全书评论）")
+    content = Column(String(500), nullable=False, comment="评论内容（1-500 字）")
+    status = Column(String(16), default="active", comment="active=展示 / deleted=已删除")
+    like_count = Column(Integer, default=0, comment="点赞数（预留）")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    def __repr__(self):
+        return f"<NovelComment {self.user_id}@{self.novel_id}#{self.chapter_idx}>"
+
+
+__all__ = ["Novel", "NovelChapter", "NovelReadProgress", "NovelBookmark", "NovelComment"]

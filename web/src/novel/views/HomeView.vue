@@ -13,6 +13,17 @@
       </span>
     </div>
 
+    <div class="nv-rank" v-if="rank.length">
+      <div class="nv-rank-head">🔥 热门榜</div>
+      <div class="nv-rank-list">
+        <div class="nv-rank-item" v-for="(b, i) in rank" :key="b.id" @click="open(b)">
+          <span class="nv-rank-no" :class="{ top: i < 3 }">{{ i + 1 }}</span>
+          <span class="nv-rank-t">{{ b.title }}</span>
+          <span class="nv-rank-v">{{ fmtWords(b.view_count) }}阅</span>
+        </div>
+      </div>
+    </div>
+
     <div class="nv-books">
       <div class="nv-book" v-for="b in books" :key="b.id" @click="open(b)">
         <div class="nv-cover">
@@ -49,9 +60,14 @@ const total = ref(0)
 const loading = ref(false)
 const hasMore = ref(true)
 const sentinel = ref(null)
+const rank = ref([])
 let io = null
 
 const fmtWords = (n) => (n >= 10000 ? (n / 10000).toFixed(1) + '万' : String(n || 0))
+
+async function loadRank() {
+  try { rank.value = await api.rank(10) } catch (e) { rank.value = [] }
+}
 
 async function loadCats() {
   try { categories.value = await api.categories() } catch (e) { categories.value = [] }
@@ -107,6 +123,7 @@ function ensureObserver() {
 
 onMounted(async () => {
   await loadCats()
+  await loadRank()
   await loadMore()
 })
 onUnmounted(() => { if (io) io.disconnect() })

@@ -22,6 +22,7 @@
             <button class="nv-btn" @click="toggleShelf">
               {{ book.in_shelf ? '移出书架' : '加入书架' }}
             </button>
+            <button class="nv-btn" @click="shareBook">🔗 分享</button>
           </div>
         </div>
       </div>
@@ -43,6 +44,37 @@
         <button class="nv-btn" @click="loadMoreChapters">加载更多目录</button>
       </div>
     </div>
+
+    <!-- 读者评论（社区 UGC）：公开列表 + 登录发布/删除 -->
+    <div class="nv-card">
+      <h3 class="nv-title">读者评论（{{ commentTotal }}）</h3>
+      <div class="nv-comment-box" v-if="isLogin()">
+        <textarea v-model="commentText" class="nv-comment-input" rows="3"
+                  maxlength="500" placeholder="说说你的读后感（1-500 字，文明发言）"></textarea>
+        <div class="nv-comment-bar">
+          <span class="nv-comment-count">{{ commentText.length }}/500</span>
+          <button class="nv-btn primary" :disabled="posting" @click="postComment">发布评论</button>
+        </div>
+      </div>
+      <div class="nv-comment-tip" v-else>登录主站后可在本书发表评论</div>
+
+      <div class="nv-comment-list" v-if="comments.length">
+        <div class="nv-comment" v-for="c in comments" :key="c.id">
+          <div class="nv-comment-head">
+            <span class="nv-comment-user">{{ maskUser(c.user_id) }}</span>
+            <span class="nv-comment-time" v-if="c.chapter_idx > 0">读到第{{ c.chapter_idx }}章</span>
+            <span class="nv-comment-time" v-else>全书短评</span>
+            <button v-if="isLogin() && c.user_id === myUser" class="nv-comment-del"
+                    @click="removeComment(c)">删除</button>
+          </div>
+          <div class="nv-comment-text">{{ c.content }}</div>
+        </div>
+        <div style="margin-top:12px;text-align:center" v-if="comments.length < commentTotal">
+          <button class="nv-btn" @click="loadMoreComments">加载更多评论</button>
+        </div>
+      </div>
+      <div class="nv-comment-empty" v-else>还没有评论，来做第一个吧～</div>
+    </div>
   </div>
 
   <div class="nv-empty" v-else-if="!loading">小说不存在或已下架</div>
@@ -61,6 +93,26 @@ const book = ref(null)
 const chapters = ref([])
 const total = ref(0)
 const loading = ref(true)
+
+// ── 社区：评论 ──
+const comments = ref([])
+const commentTotal = ref(0)
+const commentText = ref('')
+const posting = ref(false)
+const commentPage = ref(1)
+const myUser = computed(() => {
+  try {
+    const raw = localStorage.getItem('zx_user')
+    const d = raw ? JSON.parse(raw) : null
+    return d && d.user ? String(d.user) : ''
+  } catch (e) { return '' }
+})
+
+function maskUser(uid) {
+  const u = String(uid || '')
+  if (u.length <= 2) return u || '匿名读者'
+  return u.slice(0, 1) + '***' + u.slice(-1)
+}
 
 const fmtWords = (n) => (n >= 10000 ? (n / 10000).toFixed(1) + '万' : String(n || 0))
 const unitText = computed(() => (book.value && book.value.chapter_mode === 'stream' ? '段' : '章'))
@@ -104,5 +156,58 @@ async function toggleShelf() {
   } catch (e) { alert(e.message || '操作失败') }
 }
 
-onMounted(load)
+async function loadComments() {
+  commentPage.value = 1
+  try {
+    const d = await api.comments(id.value, { page: 1, page_size: 20 })
+    comments.value = d.items || []
+    commentTotal.value = d.total || 0
+  } catch (e) { comments.value = []; commentTotal.value = 0 }
+}
+
+async function loadMoreComments() {
+  const next = commentPage.value + 1
+  try {
+    const d = await api.comments(id.value, { page: next, page_size: 20 })
+    comments.value.push(...(d.items || []))
+    commentPage.value = next
+  } catch (e) { /* 忽略翻页错误 */ }
+}
+
+async function postComment() {
+  const text = commentText.value.trim()
+  if (!text) { alert('评论内容不能为空'); return }
+  if (!isLogin()) { alert('请先登录主站后再发表评论'); return }
+  posting.value = true
+  try {
+    const c = await api.addComment(id.value, text, 0)
+    comments.value.unshift(c)
+    commentTotal.value += 1
+    commentText.value = ''
+  } catch (e) { alert(e.message || '发布失败') }
+  finally { posting.value = false }
+}
+
+async function removeComment(c) {
+  if (!confirm('确定删除这条评论？')) return
+  try {
+    await api.deleteComment(id.value, c.id)
+    comments.value = comments.value.filter(x => x.id !== c.id)
+    commentTotal.value = Math.max(0, commentTotal.value - 1)
+  } catch (e) { alert(e.message || '删除失败') }
+}
+
+function shareBook() {
+  const link = `${location.origin}/novel#/book/${id.value}`
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(
+      () => alert('分享链接已复制：' + link),
+      () => prompt('复制下面的分享链接：', link),
+    )
+  } else {
+    prompt('复制下面的分享链接：', link)
+  }
+}
+
+onMounted(() => { load(); loadComments() })
 </script>

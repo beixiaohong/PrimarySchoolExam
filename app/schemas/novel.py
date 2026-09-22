@@ -96,6 +96,13 @@ class BookmarkCreate(BaseModel):
     note: str = ""
 
 
+class NovelCommentCreate(BaseModel):
+    """发布小说评论：内容 1-500 字；chapter_idx=0 表示全书短评"""
+    content: str = Field(..., min_length=1, max_length=500,
+                         description="评论内容（1-500 字）")
+    chapter_idx: int = Field(0, ge=0, description="关联章/段号（0=全书评论）")
+
+
 # ───────────────── 后台：导入 / 编辑 ─────────────────
 class NovelImportResult(BaseModel):
     """TXT 导入结果（后台上传后立即回显，便于确认是否成功分章）"""

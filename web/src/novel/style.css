@@ -187,3 +187,34 @@ a { color: inherit; text-decoration: none; }
   .nv-books { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
   .nv-seg-text { font-size: 16px; }
 }
+
+/* ── 热门榜（首页）── */
+.nv-rank { background: var(--nv-card); border: 1px solid var(--nv-line); border-radius: 14px;
+  box-shadow: var(--nv-shadow); padding: 12px 14px; margin-bottom: 14px; }
+.nv-rank-head { font-size: 15px; font-weight: 700; color: var(--nv-main); margin-bottom: 8px; }
+.nv-rank-list { display: flex; flex-direction: column; gap: 6px; }
+.nv-rank-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.nv-rank-item:hover { background: var(--nv-main-soft); }
+.nv-rank-no { width: 22px; height: 22px; border-radius: 50%; background: var(--nv-main-soft); color: var(--nv-main);
+  font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.nv-rank-no.top { background: var(--nv-main); color: #fff; }
+.nv-rank-t { flex: 1; min-width: 0; font-size: 14px; color: var(--nv-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-rank-v { font-size: 11px; color: var(--nv-sub); flex-shrink: 0; }
+
+/* ── 读者评论（社区 UGC）── */
+.nv-comment-box { margin-bottom: 12px; }
+.nv-comment-input { width: 100%; border: 1px solid var(--nv-line); border-radius: 10px;
+  padding: 8px 10px; font-size: 13px; outline: none; resize: vertical; background: #fff; color: var(--nv-text); }
+.nv-comment-input:focus { border-color: var(--nv-main); }
+.nv-comment-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.nv-comment-count { font-size: 11px; color: var(--nv-sub); }
+.nv-comment-tip { font-size: 12px; color: var(--nv-sub); margin-bottom: 10px; }
+.nv-comment-list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.nv-comment { background: #fbf8f2; border: 1px solid var(--nv-line); border-radius: 10px; padding: 10px 12px; }
+.nv-comment-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.nv-comment-user { font-size: 13px; font-weight: 700; color: var(--nv-main); }
+.nv-comment-time { font-size: 11px; color: var(--nv-sub); }
+.nv-comment-del { margin-left: auto; background: none; border: none; color: #c0392b; cursor: pointer; font-size: 12px; padding: 0; }
+.nv-comment-text { font-size: 14px; line-height: 1.6; color: var(--nv-text); word-break: break-word; }
+.nv-comment-empty { font-size: 13px; color: var(--nv-sub); text-align: center; padding: 14px 0; }

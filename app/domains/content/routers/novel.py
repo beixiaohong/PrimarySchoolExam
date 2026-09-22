@@ -21,12 +21,12 @@ from sqlalchemy.orm import Session
 
 from app.config import BASE_DIR
 from app.database import get_db
-from app.models.novel import Novel, NovelChapter, NovelBookmark, NovelReadProgress
+from app.models.novel import Novel, NovelChapter, NovelBookmark, NovelReadProgress, NovelComment
 from app.models.user import User
 from app.schemas.novel import (BookmarkCreate, CategoryItem, ChapterBrief,
                                ChapterContent, ChapterListResponse, NovelBrief,
-                               NovelDetail, NovelListResponse, ProgressUpdate,
-                               ReadResponse, ShelfUpdate)
+                               NovelCommentCreate, NovelDetail, NovelListResponse,
+                               ProgressUpdate, ReadResponse, ShelfUpdate)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,21 @@ def _require_user(authorization: str = Header(default=""),
     if not user:
         raise HTTPException(401, "请先登录")
     return user
+
+
+def _comment_safe(db: Session, text: str):
+    """内容安全（D4 意图）：直接复用 IM 词库表 db_im_sensitive_words 单一数据源做拦截。
+
+    说明：D9 冻结域（frozen）对其它域不暴露任何能力，敏感词*服务*（check_text）不可被
+    内容域 import；此处仅读取共享词库表做最小匹配，避免重复维护词库。后续应将内容安全
+    抽为跨域共享契约，再统一替换本 stopgap。命中任一启用词即拒绝发布。
+    """
+    from app.models.im import SensitiveWord
+    low = (text or "").lower()
+    for (w,) in db.query(SensitiveWord.word).filter(SensitiveWord.is_active.is_(True)).all():
+        if w and w.strip() and w.strip().lower() in low:
+            return False, w.strip()
+    return True, None
 
 
 def _brief(n: Novel, intro_len: int = 80) -> dict:
@@ -353,5 +368,82 @@ def delete_bookmark(novel_id: int, bid: int,
     if not b:
         raise HTTPException(404, "书签不存在")
     db.delete(b)
+    db.commit()
+    return {"ok": True}
+
+
+# ───────────────── 阅读榜单（公开） ─────────────────
+@router.get("/rank", summary="阅读榜单（按人气 top N，公开）")
+def reading_rank(top: int = Query(10, ge=1, le=50),
+                 db: Session = Depends(get_db)):
+    """热门小说榜：按 view_count 倒序取前 top 本（上架且仅汉字以上）。"""
+    rows = (db.query(Novel)
+            .filter(Novel.enabled.is_(True))
+            .order_by(Novel.view_count.desc(), Novel.id.desc())
+            .limit(top).all())
+    return [_brief(n) for n in rows]
+
+
+# ───────────────── 评论（社区 UGC） ─────────────────
+@router.get("/{novel_id}/comments", summary="小说评论列表（公开，仅展示 active）")
+def list_comments(novel_id: int,
+                  chapter_idx: int = Query(0, description="0=全书评论；>0=该章/段评论"),
+                  page: int = Query(1, ge=1),
+                  page_size: int = Query(20, ge=1, le=100),
+                  db: Session = Depends(get_db)):
+    n = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not n or not n.enabled:
+        raise HTTPException(404, "小说不存在或已下架")
+    q = db.query(NovelComment).filter(
+        NovelComment.novel_id == novel_id, NovelComment.status == "active")
+    if chapter_idx > 0:
+        q = q.filter(NovelComment.chapter_idx == chapter_idx)
+    total = q.count()
+    rows = (q.order_by(NovelComment.created_at.desc())
+            .offset((page - 1) * page_size).limit(page_size).all())
+    return {
+        "items": [{
+            "id": c.id, "user_id": c.user_id, "content": c.content,
+            "chapter_idx": c.chapter_idx, "like_count": c.like_count or 0,
+            "created_at": c.created_at,
+        } for c in rows],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+@router.post("/{novel_id}/comments", summary="发布评论（需登录，含敏感词拦截）")
+def add_comment(novel_id: int, body: NovelCommentCreate,
+                user: User = Depends(_require_user),
+                db: Session = Depends(get_db)):
+    n = db.query(Novel).filter(Novel.id == novel_id).first()
+    if not n or not n.enabled:
+        raise HTTPException(404, "小说不存在或已下架")
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(400, "评论内容不能为空")
+    ok, hit = _comment_safe(db, content)
+    if not ok:
+        raise HTTPException(400, f"评论包含不合适内容，请修改后再发（命中：{hit}）")
+    c = NovelComment(user_id=user.user_id, novel_id=novel_id,
+                     chapter_idx=max(0, body.chapter_idx), content=content)
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return {"ok": True, "id": c.id, "user_id": c.user_id, "content": c.content,
+            "chapter_idx": c.chapter_idx, "like_count": 0, "created_at": c.created_at}
+
+
+@router.delete("/{novel_id}/comments/{cid}", summary="删除评论（仅本人，软删）")
+def delete_comment(novel_id: int, cid: int,
+                   user: User = Depends(_require_user),
+                   db: Session = Depends(get_db)):
+    c = (db.query(NovelComment)
+         .filter(NovelComment.id == cid, NovelComment.novel_id == novel_id)
+         .first())
+    if not c:
+        raise HTTPException(404, "评论不存在")
+    if c.user_id != user.user_id:
+        raise HTTPException(403, "只能删除自己的评论")
+    c.status = "deleted"
     db.commit()
     return {"ok": True}
