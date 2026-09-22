@@ -9,6 +9,7 @@ import SyncView from './views/SyncView.vue'
 import KnowledgeView from './views/KnowledgeView.vue'
 import ReadingView from './views/ReadingView.vue'
 import LearningGoalsView from './views/LearningGoalsView.vue'
+import StudyCalendarView from './views/StudyCalendarView.vue'
 import ReciteView from './views/ReciteView.vue'
 import PracticeView from './views/PracticeView.vue'
 // B1 组件化：App.vue 内联块抽出的 16 个视图（壳通过 provide appCtx 注入，本文件统一全局注册）
@@ -67,6 +68,7 @@ app.component('SyncView', SyncView)
 app.component('KnowledgeView', KnowledgeView)
 app.component('ReadingView', ReadingView)
 app.component('LearningGoalsView', LearningGoalsView)
+app.component('StudyCalendarView', StudyCalendarView)
 app.component('ReciteView', ReciteView)
 app.component('PracticeView', PracticeView)
 // B1 组件化：16 个抽出视图的全局注册（组件名 PascalCase，App.vue 用 kebab 标签匹配）

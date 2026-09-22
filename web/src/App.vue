@@ -217,6 +217,7 @@
       <KnowledgeView v-if="tab==='kp'"></KnowledgeView>
       <ReadingView v-if="tab==='reading'"></ReadingView>
       <LearningGoalsView v-if="tab==='goals'"></LearningGoalsView>
+      <StudyCalendarView v-if="tab==='calendar'"></StudyCalendarView>
 
       <!-- ═══════════ 网课（系统配置 + 家长配置） ═══════════ -->
 <courses-view v-if="tab==='courses'"></courses-view>

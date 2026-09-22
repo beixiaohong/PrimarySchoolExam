@@ -35,6 +35,8 @@ export const NAV_GROUPS = [
       { tab: 'tree', label: '成长树', icon: 'tree' },
       { tab: 'badges', label: '成就徽章', icon: 'badges', badge: 'badge' },
       { tab: 'cards', label: '知识卡图鉴', icon: 'cards' },
+      // 学习日历（打卡可视化 + 连续打卡成就）：聚合每日任务/专注/心情打卡
+      { tab: 'calendar', label: '学习日历', icon: 'calendar' },
       { tab: 'wallet', label: '钱包', icon: 'wallet' },
       // 记账本（D2 决策：挨着钱包）——对应 views/LedgerView.vue + logic/ledger.js
       { tab: 'ledger', label: '记账本', icon: 'ledger' },
