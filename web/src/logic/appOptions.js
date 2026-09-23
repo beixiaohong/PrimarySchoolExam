@@ -11,6 +11,7 @@ import { ledgerData, ledgerComputed, ledgerMethods } from './ledger.js';
 import { imData, imComputed, imMethods } from './im.js';
 import { authData, authMethods } from './auth.js';
 import { focusData, focusComputed, focusMethods } from './focus.js';
+import { dictData, dictMethods } from './dict.js';
 
 const appOptions = {
   data() {
@@ -23,6 +24,7 @@ const appOptions = {
       promotedInfo: null,   // 升年级引导弹窗（登录响应 promoted）
       ...authData(),
       ...focusData(),   // 认证表单状态（authMode/loginPwd/reg*/rst*/bind*/authCooldown 等，见 logic/auth.js）
+      ...dictData(),   // 听写磨耳朵 data（dictMode/dictSession，见 logic/dict.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -127,8 +129,6 @@ const appOptions = {
       // 知识卡图鉴（P2-4 创意 13）
       cardData: null, drawCards: [], drawAllCollected: false, cardDrawing: false,
       // 听写磨耳朵（P2-5 创意 25）
-      dictMode: 'word',
-      dictSession: { active: false, done: false, items: [], i: 0, current: null, answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false, candidateChars: [] },
       // 番茄专注钟（P2-6 创意 22）
       // AI 趣味出题（AI-2 创意 24）
       aiQuizThemes: { adventure: '冒险岛探险', space: '太空旅行', dino: '恐龙世界', food: '美食厨房', magic: '魔法学院' },
@@ -322,6 +322,7 @@ const appOptions = {
     ...ledgerMethods,   // 个人账本 methods（记账/账单/分析/六维 CRUD/周期交易，见 logic/ledger.js）
     ...imMethods,
     ...focusMethods,       // IM methods（WS 客户端/上传/录音/红包/好友/群，见 logic/im.js）
+    ...dictMethods,       // 听写磨耳朵 methods（dictSwitchMode/dictStart/dictSpeak/dictCheck/dictReplay/dictNext/loadDictCandidates，见 logic/dict.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -722,25 +723,8 @@ const appOptions = {
     },
 
     /* ─────────── 听写磨耳朵（P2-5 创意 25） ─────────── */
-    dictSwitchMode(m) {
-      if (this.dictSession.active) return;
-      this.dictMode = m;
-    },
-    dictStart() {
-      const isWord = this.dictMode === 'word';
-      const url = isWord
-        ? `/api/dictation/words?user_id=${encodeURIComponent(this.user)}&count=10`
-        : `/api/dictation/texts?user_id=${encodeURIComponent(this.user)}&count=5&grade=${this.grade}`;
-      this.api(url).then(d => {
-        const items = (d.items || []).map(it => isWord
-          ? { answer: it.word, meaning: `${it.pos || ''} ${it.meaning || ''}`.trim(), extra: it.word }
-          : { answer: it.sentence, meaning: it.title, extra: it.full });
-        if (!items.length) { this.showToast('题库是空的，先学一点再来听写吧'); return; }
-        this.dictSession = { active: true, done: false, items, i: 0, current: items[0], answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false, candidateChars: [] };
-        if (!isWord) this.loadDictCandidates(items[0].answer);
-        this.$nextTick(() => setTimeout(() => this.dictSpeak(items[0]), 350));
-      }).catch(e => this.showToast(e.message));
-    },
+
+
     speakText(text, lang, rate) {
       if (!text) return;
       try {
@@ -765,57 +749,15 @@ const appOptions = {
       const t = ts.texts[ts.i];
       if (t) this.speakText(t.title + '，' + (t.author || '') + '，' + t.content, 'zh-CN', 0.85);
     },
-    dictSpeak(item) {
-      if (!item) return;
-      try {
-        if (!('speechSynthesis' in window)) { this.showToast('当前浏览器不支持语音朗读'); return; }
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(item.extra || item.answer);
-        u.lang = this.dictMode === 'word' ? 'en-US' : 'zh-CN';
-        u.rate = this.dictMode === 'word' ? 0.8 : 0.9;
-        u.pitch = 1;
-        window.speechSynthesis.speak(u);
-      } catch (e) { this.showToast('语音播放失败，请检查浏览器设置'); }
-    },
-    dictCheck() {
-      const s = this.dictSession;
-      if (!s.current) return;
-      const ans = (s.answer || '').trim().toLowerCase().replace(/[，。！？；、\s]/g, '');
-      const correct = (s.current.answer || '').trim().toLowerCase().replace(/[，。！？；、\s]/g, '');
-      s.lastOk = ans === correct;
-      if (s.lastOk) s.correct += 1;
-      s.revealed = true;
-    },
-    loadDictCandidates(answer) {
-      // 2026-08-19：背诵/默写已改为输入法输入（AntiCheatInput text 模式），
-      // 不再需要「点选字池」防作弊方案（用户反馈候选字太难找字）。
-      // 保留空实现以免调用点报错；candidateChars 不再填充。
-    },
+
+
+
     loadQuizCandidates(answer) {
       // 同上：quiz 内中文填空已用输入法输入，不再拉点选字池。
       this.quiz.candidateChars = [];
     },
-    dictReplay() { this.dictSpeak(this.dictSession.current); },
-    dictNext() {
-      const s = this.dictSession;
-      if (s.i >= s.items.length - 1) {
-        s.active = false;
-        s.done = true;
-        if (s.correct === s.items.length && !s.rewarded) {
-          s.rewarded = true;
-          this.api('/api/dictation/reward', { method: 'POST', body: JSON.stringify({ user_id: this.user, correct: s.correct, total: s.items.length }) })
-            .then(d => { if (d.granted) { this.loadPet(); this.showToast(`🪙 听写全对 +${d.granted} 金币！`); } })
-            .catch(() => {});
-        }
-        return;
-      }
-      s.i += 1;
-      s.current = s.items[s.i];
-      s.answer = '';
-      s.revealed = false;
-      if (this.dictMode !== 'word') this.loadDictCandidates(s.current.answer);
-      this.$nextTick(() => setTimeout(() => this.dictSpeak(s.current), 250));
-    },
+
+
 
     /* ─────────── AI 趣味出题（AI-2） ─────────── */
     aiQuizGenerate() {
