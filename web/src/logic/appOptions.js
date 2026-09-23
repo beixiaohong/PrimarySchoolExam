@@ -13,6 +13,7 @@ import { authData, authMethods } from './auth.js';
 import { focusData, focusComputed, focusMethods } from './focus.js';
 import { dictData, dictMethods } from './dict.js';
 import { cardsData, cardsMethods } from './cards.js';
+import { petData, petMethods } from './pet.js';
 
 const appOptions = {
   data() {
@@ -26,7 +27,8 @@ const appOptions = {
       ...authData(),
       ...focusData(),   // 认证表单状态（authMode/loginPwd/reg*/rst*/bind*/authCooldown 等，见 logic/auth.js）
       ...dictData(),   // 听写磨耳朵 data（dictMode/dictSession，见 logic/dict.js）
-      ...cardsData(),   // 知识卡图鉴/抽卡/徽章 data（badgeData/cardData/drawCards 等，见 logic/cards.js）
+      ...cardsData(),
+      ...petData(),   // 知识卡图鉴/抽卡/徽章 data（badgeData/cardData/drawCards 等，见 logic/cards.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -118,14 +120,6 @@ const appOptions = {
       qaHistory: [], qaHistType: 'all',
       qaMessages: [], qaSessionId: '', qaSessions: [],
       // 宠物家园（P2-1 金币宠物）
-      petProfile: null, petLedger: [], petRules: [], petMsg: '', petBusy: false, petLeveledUp: false,
-      // 成长树（P2-2 创意 7）
-      treeData: null,
-      treeStages: [
-        { name: '小种子', emoji: '🌱' }, { name: '小幼苗', emoji: '🌿' }, { name: '小树苗', emoji: '🪴' },
-        { name: '青葱小树', emoji: '🌳' }, { name: '茁壮大树', emoji: '🌳' }, { name: '枝繁叶茂', emoji: '🌳' },
-        { name: '开花啦', emoji: '🌸' }, { name: '硕果累累', emoji: '🍎' }, { name: '森林之王', emoji: '🌟' },
-      ],
       // 听写磨耳朵（P2-5 创意 25）
       // 番茄专注钟（P2-6 创意 22）
       // AI 趣味出题（AI-2 创意 24）
@@ -321,7 +315,8 @@ const appOptions = {
     ...imMethods,
     ...focusMethods,       // IM methods（WS 客户端/上传/录音/红包/好友/群，见 logic/im.js）
     ...dictMethods,       // 听写磨耳朵 methods（dictSwitchMode/dictStart/dictSpeak/dictCheck/dictReplay/dictNext/loadDictCandidates，见 logic/dict.js）
-    ...cardsMethods,       // 知识卡图鉴/抽卡/徽章 methods（loadBadges/loadCards/cardDraw，见 logic/cards.js）
+    ...cardsMethods,
+    ...petMethods,       // 知识卡图鉴/抽卡/徽章 methods（loadBadges/loadCards/cardDraw，见 logic/cards.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -585,101 +580,24 @@ const appOptions = {
         .catch(() => { this.qaHistory = []; });
     },
 
-    /* ─────────── 宠物家园（P2-1 金币宠物） ─────────── */
-    loadPet() {
-      if (!this.user) return;
-      this.api(`/api/pet?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.petProfile = d; })
-        .catch(() => { this.petProfile = null; });
-    },
+
     loadDiamonds() {
       if (!this.user) return;
       this.api(`/api/diamond/balance?user_id=${encodeURIComponent(this.user)}`)
         .then(d => { this.diamonds = d.balance || 0; })
         .catch(() => { this.diamonds = 0; });
     },
-    loadPetLedger() {
-      if (!this.user) return;
-      this.api(`/api/pet/ledger?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.petLedger = d || []; })
-        .catch(() => { this.petLedger = []; });
-    },
-    loadPetRules() {
-      if (this.petRules.length) return;
-      this.api('/api/pet/rules')
-        .then(d => { this.petRules = (d && d.items) || []; })
-        .catch(() => {});
-    },
-    petFeed() {
-      if (this.petBusy) return;
-      this.petBusy = true;
-      this.petMsg = '';
-      this.api('/api/pet/feed', { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
-        .then(d => {
-          const leveled = !!d.leveled;
-          this.petProfile = d;
-          if (leveled) {
-            this.petLeveledUp = true;
-            this.petMsg = '🎉 升级啦！宠物长成新的样子了！';
-            this.showToast(`🎉 宠物升级到 Lv.${d.level}！`);
-          } else {
-            this.petMsg = '🍎 嗷呜～真好吃！经验 +5';
-          }
-          this.loadPetLedger();
-        })
-        .catch(e => { this.petMsg = e.message; })
-        .finally(() => { this.petBusy = false; });
-    },
-    petPat() {
-      if (this.petBusy) return;
-      this.petBusy = true;
-      this.petMsg = '';
-      this.api('/api/pet/pat', { method: 'POST', body: JSON.stringify({ user_id: this.user }) })
-        .then(d => {
-          this.petProfile = d;
-          this.petMsg = d.leveled ? '🎉 升级啦！宠物长成新的样子了！' : '🤗 好舒服～经验 +1';
-          if (d.leveled) { this.petLeveledUp = true; this.showToast(`🎉 宠物升级到 Lv.${d.level}！`); }
-        })
-        .catch(e => { this.petMsg = e.message; })
-        .finally(() => { this.petBusy = false; });
-    },
-    petEmoji(level) {
-      if (level >= 9) return '🦚';
-      if (level >= 7) return '🦜';
-      if (level >= 5) return '🐥';
-      if (level >= 3) return '🐤';
-      return '🥚';
-    },
-    petName(level) {
-      if (level >= 9) return '🦚 凤凰奇奇';
-      if (level >= 7) return '🦜 鹦鹉小七';
-      if (level >= 5) return '🐥 大黄鸭';
-      if (level >= 3) return '🐤 小黄鸡';
-      return '🥚 宠物蛋';
-    },
-    petDesc(level) {
-      if (level >= 9) return '传说中的凤凰，闪闪发光，同学都会羡慕你！';
-      if (level >= 7) return '学会说人话了，会跟着你朗读课文！';
-      if (level >= 5) return '长出翅膀了，越来越精神！';
-      if (level >= 3) return '破壳啦！一只毛茸茸的小家伙';
-      return '还是一颗蛋，努力赚金币喂它，很快就会孵出来！';
-    },
-    petExpPct(p) {
-      if (!p || !p.exp_next) return 100;
-      return Math.min(100, Math.round(p.exp / p.exp_next * 100));
-    },
 
-    /* ─────────── 成长树（P2-2 创意 7） ─────────── */
-    loadTree() {
-      if (!this.user) return;
-      this.api(`/api/tree?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.treeData = d; })
-        .catch(() => { this.treeData = null; });
-    },
-    treeStageName(idx) {
-      const s = this.treeStages[idx];
-      return s ? s.name : '';
-    },
+
+
+
+
+
+
+
+
+
+
 
 
 
