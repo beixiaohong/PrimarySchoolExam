@@ -15,7 +15,7 @@ import hmac
 import secrets
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -319,7 +319,7 @@ def child_stats(user_id: str, db: Session = Depends(get_db)):
 # ═══════════════════ 家长学习报告 ═══════════════════
 
 @router.get("/report", summary="家长学习报告（可选时间窗：周/月/30天，含分科/趋势/薄弱点）")
-def study_report(user_id: str, range: str = "week", db: Session = Depends(get_db)):
+def study_report(user_id: str, range_: str = Query("week", alias="range"), db: Session = Depends(get_db)):
     """家长学习报告：在 child-stats 基础上扩展为可选时间窗的多维报告。
 
     参数（Query）：user_id、range（week=本周一至今天 / month=本月1日至今 / 30d=近30天）。
@@ -344,13 +344,14 @@ def study_report(user_id: str, range: str = "week", db: Session = Depends(get_db
     from app.domains.identity.contracts import _streak
 
     today = _date.today()
-    if range == "month":
+    if range_ == "month":
         start = today.replace(day=1)
         label = f"{today.month}月累计"
-    elif range == "30d":
+    elif range_ == "30d":
         start = today - timedelta(days=29)
         label = "近30天"
-    else:  # week
+    else:  # week（含非法 range 回退）
+        range_ = "week"
         start = today - timedelta(days=today.weekday())
         label = "本周"
     start_dt = datetime.combine(start, datetime.min.time())
@@ -447,7 +448,7 @@ def study_report(user_id: str, range: str = "week", db: Session = Depends(get_db
                 weak = wk[:5]
 
     return {
-        "range": range,
+        "range": range_,
         "range_label": label,
         "summary": {
             "total_attempts": total,
