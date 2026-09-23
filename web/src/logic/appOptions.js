@@ -10,6 +10,7 @@ import { ledgerData, ledgerComputed, ledgerMethods } from './ledger.js';
 // IM 即时通讯（tab='im'）：D2 决策入口放工具组；业务全在 logic/im.js（与 parent/ledger 同构）
 import { imData, imComputed, imMethods } from './im.js';
 import { authData, authMethods } from './auth.js';
+import { focusData, focusComputed, focusMethods } from './focus.js';
 
 const appOptions = {
   data() {
@@ -20,7 +21,8 @@ const appOptions = {
       // 登录
       user: '', userName: '', token: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
       promotedInfo: null,   // 升年级引导弹窗（登录响应 promoted）
-      ...authData(),   // 认证表单状态（authMode/loginPwd/reg*/rst*/bind*/authCooldown 等，见 logic/auth.js）
+      ...authData(),
+      ...focusData(),   // 认证表单状态（authMode/loginPwd/reg*/rst*/bind*/authCooldown 等，见 logic/auth.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -128,8 +130,6 @@ const appOptions = {
       dictMode: 'word',
       dictSession: { active: false, done: false, items: [], i: 0, current: null, answer: '', revealed: false, lastOk: false, correct: 0, rewarded: false, candidateChars: [] },
       // 番茄专注钟（P2-6 创意 22）
-      focusTimer: { total: 25, left: 25 * 60, running: false, paused: false },
-      focusDone: false, focusMsg: '', focusToday: null, focusStats: null, _focusTicker: null,
       // AI 趣味出题（AI-2 创意 24）
       aiQuizThemes: { adventure: '冒险岛探险', space: '太空旅行', dino: '恐龙世界', food: '美食厨房', magic: '魔法学院' },
       aiQuizThemeEmoji: { adventure: '🗺️', space: '🚀', dino: '🦕', food: '🍔', magic: '🔮' },
@@ -147,7 +147,8 @@ const appOptions = {
   computed: {
     ...parentComputed,   // 家长管理 computed（teachUnitOptions/teachProgressText/mandatorySummary/parentTodoTotal/parentOpen）
     ...ledgerComputed,   // 个人账本 computed（分类级联/账单分组/环形图/月度柱，见 logic/ledger.js）
-    ...imComputed,       // IM computed（会话排序/当前会话名/能否发送/录音秒数，见 logic/im.js）
+    ...imComputed,
+    ...focusComputed,       // IM computed（会话排序/当前会话名/能否发送/录音秒数，见 logic/im.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码
       const a = (this.username || '').trim();
@@ -161,16 +162,6 @@ const appOptions = {
     greeting() {
       const h = new Date().getHours();
       return h < 6 ? '夜深了' : h < 12 ? '早上好' : h < 18 ? '下午好' : '晚上好';
-    },
-    focusTimeText() {
-      const s = this.focusTimer.left % 60;
-      const m = Math.floor(this.focusTimer.left / 60);
-      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    },
-    focusRingStyle() {
-      const total = this.focusTimer.total * 60 || 1;
-      const pct = Math.min(100, Math.round((total - this.focusTimer.left) / total * 100));
-      return `background: conic-gradient(#ff512f ${pct}%, #ffe3e3 ${pct}% 100%)`;
     },
     aiQuizAnswered() {
       const q = this.aiQuiz;
@@ -329,7 +320,8 @@ const appOptions = {
   methods: {
     ...parentMethods,   // 家长管理 methods（47 个，见 logic/parent.js；与本对象剩余键交集必须为空）
     ...ledgerMethods,   // 个人账本 methods（记账/账单/分析/六维 CRUD/周期交易，见 logic/ledger.js）
-    ...imMethods,       // IM methods（WS 客户端/上传/录音/红包/好友/群，见 logic/im.js）
+    ...imMethods,
+    ...focusMethods,       // IM methods（WS 客户端/上传/录音/红包/好友/群，见 logic/im.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -823,64 +815,6 @@ const appOptions = {
       s.revealed = false;
       if (this.dictMode !== 'word') this.loadDictCandidates(s.current.answer);
       this.$nextTick(() => setTimeout(() => this.dictSpeak(s.current), 250));
-    },
-
-    /* ─────────── 番茄专注钟（P2-6 创意 22） ─────────── */
-    focusSet(m) { this.focusTimer.total = m; this.focusTimer.left = m * 60; },
-    focusStart() {
-      this.focusDone = false;
-      this.focusMsg = '';
-      this.focusTimer.running = true;
-      this.focusTimer.paused = false;
-      this._startFocusTicker();
-      this.showToast(`⏰ 开始专注 ${this.focusTimer.total} 分钟，加油！`);
-    },
-    _startFocusTicker() {
-      if (this._focusTicker) clearInterval(this._focusTicker);
-      this._focusTicker = setInterval(() => {
-        if (!this.focusTimer.running) return;
-        this.focusTimer.left -= 1;
-        if (this.focusTimer.left <= 0) {
-          this.focusTimer.left = 0;
-          this.focusFinish();
-        }
-      }, 1000);
-    },
-    focusPause() { this.focusTimer.running = false; this.focusTimer.paused = true; this.focusMsg = '⏸ 已暂停，休息一下眼睛吧'; },
-    focusResume() { this.focusTimer.running = true; this.focusTimer.paused = false; this.focusMsg = ''; },
-    focusReset() {
-      if (this._focusTicker) clearInterval(this._focusTicker);
-      this.focusTimer.running = false;
-      this.focusTimer.paused = false;
-      this.focusDone = false;
-      this.focusMsg = '';
-      this.focusTimer.left = this.focusTimer.total * 60;
-    },
-    focusFinish() {
-      if (this._focusTicker) clearInterval(this._focusTicker);
-      this.focusTimer.running = false;
-      this.focusDone = true;
-      this.focusMsg = '🎉 专注完成！';
-      this.api('/api/focus/complete', { method: 'POST', body: JSON.stringify({ user_id: this.user, minutes: this.focusTimer.total }) })
-        .then(d => {
-          if (d.granted) {
-            this.focusMsg = `🎉 专注完成！金币 +${d.granted}`;
-            this.loadPet();
-          } else if (d.limited) {
-            this.focusMsg = '🎉 专注完成！（今天专注次数已满，金币不再增加啦）';
-          }
-          this.loadFocus();
-        })
-        .catch(e => this.showToast(e.message));
-    },
-    loadFocus() {
-      if (!this.user) return;
-      this.api(`/api/focus/today?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.focusToday = d; })
-        .catch(() => {});
-      this.api(`/api/focus/stats?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.focusStats = d; })
-        .catch(() => {});
     },
 
     /* ─────────── AI 趣味出题（AI-2） ─────────── */
