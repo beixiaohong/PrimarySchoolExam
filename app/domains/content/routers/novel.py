@@ -163,6 +163,18 @@ def my_shelf(user: User = Depends(_require_user), db: Session = Depends(get_db))
     return out
 
 
+# ───────────────── 阅读榜单（公开，须置于 /{novel_id} 之前以免被 int 路由拦截） ─────────────────
+@router.get("/rank", summary="阅读榜单（按人气 top N，公开）")
+def reading_rank(top: int = Query(10, ge=1, le=50),
+                 db: Session = Depends(get_db)):
+    """热门小说榜：按 view_count 倒序取前 top 本（上架且仅汉字以上）。"""
+    rows = (db.query(Novel)
+            .filter(Novel.enabled.is_(True))
+            .order_by(Novel.view_count.desc(), Novel.id.desc())
+            .limit(top).all())
+    return [_brief(n) for n in rows]
+
+
 @router.get("/{novel_id}", response_model=NovelDetail, summary="小说详情")
 def novel_detail(novel_id: int, db: Session = Depends(get_db),
                  authorization: str = Header(default="")):
@@ -370,18 +382,6 @@ def delete_bookmark(novel_id: int, bid: int,
     db.delete(b)
     db.commit()
     return {"ok": True}
-
-
-# ───────────────── 阅读榜单（公开） ─────────────────
-@router.get("/rank", summary="阅读榜单（按人气 top N，公开）")
-def reading_rank(top: int = Query(10, ge=1, le=50),
-                 db: Session = Depends(get_db)):
-    """热门小说榜：按 view_count 倒序取前 top 本（上架且仅汉字以上）。"""
-    rows = (db.query(Novel)
-            .filter(Novel.enabled.is_(True))
-            .order_by(Novel.view_count.desc(), Novel.id.desc())
-            .limit(top).all())
-    return [_brief(n) for n in rows]
 
 
 # ───────────────── 评论（社区 UGC） ─────────────────
