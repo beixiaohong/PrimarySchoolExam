@@ -9,6 +9,7 @@ import { parentData, parentComputed, parentMethods } from './parent.js';
 import { ledgerData, ledgerComputed, ledgerMethods } from './ledger.js';
 // IM 即时通讯（tab='im'）：D2 决策入口放工具组；业务全在 logic/im.js（与 parent/ledger 同构）
 import { imData, imComputed, imMethods } from './im.js';
+import { authData, authMethods } from './auth.js';
 
 const appOptions = {
   data() {
@@ -19,11 +20,7 @@ const appOptions = {
       // 登录
       user: '', userName: '', token: '', username: '', grade: 6, subject: '英语', showGradeModal: false,
       promotedInfo: null,   // 升年级引导弹窗（登录响应 promoted）
-      // 认证（P2：注册/登录/重置/绑定）
-      authMode: 'login', loginPwd: '', authInfo: {},
-      regTarget: '', regCode: '', regPwd: '', regNickname: '',
-      rstTarget: '', rstCode: '', rstPwd: '',
-      bindTarget: '', bindCode: '', authCooldown: 0, _authTimer: null,
+      ...authData(),   // 认证表单状态（authMode/loginPwd/reg*/rst*/bind*/authCooldown 等，见 logic/auth.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -379,102 +376,7 @@ const appOptions = {
       }
     },
 
-    /* ─────────── 登录 / 注册 / 退出 ─────────── */
-    login() {
-      const account = this.username.trim();
-      if (!account) { this.showToast('请输入邮箱'); return; }
-      if (!this.isAccountCredential) { this.showToast('请输入有效的邮箱'); return; }
-      if (!this.loginPwd) { this.showToast('请输入密码'); return; }
-      this.api('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ account, password: this.loginPwd }),
-      }).then(r => this.onLoginOk(r)).catch(e => this.showToast(e.message));
-    },
-    onLoginOk(r) {
-      this.user = r.user_id;
-      this.userName = r.nickname || r.user_id;
-      this.token = r.token || '';
-      this.streakDays = r.streak_days || 0;
-      this.grade = r.grade || 6;
-      this.subject = r.subject || '英语';
-      this.saveUser();
-      this.showToast(`欢迎回来，${this.userName}！`);
-      this.loadAuthInfo();
-      this.loadWeather();
-      // 升年级引导：9月1日自动升级后登录弹窗
-      if (r.promoted) {
-        this.promotedInfo = { prev_grade: r.prev_grade || (r.new_grade || r.grade) - 1, new_grade: r.new_grade || r.grade };
-      }
-      if (r.is_new || !r.grade) {
-        this.showGradeModal = true;
-      } else {
-        this.refreshAll();
-      }
-    },
-    closePromoted() {
-      this.promotedInfo = null;
-    },
-    register() {
-      const target = this.regTarget.trim();
-      if (!/^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(target)) { this.showToast('请输入有效的邮箱'); return; }
-      if (this.regCode.trim().length < 6 || !this.regPwd) return;
-      this.api('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          target, code: this.regCode.trim(), password: this.regPwd,
-          nickname: this.regNickname.trim() || null,
-        }),
-      }).then(r => { this.regCode = ''; this.regPwd = ''; this.onLoginOk(r); })
-        .catch(e => this.showToast(e.message));
-    },
-    sendAuthCode(purpose, target) {
-      const t = (target || '').trim();
-      if (!t || this.authCooldown > 0) return;
-      this.api('/api/auth/send-code', {
-        method: 'POST',
-        body: JSON.stringify({ target: t, purpose }),
-      }).then(() => {
-        this.showToast('验证码已发送，请注意查收');
-        this.startAuthCooldown();
-      }).catch(e => this.showToast(e.message));
-    },
-    startAuthCooldown() {
-      this.authCooldown = 60;
-      clearInterval(this._authTimer);
-      this._authTimer = setInterval(() => {
-        if (--this.authCooldown <= 0) clearInterval(this._authTimer);
-      }, 1000);
-    },
-    resetPassword() {
-      const target = this.rstTarget.trim();
-      if (!target || this.rstCode.trim().length < 6 || !this.rstPwd) return;
-      this.api('/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ target, code: this.rstCode.trim(), new_password: this.rstPwd }),
-      }).then(() => {
-        this.showToast('密码已重置，请用新密码登录');
-        this.username = target; this.rstTarget = ''; this.rstCode = ''; this.rstPwd = '';
-        this.authMode = 'login';
-      }).catch(e => this.showToast(e.message));
-    },
-    bindAccount() {
-      const target = this.bindTarget.trim();
-      if (!this.user || !target || this.bindCode.trim().length < 6) return;
-      this.api('/api/auth/bind', {
-        method: 'POST',
-        body: JSON.stringify({ user_id: this.user, target, code: this.bindCode.trim() }),
-      }).then(() => {
-        this.showToast('绑定成功 🎉');
-        this.bindTarget = ''; this.bindCode = '';
-        this.loadAuthInfo();
-      }).catch(e => this.showToast(e.message));
-    },
-    loadAuthInfo() {
-      if (!this.user) return;
-      this.api(`/api/auth/me?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.authInfo = d || {}; if (d && d.nickname) this.userName = d.nickname; })
-        .catch(() => { this.authInfo = {}; });
-    },
+    ...authMethods,   // 登录/注册/重置/绑定/退出凭证（login/onLoginOk/register/sendAuthCode/resetPassword/bindAccount/loadAuthInfo 等，见 logic/auth.js）
     loadWeather() {
       // 首页天气卡：优先用户配置城市，后端回退 IP 定位/默认城市
       this.api(`/api/weather/current?user_id=${encodeURIComponent(this.user || '')}`)
