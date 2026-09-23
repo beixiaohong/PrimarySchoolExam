@@ -12,6 +12,7 @@ import { imData, imComputed, imMethods } from './im.js';
 import { authData, authMethods } from './auth.js';
 import { focusData, focusComputed, focusMethods } from './focus.js';
 import { dictData, dictMethods } from './dict.js';
+import { cardsData, cardsMethods } from './cards.js';
 
 const appOptions = {
   data() {
@@ -25,6 +26,7 @@ const appOptions = {
       ...authData(),
       ...focusData(),   // 认证表单状态（authMode/loginPwd/reg*/rst*/bind*/authCooldown 等，见 logic/auth.js）
       ...dictData(),   // 听写磨耳朵 data（dictMode/dictSession，见 logic/dict.js）
+      ...cardsData(),   // 知识卡图鉴/抽卡/徽章 data（badgeData/cardData/drawCards 等，见 logic/cards.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -124,10 +126,6 @@ const appOptions = {
         { name: '青葱小树', emoji: '🌳' }, { name: '茁壮大树', emoji: '🌳' }, { name: '枝繁叶茂', emoji: '🌳' },
         { name: '开花啦', emoji: '🌸' }, { name: '硕果累累', emoji: '🍎' }, { name: '森林之王', emoji: '🌟' },
       ],
-      // 成就徽章（P2-3 创意 8）
-      badgeData: null, badgeNew: [],
-      // 知识卡图鉴（P2-4 创意 13）
-      cardData: null, drawCards: [], drawAllCollected: false, cardDrawing: false,
       // 听写磨耳朵（P2-5 创意 25）
       // 番茄专注钟（P2-6 创意 22）
       // AI 趣味出题（AI-2 创意 24）
@@ -323,6 +321,7 @@ const appOptions = {
     ...imMethods,
     ...focusMethods,       // IM methods（WS 客户端/上传/录音/红包/好友/群，见 logic/im.js）
     ...dictMethods,       // 听写磨耳朵 methods（dictSwitchMode/dictStart/dictSpeak/dictCheck/dictReplay/dictNext/loadDictCandidates，见 logic/dict.js）
+    ...cardsMethods,       // 知识卡图鉴/抽卡/徽章 methods（loadBadges/loadCards/cardDraw，见 logic/cards.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -682,45 +681,10 @@ const appOptions = {
       return s ? s.name : '';
     },
 
-    /* ─────────── 成就徽章（P2-3 创意 8） ─────────── */
-    loadBadges(announce) {
-      if (!this.user) return;
-      this.api(`/api/badges?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => {
-          const prevNew = this.badgeNew;
-          this.badgeData = d;
-          if (d.newly && d.newly.length) {
-            this.badgeNew = (d.items || []).filter(b => (d.newly || []).includes(b.code));
-            if (announce && this.badgeNew.length) {
-              this.showToast(`🎉 获得新徽章：${this.badgeNew.map(b => b.name).join('、')}！`);
-            }
-          } else if (prevNew.length) {
-            this.badgeNew = prevNew;
-          }
-        })
-        .catch(() => { this.badgeData = null; });
-    },
 
-    /* ─────────── 知识卡图鉴（P2-4 创意 13） ─────────── */
-    loadCards() {
-      if (!this.user) return;
-      this.api(`/api/cards?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => { this.cardData = d; })
-        .catch(() => { this.cardData = null; });
-    },
-    cardDraw() {
-      if (this.cardDrawing || !this.user) return;
-      this.cardDrawing = true;
-      this.drawCards = [];
-      this.api(`/api/cards/draw?user_id=${encodeURIComponent(this.user)}`)
-        .then(d => {
-          this.drawAllCollected = !!d.all_collected;
-          this.drawCards = d.cards || [];
-          if (this.drawCards.length) this.showToast('🎴 抽到 3 张知识卡！');
-        })
-        .catch(e => this.showToast(e.message))
-        .finally(() => { this.cardDrawing = false; });
-    },
+
+
+
 
     /* ─────────── 听写磨耳朵（P2-5 创意 25） ─────────── */
 
