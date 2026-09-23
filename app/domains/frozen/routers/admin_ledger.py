@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.admin import Admin
 from app.models.ledger import Bill, Account, Category
 from app.routers.admin import _require_admin, _audit
+from app.core.permissions import require_perm
 
 router = APIRouter()
 
@@ -42,7 +43,8 @@ def list_bills(
     return {"total": total, "items": [_bill_to_dict(b) for b in rows]}
 
 
-@router.delete("/ledger/bills/{bill_id}", summary="删除账单")
+@router.delete("/ledger/bills/{bill_id}", summary="删除账单",
+               dependencies=[Depends(require_perm("ledger:manage"))])
 def delete_bill(bill_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """删除指定账单（运营兜底），并记审计日志。"""
     b = db.query(Bill).filter(Bill.id == bill_id).first()
@@ -67,7 +69,8 @@ def list_accounts(user_id: str = None, admin: "Admin" = Depends(_require_admin),
          "balance": str(a.balance)} for a in rows]}
 
 
-@router.delete("/ledger/accounts/{account_id}", summary="删除账户")
+@router.delete("/ledger/accounts/{account_id}", summary="删除账户",
+               dependencies=[Depends(require_perm("ledger:manage"))])
 def delete_account(account_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """删除指定账本账户，并记审计日志。"""
     a = db.query(Account).filter(Account.id == account_id).first()
@@ -92,7 +95,8 @@ def list_categories(user_id: str = None, admin: "Admin" = Depends(_require_admin
          "level1": c.level1, "level2": c.level2, "level3": c.level3} for c in rows]}
 
 
-@router.delete("/ledger/categories/{category_id}", summary="删除分类")
+@router.delete("/ledger/categories/{category_id}", summary="删除分类",
+               dependencies=[Depends(require_perm("ledger:manage"))])
 def delete_category(category_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """删除指定账本分类，并记审计日志。"""
     c = db.query(Category).filter(Category.id == category_id).first()

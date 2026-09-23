@@ -50,6 +50,9 @@ PERMISSIONS = [
     {"code": "analytics:view", "name": "运营分析查看", "group": "数据", "is_high_risk": False},
     {"code": "mastery:recompute", "name": "掌握度重算触发", "group": "数据", "is_high_risk": False},
     {"code": "mastery:view_all", "name": "掌握度全量查看", "group": "数据", "is_high_risk": False},
+    {"code": "im:manage", "name": "IM 数据管理", "group": "社交", "is_high_risk": True},
+    {"code": "ledger:manage", "name": "账本数据管理", "group": "财务", "is_high_risk": True},
+    {"code": "announcement:manage", "name": "系统公告管理", "group": "运营", "is_high_risk": False},
 ]
 
 # 角色默认权限映射（直接复用 admins.role 现有枚举值）
@@ -62,6 +65,7 @@ ROLE_PERMISSIONS = {
         "user:manage", "benefit:grant_manual", "benefit:vip_manage", "benefit:grant",
         "audit:view", "config:manage", "dashboard:view", "analytics:view",
         "mastery:recompute", "mastery:view_all",
+        "im:manage", "ledger:manage", "announcement:manage",
     ],
     # 运维：只读
     "ops": ["dashboard:view", "analytics:view", "audit:view"],

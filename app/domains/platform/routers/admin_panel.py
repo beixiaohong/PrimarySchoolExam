@@ -32,6 +32,7 @@ from app.models.im import Chat, Message, Friendship, RedPacket
 from app.models.admin import Admin
 from app.models.announcement import Announcement
 from app.routers.admin import _require_admin, _audit
+from app.core.permissions import require_perm
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,8 @@ class AnnouncementCreate(BaseModel):
     is_pinned: bool = False
 
 
-@router.post("/announcements", summary="发布系统公告")
+@router.post("/announcements", summary="发布系统公告",
+             dependencies=[Depends(require_perm("announcement:manage"))])
 def create_announcement(req: AnnouncementCreate, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """发布系统公告并记审计日志。"""
     ann = Announcement(
@@ -131,7 +133,8 @@ def list_announcements(admin: "Admin" = Depends(_require_admin), db: Session = D
         for a in rows]}
 
 
-@router.delete("/announcements/{ann_id}", summary="删除公告")
+@router.delete("/announcements/{ann_id}", summary="删除公告",
+               dependencies=[Depends(require_perm("announcement:manage"))])
 def delete_announcement(ann_id: int, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """删除指定公告，并记审计日志。"""
     a = db.query(Announcement).filter(Announcement.id == ann_id).first()

@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.admin import Admin
 from app.models.im import Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim, ReadReceipt, SensitiveWord, SensitiveHit
 from app.routers.admin import _require_admin, _audit
+from app.core.permissions import require_perm
 
 router = APIRouter()
 
@@ -37,7 +38,8 @@ def list_chats(
         for c in rows]}
 
 
-@router.delete("/im/chats/{chat_id}", summary="删除聊天(含消息/成员)")
+@router.delete("/im/chats/{chat_id}", summary="删除聊天(含消息/成员)",
+               dependencies=[Depends(require_perm("im:manage"))])
 def delete_chat(chat_id: str, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """删除指定聊天及其全部消息/成员/已读回执，并记审计日志。"""
     c = db.query(Chat).filter(Chat.id == chat_id).first()
@@ -68,7 +70,8 @@ def list_friendships(
          "status": f.status.value if f.status else None} for f in rows]}
 
 
-@router.delete("/im/friendships/{friendship_id}", summary="删除好友关系")
+@router.delete("/im/friendships/{friendship_id}", summary="删除好友关系",
+               dependencies=[Depends(require_perm("im:manage"))])
 def delete_friendship(friendship_id: str, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """删除指定好友关系，并记审计日志。"""
     f = db.query(Friendship).filter(Friendship.id == friendship_id).first()
@@ -92,7 +95,8 @@ def list_red_packets(skip: int = 0, limit: int = 50, admin: "Admin" = Depends(_r
         for r in rows]}
 
 
-@router.delete("/im/red-packets/{red_packet_id}", summary="删除红包")
+@router.delete("/im/red-packets/{red_packet_id}", summary="删除红包",
+               dependencies=[Depends(require_perm("im:manage"))])
 def delete_red_packet(red_packet_id: str, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """删除指定红包及其领取记录，并记审计日志。"""
     r = db.query(RedPacket).filter(RedPacket.id == red_packet_id).first()
@@ -136,7 +140,8 @@ def list_messages(
         for m in rows]}
 
 
-@router.delete("/im/messages/{message_id}", summary="违规消息删除（合规）")
+@router.delete("/im/messages/{message_id}", summary="违规消息删除（合规）",
+               dependencies=[Depends(require_perm("im:manage"))])
 def delete_message(message_id: str, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
     """软删除指定消息（is_deleted=True），并记审计日志。合规刚需。"""
     m = db.query(Message).filter(Message.id == message_id).first()
@@ -169,7 +174,8 @@ def list_sensitive_words(
         for w in rows]}
 
 
-@router.post("/im/sensitive-words", summary="新增敏感词")
+@router.post("/im/sensitive-words", summary="新增敏感词",
+              dependencies=[Depends(require_perm("im:manage"))])
 def create_sensitive_word(
     payload: dict, admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
@@ -197,7 +203,8 @@ def create_sensitive_word(
     return {"id": w.id, "word": w.word, "level": w.level, "is_active": w.is_active}
 
 
-@router.put("/im/sensitive-words/{word_id}", summary="更新敏感词")
+@router.put("/im/sensitive-words/{word_id}", summary="更新敏感词",
+             dependencies=[Depends(require_perm("im:manage"))])
 def update_sensitive_word(
     word_id: int, payload: dict,
     admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
@@ -222,7 +229,8 @@ def update_sensitive_word(
     return {"ok": True}
 
 
-@router.delete("/im/sensitive-words/{word_id}", summary="删除敏感词")
+@router.delete("/im/sensitive-words/{word_id}", summary="删除敏感词",
+               dependencies=[Depends(require_perm("im:manage"))])
 def delete_sensitive_word(
     word_id: int, admin: Admin = Depends(_require_admin), db: Session = Depends(get_db),
 ):
