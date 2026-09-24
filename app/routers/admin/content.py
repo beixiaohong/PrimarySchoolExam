@@ -17,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.pagination import paginate
 from app.models.admin import Admin
 from app.models.classical import ClassicalText
 from app.models.grammar import GrammarPoint, GrammarExercise
@@ -138,9 +139,7 @@ def list_words(bid: int, keyword: str = "", page: int = 1, page_size: int = 50,
     kw = keyword.strip()
     if kw:
         q = q.filter(func.lower(Word.word).like(f"%{kw.lower()}%"))
-    total = q.count()
-    rows = q.order_by(Word.unit, Word.id).offset(
-        max(0, (page - 1) * page_size)).limit(min(page_size, 200)).all()
+    rows, total = paginate(q.order_by(Word.unit, Word.id), page, page_size)
     return {"total": total, "items": [{
         "id": w.id, "word": w.word, "phonetic": w.phonetic or "",
         "pos": w.pos or "", "meaning": w.meaning, "unit": w.unit or "",

@@ -8,10 +8,10 @@
 返回 {items, total, page, page_size}。审计表禁止物理删除（DB-05），仅查询。
 """
 from fastapi import Depends, Query
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.pagination import paginate
 from app.core.permissions import PERMISSIONS, require_perm
 from app.models.admin import AdminOperationLog
 
@@ -65,9 +65,7 @@ def api_audit_logs(
         q = q.filter(AdminOperationLog.admin == admin_name)
     if target_type:
         q = q.filter(AdminOperationLog.target_type == target_type)
-    total = q.with_entities(func.count()).scalar() or 0
-    rows = (q.order_by(AdminOperationLog.id.desc())
-            .offset((page - 1) * page_size).limit(page_size).all())
+    rows, total = paginate(q.order_by(AdminOperationLog.id.desc()), page, page_size)
     return {
         "items": [_serialize(r) for r in rows],
         "total": total,

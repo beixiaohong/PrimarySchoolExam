@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.pagination import paginate
 from app.models.admin import Admin
 from app.models.commerce_order import Order
 from app.models.commerce_payment import PayTransaction
@@ -139,8 +140,7 @@ def admin_list_products(
     if keyword:
         kw = f"%{keyword}%"
         q = q.filter((Product.name.like(kw)) | (Product.sku.like(kw)))
-    total = q.count()
-    rows = q.order_by(Product.sort_order.desc(), Product.id.desc()).offset((page-1)*size).limit(size).all()
+    rows, total = paginate(q.order_by(Product.sort_order.desc(), Product.id.desc()), page, size)
     if not rows:
         return {"items": [], "total": total, "page": page, "size": size}
     ids = [p.id for p in rows]
