@@ -156,10 +156,27 @@ cd web && node node_modules/vite/bin/vite.js build    # 前端构建（127 模�
 - 比对路径要**归一化参数段**（后端 `{gid}` vs 前端具体 id），否则一律误报。
 - **含 `\s`/`\d` 的脚本别用 heredoc 生成**（反斜杠被吞 → Node 报 `SyntaxError: missing )`），一律用 Write 落盘。
 
-## ⚠️ 待修的两个已知问题（2026-09-24 回归发现，用户暂未决定）
-1. **等级特权承诺未落地**：`level_config.perk` 的「头像框/称号专属配色/成就墙展示位」
-   在前端**只当文字显示**，无任何按等级生效的视觉变化 → 虚假承诺。
-   `services/level.py` 注释里「避免出现写了但没实现的权益」与实现不符，改注释或补实现（推荐后者，成本低）。
-2. **focus 路由无鉴权**：`POST /api/focus/complete`、`GET /api/focus/today|stats` 只依赖
-   `get_db`，**没有 `require_self`**，`user_id` 由请求方提供 → 可伪造他人身份刷金币/经验
-   （有每日 8 次上限与时长白名单兜底，影响有限）。建议补 `require_self` 统一鉴权口径。
+## 🚨 鉴权判读铁律：别只看 router 文件内的依赖（2026-09-24 自我纠错）
+- **router 文件里没写 `require_self` ≠ 无鉴权**。全站鉴权来自 `app/main.py` 的挂载处
+  `include_router(xxx.router, prefix=..., dependencies=user_auth_deps)`，
+  而 `user_auth_deps = [Depends(require_self)]`。
+- `require_self` 是**严格账号绑定**：从 query 或 JSON body 取 `user_id`，与登录账号不一致直接 **403**
+  （拦在写库之前）；未登录 401。因此「A 的 token + B 的 user_id」类越权在全家都已封堵。
+- 回归时我一度把 `focus` 报成「无鉴权可伪造他人身份刷金币」——**是误报**，
+  原因就是只读了 `focus.py` 里的 `Depends(get_db)`，漏看 `main.py:124` 挂载时的 `dependencies`。
+  已由 `tests/test_user_id_binding.py`（4 例：他人写 403 / 他人读 403 / 本人 200 / 未登录 401）钉死，
+  并在 `focus.py` 顶部写明鉴权来源，防止后人重复误判。
+- **判读顺序**：先看 `app/main.py` 里该 router 的 `include_router(... dependencies=...)`，再读 router 内部。
+
+## ✅ 等级特权已全部真实落地（2026-09-24，commit 0c78730）
+`level_config.perk` 的 20 条特权（原先是「只显示文字、无任何效果」的虚假承诺）现已全部实现：
+- **称号专属配色** → `logic/level.js::levelHue()`：Lv1 青绿 150° → Lv20 紫 290° 逐级插值，**每级配色不同**；
+  经 CSS 变量 `--lv-h` 下发，顶栏徽标 / 等级页 hero 背景与投影 / 进度条 / 特权条 / 成就墙展示位共用。
+- **头像框「X」**（10 条）→ `levelFrameTier()`：Lv2 起每 2 级解锁 1 档（`floor(lv/2)`，Lv1 无框），
+  经 `--lv-tier` 控制 `.lv-frame` 边框厚度与光晕强度；档位与等级表 10 个框所在等级一一对应。
+- **成就墙展示位**（4 条）→ `BadgesView.vue` 顶部 `.lv-showcase` 等级展示卡（小头像框 + 称号 + 经验 + 跳等级页）；
+  `goTab('badges')` 已补 `loadLevel()`。
+- **防漂移**：`services/level.py` 注释逐条标注落地点；`test_level.py` 加
+  `test_perk_texts_all_have_real_landing`（新增未实现的特权类型会直接失败）+
+  `test_frame_tier_matches_frame_perk_levels`（档位与框等级一一对应，与前端同口径）。
+- **改等级特权时的检查清单**：改 `_PERKS` 文案 → 同步落地点 → 同步 `LANDED` 映射 → 跑 `test_level.py`。
