@@ -120,18 +120,29 @@ def _build_profile(db: Session, user_id: str, grade: int, subject: str) -> str:
         lines.append(f"已获得 {badge_count} 枚徽章；成长树 {tree_score} 分；金币余额 {balance}")
     except Exception:
         pass
-    # 连续打卡（daily_tasks 往前数）
+    # 连续打卡（daily_tasks 往前数）—— 性能优化：原 range(60) 逐日查（最坏 60 次 DB 往返/次画像），
+    # 改为按 60 天区间一次性取任务，内存聚合后从今天往前数连续 done 天数（语义不变）。
     try:
         from app.models.daily_task import DailyTask as DT
         d = date.today()
+        start = d - timedelta(days=59)
+        rows = db.query(DT.task_date, DT.status).filter(
+            DT.user_id == user_id, DT.task_date >= start, DT.task_date <= d
+        ).all()
+        # 某天「全部 done」= 当天有任务且每条 status 均为 done
+        done_by_day = {}
+        for _td, _st in rows:
+            done_by_day.setdefault(_td, True)
+            if _st != "done":
+                done_by_day[_td] = False
         streak = 0
-        for i in range(60):
-            day = d - timedelta(days=i)
-            rows = db.query(DT).filter(DT.user_id == user_id, DT.task_date == day).all()
-            if rows and all(getattr(t, "status", "") == "done" for t in rows):
+        cur = d
+        while cur >= start:
+            if done_by_day.get(cur):  # 当天有任务且全部 done
                 streak += 1
             else:
                 break
+            cur -= timedelta(days=1)
         if streak:
             lines.append(f"已连续 {streak} 天完成任务")
     except Exception:

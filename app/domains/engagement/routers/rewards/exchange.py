@@ -52,29 +52,40 @@ def sync_coupon_progress(db: Session, user_id: str):
             c.cycle_start_date = today_str
             start = today
         # 统计「本轮起点之后、今天之前」的缺卡/中断（旧缺卡不再拖累新本轮）
+        # —— 性能优化：原 while 逐日查强制任务 + 补签卡二次查（天数无上限 ×2 次 DB 往返），
+        #    改为按区间一次性批量取任务与补签记录，内存中判定（语义不变）。
+        d0 = start + timedelta(days=1)
+        d1 = today
+        task_rows = db.query(DailyTask.task_date, DailyTask.status).filter(
+            DailyTask.user_id == user_id,
+            DailyTask.task_date >= d0, DailyTask.task_date < d1,
+            DailyTask.task_type == "mandatory",
+        ).all()
+        tasks_by_day = {}
+        for _td, _st in task_rows:
+            tasks_by_day.setdefault(_td, []).append(_st)
+        makeup_rows = db.query(MakeupUsageLog.target_date).filter(
+            MakeupUsageLog.user_id == user_id,
+            MakeupUsageLog.target_date >= d0, MakeupUsageLog.target_date < d1,
+        ).all()
+        makeup_days = {_m.target_date for _m in makeup_rows}
+
         miss = 0
         no_record_streak = 0
         interrupted = False
-        d = start + timedelta(days=1)
-        while d < today:
-            day_rows = db.query(DailyTask).filter(
-                DailyTask.user_id == user_id, DailyTask.task_date == d,
-                DailyTask.task_type == "mandatory",
-            ).all()
+        d = d0
+        while d < d1:
+            day_rows = tasks_by_day.get(d, [])
             if not day_rows:
                 no_record_streak += 1
                 if no_record_streak >= 2:
                     interrupted = True  # 连续 2 天以上无记录 → 视为中断
             else:
                 no_record_streak = 0
-                day_full = len(day_rows) >= 3 and all(r.status == "done" for r in day_rows)
+                day_full = len(day_rows) >= 3 and all(_s == "done" for _s in day_rows)
                 if not day_full:
                     # 检查是否用了补签卡
-                    makeup = db.query(MakeupUsageLog).filter(
-                        MakeupUsageLog.user_id == user_id,
-                        MakeupUsageLog.target_date == d
-                    ).count()
-                    if not makeup:
+                    if d not in makeup_days:
                         miss += 1
             d += timedelta(days=1)
         if miss > 1 or interrupted:

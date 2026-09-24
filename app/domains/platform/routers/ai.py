@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
@@ -333,13 +334,16 @@ def _aggregate_week(db: Session, user_id: str) -> dict:
         ClassicalDailyLog.learn_date >= start, ClassicalDailyLog.learn_date <= end,
     ).all()
     stats["classical_learned"] = sum((r.texts_learned or 0) + (r.texts_reviewed or 0) for r in rows)
-    # 全勤天数：三科任务全部 done 的天数
+    # 全勤天数：三科任务全部 done 的天数 —— 性能优化：原 range(7) 逐日 count（7 次 DB 往返/次周报），
+    # 改为按周区间一次性取 done 计数并按天 group（语义不变）。
+    day_done = db.query(DailyTask.task_date, func.count()).filter(
+        DailyTask.user_id == user_id,
+        DailyTask.task_date >= start, DailyTask.task_date <= end,
+        DailyTask.status == "done",
+    ).group_by(DailyTask.task_date).all()
+    done_by_day = {_d: _c for _d, _c in day_done}
     for d in (start + timedelta(days=i) for i in range(7)):
-        done = db.query(DailyTask).filter(
-            DailyTask.user_id == user_id,
-            DailyTask.task_date == d, DailyTask.status == "done",
-        ).count()
-        if done >= 3:
+        if done_by_day.get(d, 0) >= 3:
             stats["full_days"] += 1
     return stats
 
