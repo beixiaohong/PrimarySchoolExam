@@ -9,7 +9,10 @@
 - **前后端契约错位**：后端返回 `id` 而前端读 `user_id`、前端请求了不存在的路径
   （页面不报错，只是按钮静默失效 —— 本项目真实踩过 IM 私聊/加好友全废）；
 - **图标缺失**：`nav.js` 写了 `icon: 'xxx'` 但 `AppIcon.ICONS` 没定义，静默回落 placeholder；
-- **路由漏注册**：新模块忘记 `app.include_router`，全部 404。
+- **路由漏注册**：新模块忘记 `app.include_router`，全部 404；
+- **依赖未声明**：代码模块级硬导入了某个包，但 `requirements.txt` 没写
+  —— 本地因为跑测试多装了包所以正常，**线上启动即崩**（2026-09-24 真实事故：
+  weather.py 改用 httpx 未同步清单，线上 `ModuleNotFoundError` 全站 502）。
 
 注意：`app.routes` 在本项目使用的 FastAPI 版本里，`include_router` 是**惰性**的
 （元素是 `_IncludedRouter`，`path` 为 None），直接遍历拿不到路径。
@@ -51,7 +54,7 @@ def bad(name: str, detail: str):
 
 # ── 1. 域契约（import-linter）──
 def check_contracts():
-    print("\n[1/5] 域契约（import-linter）")
+    print("\n[1/6] 域契约（import-linter）")
     if not Path(LINT).exists():
         bad("域契约", f"未找到 {LINT}")
         return
@@ -66,7 +69,7 @@ def check_contracts():
 
 # ── 2. 全量语法编译 ──
 def check_compile():
-    print("\n[2/5] 全量语法编译（app/ tools/ tests/）")
+    print("\n[2/6] 全量语法编译（app/ tools/ tests/）")
     r = subprocess.run([PY, "-m", "compileall", "-q", "app", "tools", "tests"],
                        cwd=str(ROOT), capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
@@ -76,7 +79,35 @@ def check_compile():
         bad("语法编译", (r.stdout or "") + (r.stderr or ""))
 
 
-# ── 3 & 5. 路由一致性（OpenAPI 表 vs 前端 URL）+ 关键路由存在性 ──
+# ── 3. 依赖完整性（代码硬导入 vs requirements.txt）──
+def check_dependencies():
+    print("\n[3/6] 依赖完整性（启动期硬导入 vs requirements.txt）")
+    try:
+        # 按路径加载同目录的审计模块（不依赖 cwd / 是否作为包运行）
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "dep_audit", ROOT / "tools" / "dep_audit.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception as e:                       # pragma: no cover
+        bad("依赖完整性", f"无法加载 tools/dep_audit.py：{e}")
+        return
+
+    result = mod.audit([ROOT / "app"])
+    st = result["stats"]
+    if result["errors"]:
+        detail = "; ".join(f"{e['module']} <- {e['files'][0]}" for e in result["errors"])
+        bad("依赖完整性", f"{len(result['errors'])} 个包未在 requirements.txt 声明，"
+                          f"线上会启动失败：{detail}")
+    else:
+        ok("依赖完整性", f"{st['files_scanned']} 个文件扫描，"
+                        f"启动期硬依赖 {st['third_party_modules']} 个第三方模块全部已声明")
+    if result["warnings"]:
+        print(f"         提示：{len(result['warnings'])} 个模块归属无法判定"
+              f"（本地未安装），需人工确认：{[w['module'] for w in result['warnings']]}")
+
+
+# ── 4 & 6. 路由一致性（OpenAPI 表 vs 前端 URL）+ 关键路由存在性 ──
 def load_paths():
     """取展开后的完整路由表（必须经 openapi()，见模块 docstring 的说明）"""
     from app.main import app
@@ -90,7 +121,7 @@ def _norm(p: str) -> str:
 
 
 def check_key_routes(paths):
-    print("\n[3/5] 关键路由注册（四项新功能端点）")
+    print("\n[4/6] 关键路由注册（四项新功能端点）")
     missing = [t for t in KEY_ROUTES if not any(p.startswith(t) for p in paths)]
     if missing:
         bad("关键路由", f"未注册：{missing}")
@@ -101,7 +132,7 @@ def check_key_routes(paths):
 
 
 def check_frontend_urls(paths):
-    print("\n[4/5] 前端请求路径 vs 后端路由")
+    print("\n[5/6] 前端请求路径 vs 后端路由")
     have = {(_norm(p), m.upper()) for p in paths for m in paths[p] if m in METHODS}
     # 匹配 web/src 下形如 '/api/...' / `/api/...${x}` 的字面量
     pat = re.compile(r"""['"`](/api/[A-Za-z0-9_\-/{}.$]*)['"`]""")
@@ -127,7 +158,7 @@ def check_frontend_urls(paths):
 
 
 def check_icons():
-    print("\n[5/5] 导航图标完整性（nav.js vs AppIcon.ICONS）")
+    print("\n[6/6] 导航图标完整性（nav.js vs AppIcon.ICONS）")
     nav_f = WEB_SRC / "nav.js"
     ico_f = WEB_SRC / "components" / "AppIcon.vue"
     if not nav_f.exists() or not ico_f.exists():
@@ -160,6 +191,7 @@ def main() -> int:
     print("=" * 68)
     check_contracts()
     check_compile()
+    check_dependencies()
     paths = load_paths()
     print(f"\n      （后端路由总数 = {len(paths)}）")
     check_key_routes(paths)
