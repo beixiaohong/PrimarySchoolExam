@@ -170,6 +170,17 @@ def _local_names(root: Path = ROOT) -> set[str]:
     return names
 
 
+def iter_py_files(base: Path):
+    """列出一个目录（递归）或**单个 .py 文件**下的 Python 文件
+
+    支持单文件是为了让 tools/ops_check.py 能只审计「调度任务实际会跑的那几个脚本」，
+    而不是把整个 tools/ 都算进来（后者含大量仅本地使用的脚本，会引入噪声）。
+    """
+    if base.is_file():
+        return [base] if base.suffix == ".py" else []
+    return sorted(base.rglob("*.py"))
+
+
 def audit(paths: list[Path], root: Path = ROOT, requirements: Path | None = None) -> dict:
     """审计给定目录下的「启动期硬导入」是否都在 requirements.txt 声明
 
@@ -187,7 +198,7 @@ def audit(paths: list[Path], root: Path = ROOT, requirements: Path | None = None
     third: dict[str, dict] = {}
 
     for base in paths:
-        for f in sorted(base.rglob("*.py")):
+        for f in iter_py_files(base):
             for name, lineno in hard_imports(f):
                 if name in stdlib or name in local or name.startswith("_"):
                     continue
@@ -225,7 +236,7 @@ def audit(paths: list[Path], root: Path = ROOT, requirements: Path | None = None
         "stats": {
             "declared": len(declared),
             "third_party_modules": len(third),
-            "files_scanned": sum(1 for b in paths for _ in b.rglob("*.py")),
+            "files_scanned": sum(len(iter_py_files(b)) for b in paths),
         },
     }
 

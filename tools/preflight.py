@@ -28,6 +28,8 @@ WARN —— 功能降级，允许继续但必须让操作者看见：
   · ffmpeg/ffprobe（IM 语音转 MP3）、soffice（LibreOffice，试卷 .doc 解析）
   · npm/node（前端重建需要）、admin/dist 缺失
   · 可选 API Key 缺失（按功能列出影响）
+  · 定时任务资产异常（tasks 配置有误 / 脚本不存在 / 未 git 跟踪 / 依赖未声明）
+    —— 由 tools/ops_check.py 提供；不影响站点可用性，故不阻断，但上线后会静默失败
 
 实现约束
 --------
@@ -126,6 +128,30 @@ def _load_audit(app_dir: Path):
         try:
             spec = importlib.util.spec_from_file_location("dep_audit", audit_path)
             mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception:
+            mod = None
+    _AUDIT_CACHE[key] = mod
+    return mod
+
+
+def _load_ops(app_dir: Path):
+    """按路径加载 tools/ops_check.py（复用其调度资产体检逻辑）
+
+    与 _load_audit 同样按路径加载：既避免 import 项目包（venv 可能已损坏），
+    也不依赖 cwd。**必须注册进 sys.modules** —— ops_check 内部还会按路径加载
+    scheduler.py / dep_audit.py，注册后其相对加载与注解解析才稳。
+    """
+    key = ("ops", str(app_dir))
+    if key in _AUDIT_CACHE:
+        return _AUDIT_CACHE[key]
+    ops_path = app_dir / "tools" / "ops_check.py"
+    mod = None
+    if ops_path.exists():
+        try:
+            spec = importlib.util.spec_from_file_location("ops_check", ops_path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["ops_check"] = mod
             spec.loader.exec_module(mod)
         except Exception:
             mod = None
@@ -292,6 +318,62 @@ def check_dist(app_dir: Path) -> list[Finding]:
     return out
 
 
+def check_scheduled_jobs(app_dir: Path) -> list[Finding]:
+    """定时任务资产检查（复用 tools/ops_check.py）
+
+    为什么放在部署闸门里：调度任务由线上 cron 每 15 分钟静默执行，**没有告警通道** ——
+    「command 指向的脚本不存在」「脚本新增后忘记 git add（线上 pull 不到）」
+    「脚本依赖未在 requirements.txt 声明」这三类问题在这里提前暴露，
+    否则要等到某天发现订单没关单、会员没降级才反查。
+
+    另外**顺带体检线上调度状态**（`tools/.scheduler_state.json` 存在时）：
+    上次执行失败、超过 26 小时未成功、已过有效期、残留状态等。
+    这样不必依赖运维记得手动跑 `ops_check.py --state`。
+
+    级别刻意定为 **warn 而非 block**：它不影响站点可用性，与本闸门
+    「只拦会致挂的项」的原则一致 —— 闸门误报会让人绕过它，比漏报更糟。
+    但每次部署都会打印，保证问题不会被忽略。
+    """
+    mod = _load_ops(app_dir)
+    if mod is None:
+        return [Finding("定时任务资产", "warn", "未找到 tools/ops_check.py（旧版本代码？跳过）")]
+
+    state_path = app_dir / "tools" / ".scheduler_state.json"
+    try:
+        result = mod.run(repo_root=app_dir)          # 静态资产体检（不含线上状态）
+    except Exception as e:  # 检查脚本自身出错不应阻断部署
+        return [Finding("定时任务资产", "warn", f"检查异常：{type(e).__name__}: {e}")]
+
+    j = result["jobs"]
+    errors = [i for i in result["items"] if i["level"] == "error"]
+    out: list[Finding] = []
+    if not errors:
+        detail = (f"{j['enabled']} 个启用任务（共 {j['total']} 个）："
+                  f"配置合法、脚本存在且已声明依赖")
+        if state_path.exists():
+            detail += "；已顺带体检线上调度状态"
+        out.append(Finding("定时任务资产", "ok", detail))
+    for i in errors:
+        out.append(Finding(
+            i["title"], "warn", i["detail"],
+            hint=(i["hint"] + "；服务器上可跑 `python tools/ops_check.py` 复核"),
+            impact="该定时任务在线上会静默失败（调度器无告警通道，只在 scheduler.log 留痕）",
+        ))
+
+    # 线上调度状态体检：单列出来（不复用上面的资产错误，避免与静态问题混在一起）。
+    # 这是 deployment 时唯一能发现「某任务已连续多日失败/静默停摆」的时机。
+    if state_path.exists():
+        try:
+            for i in mod.check_state(state_path, mod.SCHED.JOBS):
+                out.append(Finding(f"调度状态：{i['title']}", "warn", i["detail"],
+                                   hint=i["hint"],
+                                   impact="该定时任务的业务动作未生效（订单/会员/红包/账单），"
+                                          "且调度器不会主动告警"))
+        except Exception as e:  # noqa: BLE001
+            out.append(Finding("调度状态体检", "warn", f"异常：{type(e).__name__}: {e}"))
+    return out
+
+
 # ── 编排与输出 ──
 
 def run(app_dir: Path, python: str, stage: str = "early", app_user: str = "",
@@ -300,6 +382,7 @@ def run(app_dir: Path, python: str, stage: str = "early", app_user: str = "",
     findings += check_dependencies(app_dir, requirements)
     findings.append(check_import(app_dir, python, app_user, requirements))
     findings += check_env(app_dir)
+    findings += check_scheduled_jobs(app_dir)      # 定时任务资产（warn 级，静态+git）
     if stage == "full":
         findings += check_external_bins()
         findings += check_dist(app_dir)

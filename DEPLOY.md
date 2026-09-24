@@ -21,6 +21,7 @@
 12. [自动化测试](#12-自动化测试)
 13. [项目结构](#13-项目结构)
 14. [常见问题](#14-常见问题)
+15. [定时任务（调度器）运维](#15-定时任务调度器运维)
 
 ---
 
@@ -686,3 +687,97 @@ curl -X POST https://你的域名/api/admin/change-password \
 > - 不灌种子
 > - 不改数据
 > - 同步工具（`tools/sync_prod_to_local.py`）对线上库只读 SELECT
+
+---
+
+## 15. 定时任务（调度器）运维
+
+线上定时任务由**代码内置**的 `tools/scheduler.py` 承担（随 git 提交、随 deploy 上线），
+crontab 每 15 分钟唤醒它一次，由它决定哪些任务到期该跑。
+
+### 15.1 当前任务清单
+
+| 任务名 | 时刻 | 作用 | 幂等性 |
+|---|---|---|---|
+| `close_expired_orders` | 00:15 | 超时订单自动关闭 | 只处理未关闭的 |
+| `ledger_recurring_daily` | 01:00 | 账本周期交易自动执行（生成账单 + 联动余额） | `next_run` 推进到未来，重跑不重复出账 |
+| `im_red_packet_expire` | 01:10 | 24h 未领完的红包剩余钻石退回发送者 | 状态置 `EXPIRED` 后不再命中 |
+| `vip_expire_downgrade` | 02:00 | 会员到期降级 | 只处理已过期未降级的 |
+
+> 另有 2 个任务处于 `enabled=False` 停用状态（`seed_junior_grade7` / `backfill_paper_answers`），
+> 保留配置便于随时恢复 —— 改回 `True` 即可，不必重写定义。
+
+### 15.2 安装（每台服务器只需一次）
+
+```bash
+crontab -e
+# 加入下面一行（注意用项目自己的 venv 解释器）
+*/15 * * * * cd /home/PrimarySchoolExam && /home/PrimarySchoolExam/venv/bin/python tools/scheduler.py >> /var/log/scheduler.log 2>&1
+```
+
+确认已安装：
+
+```bash
+crontab -l | grep scheduler
+tail -f /var/log/scheduler.log        # 每 15 分钟会有一行「调度检查完成」
+```
+
+### 15.3 状态与日志
+
+| 文件 | 位置 | 说明 |
+|---|---|---|
+| 任务状态 | `tools/.scheduler_state.json` | 每个任务的 `last_run` / `run_count` / `last_status` / `last_output`（截断 500 字） |
+| 单实例锁 | `tools/.scheduler.lock` | 防上一个长任务没跑完又被 cron 起一个 |
+| 运行日志 | `/var/log/scheduler.log` | cron 重定向输出，含每个任务的返回码与完整输出 |
+
+> 这两个运行时文件已在 `.gitignore` 中（勿提交 —— 提交会把线上运行状态污染进仓库）。
+
+### 15.4 体检（最重要的一步）
+
+调度任务是**静默执行**的，没有告警通道：任务失败的症状就是「什么都不发生」
+（订单不关单、会员不降级、红包不退回），可以安静积累成业务数据错误。所以：
+
+```bash
+cd /home/PrimarySchoolExam
+
+# 静态体检：任务配置 / 脚本存在性 / 脚本依赖 / 运行时文件
+venv/bin/python tools/ops_check.py
+
+# 追加线上状态体检：上次是否失败、是否已静默停摆、是否已过期/达上限
+venv/bin/python tools/ops_check.py --state tools/.scheduler_state.json
+```
+
+状态体检能发现这些问题（都会以 warn 列出来）：
+
+| 现象 | 含义 |
+|---|---|
+| `任务上次执行失败` | 附 `last_error`/`last_output` 摘要，去日志看完整堆栈 |
+| `已超过 26 小时未成功执行` | 可能 crontab 被删、服务器时间错、或任务被静默停掉 |
+| `已过有效期` | `valid_until` 到期，任务不再执行（需延长或清理定义） |
+| `已达次数上限` | `run_count >= max_runs` |
+| `残留调度状态` | 状态里有、JOBS 里已无同名任务（改过名/删过任务） |
+
+`tools/ops_check.py` 也已接入另外两处，无需手动调用：
+- **提交前**：`tools/regression_check.py`（第 7 项，有错即 FAIL）
+- **部署时**：`tools/preflight.py`（部署闸门，作为 WARN 项打印 —— 它不影响站点可用性，故不阻断部署）
+
+### 15.5 新增/修改任务的正确姿势
+
+1. 在 `tools/scheduler.py` 的 `JOBS` 里追加定义（或改现有项）；
+2. **跑 `python tools/ops_check.py`** —— 配置笔误、脚本不存在、忘记 `git add`、依赖未声明都会在这里报出来；
+3. `git add`（新脚本必须提交，否则线上 `git pull` 拿不到）→ commit → push；
+4. 服务器 `git pull && sudo bash deploy.sh`（部署时的 preflight 会再核一遍）。
+
+### 15.6 已知陷阱（加固于 2026-09-24，勿回退）
+
+- **配置写错不会告警**：`kind` 拼错 → 任务永不执行；`at`/`valid_from` 写错 → 历史上会抛
+  `ValueError` 冒泡出 `run_due_jobs`，**整轮调度中断**，排在它之后的任务永久停摆。
+  现在：`validate_job()` 静态校验 + `_job_due()` 不再抛异常 + 单任务异常就地隔离
+  （坏任务只跳过自己，并在日志里醒目打印）。
+- **`enabled` 必须写布尔值**：写字符串 `"False"` 时 `job.get("enabled") is False` 判定不成立
+  → **停用失效、任务照跑**。校验器会拦。
+- **`command` 用仓库内相对路径**：写绝对路径在换服务器/换部署目录后必失效。
+- **状态文件损坏不致命**：会按空状态继续（当日 daily 任务可能重复执行一次，任务多为幂等），
+  日志里会打印提示。
+- **排查不到任务为什么不跑**：`ops_check.py --state` 先看状态，再看
+  `grep -E "跳过|配置错误|fail" /var/log/scheduler.log`。

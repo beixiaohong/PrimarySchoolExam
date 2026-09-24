@@ -12,11 +12,17 @@
 - **路由漏注册**：新模块忘记 `app.include_router`，全部 404；
 - **依赖未声明**：代码模块级硬导入了某个包，但 `requirements.txt` 没写
   —— 本地因为跑测试多装了包所以正常，**线上启动即崩**（2026-09-24 真实事故：
-  weather.py 改用 httpx 未同步清单，线上 `ModuleNotFoundError` 全站 502）。
+  weather.py 改用 httpx 未同步清单，线上 `ModuleNotFoundError` 全站 502）；
+- **上线运维资产缺陷**：定时任务（`tools/scheduler.py`，线上 cron 每 15 分钟跑）
+  配置笔误、command 指向的脚本被删/改名/忘记 `git add`、脚本依赖未声明 ——
+  调度器**没有告警通道**，这些故障的症状就是「什么都不发生」（订单不关单、
+  会员不降级、红包不退回），可安静积累成业务数据错误。
 
 注意：`app.routes` 在本项目使用的 FastAPI 版本里，`include_router` 是**惰性**的
 （元素是 `_IncludedRouter`，`path` 为 None），直接遍历拿不到路径。
 必须走 `app.openapi()["paths"]` 才能拿到展开后的完整路由表 —— 这里踩过坑。
+
+检查项编号只标序号（不写 /N），新增检查项时只需在末尾追加，不必回来改前面的编号。
 
 用法
 ----
@@ -54,7 +60,7 @@ def bad(name: str, detail: str):
 
 # ── 1. 域契约（import-linter）──
 def check_contracts():
-    print("\n[1/6] 域契约（import-linter）")
+    print("\n[1] 域契约（import-linter）")
     if not Path(LINT).exists():
         bad("域契约", f"未找到 {LINT}")
         return
@@ -69,7 +75,7 @@ def check_contracts():
 
 # ── 2. 全量语法编译 ──
 def check_compile():
-    print("\n[2/6] 全量语法编译（app/ tools/ tests/）")
+    print("\n[2] 全量语法编译（app/ tools/ tests/）")
     r = subprocess.run([PY, "-m", "compileall", "-q", "app", "tools", "tests"],
                        cwd=str(ROOT), capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
@@ -81,7 +87,7 @@ def check_compile():
 
 # ── 3. 依赖完整性（代码硬导入 vs requirements.txt）──
 def check_dependencies():
-    print("\n[3/6] 依赖完整性（启动期硬导入 vs requirements.txt）")
+    print("\n[3] 依赖完整性（启动期硬导入 vs requirements.txt）")
     try:
         # 按路径加载同目录的审计模块（不依赖 cwd / 是否作为包运行）
         import importlib.util
@@ -121,7 +127,7 @@ def _norm(p: str) -> str:
 
 
 def check_key_routes(paths):
-    print("\n[4/6] 关键路由注册（四项新功能端点）")
+    print("\n[4] 关键路由注册（四项新功能端点）")
     missing = [t for t in KEY_ROUTES if not any(p.startswith(t) for p in paths)]
     if missing:
         bad("关键路由", f"未注册：{missing}")
@@ -132,7 +138,7 @@ def check_key_routes(paths):
 
 
 def check_frontend_urls(paths):
-    print("\n[5/6] 前端请求路径 vs 后端路由")
+    print("\n[5] 前端请求路径 vs 后端路由")
     have = {(_norm(p), m.upper()) for p in paths for m in paths[p] if m in METHODS}
     # 匹配 web/src 下形如 '/api/...' / `/api/...${x}` 的字面量
     pat = re.compile(r"""['"`](/api/[A-Za-z0-9_\-/{}.$]*)['"`]""")
@@ -158,7 +164,7 @@ def check_frontend_urls(paths):
 
 
 def check_icons():
-    print("\n[6/6] 导航图标完整性（nav.js vs AppIcon.ICONS）")
+    print("\n[6] 导航图标完整性（nav.js vs AppIcon.ICONS）")
     nav_f = WEB_SRC / "nav.js"
     ico_f = WEB_SRC / "components" / "AppIcon.vue"
     if not nav_f.exists() or not ico_f.exists():
@@ -185,6 +191,34 @@ def check_icons():
         ok("导航图标", f"引用 {len(used)} 个，全部已定义（ICONS 共 {len(defined)} 个）")
 
 
+def check_ops():
+    print("\n[7] 上线运维资产（定时任务配置 / 脚本依赖 / 运行时文件）")
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ops_check", ROOT / "tools" / "ops_check.py")
+        mod = importlib.util.module_from_spec(spec)
+        # 必须注册进 sys.modules：ops_check 内部还会按路径加载别的模块
+        sys.modules["ops_check"] = mod
+        spec.loader.exec_module(mod)
+    except Exception as e:                       # pragma: no cover
+        bad("运维资产", f"无法加载 tools/ops_check.py：{e}")
+        return
+
+    result = mod.run()
+    j = result["jobs"]
+    errors = [i for i in result["items"] if i["level"] == "error"]
+    if errors:
+        detail = "; ".join(f"{i['title']}（{i['detail']}）" for i in errors)
+        bad("运维资产", f"{len(errors)} 个错误 -> {detail[:280]}")
+    else:
+        ok("运维资产", f"任务 {j['total']} 个（启用 {j['enabled']} / 停用 {j['disabled']}）："
+                      f"配置合法、脚本存在且依赖已声明")
+    for i in result["items"]:
+        if i["level"] == "warn":
+            print(f"         提示：[{i['title']}] {i['detail'][:110]}")
+
+
 def main() -> int:
     print("=" * 68)
     print("项目回归自检")
@@ -197,6 +231,7 @@ def main() -> int:
     check_key_routes(paths)
     check_frontend_urls(paths)
     check_icons()
+    check_ops()
 
     print("\n" + "=" * 68)
     if failures:

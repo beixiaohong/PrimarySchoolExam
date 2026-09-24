@@ -29,5 +29,10 @@ tools/_*.py
 endpoint_baseline.txt
 tools/endpoint_snapshot.py
 
+# 定时器运行时文件（线上生成：任务状态 + 单实例锁，勿入库）
+# 未忽略会导致线上 git 工作区变脏，一旦 `git add -A` 就把线上运行状态提交进仓库。
+tools/.scheduler_state.json
+tools/.scheduler.lock
+
 # pre-commit 本地 venv 缓存（沙箱指向项目内可写目录，勿入库）
 .pc_cache/
