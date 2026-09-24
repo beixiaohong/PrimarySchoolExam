@@ -219,3 +219,27 @@ cd web && node node_modules/vite/bin/vite.js build    # 前端构建（127 模�
   `AttributeError: 'NoneType' object has no attribute '__dict__'`。用普通类。
 - 部署失败回滚：`git log --oneline -5` → `git reset --hard <好版本>` → `sudo bash deploy.sh`
   （deploy.sh 失败时会自动打印这三步，见 `rollback_hint()`）。
+
+## ⏰ 定时任务的「静默失效」防线（2026-09-24 定案）
+- **前提认知**：调度任务由 cron 每 15 分钟**静默执行**（输出只进 /var/log/scheduler.log，
+  无告警通道）。出问题的症状就是「什么都不发生」—— 订单不关单、会员不降级、红包不退回、
+  周期账单不生成，可安静积累成业务数据错误。**凡涉及调度，先按「静默失效」思路排查。**
+- **三层防护**：
+  1. 运行期 `tools/scheduler.py`：`validate_job()/validate_jobs()` 纯函数校验 +
+     `_job_due()` 不抛异常 + 单任务异常就地隔离。
+     **铁律：任何单任务问题都不得终止整轮调度**（历史：非法 at 抛 ValueError 冒泡出
+     `run_due_jobs`（该函数只有 finally），排在它之后的任务**永久停摆**）。
+  2. 提交前：`tools/regression_check.py` 第 7 项（内部调 `tools/ops_check.py`），有错即 FAIL。
+  3. 部署时：`tools/preflight.py` 的「定时任务资产」（**WARN 级**，不影响站点可用性）
+     + **自动顺带体检线上调度状态**（不必记着跑 --state）。
+- `tools/ops_check.py` 检查 6 类：任务配置 / 脚本存在 / **git 跟踪**（忘 `git add` →
+  线上 pull 不到）/ 脚本依赖声明 / 运行时文件是否在 .gitignore / **crontab 命令两处一致**；
+  `--state` 做线上状态体检（上次失败 / >26h 未成功 / 已过期 / 达 max_runs / 残留状态）。
+- **JOBS 配置陷阱清单**（都「写错不报错」，validate_job 已覆盖）：
+  kind 拼错=永不执行；at/日期非法=历史上崩整轮；`enabled="False"` 字符串=**停用失效**
+  （`is False` 判定不成立）；weekday 用在非 weekly=静默忽略；valid_from>valid_until=永不执行；
+  command 用绝对路径=换部署目录即失效。
+- **crontab 正确写法**（docstring 与 DEPLOY.md §15.2 必须逐字一致，ops_check 会校验；
+  历史错误：docstring 写 `/opt/venv/bin/python`，线上并不存在 → 任务完全不跑且只往 root 邮箱发错误）：
+  `*/15 * * * * cd /home/PrimarySchoolExam && /home/PrimarySchoolExam/venv/bin/python tools/scheduler.py >> /var/log/scheduler.log 2>&1`
+- 新增/改 JOBS 后**必跑** `python tools/ops_check.py`，且**新脚本必须 git add**。
