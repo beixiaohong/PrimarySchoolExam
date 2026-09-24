@@ -180,3 +180,21 @@ cd web && node node_modules/vite/bin/vite.js build    # 前端构建（127 模�
   `test_perk_texts_all_have_real_landing`（新增未实现的特权类型会直接失败）+
   `test_frame_tier_matches_frame_perk_levels`（档位与框等级一一对应，与前端同口径）。
 - **改等级特权时的检查清单**：改 `_PERKS` 文案 → 同步落地点 → 同步 `LANDED` 映射 → 跑 `test_level.py`。
+
+## 📦 依赖声明铁律（2026-09-24 线上全站 502 事故定案）
+- **新增任何第三方依赖，必须同步 `requirements.txt`**：线上 `deploy.sh:68` 只执行
+  `pip install -r requirements.txt`，严格按清单建 venv。漏写 → 启动期 `ModuleNotFoundError` → 全站 502。
+- **本地正常 ≠ 线上正常**：本地 `.venv` 常因跑测试多装了包（如 httpx 是 starlette TestClient 的依赖，
+  `pip show httpx` 的 `Required-by` 为空，生产依赖树根本不会带出它）。判依赖完整性**不能靠本地能否 import**。
+- **三处自动拦截（改依赖后必跑）**：
+  1. `tools/dep_audit.py` / `regression_check.py` 第 3 项：扫描 app/ 的**启动期硬导入**
+     （模块级 + 不在 `try` + 不在 `if TYPE_CHECKING`）是否都已声明；
+  2. `tests/test_requirements_complete.py`（含“守卫守卫”：注入缺包清单必须能报出来）；
+  3. `regression_check.py` 现共 **6 项**（契约/编译/依赖/路由/前端URL/图标）。
+- **可选依赖必须写成优雅降级**：函数内 `try: from bs4 import BeautifulSoup except: _BS4 = False`。
+  审计只报「模块级硬导入」，try 内的不会误报 —— 别把可选依赖写成模块级 import。
+- **线上导入期崩溃排查**：`journalctl -n 50` 常把真正的异常行截掉（只看到 import 帧）→
+  用 `journalctl -u exam-app -n 200 --no-pager | grep -iE "ModuleNotFoundError|ImportError"`，
+  或直接在项目目录 `venv/bin/python -c "import app.main"` 复现导入错误。
+- 复现“缺包”类故障的手法：用 `sys.meta_path` 插一个 finder 屏蔽目标包，再 `import app.main`，
+  对比报错帧与线上 traceback 是否一致（本次即以此确证 httpx）。
