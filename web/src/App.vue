@@ -144,7 +144,7 @@
       <button class="icon-btn" @click="showToast('🔔 暂无新通知，加油学习！')">🔔</button>
       <div class="me">
         <div class="avatar" style="width:32px;height:32px;font-size:12px">{{userName.charAt(0)}}</div>
-        <b>{{userName}}</b><button class="lv-badge" title="等级成长（点击查看）" @click="openLevel">Lv.{{levelNum}}</button><span class="streak">🔥{{streakDays}}</span><span class="diamonds" title="钻石余额">💎{{diamonds}}</span>
+        <b>{{userName}}</b><button class="lv-badge" :style="{'--lv-h': levelHue}" title="等级成长（点击查看）" @click="openLevel">Lv.{{levelNum}}</button><span class="streak">🔥{{streakDays}}</span><span class="diamonds" title="钻石余额">💎{{diamonds}}</span>
       </div>
     </header>
 

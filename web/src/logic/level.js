@@ -46,6 +46,22 @@ export const levelComputed = {
   levelExpToNext() {
     return (this.levelInfo && this.levelInfo.exp_to_next) || 0;
   },
+  // 等级专属色相（度）：落地等级表里的「称号专属配色」特权。
+  // Lv1 青绿(150°) → Lv20 紫(290°)，逐级递增，因此**每一级的配色都不同**（越级福利自然包含已得配色）。
+  // 以 CSS 变量 `--lv-h` 下发，顶栏徽标 / 等级页 hero / 头像框 / 成就墙展示位共用同一色相，
+  // 保证「称号配色」在全站是同一套观感，而不是各页面各写一套渐变。
+  levelHue() {
+    const lv = Math.max(1, Math.min(this.levelInfo && this.levelInfo.max_level || 20, this.levelNum));
+    return Math.round(150 + (lv - 1) / 19 * 140);
+  },
+  // 头像框档位（0~10）：落地等级表里的「头像框「X」」特权。
+  // 等级表从 Lv2 起每 2 级给一个头像框（Lv2 青苗 → Lv20 智学之光，共 10 个），
+  // 故档位 = floor(lv/2)，Lv1 尚未解锁任何头像框（0 = 不渲染外框）。
+  levelFrameTier() {
+    const lv = this.levelNum;
+    if (lv < 2) return 0;
+    return Math.min(10, Math.floor(lv / 2));
+  },
 };
 
 export const levelMethods = {

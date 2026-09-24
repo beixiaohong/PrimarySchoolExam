@@ -319,3 +319,58 @@ def test_backfill_tool_column_names_exist():
         names = set(model.__table__.columns.keys())
         for col in cols:
             assert col in names, f"{model.__name__} 缺少列 {col}（回填脚本会 SQL 报错）"
+
+
+def test_perk_texts_all_have_real_landing():
+    """等级表里的每条特权文案都必须有**真实落地**（防止再出现「承诺了但看不到」）
+
+    背景：回归时发现 20 条特权（头像框 / 称号专属配色 / 成就墙展示位）当时只被前端
+    当文字显示，没有任何按等级生效的视觉效果 —— 用户升到 Lv2 看到「头像框「嫩叶」已解锁」
+    却毫无变化。现已补齐落地点，本用例把「文案 ↔ 落地」的对应关系钉死：
+    改动 _PERKS 时若新增了没实现的特权类型，这里会立刻失败并提示去补落地点。
+    """
+    from app.domains.engagement.services.level import _PERKS, MAX_LEVEL
+
+    # 已实现落地的特权类型 -> 落地点说明（新增类型时必须同步实现并登记到这里）
+    LANDED = {
+        "基础徽标": "顶栏 Lv.N 徽标（App.vue .lv-badge）",
+        "称号专属配色": "levelHue() 经 --lv-h 下发，徽标/hero/进度条/特权条共用",
+        "头像框": "levelFrameTier() 经 --lv-tier 控制 .lv-frame 边框与光晕",
+        "传奇头像框": "同上（Lv20 用「传奇」前缀标识最高档，仍走 levelFrameTier=10）",
+        "成就墙展示位": "BadgesView .lv-showcase 等级展示卡",
+    }
+
+    def classify(perk: str) -> str:
+        """把一条特权文案归类到已落地的类型；认不出就返回原文（触发失败）"""
+        for key in LANDED:
+            if perk == key or perk.startswith(key):
+                return key
+        return perk
+
+    assert len(_PERKS) == MAX_LEVEL, f"特权条数应与等级数一致：{len(_PERKS)} != {MAX_LEVEL}"
+
+    unknown = sorted({p for p in _PERKS if classify(p) not in LANDED})
+    assert not unknown, (
+        f"以下特权文案没有对应的已落地实现，会变成「承诺了但看不到」：{unknown}。"
+        f"请先实现视觉落地点，再加入 LANDED 映射（{list(LANDED)}）")
+
+
+def test_frame_tier_matches_frame_perk_levels():
+    """头像框档位必须与等级表中「头像框「X」」所在的等级一一对应（10 个框 ↔ 10 个档）
+
+    前端 levelFrameTier = Lv2 起 floor(lv/2)（上限 10）；后端特权文案里带「头像框」的
+    等级是 2/4/6/…/20。两者若漂移，会出现「文案说解锁了第 N 个框，实际档位不是 N」。
+    """
+    from app.domains.engagement.services.level import _PERKS
+
+    frame_levels = [i + 1 for i, p in enumerate(_PERKS) if "头像框" in p]
+    assert frame_levels == [2, 4, 6, 8, 10, 12, 14, 16, 18, 20], (
+        f"头像框等级应为 2..20 的偶数级，实际 {frame_levels}")
+
+    def js_frame_tier(lv: int) -> int:
+        """与 web/src/logic/level.js 的 levelFrameTier() 同口径"""
+        return 0 if lv < 2 else min(10, lv // 2)
+
+    tiers = [js_frame_tier(lv) for lv in frame_levels]
+    assert tiers == list(range(1, 11)), f"档位应为 1..10，实际 {tiers}"
+    assert js_frame_tier(1) == 0, "Lv1 尚未解锁任何头像框，档位应为 0"

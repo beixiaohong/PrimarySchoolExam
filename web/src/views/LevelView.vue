@@ -1,13 +1,18 @@
 <template>
-<div class="fade-enter">
-  <div class="hero" style="background:linear-gradient(135deg,#7b6cf6,#4facfe)">
+<div class="fade-enter" :style="{'--lv-h': appCtx.levelHue, '--lv-tier': appCtx.levelFrameTier}">
+  <!-- hero：背景渐变与头像框都按**当前等级**渲染，落地等级表里的
+       「称号专属配色」（色相随 lv 逐级变化）与「头像框「X」」（Lv2 起每 2 级解锁 1 档，共 10 档） -->
+  <div class="hero lv-hero-band">
     <div style="flex:1">
       <h1>🎖️ 等级成长</h1>
       <p class="sub" style="color:rgba(255,255,255,.92)">认真学习积累经验，升级解锁称号、头像框与钻石奖励。</p>
     </div>
     <div class="lv-hero">
-      <div class="lv-hero-num">Lv.{{appCtx.levelNum}}</div>
+      <div class="lv-frame" :class="'f' + appCtx.levelFrameTier">
+        <div class="lv-hero-num">Lv.{{appCtx.levelNum}}</div>
+      </div>
       <div class="lv-hero-title">{{appCtx.levelTitle || '—'}}</div>
+      <div class="lv-frame-hint" v-if="appCtx.levelFrameTier">头像框 {{appCtx.levelFrameTier}} / 10 档</div>
     </div>
   </div>
 
@@ -26,7 +31,7 @@
       <template v-else>正在读取等级信息…</template>
     </div>
     <div class="lv-perk" v-if="appCtx.levelInfo">🎁 当前特权：{{appCtx.levelInfo.perk}}</div>
-    <div class="lv-tip">经验来自真实学习行为：交卷 · 掌握错题 · 完成任务 · 心情打卡 · 每日签到 · 番茄专注</div>
+    <div class="lv-tip">称号配色与头像框已按当前等级生效（顶栏徽标同色）。经验来自真实学习行为：交卷 · 掌握错题 · 完成任务 · 心情打卡 · 每日签到 · 番茄专注</div>
   </div>
 
   <!-- 完整等级阶梯 -->

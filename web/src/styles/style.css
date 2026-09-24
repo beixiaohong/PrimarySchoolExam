@@ -408,26 +408,43 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .fv-star.on{color:#f5a623;border-color:#f5a623;font-weight:600}
 
 /* ============ 等级成长（新功能 C） ============ */
-/* 顶栏 Lv.N 徽标：可点击进入等级页 */
-.lv-badge{border:1px solid rgba(123,108,246,.35);background:linear-gradient(135deg,rgba(123,108,246,.14),rgba(79,172,254,.14));
-  color:#6a5ae0;font-size:12px;font-weight:700;padding:3px 9px;border-radius:8px;margin-left:8px;cursor:pointer;transition:all .15s}
-.lv-badge:hover{background:linear-gradient(135deg,#7b6cf6,#4facfe);color:#fff;border-color:transparent}
-/* 等级页 hero 右侧等级牌 */
+/* 等级专属配色系统：--lv-h（色相，Lv1 青绿 150° → Lv20 紫 290°，由 level.js 的 levelHue 计算）
+   与 --lv-tier（头像框档位 0~10，由 levelFrameTier 计算）由组件根节点下发，
+   徽标 / hero / 头像框 / 成就墙展示位共用同一套色相。
+   这样等级表里的「称号专属配色」「头像框「X」」不再是只显示一行的文字，而是**真实生效**的视觉。 */
+/* 顶栏 Lv.N 徽标：可点击进入等级页；配色随当前等级变化 */
+.lv-badge{border:1px solid hsla(var(--lv-h,255),70%,55%,.42);
+  background:linear-gradient(135deg,hsla(var(--lv-h,255),72%,58%,.16),hsla(var(--lv-h,255),72%,58%,.06));
+  color:hsl(var(--lv-h,255),62%,45%);font-size:12px;font-weight:700;padding:3px 9px;border-radius:8px;margin-left:8px;cursor:pointer;transition:all .15s}
+.lv-badge:hover{background:linear-gradient(135deg,hsl(var(--lv-h,255),70%,58%),hsl(var(--lv-h,255),78%,68%));color:#fff;border-color:transparent}
+/* 等级页 hero：背景渐变与投影都随等级色相变化（用 .hero.lv-hero-band 提高优先级覆盖 .hero，
+   不用 !important，避免以后有人想覆盖时被卡住） */
+.hero.lv-hero-band{background:linear-gradient(135deg,hsl(var(--lv-h,255),68%,56%),hsl(var(--lv-h,255),74%,70%));
+  box-shadow:0 10px 30px hsla(var(--lv-h,255),60%,50%,.30)}
+/* 头像框：Lv2 起每 2 级升 1 档（共 10 档），档位越高边框越厚、光晕越强；Lv1 尚未解锁（f0 无框） */
 .lv-hero{text-align:center;padding:0 8px}
-.lv-hero-num{font-size:28px;font-weight:800;color:#fff;letter-spacing:.5px;line-height:1.2}
-.lv-hero-title{font-size:12.5px;color:rgba(255,255,255,.94);font-weight:600;margin-top:2px}
+.lv-frame{width:78px;height:78px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;
+  border:calc(2px + var(--lv-tier,0) * .35px) solid hsl(var(--lv-h,255),74%,66%);
+  background:radial-gradient(circle at 50% 28%,hsla(var(--lv-h,255),80%,70%,.34),transparent 70%);
+  box-shadow:0 0 calc(6px + var(--lv-tier,0) * 1.8px) calc(var(--lv-tier,0) * .35px) hsla(var(--lv-h,255),85%,62%,.30)}
+.lv-frame.f0{border:none;background:none;box-shadow:none}
+.lv-frame.small{width:54px;height:54px;margin:0}
+.lv-hero-num,.lv-showcase-num{font-size:20px;font-weight:800;color:#fff;letter-spacing:.5px;line-height:1.2;text-shadow:0 1px 6px rgba(0,0,0,.22)}
+.lv-frame.small .lv-hero-num,.lv-frame.small .lv-showcase-num{font-size:13px}
+.lv-hero-title{font-size:12.5px;color:rgba(255,255,255,.94);font-weight:600;margin-top:6px}
+.lv-frame-hint{font-size:10.5px;color:rgba(255,255,255,.85);margin-top:3px}
 /* 进度卡 */
 .lv-card{max-width:760px;margin-top:16px}
 .lv-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .lv-cur{font-size:15px}
 .lv-exp{font-size:12.5px;color:var(--text-3)}
-.lv-bar{height:12px;border-radius:8px;background:rgba(123,108,246,.13);overflow:hidden;margin:12px 0 8px}
-.lv-bar-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,#7b6cf6,#4facfe);transition:width .35s ease}
+.lv-bar{height:12px;border-radius:8px;background:hsla(var(--lv-h,255),70%,58%,.14);overflow:hidden;margin:12px 0 8px}
+.lv-bar-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,hsl(var(--lv-h,255),68%,56%),hsl(var(--lv-h,255),78%,68%));transition:width .35s ease}
 .lv-bar-fill.max{background:linear-gradient(90deg,#f5a623,#f7d774)}
 .lv-hint{font-size:12.5px;color:var(--text-2,#8a97b0)}
-.lv-hint b{color:#6a5ae0}
-.lv-perk{margin-top:10px;font-size:13px;font-weight:600;color:#6a5ae0;background:rgba(123,108,246,.08);
-  border-radius:10px;padding:9px 12px}
+.lv-hint b{color:hsl(var(--lv-h,255),62%,45%)}
+.lv-perk{margin-top:10px;font-size:13px;font-weight:600;color:hsl(var(--lv-h,255),62%,45%);
+  background:hsla(var(--lv-h,255),72%,58%,.09);border-radius:10px;padding:9px 12px}
 .lv-tip{margin-top:10px;font-size:11.5px;color:var(--text-3)}
 /* 阶梯表 */
 .lv-ladder-card{max-width:760px;margin-top:16px}
@@ -445,6 +462,16 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .lv-item.done{opacity:.62}
 .lv-item.done .lv-item-state{color:#39a86b}
 .lv-item.cur{background:linear-gradient(90deg,rgba(123,108,246,.10),transparent);border-radius:10px}
+/* 成就墙展示位（等级表「成就墙展示位」特权落地）：徽章墙顶部的等级展示卡。
+   注意此卡为浅色底，故小尺寸头像框内的文字改用深色（白字在白卡上不可见） */
+.lv-showcase{max-width:760px;margin-top:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.lv-frame.small .lv-showcase-num{color:hsl(var(--lv-h,255),58%,40%);text-shadow:none}
+.lv-showcase-info{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.lv-showcase-info b{font-size:15px;color:hsl(var(--lv-h,255),52%,38%)}
+.lv-showcase-info span{font-size:12px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lv-showcase-btn{flex:none;border:1px solid hsla(var(--lv-h,255),70%,55%,.45);background:hsla(var(--lv-h,255),72%,58%,.10);
+  color:hsl(var(--lv-h,255),62%,45%);font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:9px;cursor:pointer;transition:all .15s}
+.lv-showcase-btn:hover{background:linear-gradient(135deg,hsl(var(--lv-h,255),70%,58%),hsl(var(--lv-h,255),78%,68%));color:#fff;border-color:transparent}
 .lv-item.cur .lv-item-lv,.lv-item.cur .lv-item-state{color:#6a5ae0}
 .lv-loading{text-align:center;font-size:12px;color:var(--text-3);padding:12px 0}
 

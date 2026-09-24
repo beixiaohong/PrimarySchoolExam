@@ -416,7 +416,7 @@ const appOptions = {
       if (t === 'qa') { this.loadQaModels(); this.loadQaHistory(); this.loadQaSessions(); }
       if (t === 'pet') { this.petLeveledUp = false; this.loadPet(); this.loadPetLedger(); this.loadPetRules(); }
       if (t === 'tree') this.loadTree();
-      if (t === 'badges') { this.badgeNew = []; this.loadBadges(true); }
+      if (t === 'badges') { this.badgeNew = []; this.loadBadges(true); this.loadLevel(); }   // loadLevel：成就墙展示位需要等级/称号/头像框（新功能 C）
       if (t === 'cards') this.loadCards();
       if (t === 'focus') this.loadFocus();
       if (t === 'aiquiz') {

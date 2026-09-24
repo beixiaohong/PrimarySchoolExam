@@ -11,6 +11,20 @@
           </div>
         </div>
 
+        <!-- 成就墙展示位（新功能 C 特权落地）：等级表里的「成就墙展示位」特权在此实现——
+             把当前等级 / 称号 / 头像框展示在徽章墙顶部，并可一键跳转等级页查看成长明细 -->
+        <div class="card lv-showcase" v-if="appCtx.levelInfo"
+             :style="{'--lv-h': appCtx.levelHue, '--lv-tier': appCtx.levelFrameTier}">
+          <div class="lv-frame small" :class="'f' + appCtx.levelFrameTier">
+            <span class="lv-showcase-num">Lv.{{appCtx.levelNum}}</span>
+          </div>
+          <div class="lv-showcase-info">
+            <b>{{appCtx.levelTitle || '—'}}</b>
+            <span>累计 {{appCtx.levelInfo.exp}} 经验 · {{appCtx.levelInfo.perk}}</span>
+          </div>
+          <button class="lv-showcase-btn" @click="appCtx.openLevel()">查看成长 →</button>
+        </div>
+
         <div v-if="appCtx.badgeNew.length" class="card" style="max-width:760px;margin-top:16px;border-color:#F0C98A;background:#FFF8EC">
           <div class="card-head"><b>🎉 恭喜获得新徽章！</b></div>
           <div class="badge-new-list">
