@@ -18,6 +18,9 @@
   （供 family/parent.py 的 `/api/parent/notices` 聚合家长待办角标；`pending_makeups` 内部复用
   `makeup_service.list_pending_makeup` 保证与 `/api/tasks/makeup/pending` 返回条数恒等，family 不
   直接 import engagement 内部，避免破域独立契约）。
+- `AchievementService.try_grant(db, uid, event)`：事件驱动的成就实时授予（新功能 B）。
+  收口 assessment（交卷 exam_done / 错题掌握 wrong_mastered）等跨域埋点，让徽章在行为发生时
+  即时解锁而非等用户下次访问徽章墙；纯 DB 无外部调用，调用方须在写操作 commit 后调用。
 - 其余为存量符号的显式再导出（延迟解析，名字与实现一致以便逐步替换），带下划线者
   属域内私有 helper 被跨域引用形成的契约债，S1.5 实现内聚后去除。
 
@@ -36,7 +39,7 @@ _EXPORTS = {
     "_balance": ("app.domains.engagement.routers.pet", "_balance"),
 }
 
-__all__ = ("PetService", "GrowthTreeService", "TaskService", "MakeupService") + tuple(_EXPORTS)
+__all__ = ("PetService", "GrowthTreeService", "TaskService", "MakeupService", "AchievementService") + tuple(_EXPORTS)
 
 
 def __getattr__(name):
@@ -114,6 +117,25 @@ class TaskService:
         """待家长确认的补签申请数（复用 list_pending_makeup，与 /api/tasks/makeup/pending 条数恒等）"""
         from app.domains.engagement.routers.tasks.makeup_service import list_pending_makeup
         return len(list_pending_makeup(db, uid))
+
+
+class AchievementService:
+    """成就徽章对外唯一入口（新功能 B）。
+
+    实时授予：由各域在自己的写操作 commit 之后调用，只评估与该事件相关的徽章，
+    返回本次新解锁的 code 列表（调用方可用于前端 Toast）。失败应由调用方 try/except 兜底，
+    成就授予不得影响主业务流程。
+    """
+
+    @staticmethod
+    def try_grant(db, uid: str, event: str = None) -> list:
+        """评估并授予徽章，返回新解锁 code 列表。
+
+        event 取值见 `services/achievement.py` 的 EVENT_* 常量（如 "exam_done"、
+        "wrong_mastered"）；传 None 表示兜底全量评估。
+        """
+        from app.domains.engagement.services.achievement import try_grant
+        return try_grant(db, uid, event)
 
 
 class MakeupService:

@@ -304,6 +304,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
             optional_rows.append(r)
 
     # 计算进度 & 自动完成
+    auto_completed = False   # 新功能 B：本次是否有任务「由自动判定跃迁为 done」→ 决定是否触发成就实时评估
     for row in all_rows:
         if row.status == "done":
             continue
@@ -313,6 +314,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
             if not _daily_task_feasible(db, user_id, row.task_code, row.subject, row.target):
                 row.progress = row.target
                 row.status = "done"
+                auto_completed = True
                 # 可选任务自动完成仍计入心愿进度
                 if (getattr(row, 'task_type', 'mandatory') or 'mandatory') == "optional":
                     try:
@@ -325,6 +327,7 @@ def _build_payload(db: Session, user_id: str) -> dict:
             row.progress = prog
             if prog >= row.target:
                 row.status = "done"
+                auto_completed = True
                 # 心愿进度仅统计可选任务（强制任务不计入）
                 if (getattr(row, 'task_type', 'mandatory') or 'mandatory') == "optional":
                     try:
@@ -333,6 +336,15 @@ def _build_payload(db: Session, user_id: str) -> dict:
                     except Exception:
                         pass
     db.commit()
+
+    # 新功能 B：本次有任务跃迁为完成 → 实时评估成就（全勤 streak 类）。
+    # 纯 DB、无外部调用，仅在有跃迁时触发；失败不影响任务面板主流程。
+    if auto_completed:
+        try:
+            from app.domains.engagement.services.achievement import try_grant, EVENT_TASK_DONE
+            try_grant(db, user_id, EVENT_TASK_DONE)
+        except Exception:
+            pass
 
     # 检查 optional_streak 类型许愿进度
     try:

@@ -147,6 +147,13 @@ def claim_task(req: ClaimRequest, request: Request, db: Session = Depends(get_db
     except Exception:
         pass
     db.commit()
+    # 新功能 B：手动确认完成同样视为「任务完成」事件（全勤 streak 类成就实时评估）。
+    # 注：必须在落库后触发——_build_payload 的自动跃迁检测只覆盖「自动判定」路径。
+    try:
+        from app.domains.engagement.services.achievement import try_grant as _try_grant, EVENT_TASK_DONE
+        _try_grant(db, req.user_id, EVENT_TASK_DONE)
+    except Exception:
+        pass
     return _build_payload(db, req.user_id)
 
 

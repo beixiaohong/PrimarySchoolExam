@@ -13,6 +13,8 @@ import { authData, authMethods } from './auth.js';
 import { focusData, focusComputed, focusMethods } from './focus.js';
 import { dictData, dictMethods } from './dict.js';
 import { cardsData, cardsMethods } from './cards.js';
+// 成就徽章墙（新功能 B 升级：进度条 + 分类）：从 cards.js 拆出独立模块
+import { badgesData, badgesComputed, badgesMethods } from './badges.js';
 import { petData, petMethods } from './pet.js';
 import { reciteData, reciteComputed, reciteMethods } from './recite.js';
 // 每日签到 + 连续奖励（新功能 A）：data/computed/methods 抽至 logic/checkin.js（与 recite 同构）
@@ -32,6 +34,7 @@ const appOptions = {
       ...focusData(),   // 认证表单状态（authMode/loginPwd/reg*/rst*/bind*/authCooldown 等，见 logic/auth.js）
       ...dictData(),   // 听写磨耳朵 data（dictMode/dictSession，见 logic/dict.js）
       ...cardsData(),
+      ...badgesData(),   // 成就徽章 data（badgeData/badgeNew/badgeCat，见 logic/badges.js）
       ...petData(),
       ...reciteData(),   // 单词背诵+古文默写 data（wordSession/textSession/textDetail，见 logic/recite.js）
       ...checkinData(),   // 每日签到 data（checkin/checkinLoading/checkinOverlay，见 logic/checkin.js）
@@ -148,6 +151,7 @@ const appOptions = {
     ...reciteComputed,       // 单词背诵+古文默写 computed（wordPct/textPct/curWord/curText/textLines，见 logic/recite.js）
     ...checkinComputed,       // 每日签到 computed（checkinSignedToday/checkinStreak/checkinNextReward/checkinCalendar，见 logic/checkin.js）
     ...favoritesComputed,       // 我的收藏 computed（favoritesHasMore，见 logic/favorites.js）
+    ...badgesComputed,       // 成就徽章 computed（badgeItems/badgeCats，见 logic/badges.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码
       const a = (this.username || '').trim();
@@ -308,6 +312,7 @@ const appOptions = {
     ...focusMethods,       // IM methods（WS 客户端/上传/录音/红包/好友/群，见 logic/im.js）
     ...dictMethods,       // 听写磨耳朵 methods（dictSwitchMode/dictStart/dictSpeak/dictCheck/dictReplay/dictNext/loadDictCandidates，见 logic/dict.js）
     ...cardsMethods,
+    ...badgesMethods,       // 成就徽章 methods（loadBadges/setBadgeCat，见 logic/badges.js）
     ...petMethods,
     ...reciteMethods,       // 单词背诵+古文默写 methods（startWordSession/wordNext/startTextSession 等 16 个，见 logic/recite.js）
     ...checkinMethods,       // 每日签到 methods（loadCheckin/doCheckin/openCheckinOverlay/closeCheckinOverlay，见 logic/checkin.js）

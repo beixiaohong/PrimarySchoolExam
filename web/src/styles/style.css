@@ -991,6 +991,16 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .badge-desc{font-size:11px;color:var(--text-3);min-height:26px}
 .badge-date{font-size:10.5px;color:#9A6B1F;font-weight:600}
 .badge-item.locked .badge-date{color:var(--text-3);font-weight:400}
+/* 成就徽章墙升级（新功能 B）：分类 tab + 进度条 */
+.bd-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 0;max-width:760px}
+.bd-tab{border:1.5px solid var(--line);background:#fff;color:var(--text-2);font-size:13px;font-weight:600;padding:8px 14px;border-radius:11px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.bd-tab:hover{border-color:#f093fb}
+.bd-tab.active{background:linear-gradient(135deg,#f093fb,#f5576c);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(240,87,108,.26)}
+.bd-tab-num{font-size:11px;font-weight:700;opacity:.75}
+.bd-bar{width:100%;height:6px;border-radius:99px;background:var(--bg);overflow:hidden;margin-top:5px}
+.bd-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#f093fb,#f5576c);transition:width .35s ease}
+.bd-bar-fill.done{background:linear-gradient(90deg,#5ED69F,#2E8B57)}
+.bd-prog{font-size:10.5px;color:var(--text-3);font-weight:600}
 
 /* ═══════════ 知识卡图鉴（P2-4 创意 13） ═══════════ */
 .card-count{background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.6);border-radius:16px;padding:10px 20px;text-align:center;min-width:110px}

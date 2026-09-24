@@ -280,6 +280,15 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
         pass
     db.commit()
 
+    # 新功能 B：交卷后实时评估成就（首考/刷题数/满分等 exam_done 事件）。
+    # 经 engagement 契约调用（跨域只走 contracts），纯 DB 无外部调用，
+    # 且此时答题数据已提交 —— 不违反「不得持 DB 连接等外部阻塞调用」铁律。
+    try:
+        from app.domains.engagement.contracts import AchievementService
+        AchievementService.try_grant(db, user_id, "exam_done")
+    except Exception:
+        pass
+
     # ── S3-M5 增量掌握度触发（07 §5.1.1 步骤2）──
     # 答题写库已提交、释放请求连接后，异步投递掌握度重算（fire-and-forget）。
     # 工作线程自开短会话、纯 DB 计算（无外部阻塞调用），不阻塞响应、持连铁律安全。
