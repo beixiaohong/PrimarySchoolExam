@@ -15,7 +15,8 @@ deploy.sh 虽然会报错退出，但那时站点已经挂了、旧版本的进�
 ----------
 - `early`：装完依赖、修完属主后立刻能查的项 —— 依赖完整性 + 应用可导入 + .env 必需键。
   放在前端构建**之前**执行，避免发现问题时已白跑几分钟 npm build。
-- `full`：再加上外部命令、前端产物、目录检查，放在**写 systemd/nginx 配置与重启之前**。
+- `full`：再加上外部命令、前端产物（存在性 / 引用完整 / 与源码及后端契约配对），
+  放在**写 systemd/nginx 配置与重启之前**。
 
 检查项与严重级别
 ----------------
@@ -30,6 +31,10 @@ WARN —— 功能降级，允许继续但必须让操作者看见：
   · 可选 API Key 缺失（按功能列出影响）
   · 定时任务资产异常（tasks 配置有误 / 脚本不存在 / 未 git 跟踪 / 依赖未声明）
     —— 由 tools/ops_check.py 提供；不影响站点可用性，故不阻断，但上线后会静默失败
+  · 前端产物与源码/后端契约不配对（dist 过期、引用的接口后端已不存在）
+    —— 由 tools/build_info.py 提供；用户可见症状是"界面是旧的/按钮点了没反应"，
+    但服务本身正常，故不阻断。**这些检查放在构建之后**，所以此时若还报不配对，
+    说明源码本身就对不上（改后端时漏改前端），是高置信度的真问题。
 
 实现约束
 --------
@@ -318,6 +323,169 @@ def check_dist(app_dir: Path) -> list[Finding]:
     return out
 
 
+# 前端工程 → 展示名（顺序即输出顺序）
+FRONT_PROJECTS = (("web", "主站前端"), ("admin", "管理后台"))
+# 前端工程 → 入口 HTML（每个入口都是一个独立页面，资源缺一个就白屏）
+FRONT_ENTRIES = {"web": ("index.html", "novel.html"), "admin": ("index.html",)}
+# 入口 HTML 里的资源引用：web 输出到 /assets（根），admin 因为 base=/admin 输出到 /admin/assets
+_ASSET_REF_RE = re.compile(r"""(?:src|href)\s*=\s*["']([^"']*/assets/[^"']+)["']""")
+
+
+def _resolve_ref(dist: Path, ref: str, sub: str):
+    """把入口里的资源引用解析成 dist 内的实际文件路径；外链返回 None"""
+    if "://" in ref or ref.startswith("data:"):
+        return None
+    rel = ref.split("?", 1)[0].split("#", 1)[0].strip()
+    while rel.startswith(("./", "/")):
+        rel = rel[2:] if rel.startswith("./") else rel[1:]
+    if sub != "web" and rel.startswith(f"{sub}/"):
+        rel = rel[len(sub) + 1:]      # admin/dist 由 /admin/ 前缀托管
+    return dist / rel
+
+
+def _load_build_info(app_dir: Path):
+    """按路径加载 tools/build_info.py（构建溯源与契约比对的唯一实现，此处只做编排）"""
+    key = ("bi", str(app_dir))
+    if key in _AUDIT_CACHE:
+        return _AUDIT_CACHE[key]
+    path = app_dir / "tools" / "build_info.py"
+    mod = None
+    if path.exists():
+        try:
+            spec = importlib.util.spec_from_file_location("build_info", path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["build_info"] = mod
+            spec.loader.exec_module(mod)
+        except Exception:
+            mod = None
+    _AUDIT_CACHE[key] = mod
+    return mod
+
+
+def check_dist_assets(app_dir: Path) -> list[Finding]:
+    """入口 HTML 引用的静态资源是否都在 dist 里
+
+    抓的是"产物不完整"：磁盘写满、构建中途被杀、只同步了一半产物 ——
+    此时 index.html 在（所以 check_dist 通过）、服务也能起，但页面白屏。
+    """
+    out = []
+    for sub, why in FRONT_PROJECTS:
+        dist = app_dir / sub / "dist"
+        for entry in FRONT_ENTRIES.get(sub, ("index.html",)):
+            idx = dist / entry
+            if not idx.is_file():
+                continue
+            try:
+                html = idx.read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                out.append(Finding(f"{why}入口可读性", "warn",
+                                   f"读取 {sub}/dist/{entry} 失败：{e}"))
+                continue
+            refs = list(_ASSET_REF_RE.findall(html))
+            missing = []
+            for r in refs:
+                resolved = _resolve_ref(dist, r, sub)
+                if resolved is None:      # 外链（CDN），本地无需存在
+                    continue
+                if not resolved.is_file():
+                    missing.append(r)
+            if missing:
+                out.append(Finding(
+                    f"{why}资源不完整", "warn",
+                    f"{entry} 引用了 {len(missing)} 个不存在的资源：{'、'.join(missing[:3])}",
+                    hint=f"产物不完整（构建中断/磁盘满/同步不全）—— 重新构建 {sub}/",
+                    impact=f"{why}打开即白屏（页面拿不到 JS/CSS）"))
+            elif not refs:
+                out.append(Finding(
+                    f"{why}资源引用", "warn", f"{entry} 里未解析到任何 /assets 引用",
+                    hint="构建配置（base/输出目录）可能变了，请人工确认入口是否正常",
+                    impact="该检查对空入口无效，等于没校验"))
+            else:
+                out.append(Finding(f"{why}资源完整", "ok",
+                                   f"{entry} 引用的 {len(refs)} 个资源均存在"))
+    return out
+
+
+def check_frontend_contract(app_dir: Path, python: str, routes=None) -> list[Finding]:
+    """前端产物是否与「当前源码」和「后端契约」配对
+
+    为什么值得单独查（部署链路上最容易出现、又最不像 bug 的漂移）：
+    - **dist 过期**：前端源码改了但没重建（或重建失败被忽略）→ 线上一直是旧界面，
+      用户报的问题对不上代码，排查时白费半天。
+    - **契约错位**：后端把接口改名/删除，前端产物里还写着旧路径 → 线上 404，
+      页面不报错、按钮静默失效（本项目踩过：IM 私聊/加好友"点了没反应"）。
+    两者都不影响服务启动，故为 WARN 级，与「闸门只拦会致挂的项」的原则一致。
+
+    本检查在 `full` stage（**前端构建之后**）执行：
+    - 若源码变了，deploy.sh 已重建，这里就会报 OK；
+    - 若这里报「过期」，说明构建被跳过/失败而部署继续了，属于必须看见的异常；
+    - 「契约错位」则是源码级的真问题（改后端漏改前端），高置信度。
+
+    routes 为 None 时自行导出后端路由表（用服务解释器跑 openapi）；
+    导出失败只记 WARN 并跳过比对 —— 导不出路由表绝不该拦住一次部署。
+    """
+    mod = _load_build_info(app_dir)
+    if mod is None:
+        return [Finding("前端产物配对", "warn", "未找到 tools/build_info.py（旧版本代码？跳过）")]
+
+    out: list[Finding] = []
+    fresh: list[tuple] = []          # 新鲜度通过、可用于契约比对的工程
+    for sub, why in FRONT_PROJECTS:
+        project = app_dir / sub
+        if not (project / "dist" / "index.html").is_file():
+            continue                 # 产物缺失由 check_dist 报，不重复
+        info = mod.read_build_info(project)
+        if info is None:
+            out.append(Finding(
+                f"{why}构建溯源缺失", "warn", f"{sub}/dist 未记录构建信息（无法确认是否对应当前源码）",
+                hint=f"重新构建 {sub}/（deploy.sh 会自动补记）；本次不校验该产物",
+                impact="无法判断线上跑的是不是当前代码，出问题时要靠猜"))
+            continue
+        need, reason = mod.needs_build(project)
+        if need:
+            changed = mod.changed_sources(project, info)[:5]
+            out.append(Finding(
+                f"{why}产物过期", "warn",
+                reason + ("；" + "、".join(changed) if changed else ""),
+                hint=f"重新构建 {sub}/（本次已跳过它的契约比对，避免旧产物误导）",
+                impact=f"{why}展示的是旧界面，与当前代码不一致"))
+        else:
+            line = (f"{info.get('source_hash')}（{info.get('source_count')} 个源文件）"
+                    f"构建于 {info.get('built_at')}"
+                    + (f"，git {info.get('git_sha')}" if info.get("git_sha") else ""))
+            out.append(Finding(f"{why}产物", "ok", line + " 与当前源码一致"))
+            fresh.append((why, sub, info))
+
+    if not fresh:
+        return out
+
+    if routes is None:
+        routes, note = mod.dump_api_paths(python, app_dir)
+        if not routes:
+            out.append(Finding("前后端契约", "warn", f"跳过比对 —— {note}",
+                               hint="确认服务解释器可用；手动复核："
+                                    f"{python} tools/build_info.py check --dir web"))
+            return out
+
+    # 合并两个工程的引用（分开报"是哪个工程在调"没意义，路径本身就能看出来源）
+    front: dict = {}
+    for why, _sub, info in fresh:
+        for p in info.get("api_paths") or []:
+            front.setdefault(p, why)
+    missing = mod.api_paths_missing(list(front), routes)
+    if missing:
+        detail = "、".join(f"{p}（{front[p]}）" for p in missing[:6])
+        more = f" 等 {len(missing)} 个" if len(missing) > 6 else ""
+        out.append(Finding(
+            "前后端契约错位", "warn", f"前端在调用、后端不存在的路径：{detail}{more}",
+            hint="若接口只是改名，改前端源码后重建；若前端不该再调，删掉调用后重建",
+            impact="线上 404、按钮/动作静默失效（页面不报错，用户以为坏了）"))
+    else:
+        out.append(Finding("前后端契约", "ok",
+                           f"{len(front)} 个前端引用路径全部对应到后端路由（共 {len(routes)} 条）"))
+    return out
+
+
 def check_scheduled_jobs(app_dir: Path) -> list[Finding]:
     """定时任务资产检查（复用 tools/ops_check.py）
 
@@ -377,7 +545,7 @@ def check_scheduled_jobs(app_dir: Path) -> list[Finding]:
 # ── 编排与输出 ──
 
 def run(app_dir: Path, python: str, stage: str = "early", app_user: str = "",
-        requirements: Path | None = None) -> list[Finding]:
+        requirements: Path | None = None, routes=None) -> list[Finding]:
     findings: list[Finding] = []
     findings += check_dependencies(app_dir, requirements)
     findings.append(check_import(app_dir, python, app_user, requirements))
@@ -386,6 +554,9 @@ def run(app_dir: Path, python: str, stage: str = "early", app_user: str = "",
     if stage == "full":
         findings += check_external_bins()
         findings += check_dist(app_dir)
+        findings += check_dist_assets(app_dir)     # 首页引用的资源是否齐全（白屏防线）
+        # 前端产物配对（过期 / 与后端契约错位）—— 放在构建之后才有意义
+        findings += check_frontend_contract(app_dir, python, routes=routes)
     return findings
 
 

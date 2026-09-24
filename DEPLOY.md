@@ -276,6 +276,42 @@ sudo systemctl restart exam-app
 
 > 若 `web/dist` 或 `admin/dist` 不存在，访问对应路径会返回「前端未构建」提示。
 
+### 6.4 构建溯源与产物校验（tools/build_info.py）
+
+前端是**编译产物**，后端是**源码直跑** —— 两者版本可以各自漂移，而且症状很隐蔽：
+页面还是旧界面、按钮点了没反应，排查时容易误判成后端 bug。两类故障：
+
+| 故障 | 症状 | 成因 |
+|---|---|---|
+| dist 过期 | 线上一直是旧界面，与代码对不上 | 前端源码改了但 dist 没重建（或构建失败被忽略） |
+| 契约错位 | 线上 404、按钮静默失效 | 接口改名/删除后前端没跟上（本项目踩过：IM 私聊「点了没反应」） |
+
+`deploy.sh` 每次构建完会自动记录溯源信息到 `dist/.build-info.json`
+（源码逐文件指纹 + git sha + 产物引用的 `/api/...` 路径），`preflight.py` 在重启前据此校验。
+
+手动排查：
+
+```bash
+cd /home/PrimarySchoolExam
+venv/bin/python tools/build_info.py show  --dir web   # 这份 dist 是谁构建的、是否过期
+venv/bin/python tools/build_info.py check --dir web   # 新鲜度 + 前后端契约一次性核对
+```
+
+`check` 输出示例：
+
+```
+[build-info] [ OK ] web 的 dist 与当前源码一致（源码未变（88 个文件，指纹 237717693842aaf0））
+[build-info] [WARN] 2 个路径前端在调用但后端不存在（接口改名/删除后前端未跟上）：
+          · /api/study/plan-removed
+```
+
+- 报「过期」时若想自己构建：`cd web && npm ci && npm run build`，然后
+  `venv/bin/python tools/build_info.py write --dir web` 补记溯源信息。
+- `needs-build --dir web` 是给脚本用的判据（退出码 **0=需要构建 / 1=无需构建**），
+  `deploy.sh` 用它取代了原来的 mtime 判断。
+- 未记录溯源信息（老产物）时，`preflight` 只提示「无法校验」并要求重建一次 ——
+  首次部署本机制时会自动重建一轮，之后即收敛。
+
 ---
 
 ## 7. Nginx 配置
@@ -463,7 +499,11 @@ git pull
 sudo bash deploy.sh
 ```
 
-deploy.sh 会自动判断前端是否需要重建（基于源码 mtime 对比）。
+deploy.sh 会自动判断前端是否需要重建：优先用**源码内容指纹**（`tools/build_info.py`），
+指纹不可用时退化为 mtime 对比。指纹判据覆盖了 `src/`、`index.html`、`novel.html`、
+`public/`、`package.json`、`package-lock.json`、`vite.config.js` —— 而 mtime 判据只看
+`src/`、`package.json`、`vite.config.js`，会漏掉「改了入口 HTML / 换了 public 图片」
+和「删除了源文件」，漏判后果是线上静默沿用旧 dist（界面与代码不一致，却毫无提示）。
 
 ### 11.3 部署前置自检（deploy.sh 的"部署闸门"）
 
@@ -473,7 +513,7 @@ deploy.sh 会自动判断前端是否需要重建（基于源码 mtime 对比）
 | 阶段 | 位置 | 检查内容 |
 |---|---|---|
 | `early` | 装完依赖、修完属主后（前端构建**之前**） | 依赖完整性 + 应用可导入 + `.env` 必需键 |
-| `full` | 写 systemd/nginx 配置与重启服务**之前** | 再加外部命令（ffmpeg/soffice/npm）+ 前端产物 |
+| `full` | 写 systemd/nginx 配置与重启服务**之前** | 再加外部命令（ffmpeg/soffice/npm）+ 前端产物（存在性 / 引用完整 / 与源码及后端契约配对） |
 
 单独运行（排查用，不改动任何东西）：
 
@@ -490,11 +530,19 @@ venv/bin/python tools/preflight.py --stage full
 | `应用可导入` BLOCK | 服务起不来（重启即全站 502） | 看提示区分：漏声明→补清单；已声明→`pip install -r requirements.txt` |
 | `外部命令 ffmpeg` WARN | IM 语音转 MP3 不可用 | `apt install ffmpeg`（不阻断部署） |
 | `.env 缺少 DB_HOST` BLOCK | 连不上数据库 | 在 `.env` 补上 |
+| `主站前端产物过期` WARN | dist 不是当前源码构建的（构建被跳过/失败） | 重新构建（`deploy.sh` 会自动重建），详见 §6.4 |
+| `前后端契约错位` WARN | 前端在调后端**不存在**的 `/api/...`（接口改名后前端没跟上） | 改前端源码或后端路由，然后重建前端，详见 §6.4 |
+| `主站前端资源不完整` WARN | 入口 HTML 引用的 JS/CSS 在 dist 里找不到（构建中断/磁盘满） | 重新构建前端 |
+| `定时任务资产` WARN | 调度任务配置有误/脚本不存在/依赖未声明 | 见 §15 |
 
 > **闸门为什么必须在重启之前**：2026-09-24 事故中 deploy.sh 的顺序是「先重启、后检查」，
 > 坏版本被换上后 systemd（`Restart=always`）不停崩溃重启，全站 502 ——
 > deploy.sh 虽然报错退出，站点却已经挂了、旧版本进程也没了。
 > 现在自检不过就**根本不重启**。
+>
+> **为什么前端配对只报 WARN 不阻断**：它不影响服务启动（站点可用，只是界面旧了/某个按钮失灵）。
+> 闸门一旦误报就会被人绕过而失去意义，所以只让"真会致挂"的项 BLOCK ——
+> 但这些 WARN 每次部署都会打印，不会悄悄溜过去。
 
 ### 11.4 回滚
 

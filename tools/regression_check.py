@@ -138,6 +138,12 @@ def check_key_routes(paths):
 
 
 def check_frontend_urls(paths):
+    """前端请求路径 vs 后端路由（**源码级**，提交前就能发现接口改名漏改前端）
+
+    与 tools/build_info.py 的分工：这里扫 `web/src/**` 源码（严格归一化相等，
+    规则取严以免误报）；而 build_info 扫 `dist` 产物（打包后模板串只剩静态前缀，
+    规则必须放宽），负责抓"线上那份 dist 与当前后端不匹配"。两者互补，别当重复。
+    """
     print("\n[5] 前端请求路径 vs 后端路由")
     have = {(_norm(p), m.upper()) for p in paths for m in paths[p] if m in METHODS}
     # 匹配 web/src 下形如 '/api/...' / `/api/...${x}` 的字面量

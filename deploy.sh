@@ -106,14 +106,30 @@ fi
 # ---------- 3.6 构建前端（仅源码变化时重建；小内存服务器防 OOM/CPU 拖垮）----------
 # 前端构建（vite build，admin 含 element-plus/echarts）在小内存服务器上容易把
 # CPU/内存打满导致全站无响应。策略：
-#   1) mtime 判断：web/admin 源码（src/package.json/vite 配置）比 dist 新才重建，
-#      只改后端/纯数据部署时直接复用现有 dist，秒级完成；
+#   1) 判断重建：优先**源码内容指纹**（tools/build_info.py，见 frontend_needs_build），
+#      判据不可用时退化为 mtime；源码没变时直接复用现有 dist，秒级完成；
 #   2) 构建时 nice 降优先级 + 限制 Node 堆内存，避免拖垮 MySQL/Nginx；
 #   3) 无 swap 时自动补 2G swapfile 兜底防 OOM。
 frontend_needs_build() {
     local dir=$1
     [ -f "$dir/dist/index.html" ] || return 0  # 尚无产物 → 需要构建
-    # 任一源码文件比 dist 新 → 需要构建（find 无匹配时 grep 返回 1 = 不需要）
+    # 首选**源码内容指纹**判据（tools/build_info.py）：
+    # 下面的 mtime 判据只看 src/、package.json、vite.config.js，会漏掉
+    # index.html / novel.html / public/ 的改动，也看不出"源文件被删除"，
+    # 漏判的后果是线上静默沿用旧 dist（界面与代码不一致，却毫无提示）。
+    # 退出码约定：0=需要构建，1=无需构建；返回其它码按"需要构建"处理 ——
+    # 多构建一次只是慢几分钟，漏构建却会一直没人发现。
+    if [ -x "$APP_DIR/venv/bin/python" ] && [ -f "$APP_DIR/tools/build_info.py" ]; then
+        local rc=0
+        "$APP_DIR/venv/bin/python" "$APP_DIR/tools/build_info.py" needs-build --dir "$dir" \
+            >/dev/null 2>&1 || rc=$?
+        case $rc in
+            0) return 0 ;;   # 需要构建
+            1) return 1 ;;   # 无需构建
+            *) warn "构建判据异常（build_info.py 退出码 $rc），按需要构建处理" ; return 0 ;;
+        esac
+    fi
+    # 兜底：无 build_info.py（旧版本代码）时沿用 mtime 判据
     find "$dir/src" "$dir/package.json" "$dir/vite.config.js" \
          -newer "$dir/dist/index.html" 2>/dev/null | grep -q .
     return $?
@@ -134,6 +150,13 @@ if command -v npm &>/dev/null && [ -f "$APP_DIR/web/package.json" ]; then
          nice -n 10 npm ci --prefer-offline --no-audit --no-fund && nice -n 10 npm run build) \
             && info "web 前端构建完成" \
             || error "web 前端构建失败：请检查 Node 版本(需 18+)"
+        # 记录构建溯源：源码指纹 + 产物引用的 API 路径。
+        # 部署前的 preflight 会据此确认「这份 dist 就是当前源码构建的」，
+        # 并把产物里引用的 /api/... 与后端路由表比对（抓"接口改名漏改前端"）。
+        if [ -f "$APP_DIR/tools/build_info.py" ]; then
+            "$APP_DIR/venv/bin/python" "$APP_DIR/tools/build_info.py" write --dir "$APP_DIR/web" \
+                || warn "web 构建信息写入失败（不影响部署；preflight 将跳过该产物的配对校验）"
+        fi
         chown -R "$APP_USER:$APP_USER" "$APP_DIR/web/dist" 2>/dev/null || true
     else
         info "web 前端无源码变化，跳过构建（复用现有 dist）"
@@ -159,6 +182,11 @@ if frontend_needs_build "$APP_DIR/admin"; then
         || error "管理后台构建失败"
     if [ ! -f "$APP_DIR/admin/dist/index.html" ]; then
         error "管理后台构建产物缺失"
+    fi
+    # 同 web：记录构建溯源，供 preflight 校验产物与后端契约是否配对
+    if [ -f "$APP_DIR/tools/build_info.py" ]; then
+        "$APP_DIR/venv/bin/python" "$APP_DIR/tools/build_info.py" write --dir "$APP_DIR/admin" \
+            || warn "管理后台构建信息写入失败（不影响部署；preflight 将跳过该产物的配对校验）"
     fi
     chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
 else
@@ -328,6 +356,9 @@ echo "    cd ${APP_DIR} && git pull && sudo bash deploy.sh"
 echo ""
 echo "  部署前自检（可单独运行，重启前验证新版本能否跑起来）:"
 echo "    ${APP_DIR}/venv/bin/python ${APP_DIR}/tools/preflight.py --stage full"
+echo ""
+echo "  前端产物与后端契约核对（dist 是否对应当前源码 / 接口是否已改名）:"
+echo "    ${APP_DIR}/venv/bin/python ${APP_DIR}/tools/build_info.py check --dir ${APP_DIR}/web"
 echo ""
 echo "  部署失败需回滚:"
 echo "    cd ${APP_DIR} && git log --oneline -5"
