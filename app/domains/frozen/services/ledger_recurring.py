@@ -15,7 +15,9 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models import ledger as model_ledger
-from app.domains.frozen.routers.ledger import _adjust_balance, _advance_next_run
+# 余额调整/推进逻辑已下沉为 service（ledger_calc），此处直接从 service 取，
+# 不再反向依赖 routers/ledger（避免 service→router 越层依赖，见治理总纲 P1-3）。
+from app.domains.frozen.services.ledger_calc import _adjust_balance, _advance_next_run
 
 logger = logging.getLogger(__name__)
 
