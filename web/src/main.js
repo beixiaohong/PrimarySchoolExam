@@ -36,6 +36,8 @@ import ParentView from './views/ParentView.vue'
 import SupportView from './views/SupportView.vue'
 import CoursesView from './views/CoursesView.vue'
 import FavoritesView from './views/FavoritesView.vue'
+// 等级成长（tab='level'，新功能 C）：业务在 logic/level.js
+import LevelView from './views/LevelView.vue'
 import AntiCheatInput from './components/AntiCheatInput.vue'
 // B3 全站图标统一：内联 SVG 图标集（nav.js / App.vue 侧边栏 & TabBar 统一引用）
 import AppIcon from './components/AppIcon.vue'
@@ -94,6 +96,7 @@ app.component('ParentView', ParentView)
 app.component('SupportView', SupportView)
 app.component('CoursesView', CoursesView)
 app.component('FavoritesView', FavoritesView)
+app.component('LevelView', LevelView)
 app.component('AntiCheatInput', AntiCheatInput)
 app.component('AppIcon', AppIcon)
 // 挂载到 index.html 中的 #app 节点

@@ -144,7 +144,7 @@
       <button class="icon-btn" @click="showToast('🔔 暂无新通知，加油学习！')">🔔</button>
       <div class="me">
         <div class="avatar" style="width:32px;height:32px;font-size:12px">{{userName.charAt(0)}}</div>
-        <b>{{userName}}</b><span class="streak">🔥{{streakDays}}</span><span class="diamonds" title="钻石余额">💎{{diamonds}}</span>
+        <b>{{userName}}</b><button class="lv-badge" title="等级成长（点击查看）" @click="openLevel">Lv.{{levelNum}}</button><span class="streak">🔥{{streakDays}}</span><span class="diamonds" title="钻石余额">💎{{diamonds}}</span>
       </div>
     </header>
 
@@ -176,6 +176,9 @@
 
       <!-- ═══════════ 成长树（P2-2 创意 7） ═══════════ -->
 <tree-view v-if="tab==='tree'"></tree-view>
+
+      <!-- ═══════════ 等级成长（新功能 C 等级/经验体系） ═══════════ -->
+<level-view v-if="tab==='level'"></level-view>
 
       <!-- ═══════════ 成就徽章墙（P2-3 创意 8） ═══════════ -->
 <badges-view v-if="tab==='badges'"></badges-view>

@@ -50,6 +50,14 @@ def complete_focus(req: FocusCompleteReq, db: Session = Depends(get_db)):
     except Exception:
         pass
     db.commit()
+    # 新功能 C：完成一次专注是一次行为事件（加经验，并按其分钟数追加贡献）。
+    # 纯 DB、无外部调用；此处专注记录已提交。注意超限分支在上方直接 return，
+    # 因此「刷满每日上限后继续 POST」不会白刷经验。
+    try:
+        from app.domains.engagement.services.events import EVENT_FOCUS_DONE, award
+        award(db, req.user_id, EVENT_FOCUS_DONE, extra_exp=req.minutes // 10)
+    except Exception:
+        pass
     return {"ok": True, "granted": FOCUS_PAID, "day_count": day_count + 1}
 
 

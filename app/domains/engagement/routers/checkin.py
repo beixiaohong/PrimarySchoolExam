@@ -6,7 +6,10 @@
   保证每日至多一行，天然支撑幂等。
 - 连续天数**独立**计算（基于 checkin 行集合），不与「全勤 streak」（badges/assistant 口径）
   耦合，避免被「仅打开 App 未学习」污染。
-- 奖励经 `diamond.grant`（自带 WITH FOR UPDATE 行锁，并发安全）发放；基础奖励 + 里程碑阶梯。
+- 奖励经 `commerce.contracts.DiamondService.grant`（底层 grant 自带 WITH FOR UPDATE 行锁，
+  并发安全）发放；基础奖励 + 里程碑阶梯。**跨域必须走 commerce.contracts**，不直连
+  commerce.services.diamond（由 .importlinter 域独立契约强制）。
+- 签到同时是一次行为事件（新功能 C）：经 `events.award(..., EVENT_CHECKIN)` 加经验。
 
 铁律合规：纯 DB 操作，无外部/AI 调用，不持连接等阻塞调用；grant 内部自带短会话提交。
 """
@@ -16,7 +19,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.domains.commerce.services.diamond import get_balance, grant as diamond_grant
+from app.domains.commerce.contracts import DiamondService
+from app.domains.engagement.services.events import EVENT_CHECKIN, award
 from app.domains.identity.contracts import require_self
 from app.models.daily_task import DailyTask
 from app.models.user import User
@@ -119,7 +123,10 @@ def do_checkin(current_user: User = Depends(require_self),
         if bonus:
             reward += bonus
         if reward > 0:
-            diamond_grant(db, uid, reward, reason="daily_checkin")
+            DiamondService.grant(db, uid, reward, biz="daily_checkin")
+        # 签到本身也是一次行为事件（新功能 C）：加经验，并评估徽章解锁。
+        # 只在 is_new 分支内调用，重复 POST 不会重复加经验（与发钻同口径幂等）。
+        award(db, uid, EVENT_CHECKIN)
 
     return {
         "signed_today": True,
@@ -128,7 +135,7 @@ def do_checkin(current_user: User = Depends(require_self),
         "reward": reward,
         "bonus": bonus,
         "next_reward_day": _next_reward_day(streak),
-        "diamonds": get_balance(db, uid),
+        "diamonds": DiamondService.balance(db, uid),
     }
 
 
@@ -147,5 +154,5 @@ def checkin_status(current_user: User = Depends(require_self),
         "next_reward_day": _next_reward_day(streak),
         "ladder": [{"day": d, "bonus": b} for d, b in sorted(CHECKIN_LADDER.items())],
         "base_reward": CHECKIN_BASE_REWARD,
-        "diamonds": get_balance(db, uid),
+        "diamonds": DiamondService.balance(db, uid),
     }

@@ -33,16 +33,23 @@ CATEGORY_LABELS = {
     CATEGORY_SOCIAL: "社交与目标",
 }
 
-# ── 触发事件常量（埋点方按常量传参，避免字符串拼写漂移）──
-EVENT_EXAM_DONE = "exam_done"                    # 交卷（assessment）
-EVENT_WRONG_MASTERED = "wrong_mastered"          # 错题标记已掌握（assessment / family）
-EVENT_TASK_DONE = "task_done"                    # 每日任务完成（engagement）
-EVENT_MOOD_DONE = "mood_done"                    # 心情打卡（engagement）
-EVENT_VOCAB_MASTERED = "vocab_mastered"          # 掌握单词（engine）
-EVENT_CLASSICAL_MASTERED = "classical_met"       # 掌握古诗文（content）
-EVENT_TEACH_PASSED = "teach_passed"              # 讲题通过（engagement）
-EVENT_CHALLENGE_DONE = "challenge_done"          # 挑战赛（engagement）
-EVENT_GOAL_DONE = "goal_done"                    # 目标达成（engagement / engine）
+# ── 触发事件常量：单一真相源在 services/events.py（行为事件抽象）──
+# 此处只做再导出，便于既有调用方与测试维持 `from ...achievement import EVENT_X` 不变。
+# 之所以不在此重新定义：事件名同时驱动「经验规则」（C 等级）与「徽章规则」（B 成就），
+# 两处各写一份字面量必然漂移（写错的事件名不报错、只是静默不授予）。
+from app.domains.engagement.services.events import (  # noqa: F401  (再导出)
+    EVENT_CHALLENGE_DONE,
+    EVENT_CHECKIN,
+    EVENT_CLASSICAL_MASTERED,
+    EVENT_EXAM_DONE,
+    EVENT_FOCUS_DONE,
+    EVENT_GOAL_DONE,
+    EVENT_MOOD_DONE,
+    EVENT_TASK_DONE,
+    EVENT_TEACH_PASSED,
+    EVENT_VOCAB_MASTERED,
+    EVENT_WRONG_MASTERED,
+)
 
 # ── 单一真相源：徽章规则表 ──
 # metric 取值必须在 METRIC_FNS 中存在；target 为达标阈值；event 为触发事件。

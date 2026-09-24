@@ -126,6 +126,11 @@ def _ensure_columns():
     # 精确答案列（数学判分根因修复：除法/百分数等非整数结果存高精度值，
     # 判分按精确值比对，不再被 2 位小数截断误判，如 10/3 → 3.33333）
     _ensure_column("questions", "exact_answer", "VARCHAR(200) DEFAULT ''")
+    # 等级/经验列（080_user_level 迁移，新功能 C）：INT 可空。
+    # 存量行补列后由 DEFAULT 填充；服务层展示等级时以 exp 反算（level 仅作冗余缓存），
+    # 因此即使列值脏/为 NULL 也不会显示错误等级。
+    _ensure_column("users", "level", "INT DEFAULT 1")
+    _ensure_column("users", "exp", "INT DEFAULT 0")
 
 
 def _backfill_pq_grade_subject():

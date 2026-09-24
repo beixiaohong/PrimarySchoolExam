@@ -20,6 +20,7 @@ import { reciteData, reciteComputed, reciteMethods } from './recite.js';
 // 每日签到 + 连续奖励（新功能 A）：data/computed/methods 抽至 logic/checkin.js（与 recite 同构）
 import { checkinData, checkinComputed, checkinMethods } from './checkin.js';
 import { favoritesData, favoritesComputed, favoritesMethods } from './favorites.js';
+import { levelData, levelComputed, levelMethods } from './level.js';
 
 const appOptions = {
   data() {
@@ -39,6 +40,7 @@ const appOptions = {
       ...reciteData(),   // 单词背诵+古文默写 data（wordSession/textSession/textDetail，见 logic/recite.js）
       ...checkinData(),   // 每日签到 data（checkin/checkinLoading/checkinOverlay，见 logic/checkin.js）
       ...favoritesData(),   // 我的收藏 data（favorites/favoritesTotal/favoritesType/favSet，见 logic/favorites.js）
+      ...levelData(),       // 等级成长 data（levelInfo/levelLoading，见 logic/level.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -151,6 +153,7 @@ const appOptions = {
     ...reciteComputed,       // 单词背诵+古文默写 computed（wordPct/textPct/curWord/curText/textLines，见 logic/recite.js）
     ...checkinComputed,       // 每日签到 computed（checkinSignedToday/checkinStreak/checkinNextReward/checkinCalendar，见 logic/checkin.js）
     ...favoritesComputed,       // 我的收藏 computed（favoritesHasMore，见 logic/favorites.js）
+    ...levelComputed,       // 等级成长 computed（levelNum/levelBadgeText/levelPct/levelLadder/levelIsMax，见 logic/level.js）
     ...badgesComputed,       // 成就徽章 computed（badgeItems/badgeCats，见 logic/badges.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码
@@ -317,6 +320,7 @@ const appOptions = {
     ...reciteMethods,       // 单词背诵+古文默写 methods（startWordSession/wordNext/startTextSession 等 16 个，见 logic/recite.js）
     ...checkinMethods,       // 每日签到 methods（loadCheckin/doCheckin/openCheckinOverlay/closeCheckinOverlay，见 logic/checkin.js）
     ...favoritesMethods,       // 我的收藏 methods（loadFavorites/loadMoreFavorites/setFavoritesType/toggleFavorite，见 logic/favorites.js）
+    ...levelMethods,       // 等级成长 methods（loadLevel/openLevel，见 logic/level.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -404,6 +408,7 @@ const appOptions = {
       this.tab = t;
       if (t === 'home') { this.loadRewards(); this.loadRewardTimeline(); this.loadParentMsgs(); this.loadNotices(); this.loadDailyTasks(); this.loadCheckin(); }
       if (t === 'favorites') { this.loadFavorites(); }   // 我的收藏（新功能 D）：进入页面重新拉取第一页
+      if (t === 'level') { this.loadLevel(); }            // 等级成长（新功能 C）：进页面刷新，保证升级/经验最新
       if (t === 'practice') { this.loadMathCategories(); if (this.subject === '英语') this.loadGrammarPoints(); }
       if (t === 'recite') { this.reciteSub === 'words' ? this.loadVocabToday() : this.loadClassicalToday(); this.loadClassicalTexts(); }
       if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); this.loadTeachDue(); }
@@ -756,6 +761,7 @@ const appOptions = {
       this.loadDailyTasks();
       this.loadCheckin();           // 每日签到状态（新功能 A）：驱动首页签到按钮 + 弹窗数据
       this.loadFavorites();         // 我的收藏（新功能 D）：首屏预载，供试卷 ⭐ 按钮回显收藏状态
+      this.loadLevel();             // 等级成长（新功能 C）：首屏预载，驱动顶栏 Lv.N 徽标
       this.loadDashboard();
       this.loadReviewQueue();
       this.loadVocabToday();

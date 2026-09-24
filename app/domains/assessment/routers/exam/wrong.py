@@ -92,12 +92,12 @@ def mark_mastered(exam_id: int, req: MarkWrongRequest, db: Session = Depends(get
             wr.next_review_date = None   # 掌握出队（明日复习队列）
             mastered += 1
     db.commit()
-    # 新功能 B：错题掌握后实时评估成就（wrong_5 / wrong_20，经 engagement 契约）。
-    # 仅在本次确有题目被标记时触发；纯 DB 无外部调用，失败不影响标记主流程。
+    # 新功能 B/C：错题掌握后统一触发行为事件（加经验 + 实时评估 wrong_5 / wrong_20），
+    # 经 engagement 契约调用。仅在本次确有题目被标记时触发；纯 DB 无外部调用，失败不影响标记主流程。
     if mastered > 0:
         try:
-            from app.domains.engagement.contracts import AchievementService
-            AchievementService.try_grant(db, req.user_id, "wrong_mastered")
+            from app.domains.engagement.contracts import AwardService, EVENT_WRONG_MASTERED
+            AwardService.award(db, req.user_id, EVENT_WRONG_MASTERED)
         except Exception:
             pass
     return {"message": f"已标记 {mastered} 题为已掌握", "mastered_count": mastered}
@@ -378,11 +378,11 @@ def batch_master(req: dict, db: Session = Depends(get_db)):
             wr.next_review_date = None   # 掌握出队（明日复习队列）
             mastered += 1
     db.commit()
-    # 新功能 B：批量掌握同样触发成就实时评估（与 mark_mastered 同口径）
+    # 新功能 B/C：批量掌握同样触发行为事件（与 mark_mastered 同口径：加经验 + 成就评估）
     if mastered > 0:
         try:
-            from app.domains.engagement.contracts import AchievementService
-            AchievementService.try_grant(db, user_id, "wrong_mastered")
+            from app.domains.engagement.contracts import AwardService, EVENT_WRONG_MASTERED
+            AwardService.award(db, user_id, EVENT_WRONG_MASTERED)
         except Exception:
             pass
     return {"message": f"已标记 {mastered} 题为已掌握", "mastered_count": mastered}

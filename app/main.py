@@ -25,7 +25,7 @@ from .domains.platform.routers import search, ai, qa, assistant, weather, admin_
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
 from .domains.content.routers import novel as novel_reader
-from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus, calendar, checkin, favorites
+from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus, calendar, checkin, favorites, level
 # D9 冻结域（im/ledger）：已抽至 app/domains/frozen，受 ENABLE_IM/ENABLE_LEDGER 开关控制
 from .domains.frozen.routers import im as frozen_im, ledger as frozen_ledger
 from .domains.frozen.routers import admin_im as frozen_admin_im, admin_ledger as frozen_admin_ledger
@@ -125,6 +125,8 @@ app.include_router(focus.router, prefix="/api/focus", tags=["番茄专注钟"], 
 app.include_router(calendar.router, prefix="/api/calendar", tags=["学习日历"], dependencies=user_auth_deps)
 app.include_router(checkin.router, prefix="/api/checkin", tags=["每日签到"], dependencies=user_auth_deps)
 app.include_router(favorites.router, prefix="/api/favorites", tags=["收藏夹"], dependencies=user_auth_deps)
+# 等级/成长体系（新功能 C）：只读端点，经验一律由服务端行为埋点驱动（无对外加经验接口，防刷级）
+app.include_router(level.router, prefix="/api/level", tags=["等级成长"], dependencies=user_auth_deps)
 app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"], dependencies=[*user_auth_deps, Depends(check_quiet_hours)])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"], dependencies=user_auth_deps)
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])

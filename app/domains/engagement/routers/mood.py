@@ -56,10 +56,11 @@ def mood_checkin(req: MoodCheckinReq, db: Session = Depends(get_db)):
     else:
         db.add(MoodCheckin(user_id=user_id, check_date=today, mood=req.mood, note=note))
     db.commit()
-    # 新功能 B：心情打卡后实时评估成就（mood_7）。纯 DB、无外部调用，失败不影响打卡主流程。
+    # 新功能 B/C：打卡后统一触发行为事件（加经验 + 实时评估成就 mood_7）。
+    # 纯 DB、无外部调用，失败不影响打卡主流程。
     try:
-        from app.domains.engagement.services.achievement import try_grant, EVENT_MOOD_DONE
-        try_grant(db, user_id, EVENT_MOOD_DONE)
+        from app.domains.engagement.services.events import EVENT_MOOD_DONE, award
+        award(db, user_id, EVENT_MOOD_DONE)
     except Exception:
         pass
     return {"date": str(today), "mood": req.mood, "label": MOOD_LABELS.get(req.mood, req.mood), "note": note}

@@ -337,12 +337,12 @@ def _build_payload(db: Session, user_id: str) -> dict:
                         pass
     db.commit()
 
-    # 新功能 B：本次有任务跃迁为完成 → 实时评估成就（全勤 streak 类）。
+    # 新功能 B/C：本次有任务跃迁为完成 → 统一触发行为事件（加经验 + 全勤 streak 类成就）。
     # 纯 DB、无外部调用，仅在有跃迁时触发；失败不影响任务面板主流程。
     if auto_completed:
         try:
-            from app.domains.engagement.services.achievement import try_grant, EVENT_TASK_DONE
-            try_grant(db, user_id, EVENT_TASK_DONE)
+            from app.domains.engagement.services.events import EVENT_TASK_DONE, award
+            award(db, user_id, EVENT_TASK_DONE)
         except Exception:
             pass
 

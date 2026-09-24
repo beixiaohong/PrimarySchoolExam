@@ -21,6 +21,14 @@
 - `AchievementService.try_grant(db, uid, event)`：事件驱动的成就实时授予（新功能 B）。
   收口 assessment（交卷 exam_done / 错题掌握 wrong_mastered）等跨域埋点，让徽章在行为发生时
   即时解锁而非等用户下次访问徽章墙；纯 DB 无外部调用，调用方须在写操作 commit 后调用。
+- `AwardService.award(db, uid, event, extra_exp=0)`：**行为事件统一奖励入口**（新功能 C 引入）。
+  一次调用同时驱动经验（C 等级，可能升级并发升级钻石）与徽章（B 成就）。各域埋点应优先用它
+  而非单独调 try_grant——新增激励维度时无需再改各调用点。返回
+  `{"event","exp_gained","level","new_badges"}`，内部逐段 try/except，不影响主业务流程。
+- `LevelService.info(db, uid)` / `LevelService.add_exp(db, uid, delta, reason)`：等级/经验读写
+  （C）。`add_exp` 带行锁并发安全，供跨域补加经验；`info` 为只读详情。
+- `EVENT_*` 事件名常量再导出（值定义在 `services/events.py`）：跨域埋点传参用常量而非
+  字符串字面量，避免拼写漂移导致静默不授予。
 - 其余为存量符号的显式再导出（延迟解析，名字与实现一致以便逐步替换），带下划线者
   属域内私有 helper 被跨域引用形成的契约债，S1.5 实现内聚后去除。
 
@@ -37,9 +45,24 @@ _EXPORTS = {
     # 存量私有符号（契约债，逐步由 PetService 替换）
     "_grant_coins": ("app.domains.engagement.routers.pet", "_grant_coins"),
     "_balance": ("app.domains.engagement.routers.pet", "_balance"),
+    # ── 行为事件名（新功能 C）：单一真相源在 services/events.py ──
+    # 跨域埋点用常量而非字面量，避免写错事件名静默不授予（延迟解析，模块 __getattr__ 支持
+    # `from ...contracts import EVENT_EXAM_DONE` 形态）。
+    "EVENT_EXAM_DONE": ("app.domains.engagement.services.events", "EVENT_EXAM_DONE"),
+    "EVENT_WRONG_MASTERED": ("app.domains.engagement.services.events", "EVENT_WRONG_MASTERED"),
+    "EVENT_TASK_DONE": ("app.domains.engagement.services.events", "EVENT_TASK_DONE"),
+    "EVENT_MOOD_DONE": ("app.domains.engagement.services.events", "EVENT_MOOD_DONE"),
+    "EVENT_CHECKIN": ("app.domains.engagement.services.events", "EVENT_CHECKIN"),
+    "EVENT_FOCUS_DONE": ("app.domains.engagement.services.events", "EVENT_FOCUS_DONE"),
+    "EVENT_VOCAB_MASTERED": ("app.domains.engagement.services.events", "EVENT_VOCAB_MASTERED"),
+    "EVENT_CLASSICAL_MASTERED": ("app.domains.engagement.services.events", "EVENT_CLASSICAL_MASTERED"),
+    "EVENT_TEACH_PASSED": ("app.domains.engagement.services.events", "EVENT_TEACH_PASSED"),
+    "EVENT_CHALLENGE_DONE": ("app.domains.engagement.services.events", "EVENT_CHALLENGE_DONE"),
+    "EVENT_GOAL_DONE": ("app.domains.engagement.services.events", "EVENT_GOAL_DONE"),
 }
 
-__all__ = ("PetService", "GrowthTreeService", "TaskService", "MakeupService", "AchievementService") + tuple(_EXPORTS)
+__all__ = ("PetService", "GrowthTreeService", "TaskService", "MakeupService",
+           "AchievementService", "AwardService", "LevelService") + tuple(_EXPORTS)
 
 
 def __getattr__(name):
@@ -136,6 +159,50 @@ class AchievementService:
         """
         from app.domains.engagement.services.achievement import try_grant
         return try_grant(db, uid, event)
+
+
+class AwardService:
+    """行为事件统一奖励入口（新功能 C）。
+
+    为什么要有这一层：B（徽章）与 C（等级）都以「用户做了一件事」为触发源。若各域分别调
+    `AchievementService.try_grant` 与 `LevelService.add_exp`，则① 同一行为要改两个调用点，
+    ② 将来新增激励维度（宠物币/积分）还要再改一遍所有埋点。统一为一次 `award()` 调用后，
+    各域埋点不再随激励体系演进而改动。
+
+    调用约束（铁律）：必须在业务写操作 `db.commit()` **之后**调用，不得在持有 DB 连接期间
+    调用外部服务；实现为纯 DB 操作，内部逐段 try/except，失败不影响主业务流程。
+    """
+
+    @staticmethod
+    def award(db, uid: str, event: str, extra_exp: int = 0) -> dict:
+        """触发一次行为事件：加经验（可能升级并发放升级钻石）+ 评估徽章。
+
+        返回 {"event","exp_gained","level","new_badges"}；event 取 EVENT_* 常量。
+        返回值仅供日志/调试，调用方不应据此做业务判断（内部异常被吞，可能只返回部分结果）。
+        """
+        from app.domains.engagement.services.events import award
+        return award(db, uid, event, extra_exp=extra_exp)
+
+
+class LevelService:
+    """等级 / 经验对外入口（新功能 C）。
+
+    - `info`：只读等级详情（等级/经验/称号/特权/距下一级进度/完整阶梯表）；
+    - `add_exp`：跨域补加经验（带 FOR UPDATE 行锁，并发安全；跨级时合并发升级钻石）。
+    经验累加一律走本服务，**不**提供对外的「直接设置等级」接口（等级必须是经验的派生结果）。
+    """
+
+    @staticmethod
+    def info(db, uid: str) -> dict:
+        """等级详情（含 progress_pct / next_level_exp / ladder）"""
+        from app.domains.engagement.services.level import get_level_info
+        return get_level_info(db, uid)
+
+    @staticmethod
+    def add_exp(db, uid: str, delta: int, reason: str = "") -> dict:
+        """累加经验并返回 {old_level,new_level,leveled_up,levels_gained,reward_diamond,...}"""
+        from app.domains.engagement.services.level import add_exp
+        return add_exp(db, uid, delta, reason=reason)
 
 
 class MakeupService:

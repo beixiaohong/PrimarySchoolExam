@@ -280,12 +280,13 @@ def submit_answers(req: dict, db: Session = Depends(get_db)):
         pass
     db.commit()
 
-    # 新功能 B：交卷后实时评估成就（首考/刷题数/满分等 exam_done 事件）。
+    # 新功能 B/C：交卷后统一触发行为事件 —— 加经验（可能升级并发放升级钻石）
+    # + 实时评估成就（首考/刷题数/满分等 exam_done 事件）。
     # 经 engagement 契约调用（跨域只走 contracts），纯 DB 无外部调用，
     # 且此时答题数据已提交 —— 不违反「不得持 DB 连接等外部阻塞调用」铁律。
     try:
-        from app.domains.engagement.contracts import AchievementService
-        AchievementService.try_grant(db, user_id, "exam_done")
+        from app.domains.engagement.contracts import AwardService, EVENT_EXAM_DONE
+        AwardService.award(db, user_id, EVENT_EXAM_DONE)
     except Exception:
         pass
 

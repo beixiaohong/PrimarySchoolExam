@@ -33,6 +33,8 @@ export const NAV_GROUPS = [
     items: [
       { tab: 'pet', label: '宠物家园', icon: 'pet', badge: 'pet' },
       { tab: 'tree', label: '成长树', icon: 'tree' },
+      // 等级成长（新功能 C）：经验来自真实学习行为，升级解锁称号/头像框/钻石
+      { tab: 'level', label: '等级成长', icon: 'level' },
       { tab: 'badges', label: '成就徽章', icon: 'badges', badge: 'badge' },
       { tab: 'cards', label: '知识卡图鉴', icon: 'cards' },
       // 学习日历（打卡可视化 + 连续打卡成就）：聚合每日任务/专注/心情打卡

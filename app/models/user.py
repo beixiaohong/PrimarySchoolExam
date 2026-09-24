@@ -39,6 +39,13 @@ class User(Base):
     is_online = Column(Boolean, default=False, nullable=True, comment="IM 在线状态")
     last_seen = Column(DateTime, nullable=True, comment="IM 最后活跃时间")
 
+    # ── 等级 / 经验（080_user_level 迁移补列，新功能 C）──
+    # 经验采用「行为发生时增量累加并落库」策略（services/level.add_exp，带 WITH FOR UPDATE
+    # 行锁防并发竞态），读时直接读本列，**不**做多表实时聚合（避免每请求 N+1 聚合）。
+    # 两列均可空：_ensure_column 加列时对存量行只能给默认值，服务层读时以 exp 反算等级兜底。
+    level = Column(Integer, default=1, nullable=True, comment="等级 Lv1-20（exp 的冗余缓存，展示以 exp 反算为准）")
+    exp = Column(Integer, default=0, nullable=True, comment="累计经验值（只增不减）")
+
     # ── 登录会话 token（Bearer 鉴权，028_user_token）──
     token = Column(String(64), nullable=True, index=True, comment="登录会话 token（Bearer 鉴权）")
     token_expires_at = Column(DateTime, nullable=True, comment="token 过期时间")
