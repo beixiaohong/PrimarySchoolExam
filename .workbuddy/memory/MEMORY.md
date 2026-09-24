@@ -70,3 +70,73 @@
 - 产物：每日 SQLite `data/collected_YYYY-MM-DD.sqlite` + 去重注册表 `data/scrape_registry.sqlite`。站点：第一试卷网；九大学科均衡（学段配额 初中120/小学50/高中30）。
 - **LibreOffice 必需**（旧版 .doc 是 OLE 二进制，无 LO 解析出乱码/0 题）。
 - AI 答案当前唯一可用 **DeepSeek（deepseek-v4-flash）**；`fill_missing_answers` 已重构为短会话增量写回（崩溃只丢当前题）。200 份补全约 5-8h，宜凌晨跑。
+
+## 测试经验（高复用）
+- **MySQL REPEATABLE READ 余额断言陷阱**：长生命周期测试会话首次 `SELECT` 后快照冻结，读不到接口内部 `diamond.grant`（新建会话）已提交的新余额 → 余额差断言误判为 0。修法：余额断言用独立 `SessionLocal()` 会话读取最新已提交值，并按「前后差值」判定（参考 `tests/test_checkin.py` 的 `_read_balance`）。
+- conftest 不做事务回滚：每用例用专属用户 + 显式 token + finally 清理自身数据，避免跨用例污染钻石余额断言。
+- **判「全量测试通过」看退出码，别 grep 摘要**：`pytest -q > file` 重定向/管道下末尾只剩 warnings 块，
+  无 `N passed` 行，grep `passed` 会空手而归。失败时 pytest 退出码必非 0，故以 **EXIT=0** 为准。
+
+## 🧩 前端新增一个 tab 页面（4 处注册，漏一处页面就空白/图标缺失）
+1. `web/src/main.js`：`import XxxView from './views/XxxView.vue'` + `app.component('XxxView', XxxView)`。
+2. `web/src/App.vue`：加 `<xxx-view v-if="tab==='xxx'"></xxx-view>`（按 tab 字符串切换，非动态 :is）。
+3. `web/src/nav.js`：`NAV_GROUPS` 加 `{tab,label,icon}`（移动端 TABBAR 固定 6 项，通常只加桌面侧边栏）。
+4. `web/src/components/AppIcon.vue`：`ICONS` 补对应图标，否则回落 placeholder（不报错但视觉错）。
+- 业务一律放 `web/src/logic/xxx.js` 用三字典 `xxxData()/xxxComputed/xxxMethods`，在 `appOptions.js`
+  展开合并（data/computed/methods 三处各一行）；**同一文件多次 Edit 必须串行**。
+- `hs-btn` 样式**只在 `.home-subnav` 作用域内生效**，别处复用需自建类（如收藏夹的 `.fv-tab`）。
+- 沙箱偶发 `error launching git:` 会让 `vite build` 连带失败，与代码无关，**重跑即可**。
+
+## 🏅 成就徽章体系（新功能 B 升级后架构，2026-09-24）
+- **逻辑位置**：领域逻辑在 `app/domains/engagement/services/achievement.py`（**规则唯一真相源 `BADGE_RULES`**：
+  metric/target/category/event 四元组）；`routers/badges.py` 只是薄 HTTP 层。改徽章阈值/加徽章**只改这一处**。
+- **按需指标**：`METRIC_FNS` 惰性求值，`_metrics(db,uid,keys)` 只算点名的指标（事件路径不再全量 12 条聚合）。
+- **事件驱动授予**：`try_grant(db, uid, event)`；event=None 为兜底全量（`GET /api/badges` 用，保证历史达标不漏发）。
+  事件常量 `EVENT_*`，未登记事件返回 [] 且不授予任何徽章。
+- **埋点铁律**：必须在写操作 `db.commit()` **之后**调用（纯 DB、无外部调用、`try/except` 静默，不得影响主流程）；
+  **跨域埋点一律经 `engagement.contracts.AchievementService.try_grant`**（assessment 交卷/掌握错题即如此）。
+- 已埋点：`exam_done`(交卷) / `wrong_mastered`(掌握错题 ×2 处) / `task_done`(任务完成 ×2 处) /
+  `mood_done`(心情打卡)。其余事件（vocab/classical/teach/challenge/goal）仅由兜底全量扫描覆盖。
+- 前端徽章逻辑在 `web/src/logic/badges.js`（**已从 cards.js 拆出**），`BadgesView.vue` 有分类 tab + 进度条。
+
+## ⚠️ SQLAlchemy/MySQL 类型陷阱（极易静默出错）
+- **`Date` 列不能用 `str(d) in dates` 比较**：`DailyTask.task_date` 是 `Column(Date)`，读回是 `datetime.date`，
+  与 `str` 永不相等 → 判断恒 False（曾致 `badges._streak` 恒返回 0，`streak_7/30` 徽章永不可得）。
+  **正确写法：`while d in dates`（date 对象比较）**，参考 `app/domains/engagement/routers/checkin.py::_checkin_streak`。
+- 时区比较：MySQL DATETIME 读回是 naive，与 `datetime.now(timezone.utc)` 比较会 TypeError，先补 tzinfo。
+
+## 🧪 测试脚手架注意（conftest.AuthClient）
+- `AuthClient` 会为请求里出现的 `user_id`（无则回落 `test_auth_uid`）**自动补签 token**，
+  所以**无法用它构造「未鉴权 401」场景**（写 `assert status in (401,403)` 必失败）。
+  鉴权边界要靠其他既有用例覆盖，或绕开该 client 用裸 TestClient。
+
+## ⭐ 等级/成长体系（新功能 C 架构 + 行为事件收敛层，2026-09-24）
+- **统一行为事件入口 `app/domains/engagement/services/events.py`**（B/C 共同收敛层，**新埋点一律加这里**）：
+  11 个 `EVENT_*` 常量 + `EXP_RULES`（事件→经验）+ `award(db, uid, event, extra_exp=0)`：
+  **一次调用 = 加经验 + 评估徽章解锁**，返回 `{event,exp_gained,level,new_badges}`。
+  `achievement.py` 的 `EVENT_*` 改为**从此处再导出**（单一真相源，杜绝两处字面量漂移）。
+- **等级逻辑 `services/level.py`**：等级**由 exp 反算**（`level_for_exp` 纯函数，`>=` 语义，
+  恰好等于阈值即升级）；`users.level` 只是冗余缓存 → 列值脏/NULL 也不会显示错误等级。
+  默认 20 级 `min_exp = 30*(lv-1)*lv`（Lv1=0/Lv2=60/Lv3=180/Lv20=11400），阶梯表 `level_config`
+  （后台可调参），`_ladder()` 表空时回落常量 `LEVEL_FALLBACK`。
+- **经验策略铁律：行为发生时增量累加落库，读时零聚合**。`get_level_info` 只读 `users.exp` 一个字段，
+  **禁止**做「交卷数+正确率+专注时长+错题」实时多表聚合（否则每次开等级页付 N 条聚合查询）。
+- **`add_exp` 并发安全**：`.with_for_update()` 行锁读改写 → **先 `commit()` 释放锁，再跨域发升级钻石**
+  （不在持锁期间调其它域）；一次跨多级用 `sum(...)` 合并奖励不漏发；发奖失败**不回滚经验**。
+- **安全红线：不提供任何对外加经验端点**（仅只读 `GET /api/level`），经验只能由真实行为埋点驱动，
+  否则用户可自刷等级并白拿升级钻石。
+- **上线配套 `tools/backfill_level_exp.py`**：默认 dry-run（须 `--apply` 写库）、默认**不发**升级钻石
+  （`--grant-reward` 才补发）、默认只补 `exp=0/NULL`（可安全重跑）、`--batch` 分批提交。
+  迁移 `080_user_level.py` 幂等三步（`_ensure_column` ×2 + `LevelConfig.__table__.create(checkfirst=True)`
+  + `ensure_level_config` 增量 seed）。
+- **`ensure_level_config` 用「按 lv 增量补齐」而非「表为空才 seed」**：将来扩到 25 级会自动补新等级，
+  且不覆盖后台已调过的旧等级数值。
+
+## 🚨 两条易漏的机械性坑（2026-09-24 血泪）
+- **Vue 模板里禁止裸 `<` 比较**：`l.lv<appCtx.levelNum` 的 `<a` 会被 HTML 解析器当成 `<a>` 起始标签而报错。
+  **比较逻辑一律移入 JS**（如 `levelItemClass(l)`/`levelItemState(l)`），模板只渲染。
+- **`git commit --no-verify` 会静默放过 import-linter 契约违规**（曾致 `checkin.py` 直连
+  `commerce.services.diamond` 一路漏到线上）。**新增跨域调用后必须手动跑
+  `.venv/Scripts/lint-imports.exe` 复验（应输出 `2 kept, 0 broken`），别只信提交成功。**
+- `tools/*.py` 直接运行时 `ModuleNotFoundError: No module named 'app'`（sys.path 只含 tools/），
+  头部按范式补 `ROOT = Path(__file__).resolve().parent.parent; sys.path.insert(0, str(ROOT))`。
