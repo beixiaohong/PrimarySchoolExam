@@ -198,3 +198,24 @@ cd web && node node_modules/vite/bin/vite.js build    # 前端构建（127 模�
   或直接在项目目录 `venv/bin/python -c "import app.main"` 复现导入错误。
 - 复现“缺包”类故障的手法：用 `sys.meta_path` 插一个 finder 屏蔽目标包，再 `import app.main`，
   对比报错帧与线上 traceback 是否一致（本次即以此确证 httpx）。
+
+## 🚪 部署流程铁律：所有检查必须在 `systemctl restart` 之前（2026-09-24 定案）
+- **deploy.sh 的两道闸门**（`tools/preflight.py`，纯标准库，venv 坏了也能跑）：
+  · `3.55 early`（chown 后、前端构建前）：依赖完整性 + 应用可导入 + `.env` 必需键
+    —— 早拦是为了不在发现缺包前白跑几分钟 npm build；
+  · `3.8 full`（写 systemd/nginx 配置与重启前）：再加外部命令 + 前端产物
+    —— 做到「自检不过就彻底没碰过服务配置」。
+  失败即 `error` 中止，**旧版本继续服务、站点不掉**。手动排查：`venv/bin/python tools/preflight.py --stage full`。
+- **为什么**：原顺序「先重启、后检查」使「部署失败」放大成「站点下线」
+  （坏版本被 systemd 换上 → `Restart=always` 崩溃循环）。**判据：任何 gate 都必须在重启之前。**
+- **闸门设计原则（本次踩出来的）**：
+  · 只让「真会致挂」的项 BLOCK；外部命令缺失（ffmpeg/soffice/npm）只 WARN ——
+    否则正常部署被卡住，运维会绕过闸门，等于没有闸门（**误报比漏报更致命**）；
+  · 闸门自身必须健壮：`su` 不可用/失败要降级为当前用户跑，绝不因环境差异误拦；
+  · **最有效的检查是「用服务所用解释器真实导入」**（`python -c "import app.main"`），
+    静态检查会漏掉运行期问题；root 部署时切到 `--app-user` 跑，顺带验证文件属主/权限。
+- **会被「按路径加载」（`spec_from_file_location`，未注册 sys.modules）的脚本，慎用
+  `from __future__ import annotations` + `@dataclass`** —— 解析注解会抛
+  `AttributeError: 'NoneType' object has no attribute '__dict__'`。用普通类。
+- 部署失败回滚：`git log --oneline -5` → `git reset --hard <好版本>` → `sudo bash deploy.sh`
+  （deploy.sh 失败时会自动打印这三步，见 `rollback_hint()`）。
