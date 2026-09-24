@@ -2,6 +2,16 @@
 
 孩子选择 10/15/25 分钟专注（纯前端倒计时），
 完成后 POST /complete 记录并奖励金币 +2（防刷：同一天最多记录 8 次）。
+
+⚠️ 鉴权说明（易误判，务必先读这条再评估安全性）
+本文件的路由**没有**在函数签名里写 `require_self`，但**并不代表无鉴权**：
+鉴权来自 `app/main.py` 的挂载处
+`include_router(focus.router, dependencies=user_auth_deps)`，
+而 `user_auth_deps = [Depends(require_self)]`（严格账号绑定）。
+`require_self` 会从 query 或 JSON body 里取出 `user_id`，与当前登录账号不一致时直接 **403**，
+因此「带 A 的 token 去传 B 的 user_id」会被拦在写库之前。
+回归时曾因只读 router 内部依赖而误判此处存在越权漏洞——已由
+`tests/test_user_id_binding.py` 用真实请求钉死（他人 → 403 / 未登录 → 401 / 本人 → 200）。
 """
 from datetime import date, datetime
 
