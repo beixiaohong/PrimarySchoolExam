@@ -464,13 +464,44 @@ sudo bash deploy.sh
 
 deploy.sh 会自动判断前端是否需要重建（基于源码 mtime 对比）。
 
-### 11.3 回滚
+### 11.3 部署前置自检（deploy.sh 的"部署闸门"）
+
+`deploy.sh` 会在**重启服务之前**跑两道自检，任一项 BLOCK 就中止部署 ——
+**旧版本服务不受影响、站点保持可用**（只是这次没更新成功）。
+
+| 阶段 | 位置 | 检查内容 |
+|---|---|---|
+| `early` | 装完依赖、修完属主后（前端构建**之前**） | 依赖完整性 + 应用可导入 + `.env` 必需键 |
+| `full` | 写 systemd/nginx 配置与重启服务**之前** | 再加外部命令（ffmpeg/soffice/npm）+ 前端产物 |
+
+单独运行（排查用，不改动任何东西）：
+
+```bash
+cd /home/PrimarySchoolExam
+venv/bin/python tools/preflight.py --stage full
+```
+
+常见输出与处置：
+
+| 输出 | 含义 | 处置 |
+|---|---|---|
+| `依赖未声明：X` | 代码模块级硬导入了 X，但 `requirements.txt` 没写 | 把 X（含版本）加进 `requirements.txt` |
+| `应用可导入` BLOCK | 服务起不来（重启即全站 502） | 看提示区分：漏声明→补清单；已声明→`pip install -r requirements.txt` |
+| `外部命令 ffmpeg` WARN | IM 语音转 MP3 不可用 | `apt install ffmpeg`（不阻断部署） |
+| `.env 缺少 DB_HOST` BLOCK | 连不上数据库 | 在 `.env` 补上 |
+
+> **闸门为什么必须在重启之前**：2026-09-24 事故中 deploy.sh 的顺序是「先重启、后检查」，
+> 坏版本被换上后 systemd（`Restart=always`）不停崩溃重启，全站 502 ——
+> deploy.sh 虽然报错退出，站点却已经挂了、旧版本进程也没了。
+> 现在自检不过就**根本不重启**。
+
+### 11.4 回滚
 
 ```bash
 cd /home/PrimarySchoolExam
 git log --oneline -10   # 找到要回退的 commit
 git reset --hard <commit_hash>
-sudo systemctl restart exam-app
+sudo bash deploy.sh     # 重新部署（会先跑前置自检再重启）
 ```
 
 > 迁移只向前执行，不会自动回滚。如需回滚数据库，需手动恢复备份。
@@ -600,7 +631,7 @@ db.close()
 "
 ```
 
-### 14.4 健康检查失败
+### 14.4 健康检查失败 / 服务启动失败
 
 ```bash
 # 查看详细日志
@@ -615,6 +646,26 @@ cd /home/PrimarySchoolExam
 # 2. 迁移执行失败
 # 3. 端口被占用
 ```
+
+**如果日志停在某个 `import` 行（看不到真正的异常）**：`journalctl -n 50` 会把真正的报错行截掉，
+只剩一串 import 调用栈。用下面两条定位真凶，别靠猜：
+
+```bash
+# ① 只打印异常类型，一眼看到「缺什么包 / 什么语法错」
+journalctl -u exam-app -n 200 --no-pager | grep -iE "ModuleNotFoundError|ImportError|SyntaxError"
+
+# ② 直接复现导入错误（不启动服务，最快）
+cd /home/PrimarySchoolExam && venv/bin/python -c "import app.main"
+# 或直接跑部署自检，它会一次列全问题
+venv/bin/python tools/preflight.py --stage full
+```
+
+> ⚠️ **`ModuleNotFoundError` 的典型成因（2026-09-24 全站 502 事故）**：
+> 代码里加了新的第三方包依赖，但 `requirements.txt` 漏声明 ——
+> **本地能 `import` 不代表线上有**（本地 venv 常因跑测试多装了包，如 httpx 是
+> starlette TestClient 的依赖）。线上 `deploy.sh` 只按 `requirements.txt` 装包，
+> 于是在应用导入期直接崩溃。**修法：把包补进 `requirements.txt` 后重新部署。**
+> 提交前跑 `python tools/dep_audit.py` 或 `tools/regression_check.py` 就能提前拦住。
 
 ### 14.5 管理后台默认密码
 

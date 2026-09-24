@@ -36,6 +36,14 @@ info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+# 服务启动失败时的回滚指引（自检已尽力拦截，但运行期问题仍可能发生，如数据库不可达）
+rollback_hint() {
+    echo -e "${YELLOW}[提示]${NC} 站点当前可能不可用，回滚步骤："
+    echo "      cd ${APP_DIR} && git log --oneline -5        # 找到上一个正常版本"
+    echo "      git reset --hard <正常版本的 commit>"
+    echo "      sudo bash deploy.sh                          # 重新部署旧版本"
+}
+
 # 检查 root
 if [ "$EUID" -ne 0 ]; then
     error "请使用 sudo 运行: sudo bash deploy.sh"
@@ -76,6 +84,23 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR" 2>/dev/null || true
 # ---------- 3.5 检查 .env ----------
 if [ ! -f "$APP_DIR/.env" ]; then
     warn "未找到 $APP_DIR/.env，请先创建（参考 .env.example）"
+fi
+
+# ---------- 3.55 前置自检（early）：依赖完整性 + 应用可导入 + .env 必需键 ----------
+# 为什么必须在**重启之前**查：原先的顺序是「重启服务 → 查进程/健康」，检查发生在重启之后，
+# 一旦新版本有问题，坏版本已经被换上，systemd（Restart=always）反复崩溃重启 → 全站 502，
+# 而 deploy.sh 虽然报错退出，站点却已经挂了、旧版本进程也没了。
+# （2026-09-24 真实事故：requirements.txt 漏声明 httpx，线上 uvicorn 导入期即崩。）
+# 放在前端构建之前，避免发现问题时已白跑几分钟 npm build。
+if [ -f "$APP_DIR/tools/preflight.py" ]; then
+    info "前置自检(early)：依赖 / 应用可导入 / 环境变量..."
+    "$APP_DIR/venv/bin/python" "$APP_DIR/tools/preflight.py" \
+        --app-dir "$APP_DIR" --python "$APP_DIR/venv/bin/python" \
+        --app-user "$APP_USER" --stage early \
+        || error "前置自检未通过 → 已中止部署。旧版本服务未受影响（站点保持可用），
+    修好上面列出的问题后重新执行 deploy.sh"
+else
+    warn "未找到 tools/preflight.py，跳过前置自检（建议补齐以启用部署前校验）"
 fi
 
 # ---------- 3.6 构建前端（仅源码变化时重建；小内存服务器防 OOM/CPU 拖垮）----------
@@ -138,6 +163,17 @@ if frontend_needs_build "$APP_DIR/admin"; then
     chown -R "$APP_USER:$APP_USER" "$APP_DIR/admin/dist" 2>/dev/null || true
 else
     info "admin 前端无源码变化，跳过构建（复用现有 dist）"
+fi
+
+# ---------- 3.8 前置自检（full）：外部命令 + 前端产物 ----------
+# 放在写 systemd/nginx 配置与重启服务之前 —— 让所有"有副作用的动作"都发生在闸门之后：
+# 自检不过就彻底没碰过服务配置，站点保持旧版本正常运行。
+if [ -f "$APP_DIR/tools/preflight.py" ]; then
+    info "前置自检(full)：外部命令 / 前端产物..."
+    "$APP_DIR/venv/bin/python" "$APP_DIR/tools/preflight.py" \
+        --app-dir "$APP_DIR" --python "$APP_DIR/venv/bin/python" \
+        --app-user "$APP_USER" --stage full \
+        || error "前置自检未通过 → 已中止部署（未改服务配置、未重启，旧版本继续运行）"
 fi
 
 # ---------- 4. 配置 systemd 服务 ----------
@@ -231,7 +267,9 @@ sleep 2
 if systemctl is-active --quiet ${APP_NAME}; then
     info "应用服务运行正常 (端口 ${APP_PORT})"
 else
-    error "应用启动失败，查看日志: journalctl -u ${APP_NAME} -n 50"
+    echo -e "${RED}[ERROR]${NC} 应用启动失败，查看日志: journalctl -u ${APP_NAME} -n 50"
+    rollback_hint
+    exit 1
 fi
 
 # 健康检查
@@ -239,7 +277,9 @@ if command -v curl &>/dev/null; then
     if curl -fsS "http://127.0.0.1:${APP_PORT}/health" >/dev/null 2>&1; then
         info "健康检查通过 (/health)"
     else
-        error "健康检查失败，查看日志: journalctl -u ${APP_NAME} -n 50"
+        echo -e "${RED}[ERROR]${NC} 健康检查失败，查看日志: journalctl -u ${APP_NAME} -n 50"
+        rollback_hint
+        exit 1
     fi
 fi
 
@@ -285,6 +325,13 @@ echo "    重启Nginx: systemctl restart nginx"
 echo ""
 echo "  更新代码后运行:"
 echo "    cd ${APP_DIR} && git pull && sudo bash deploy.sh"
+echo ""
+echo "  部署前自检（可单独运行，重启前验证新版本能否跑起来）:"
+echo "    ${APP_DIR}/venv/bin/python ${APP_DIR}/tools/preflight.py --stage full"
+echo ""
+echo "  部署失败需回滚:"
+echo "    cd ${APP_DIR} && git log --oneline -5"
+echo "    git reset --hard <上一个正常版本的 commit> && sudo bash deploy.sh"
 echo ""
 echo "  证书自动续期 (Let's Encrypt):"
 echo "    certbot renew --dry-run  # 测试续期"
