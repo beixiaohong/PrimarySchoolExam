@@ -140,3 +140,26 @@
   `.venv/Scripts/lint-imports.exe` 复验（应输出 `2 kept, 0 broken`），别只信提交成功。**
 - `tools/*.py` 直接运行时 `ModuleNotFoundError: No module named 'app'`（sys.path 只含 tools/），
   头部按范式补 `ROOT = Path(__file__).resolve().parent.parent; sys.path.insert(0, str(ROOT))`。
+
+## 🔁 回归自检标准流程（2026-09-24 定案）
+改完代码、提交前按顺序跑这三条；`tools/regression_check.py` 是新增的一键静态自检：
+```bash
+.venv/Scripts/python.exe tools/regression_check.py   # 契约/编译/关键路由/前端URL/图标（退出码 0=全通过）
+.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider > /tmp/p.txt 2>&1; echo $?  # 判 EXIT=0
+cd web && node node_modules/vite/bin/vite.js build    # 前端构建（127 模块）
+```
+- **pytest 只能证明「被覆盖的逻辑是对的」**；跨域直连、前后端路径/字段错位、图标缺失、
+  路由漏注册这四类**不报错但静默失效**的问题，只有 `regression_check.py` 能抓。
+- 端到端跨模块联动见 `tests/test_e2e_new_features.py`（含迁移幂等 + 存量脏值自愈）。
+- **路由表必须走 `app.openapi()["paths"]`**：本项目 FastAPI 的 `include_router` 是惰性的
+  （`app.routes` 元素是 `_IncludedRouter`、`path` 为 None），直接遍历得 0 条 → 会误报全部路由缺失。
+- 比对路径要**归一化参数段**（后端 `{gid}` vs 前端具体 id），否则一律误报。
+- **含 `\s`/`\d` 的脚本别用 heredoc 生成**（反斜杠被吞 → Node 报 `SyntaxError: missing )`），一律用 Write 落盘。
+
+## ⚠️ 待修的两个已知问题（2026-09-24 回归发现，用户暂未决定）
+1. **等级特权承诺未落地**：`level_config.perk` 的「头像框/称号专属配色/成就墙展示位」
+   在前端**只当文字显示**，无任何按等级生效的视觉变化 → 虚假承诺。
+   `services/level.py` 注释里「避免出现写了但没实现的权益」与实现不符，改注释或补实现（推荐后者，成本低）。
+2. **focus 路由无鉴权**：`POST /api/focus/complete`、`GET /api/focus/today|stats` 只依赖
+   `get_db`，**没有 `require_self`**，`user_id` 由请求方提供 → 可伪造他人身份刷金币/经验
+   （有每日 8 次上限与时长白名单兜底，影响有限）。建议补 `require_self` 统一鉴权口径。
