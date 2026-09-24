@@ -29,6 +29,19 @@
           <button class="hs-btn" :class="{active: appCtx.homeSub==='family'}" @click="appCtx.homeSub='family'">🏡 家园互动</button>
         </div>
 
+        <!-- 每日签到（新功能 A）：未签高亮引导，已签显示连续天数 -->
+        <div class="checkin-bar" v-if="appCtx.checkin">
+          <div class="ck-left">
+            <div class="ck-fire">🔥 连续 <b>{{appCtx.checkinStreak}}</b> 天</div>
+            <div class="ck-sub" v-if="appCtx.checkinNextReward">再连续 {{appCtx.checkinNextReward.day - appCtx.checkinStreak}} 天，额外 +{{appCtx.checkinNextReward.bonus}} 💎</div>
+            <div class="ck-sub" v-else>已解锁全部连续奖励，继续保持 💪</div>
+          </div>
+          <button v-if="!appCtx.checkinSignedToday" class="btn btn-primary ck-btn" :disabled="appCtx.checkinLoading" @click="appCtx.doCheckin()">
+            {{appCtx.checkinLoading ? '签到中…' : '📅 签到领钻石'}}
+          </button>
+          <button v-else class="btn btn-ghost ck-btn" @click="appCtx.openCheckinOverlay(true)">✅ 今日已签到</button>
+        </div>
+
         <template v-if="appCtx.homeSub==='today'">
         <!-- 今日提醒条（P5：聚合待办提醒，点击直达） -->
         <div class="today-remind" v-if="appCtx.taskRemain>0 || appCtx.wrongBadge>0">
@@ -363,6 +376,42 @@
         </div>
       </template>
 </div>
+
+  <!-- 签到结果弹窗（新功能 A） -->
+  <div class="modal-mask" :class="{on: appCtx.checkinOverlay.show}">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 v-if="appCtx.checkinOverlay.already">📅 今日已签到</h2>
+        <h2 v-else>🎉 签到成功！</h2>
+      </div>
+      <div class="modal-body">
+        <div class="ck-reward" v-if="!appCtx.checkinOverlay.already">
+          <div class="ck-diamond">💎 +{{appCtx.checkinOverlay.reward}}</div>
+          <div class="ck-reward-sub" v-if="appCtx.checkinOverlay.bonus > 0">其中连续奖励 +{{appCtx.checkinOverlay.bonus}} 钻石</div>
+        </div>
+        <div class="ck-streak">🔥 已连续签到 <b>{{appCtx.checkinOverlay.streak}}</b> 天</div>
+
+        <div class="ck-cal-title">本月签到</div>
+        <div class="ck-cal">
+          <div class="ck-day" v-for="d in appCtx.checkinCalendar" :key="d.day" :class="{signed: d.signed}">
+            <span class="ck-d">{{d.day}}</span>
+            <span class="ck-dot">{{d.signed ? '✓' : ''}}</span>
+          </div>
+        </div>
+
+        <div class="ck-ladder-title">连续奖励里程碑</div>
+        <div class="ck-ladder">
+          <div class="ck-ms" v-for="m in (appCtx.checkin && appCtx.checkin.ladder)" :key="m.day" :class="{reached: appCtx.checkinStreak >= m.day}">
+            <span class="ck-ms-day">{{m.day}}天</span>
+            <span class="ck-ms-bonus">+{{m.bonus}}</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-primary" @click="appCtx.closeCheckinOverlay()">好的</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>

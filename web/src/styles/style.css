@@ -366,6 +366,31 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .toast{position:fixed;left:50%;bottom:44px;transform:translateX(-50%) translateY(20px);background:var(--text);color:#fff;padding:11px 22px;border-radius:14px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:500;box-shadow:var(--shadow-lg)}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* ============ 每日签到（新功能 A） ============ */
+.checkin-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;background:linear-gradient(135deg,#6a8bff,#8a6bff);border-radius:16px;padding:14px 18px;margin:14px 0 4px;color:#fff;box-shadow:0 6px 18px rgba(120,120,255,.25)}
+.ck-left{display:flex;flex-direction:column;gap:3px}
+.ck-fire{font-size:16px;font-weight:700}
+.ck-fire b{font-size:20px}
+.ck-sub{font-size:12px;opacity:.92}
+.checkin-bar .ck-btn{background:#fff;color:#5b4bff;border:none;box-shadow:0 2px 8px rgba(0,0,0,.12);font-weight:600}
+.checkin-bar .ck-btn:hover{background:#f2efff}
+.checkin-bar .ck-btn:disabled{opacity:.75;cursor:default}
+.ck-reward{text-align:center;margin:6px 0 14px}
+.ck-diamond{font-size:34px;font-weight:800;color:var(--primary)}
+.ck-reward-sub{font-size:13px;color:var(--text-3);margin-top:2px}
+.ck-streak{text-align:center;font-size:15px;margin-bottom:18px;color:var(--text)}
+.ck-streak b{color:var(--primary);font-size:18px}
+.ck-cal-title,.ck-ladder-title{font-size:13px;color:var(--text-3);margin:14px 0 8px;font-weight:600}
+.ck-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.ck-day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);border-radius:10px;font-size:12px;color:var(--text-3)}
+.ck-day.signed{background:var(--primary-light);color:var(--primary);font-weight:700}
+.ck-dot{font-size:11px;line-height:1}
+.ck-ladder{display:flex;gap:8px;flex-wrap:wrap}
+.ck-ms{flex:1;min-width:64px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 6px;background:var(--bg);border-radius:12px;font-size:12px;color:var(--text-3);border:1px solid transparent}
+.ck-ms.reached{border-color:var(--primary);color:var(--primary);background:var(--primary-light);font-weight:700}
+.ck-ms-day{font-size:13px}
+.ck-ms-bonus{font-weight:700}
+
 /* ============ 统计 / 设置 ============ */
 .attempt-item{display:flex;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:10px}
 .attempt-item:hover{background:rgba(78,124,246,.05)}

@@ -15,6 +15,8 @@ import { dictData, dictMethods } from './dict.js';
 import { cardsData, cardsMethods } from './cards.js';
 import { petData, petMethods } from './pet.js';
 import { reciteData, reciteComputed, reciteMethods } from './recite.js';
+// 每日签到 + 连续奖励（新功能 A）：data/computed/methods 抽至 logic/checkin.js（与 recite 同构）
+import { checkinData, checkinComputed, checkinMethods } from './checkin.js';
 
 const appOptions = {
   data() {
@@ -31,6 +33,7 @@ const appOptions = {
       ...cardsData(),
       ...petData(),
       ...reciteData(),   // 单词背诵+古文默写 data（wordSession/textSession/textDetail，见 logic/recite.js）
+      ...checkinData(),   // 每日签到 data（checkin/checkinLoading/checkinOverlay，见 logic/checkin.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -141,6 +144,7 @@ const appOptions = {
     ...imComputed,
     ...focusComputed,
     ...reciteComputed,       // 单词背诵+古文默写 computed（wordPct/textPct/curWord/curText/textLines，见 logic/recite.js）
+    ...checkinComputed,       // 每日签到 computed（checkinSignedToday/checkinStreak/checkinNextReward/checkinCalendar，见 logic/checkin.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码
       const a = (this.username || '').trim();
@@ -303,6 +307,7 @@ const appOptions = {
     ...cardsMethods,
     ...petMethods,
     ...reciteMethods,       // 单词背诵+古文默写 methods（startWordSession/wordNext/startTextSession 等 16 个，见 logic/recite.js）
+    ...checkinMethods,       // 每日签到 methods（loadCheckin/doCheckin/openCheckinOverlay/closeCheckinOverlay，见 logic/checkin.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -388,7 +393,7 @@ const appOptions = {
     /* ─────────── 导航 ─────────── */
     goTab(t) {
       this.tab = t;
-      if (t === 'home') { this.loadRewards(); this.loadRewardTimeline(); this.loadParentMsgs(); this.loadNotices(); this.loadDailyTasks(); }
+      if (t === 'home') { this.loadRewards(); this.loadRewardTimeline(); this.loadParentMsgs(); this.loadNotices(); this.loadDailyTasks(); this.loadCheckin(); }
       if (t === 'practice') { this.loadMathCategories(); if (this.subject === '英语') this.loadGrammarPoints(); }
       if (t === 'recite') { this.reciteSub === 'words' ? this.loadVocabToday() : this.loadClassicalToday(); this.loadClassicalTexts(); }
       if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); this.loadTeachDue(); }
@@ -739,6 +744,7 @@ const appOptions = {
       if (!this.user) return;
       // 第一波：首屏关键数据（任务/看板/错题/复习/背词/古诗/分析）
       this.loadDailyTasks();
+      this.loadCheckin();           // 每日签到状态（新功能 A）：驱动首页签到按钮 + 弹窗数据
       this.loadDashboard();
       this.loadReviewQueue();
       this.loadVocabToday();

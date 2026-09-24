@@ -293,6 +293,10 @@ def _build_payload(db: Session, user_id: str) -> dict:
     mandatory_rows = []
     optional_rows = []
     for r in all_rows:
+        # 签到行（task_code='checkin'）不纳入每日任务聚合：既不渲染为任务卡，
+        # 也不计入 optional_done（否则会白送补签卡），独立由 /api/checkin 管理。
+        if r.task_code == "checkin":
+            continue
         tt = getattr(r, 'task_type', 'mandatory') or 'mandatory'
         if tt == "mandatory":
             mandatory_rows.append(r)
