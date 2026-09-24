@@ -16,8 +16,16 @@ from sqlalchemy import or_
 
 from app.database import get_db, SessionLocal
 from app.models.user import User
-from app.models.im import *  # Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim, ReadReceipt, *Type
-from app.schemas.im import *
+from app.models.im import (
+    DIAMOND_SCALE,
+    MessageType, ChatType, FriendStatus, RedPacketStatus, SensitiveLevel,
+    Chat, Message, Friendship, GroupMember, RedPacket, RedPacketClaim,
+    ReadReceipt, SensitiveWord, SensitiveHit,
+)
+from app.schemas.im import (
+    FriendAddRequest, FriendshipCreate, UserResponse, ChatCreate, ChatResponse,
+    MessageCreate, MessageResponse, RedPacketCreate, RedPacketResponse,
+)
 from app.domains.frozen.services.im_crud import (
     get_private_chat,
     get_chat_by_id,
