@@ -64,6 +64,7 @@ export const NAV_GROUPS = [
     title: '我的',
     items: [
       { tab: 'stats', label: '学习统计', icon: 'stats' },
+      { tab: 'favorites', label: '我的收藏', icon: 'star' },
       { tab: 'settings', label: '设置', icon: 'settings' },
       { tab: 'parent', label: '家长管理', icon: 'parent', badge: 'parent' },
       { tab: 'support', label: '帮助与客服', icon: 'support' },

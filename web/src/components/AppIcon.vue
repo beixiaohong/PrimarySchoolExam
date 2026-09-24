@@ -37,6 +37,8 @@ const ICONS = {
   support: '<circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-2.9 2.5-2.9 2.5"/><path d="M12 17h.01"/>',
   // 学习日历（tab='calendar'，成长与激励组）：日历格 + 打卡点
   calendar: '<rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18"/><path d="M8 2v4M16 2v4"/><path d="M8 14h.01M12 14h.01M16 14h.01"/>',
+  // 我的收藏（tab='favorites'，我的组）：五角星描边
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9Z"/>',
   // IM 即时通讯：对话气泡 + 三个圆点（消息计数意象）
   im: '<path d="M4 5h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><circle cx="9" cy="11" r="1"/><circle cx="12" cy="11" r="1"/><circle cx="15" cy="11" r="1"/>',
   // —— 任务域图标（B3 批次2：首页今日任务卡 / 复习队列）——

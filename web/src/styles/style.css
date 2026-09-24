@@ -391,6 +391,22 @@ select.pill{appearance:none;padding-right:30px;background-image:url("data:image/
 .ck-ms-day{font-size:13px}
 .ck-ms-bonus{font-weight:700}
 
+/* ============ 我的收藏（新功能 D） ============ */
+.fv-tabs{display:flex;align-items:center;gap:8px;margin:18px 0 16px;flex-wrap:wrap}
+.fv-tab{border:1px solid var(--border);background:var(--card);color:var(--text-2,#8a97b0);font-size:13px;font-weight:600;padding:8px 16px;border-radius:10px;cursor:pointer;transition:all .15s}
+.fv-tab.active{background:linear-gradient(135deg,#4E7CF6,#7B9DFB);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(78,124,246,.28)}
+.fv-count{margin-left:auto;font-size:12px;color:var(--text-3)}
+.fv-item{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--border)}
+.fv-item:last-of-type{border-bottom:none}
+.fv-type{flex:none;font-size:11px;font-weight:600;padding:4px 9px;border-radius:8px;color:var(--text-2,#6b7a99)}
+.fv-body{flex:1;min-width:0}
+.fv-body b{font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fv-body .meta{font-size:12px;color:var(--text-3)}
+.fv-more{margin-top:14px;width:100%}
+.fv-loading{text-align:center;font-size:12px;color:var(--text-3);padding:12px 0}
+/* 试卷列表 ⭐ 收藏按钮：已收藏时高亮 */
+.fv-star.on{color:#f5a623;border-color:#f5a623;font-weight:600}
+
 /* ============ 统计 / 设置 ============ */
 .attempt-item{display:flex;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:10px}
 .attempt-item:hover{background:rgba(78,124,246,.05)}

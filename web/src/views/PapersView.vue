@@ -13,6 +13,7 @@
               <span class="meta">{{p.subject}} · {{p.grade}}年级 · {{p.difficulty}} · {{p.question_count}}题 · {{p.created_at}}</span>
             </div>
             <div class="p-actions">
+              <button class="btn btn-ghost btn-sm fv-star" :class="{on: appCtx.isFavorited('paper', p.id)}" @click="appCtx.toggleFavorite('paper', p.id, p.title)">{{appCtx.isFavorited('paper', p.id) ? '★ 已收藏' : '☆ 收藏'}}</button>
               <button class="btn btn-ghost btn-sm" @click="appCtx.previewPaper(p)">在线做题</button>
               <button class="btn btn-ghost btn-sm" @click="appCtx.downloadPaper(p)">下载 Word</button>
             </div>

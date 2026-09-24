@@ -35,6 +35,7 @@ import SettingsView from './views/SettingsView.vue'
 import ParentView from './views/ParentView.vue'
 import SupportView from './views/SupportView.vue'
 import CoursesView from './views/CoursesView.vue'
+import FavoritesView from './views/FavoritesView.vue'
 import AntiCheatInput from './components/AntiCheatInput.vue'
 // B3 全站图标统一：内联 SVG 图标集（nav.js / App.vue 侧边栏 & TabBar 统一引用）
 import AppIcon from './components/AppIcon.vue'
@@ -92,6 +93,7 @@ app.component('SettingsView', SettingsView)
 app.component('ParentView', ParentView)
 app.component('SupportView', SupportView)
 app.component('CoursesView', CoursesView)
+app.component('FavoritesView', FavoritesView)
 app.component('AntiCheatInput', AntiCheatInput)
 app.component('AppIcon', AppIcon)
 // 挂载到 index.html 中的 #app 节点

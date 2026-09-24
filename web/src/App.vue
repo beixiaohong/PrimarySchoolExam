@@ -221,6 +221,8 @@
 
       <!-- ═══════════ 网课（系统配置 + 家长配置） ═══════════ -->
 <courses-view v-if="tab==='courses'"></courses-view>
+      <!-- ═══════════ 我的收藏（新功能 D） ═══════════ -->
+      <favorites-view v-if="tab==='favorites'"></favorites-view>
 
       <!-- 网课播放弹窗 -->
       <div v-if="curCourse" class="modal-mask on" @click.self="closeCourse()">
