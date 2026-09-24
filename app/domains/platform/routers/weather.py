@@ -12,7 +12,7 @@ import os
 import time
 from datetime import datetime
 
-import requests
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -64,24 +64,25 @@ def _get_city_by_ip(ip: str) -> str:
 
 # ═══════════════ 和风天气调用 ═══════════════
 
-def _fetch_weather(city_query: str) -> dict:
-    """GeoAPI 查城市 → 实时天气 + 3 日预报"""
+async def _fetch_weather(city_query: str) -> dict:
+    """GeoAPI 查城市 → 实时天气 + 3 日预报（httpx 异步，不阻塞事件循环/线程池）"""
     params_key = {"key": _api_key()}
     try:
-        geo = requests.get(
-            "https://geoapi.qweather.com/v2/city/lookup",
-            params={**params_key, "location": city_query}, timeout=10).json()
-        if geo.get("code") != "200" or not geo.get("location"):
-            return {"city": city_query, "now": None, "forecast": [], "error": "未找到该城市"}
-        loc = geo["location"][0]
-        location_id, city_name = loc["id"], loc.get("name", city_query)
+        async with httpx.AsyncClient(timeout=10) as client:
+            geo = (await client.get(
+                "https://geoapi.qweather.com/v2/city/lookup",
+                params={**params_key, "location": city_query})).json()
+            if geo.get("code") != "200" or not geo.get("location"):
+                return {"city": city_query, "now": None, "forecast": [], "error": "未找到该城市"}
+            loc = geo["location"][0]
+            location_id, city_name = loc["id"], loc.get("name", city_query)
 
-        now_data = requests.get(
-            f"https://{_api_host()}/v7/weather/now",
-            params={**params_key, "location": location_id}, timeout=10).json()
-        forecast_data = requests.get(
-            f"https://{_api_host()}/v7/weather/3d",
-            params={**params_key, "location": location_id}, timeout=10).json()
+            now_data = (await client.get(
+                f"https://{_api_host()}/v7/weather/now",
+                params={**params_key, "location": location_id})).json()
+            forecast_data = (await client.get(
+                f"https://{_api_host()}/v7/weather/3d",
+                params={**params_key, "location": location_id})).json()
 
         return {
             "city": city_name,
@@ -89,7 +90,7 @@ def _fetch_weather(city_query: str) -> dict:
             "forecast": forecast_data.get("daily", []) if forecast_data.get("code") == "200" else [],
             "update_time": datetime.now().isoformat(timespec="seconds"),
         }
-    except requests.RequestException as e:
+    except httpx.HTTPError as e:
         logger.warning("天气接口调用失败（city=%s）: %s", city_query, e)
         return {"city": city_query, "now": None, "forecast": [], "error": "天气服务暂不可用"}
 
@@ -97,7 +98,7 @@ def _fetch_weather(city_query: str) -> dict:
 # ═══════════════ 接口 ═══════════════
 
 @router.get("/current", summary="当前天气（城市参数 > 用户配置城市 > IP 定位 > 默认城市）")
-def get_current_weather(request: Request, city: str = None, user_id: str = None):
+async def get_current_weather(request: Request, city: str = None, user_id: str = None):
     """获取当前天气（实时 + 三日预报）。
 
     城市解析顺序：URL 参数 city → 用户配置城市（传 user_id 时）→ IP 定位 → 默认城市(北京)。
@@ -107,8 +108,9 @@ def get_current_weather(request: Request, city: str = None, user_id: str = None)
     副作用：无（只读，可能写 IP/天气缓存）。无需家长密码。
 
     严谨性：用户城市查询用短会话（SessionLocal + 即关），绝不把 DB 连接带到
-    后续的外部天气 API 调用（_fetch_weather 含 3 次同步 requests.get，最坏 ~30s）；
-    否则连接被占、并发时抽干连接池导致全站卡死（同 267c32c 修复的 AI 接口反模式）。
+    后续的外部天气 API 调用（_fetch_weather 为 httpx 异步，并发不占线程池 worker、
+    不阻塞事件循环，最坏 ~30s 仅占用异步任务，不抽干连接池）；
+    且 DB 短会话已在上游释放，符合 267c32c 修复的「持连接等外部阻塞调用」反模式。
     """
     if not weather_configured():
         raise HTTPException(503, "天气服务未配置（QWEATHER_API_KEY）")
@@ -128,7 +130,7 @@ def get_current_weather(request: Request, city: str = None, user_id: str = None)
         if time.time() - ts < _CACHE_TTL:
             return {**result, "cached": True}
 
-    result = _fetch_weather(target)
+    result = await _fetch_weather(target)
     _weather_cache[target] = (result, time.time())
     return {**result, "cached": False}
 
