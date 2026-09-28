@@ -81,6 +81,50 @@ def test_knowledge_kind_not_fooled_by_top_dir_name():
 
 # ── ② 章节/知识域归一 ──
 
+def test_fill_merges_pdf_split_lines_and_shortens_title():
+    """填空速记按行成条会产出半句碎片（用户反馈「知识点页很乱」）→ 按句末标点合并"""
+    lines = [
+        "CIA 三要素是指----（）、（）、（）；",
+        "4 个信息安全层次是----（）安全、（）安全、（）安全；其中，（）安全是一种静",
+        "态安全；（）安全是一种动态安全；",
+    ]
+    out = gx.parse_knowledge_lines(lines, {
+        "sub": gx.KN_RECITE,
+        "source_file": "02. 课程主要知识点清单+思维导图+填空辅助记忆清单/信息系统安全管理/y.pdf",
+    })
+    items = out["items"]
+    assert len(items) == 2, "断句的两行必须合并成一条，而不是两条半句"
+    assert items[0]["title"] == "CIA 三要素", "标题要截到填空提示前，列表才读得下去"
+    assert "静态安全" in items[1]["content"] and items[1]["content"].endswith("；")
+    # 目录名「信息系统安全管理」不在考纲 24 章里 → 走 DIR_DOMAIN_HINTS 兜底
+    assert items[0]["domain"] == "信息技术发展"
+
+
+def test_slide_drops_junk_and_rejects_foreign_chapter():
+    """课件页原始文本含 √/页码碎片；且课件自称的章号与考纲不一致时不能硬套"""
+    lines = [
+        "√", "15~20", "— 12 —", "乐凯教育",
+        "第18章  职业道德规范",              # 课件自己的章号：考纲第18章是「绩效域」，不能套
+        "什么是软考中高项", "软考高项证书及作用", "考试形式、通过率",
+        "第6章 项目管理概论",
+        "项目、项目管理、项目成功标准", "项目生命周期、阶段、五大过程组",
+        "组织结构、PMO 项目经理角色",
+    ]
+    out = gx.parse_knowledge_lines(lines, {
+        "sub": gx.KN_SLIDE,
+        "source_file": "01. 直播课程课件/00.乐凯2605软考高项--第零课--开课启动会-12.13/x.pdf",
+    })
+    items = out["items"]
+    assert items, "清洗后仍应保留有效课件内容"
+    for it in items:
+        assert "√" not in it["content"] and "15~20" not in it["content"]
+        assert it["kind"] == gx.KN_SLIDE
+    foreign = [i for i in items if i["title"].startswith("第18章")]
+    assert foreign and foreign[0]["chapter"] == "", "自称章号与考纲不符时应留空"
+    own = [i for i in items if i["title"].startswith("第6章")]
+    assert own and own[0]["chapter"] == "第6章 项目管理概论"
+
+
 @pytest.mark.parametrize("text,expected", [
     ("第12章--项目质量管理（下）.pdf", "第12章 质量管理"),
     ("第1、6~8章 章节练习", "第1章 信息化发展"),

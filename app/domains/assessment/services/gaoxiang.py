@@ -102,6 +102,38 @@ def qtype_label(qtype: str) -> str:
     """题型中文名（错误提示/前端展示共用）"""
     return QTYPE_LABELS.get(qtype, qtype or "题目")
 
+
+# ── 知识点资料类型（`gx_knowledge.kind`，与 tools/gx_parse.py 的 KN_* 对齐）──
+# 一份资料包里「清单/导图/填空/课件/教材」价值差异很大，前端按此分组浏览，
+# 避免把课件页原始文本与速记条目混在一个列表里（用户反馈过「知识点页很乱」）。
+KN_LIST = "list"          # 知识点清单
+KN_MINDMAP = "mindmap"    # 思维导图
+KN_RECITE = "recite"      # 填空辅助记忆清单
+KN_MUST = "must"          # 必背知识点
+KN_FORMULA = "formula"    # 公式汇总
+KN_MNEMONIC = "mnemonic"  # 记忆口诀
+KN_ITTO = "itto"          # 过程/ITTO 汇总
+KN_SLIDE = "slide"        # 课堂课件
+KN_TEXTBOOK = "textbook"  # 教材/考纲
+KN_REF = "ref"            # 参考汇总文档
+KN_AI = "ai"              # AI 生成
+
+KN_LABELS = {
+    KN_LIST: "知识点清单", KN_MINDMAP: "思维导图", KN_RECITE: "填空速记",
+    KN_MUST: "必背考点", KN_FORMULA: "公式汇总", KN_MNEMONIC: "记忆口诀",
+    KN_ITTO: "过程与ITTO", KN_SLIDE: "课堂课件", KN_TEXTBOOK: "教材考纲",
+    KN_REF: "参考汇总", KN_AI: "AI 生成",
+}
+# 展示优先级：越靠前越「干净、越像知识点卡片」，前端默认按此排序分组
+KN_ORDER = [KN_MUST, KN_LIST, KN_ITTO, KN_FORMULA, KN_MNEMONIC, KN_MINDMAP,
+            KN_RECITE, KN_TEXTBOOK, KN_REF, KN_SLIDE, KN_AI]
+
+
+def knowledge_kind_label(kind: str) -> str:
+    """知识点资料类型中文名（前端 catalog 直接取用，省掉前端第二份映射）"""
+    return KN_LABELS.get(kind, kind or "知识点")
+
+
 # 主观题「未达标」阈值：低于该分视为错题入库，供后续重练
 SUBJECTIVE_PASS_SCORE = 60
 

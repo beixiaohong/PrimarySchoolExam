@@ -171,7 +171,17 @@
   <div v-else-if="appCtx.gxSub === 'knowledge'" class="card">
     <div class="card-head">
       <b>知识点</b>
-      <span class="card-desc">按考纲 24 章浏览；没有内容时可让 AI 生成一批</span>
+      <span class="card-desc">资料已按类型分类：先选资料类型（速记/清单/导图…），再按考纲章节定位</span>
+    </div>
+
+    <div class="gx-row">
+      <span class="gx-label">资料类型</span>
+      <div class="gx-chips">
+        <button class="gx-chip" :class="{on: !appCtx.gxKKind}" @click="appCtx.gxPickKKind('')">全部</button>
+        <button v-for="k in appCtx.gxKKindOptions" :key="k.value" class="gx-chip"
+                :class="{on: appCtx.gxKKind === k.value}"
+                @click="appCtx.gxPickKKind(k.value)">{{k.label}}（{{k.count}}）</button>
+      </div>
     </div>
 
     <div class="gx-row">
@@ -188,7 +198,7 @@
       <select class="gx-select" :value="appCtx.gxKChapter"
               @change="appCtx.gxPickKChapter($event.target.value)">
         <option value="">不限章节</option>
-        <option v-for="c in appCtx.gxChapterOptions" :key="c.value" :value="c.value">
+        <option v-for="c in appCtx.gxKChapterOptions" :key="c.value" :value="c.value">
           {{c.value}}（{{c.count}}）
         </option>
       </select>
@@ -198,23 +208,35 @@
       <button class="btn gx-mini-btn" @click="appCtx.gxClearKnowledgeFilter()">重置</button>
     </div>
 
+    <div v-if="appCtx.gxKLoading" class="card-desc">加载中…</div>
+    <div v-else-if="!appCtx.gxKList.length" class="card-desc gx-empty">
+      这个筛选条件下还没有知识点，换个条件，或让下面的 AI 生成一批。
+    </div>
+    <div v-else class="gx-kgroups">
+      <div v-for="g in appCtx.gxKGroups" :key="g.kind" class="gx-kgroup">
+        <div class="gx-kgroup-head" v-if="!appCtx.gxKKind">
+          <b>{{g.label}}</b><span class="gx-kgroup-n">{{g.items.length}} 条</span>
+        </div>
+        <div class="gx-klist">
+          <div v-for="k in g.items" :key="k.id" class="gx-kitem" @click="appCtx.gxOpenKnowledge(k)">
+            <div class="gx-kitem-head">
+              <b>{{k.title}}</b>
+              <span class="gx-kitem-tag">{{appCtx.gxKKindLabel(k.kind)}}</span>
+            </div>
+            <span class="gx-kitem-meta" v-if="k.domain || k.chapter">
+              {{k.domain || '未归类'}}<template v-if="k.chapter"> · {{k.chapter}}</template>
+            </span>
+            <span class="gx-kitem-sum" v-if="k.summary">{{k.summary}}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="gx-actions">
       <button class="btn btn-primary" :disabled="appCtx.gxKGenning" @click="appCtx.gxGenerateKnowledge()">
         {{appCtx.gxKGenning ? 'AI 生成中…' : 'AI 生成该知识域知识点'}}
       </button>
       <span class="card-desc">生成的内容会落库复用，重复点击只补新增</span>
-    </div>
-
-    <div v-if="appCtx.gxKLoading" class="card-desc">加载中…</div>
-    <div v-else-if="!appCtx.gxKList.length" class="card-desc gx-empty">
-      这个筛选条件下还没有知识点，换个条件，或让 AI 生成一批。
-    </div>
-    <div v-else class="gx-klist">
-      <div v-for="k in appCtx.gxKList" :key="k.id" class="gx-kitem" @click="appCtx.gxOpenKnowledge(k)">
-        <b>{{k.code ? k.code + ' ' : ''}}{{k.title}}</b>
-        <span class="card-desc">{{k.summary}}</span>
-        <span class="gx-q-badge" v-if="k.chapter">{{k.chapter}}</span>
-      </div>
     </div>
   </div>
 
@@ -479,10 +501,12 @@
       <div class="gx-modal-meta">
         <span class="gx-q-badge" v-if="appCtx.gxKDetail.domain">{{appCtx.gxKDetail.domain}}</span>
         <span class="gx-q-badge" v-if="appCtx.gxKDetail.chapter">{{appCtx.gxKDetail.chapter}}</span>
-        <span class="gx-q-badge" v-if="appCtx.gxKDetail.kind">{{appCtx.gxKDetail.kind}}</span>
+        <span class="gx-q-badge" v-if="appCtx.gxKDetail.kind">{{appCtx.gxKKindLabel(appCtx.gxKDetail.kind)}}</span>
         <span class="gx-modal-src" v-if="appCtx.gxKDetail.source_file">出处：{{appCtx.gxKDetail.source_file}}</span>
       </div>
-      <div class="gx-modal-body">{{appCtx.gxKDetail.content}}</div>
+      <div class="gx-modal-body gx-kcontent">
+        <p v-for="(para, i) in appCtx.gxKParas" :key="i">{{para}}</p>
+      </div>
     </div>
   </div>
 </div>
@@ -578,6 +602,22 @@ export default {
 .gx-kitem{padding:12px;border:1px solid var(--line,#eee);border-radius:10px;cursor:pointer;
   display:flex;flex-direction:column;gap:4px}
 .gx-kitem:hover{border-color:#0e7490}
+/* 知识点分节（按资料类型）：类型可读性差异大，分节 + 类型角标避免混成一坨 */
+.gx-kgroups{margin-top:12px;display:flex;flex-direction:column;gap:18px}
+.gx-kgroup-head{display:flex;align-items:center;gap:8px;padding-bottom:6px;
+  border-bottom:1px solid var(--line,#eee);font-size:14px}
+.gx-kgroup-n{font-size:12px;opacity:.6}
+.gx-kgroup .gx-klist{margin-top:8px}
+.gx-kitem-head{display:flex;align-items:flex-start;gap:8px;justify-content:space-between}
+.gx-kitem-head b{font-size:14px;line-height:1.5}
+.gx-kitem-tag{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:6px;
+  background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;white-space:nowrap}
+.gx-kitem-meta{font-size:12px;opacity:.65}
+.gx-kitem-sum{font-size:13px;line-height:1.6;opacity:.8;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+/* 知识点正文：PDF 抽取原文按行分段，去掉挤成一大坨的观感 */
+.gx-kcontent p{margin:0 0 10px;line-height:1.8;font-size:14px}
+.gx-kcontent p:last-child{margin-bottom:0}
 
 .gx-pick-list{margin-top:10px;display:flex;flex-direction:column;gap:8px;
   max-height:280px;overflow:auto}

@@ -1119,6 +1119,8 @@ def parse_knowledge_lines(lines: list, meta: dict) -> dict:
         return _parse_fill(lines, meta)
     if kind in (KN_MINDMAP,):
         return _parse_mindmap(lines, meta)
+    if kind == KN_SLIDE:
+        return _parse_slide(lines, meta)
 
     cards = []
     title = ""
@@ -1128,7 +1130,8 @@ def parse_knowledge_lines(lines: list, meta: dict) -> dict:
     def push():
         nonlocal title, buf
         content = "\n".join(buf).strip()
-        if title and len(content) >= 20:
+        # 正文要求 ≥20 个中文字：课件/表格残留的「√ / 12 / —」碎片不成卡
+        if title and len(content) >= 20 and _cjk_len(content) >= 20:
             cards.append({"title": title, "content": content, "chapter": chapter})
         buf = []
 
@@ -1172,8 +1175,10 @@ def parse_knowledge_lines(lines: list, meta: dict) -> dict:
             })
     for x in items:
         if not x["domain"]:
-            doms = _domains_of(x["chapter"] + " " + x["title"] + " " + (meta.get("source_file") or ""))
-            x["domain"] = doms[0] if doms else ""
+            x["domain"] = _first_domain(x["chapter"] + " " + x["title"] + " "
+                                        + (meta.get("source_file") or ""))
+        if not x["chapter"] and x["domain"]:
+            x["chapter"] = chapter_of(x["domain"])
         x["fingerprint"] = fingerprint(x["title"], x["content"][:400])
     return {"items": items}
 
@@ -1201,34 +1206,187 @@ def _split_long(text: str, limit: int) -> list:
 
 
 def _parse_fill(lines: list, meta: dict) -> dict:
-    """填空辅助记忆清单：每行一条（含 （） 空格的即为自测条目）"""
-    items = []
-    chapter = ""
+    """填空辅助记忆清单：先按句末标点把**断句碎片**合并成完整条目，再取前段作短标题
+
+    坑：PDF 每个条目常被拆成 2~3 个物理行（`…其中，（）安全是一种静` / `态安全；（）安全…`），
+    按行成条会产出大量半句碎片 —— 用户看到的就是「知识点页很乱」。
+    标题另做裁剪（截到 `----`/`（）`/冒号前），列表才读得下去；全文仍保留在正文里。
+    """
+    entries, cur, chapter = [], "", ""
     for raw in lines:
         line = raw.strip()
         if not line:
             continue
         m = _CH_HEAD.match(line)
         if m and len(line) <= 40:
+            if cur:
+                entries.append(cur)
+                cur = ""
             chapter = _strip_dash(line)
             continue
-        if len(line) < 8:
+        # 小节标题行（无填空括号、无标点、很短）→ 只作上下文，不成条目
+        if (not _FILL_LINE.search(line) and len(line) <= 20
+                and not re.search(r"[；。，、！？]", line)):
+            if cur:
+                entries.append(cur)
+                cur = ""
+            continue
+        if not cur:
+            cur = line
+        elif cur[-1] in _FILL_END:
+            entries.append(cur)
+            cur = line
+        elif _FILL_START.match(line) and _FILL_LINE.search(line) and len(line) > 10:
+            entries.append(cur)     # 带序号且带填空 → 新条目
+            cur = line
+        else:
+            cur += line            # 续行：PDF 在同一句中断行
+        if cur and cur[-1] in _FILL_END:
+            entries.append(cur)
+            cur = ""
+    if cur:
+        entries.append(cur)
+
+    items = []
+    for text in entries:
+        if len(text) < 8:
             continue
         items.append({
-            "title": line[:200],
-            "summary": "",
-            "content": line,
+            "title": _fill_title(text),
+            "summary": text[:180],
+            "content": text,
             "chapter": chapter,
             "domain": meta.get("domain") or "",
             "kind": KN_RECITE,
-            "has_blank": bool(_FILL_LINE.search(line)),
+            "has_blank": bool(_FILL_LINE.search(text)),
             "source_file": meta.get("source_file") or "",
         })
     for x in items:
         if not x["domain"]:
             x["domain"] = _first_domain(chapter + " " + (meta.get("source_file") or ""))
+        if not x["chapter"] and x["domain"]:
+            x["chapter"] = chapter_of(x["domain"])
         x["fingerprint"] = fingerprint(x["content"])
     return {"items": items}
+
+
+_FILL_END = "；;。！？!?：:"
+_FILL_START = re.compile(r"^(?:\d{1,3}\s*[、.．)）]|[（(]\s*\d{1,2}\s*[)）]|第\s*\d{1,2}\s*章)")
+# 标题裁剪：在「填空提示/破折号/冒号」处断开，再去掉结尾的是/为等虚词
+_FILL_CUT = re.compile(r"(?:----|——|--|[:：]|\s*[（(]\s*[）)])")
+_FILL_TAIL = re.compile(r"(?:是指|指的是|包括|分别是|是|为|有)$")
+
+
+def _fill_title(text: str) -> str:
+    """填空条目的短标题：截到填空提示前，并去掉「是/为/包括」等结尾虚词"""
+    t = _FILL_CUT.split(text or "")[0].strip(" -—·、,，。;；:")
+    t = _FILL_TAIL.sub("", t).strip()
+    if len(t) < 4:
+        t = (text or "")[:40]
+    return t[:60]
+
+
+def _parse_slide(lines: list, meta: dict) -> dict:
+    """课堂课件讲义：PDF 把每页文本直接抽出来，含大量页码/√ 表格碎片/重复页眉页脚
+
+    清洗规则（这是「知识点页很乱」的另一半根因）：
+    1. 纯符号行（`√ / 15~20`、`— 12 —`）丢弃；
+    2. 中文字数 < 6 的行丢弃（课件里大量图注、装饰字）；
+    3. 出现 ≥8 词的短行视为页眉页脚丢弃；
+    4. 无 `第N章` 小节标题的整份课件合并成一张卡（标题取课次名），按 MAX_CARD_CHARS 切块。
+    质量天然弱于清单/速记，故 kind 单列 `slide`，前端默认不混进主列表。
+    """
+    counter, chapter, title, buf, cards = {}, "", "", [], []
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        counter[line] = counter.get(line, 0) + 1
+
+    def flush():
+        """收尾当前缓冲：够长就成卡（<20 字视为上一页的尾巴，并进上一张卡而不是丢掉）"""
+        nonlocal buf
+        body = "\n".join(buf).strip()
+        buf = []
+        if not body:
+            return
+        if _cjk_len(body) >= 20:
+            cards.append({"title": title or _deck_name(meta), "body": body, "chapter": chapter})
+        elif cards:
+            cards[-1]["body"] += "\n" + body
+
+    for raw in lines:
+        line = raw.strip()
+        if not line or _SLIDE_JUNK.match(line) or _cjk_len(line) < 6:
+            continue
+        if len(line) < 40 and counter.get(line, 0) >= 8:
+            continue
+        m = _CH_HEAD.match(line)
+        if m and len(line) <= 40:
+            flush()
+            chapter = _slide_chapter(line)
+            title, buf = _strip_dash(line), []
+            continue
+        buf.append(line)
+    flush()
+
+    items = []
+    for c in cards:
+        chunks = _split_long(c["body"], MAX_CARD_CHARS)
+        for idx, chunk in enumerate(chunks, 1):
+            t = c["title"] if len(chunks) == 1 else f"{c['title']}（{idx}/{len(chunks)}）"
+            items.append({
+                "title": t[:200],
+                "summary": re.sub(r"\s+", " ", chunk)[:180],
+                "content": chunk,
+                # 只认卡片自己记录的章节：不能用循环末尾的 chapter 兜底（会把最后一张卡的
+                # 章节套到前面所有卡上，即「第零课课件显示成第6章」的由来）
+                "chapter": c.get("chapter") or "",
+                "domain": meta.get("domain") or "",
+                "kind": KN_SLIDE,
+                "source_file": meta.get("source_file") or "",
+            })
+    for x in items:
+        # 课件不按正文猜知识域：一页 PPT 常列出全部章节，猜出来就是噪声（宁可为空）
+        if not x["domain"] and x["chapter"]:
+            x["domain"] = _first_domain(x["chapter"])
+        x["fingerprint"] = fingerprint(x["title"], x["content"][:400])
+    return {"items": items}
+
+
+_SLIDE_JUNK = re.compile(r"^[\s\d√✓✗×\-—–·、,，.。:：;；/|\\()（）\[\]【】<>《》%+*=_~\"'`]+$")
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _cjk_len(text: str) -> int:
+    return len(_CJK_RE.findall(text or ""))
+
+
+def _slide_chapter(line: str) -> str:
+    """课件里的 `第N章 XXX` 只有与考纲一致时才当章节，否则留空
+
+    坑：乐凯课件沿用自己的章号（如「第18章 职业道德规范」），直接归一会被套到考纲
+    第18章「绩效域」上 → 章节筛选里一堆假命中。章号或章名对不上就宁可留空。
+    """
+    m = _CH_HEAD.match(line or "")
+    if not m:
+        return ""
+    label = chapter_of(line)
+    if not label:
+        return ""
+    no = int(m.group(1))
+    name = label.split(" ", 1)[-1] if " " in label else ""
+    return label if (label.startswith("第%d章" % no) and name and name in line) else ""
+
+
+def _deck_name(meta: dict) -> str:
+    """课件卡片标题：取课次目录名（`61. 乐凯2605软考高项--第61课--仿真模拟（六）选择题-5.16`）"""
+    parts = (meta.get("source_file") or "").split("/")
+    for seg in reversed(parts[:-1]):
+        if re.match(r"^\d+\s*[.\s]", seg):
+            return re.sub(r"^.*?--", "", seg)[:80] or seg[:80]
+    fname = _fallback_title(meta)
+    return fname[:80]
 
 
 def _parse_mindmap(lines: list, meta: dict) -> dict:
@@ -1251,9 +1409,22 @@ def _parse_mindmap(lines: list, meta: dict) -> dict:
     return {"items": [item]}
 
 
+# 目录名 → 知识域 的补充映射：有些资料目录用的是**课程专题名**而非考纲章节名，
+# 考纲表查不到就会让整批条目 domain 为空（曾致 48 条填空速记全无知识域）。
+DIR_DOMAIN_HINTS = (
+    ("信息系统安全管理", "信息技术发展"),   # 第四版第 2 章「信息安全」相关专题
+    ("信息安全", "信息技术发展"),
+)
+
+
 def _first_domain(text: str) -> str:
     doms = _domains_of(text)
-    return doms[0] if doms else ""
+    if doms:
+        return doms[0]
+    for frag, dom in DIR_DOMAIN_HINTS:
+        if frag in (text or ""):
+            return dom
+    return ""
 
 
 def _fallback_title(meta: dict) -> str:

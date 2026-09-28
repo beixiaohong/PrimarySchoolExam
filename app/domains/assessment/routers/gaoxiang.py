@@ -171,12 +171,30 @@ def catalog(db: Session = Depends(get_db)):
             kinds[sk] = kinds.get(sk, 0) + n
         if ch:
             chapters[ch] = chapters.get(ch, 0) + n
+    # 知识点维度单独聚合：知识点页按「资料类型」分组浏览，需要真实存在的 kind 及其条数
+    krows = (db.query(GxKnowledge.kind, GxKnowledge.chapter, func.count(GxKnowledge.id))
+             .group_by(GxKnowledge.kind, GxKnowledge.chapter).all())
+    k_kinds, k_chapters = {}, {}
+    for kk, kch, n in krows:
+        kk = kk or gx.KN_LIST
+        k_kinds[kk] = k_kinds.get(kk, 0) + n
+        if kch:
+            k_chapters[kch] = k_chapters.get(kch, 0) + n
     return {
         "source_kinds": sorted(({"value": k, "count": v} for k, v in kinds.items()),
                                key=lambda x: -x["count"]),
         "chapters": sorted(({"value": k, "count": v} for k, v in chapters.items()),
                            key=lambda x: x["value"]),
         "qtypes": qtypes,
+        # 知识点：类型（label 给前端直接展示，避免前端再维护一份中文映射）；
+        # 顺序按「越像知识点卡片越靠前」，而不是条数 —— 课件几千条也不该排在速记前面
+        "knowledge_kinds": sorted(
+            ({"value": k, "label": gx.knowledge_kind_label(k), "count": v}
+             for k, v in k_kinds.items()),
+            key=lambda x: (gx.KN_ORDER.index(x["value"])
+                           if x["value"] in gx.KN_ORDER else 99, -x["count"])),
+        "knowledge_chapters": sorted(({"value": k, "count": v} for k, v in k_chapters.items()),
+                                     key=lambda x: x["value"]),
     }
 
 

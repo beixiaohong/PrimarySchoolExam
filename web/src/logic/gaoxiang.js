@@ -44,6 +44,13 @@ const RUBRIC_WEIGHTS = { relevance: 35, structure: 25, practice: 25, writing: 15
 // 一次提交最多自动分析几道错题：每题一次 AI 调用（数秒），限量以免提交后长等待
 const AUTO_ANALYZE_MAX = 3;
 
+// 知识点资料类型中文名兜底（正常从后端 catalog.knowledge_kinds 取，这里保证首屏不空白）
+const KN_LABELS_FALLBACK = {
+  list: '知识点清单', mindmap: '思维导图', recite: '填空速记', must: '必背考点',
+  formula: '公式汇总', mnemonic: '记忆口诀', itto: '过程与ITTO', slide: '课堂课件',
+  textbook: '教材考纲', ref: '参考汇总', ai: 'AI 生成',
+};
+
 // 错题本题型分栏（与后端 WRONG_KINDS 对齐）
 const WRONG_TABS = [
   { k: '', label: '全部' },
@@ -65,6 +72,7 @@ export function gaoxiangData() {
     // ── 知识点 ──
     gxKDomain: '',          // '' = 不限知识域
     gxKChapter: '',
+    gxKKind: '',            // 资料类型（list/mindmap/recite/slide/textbook…），'' = 全部按类型分节
     gxKQ: '',               // 关键词（标题/正文模糊匹配）
     gxKList: [],            // 列表（无正文）
     gxKLoading: false,
@@ -186,6 +194,39 @@ export const gaoxiangComputed = {
   gxChapterOptions() {
     return ((this.gxCatalog || {}).chapters) || [];
   },
+  // 知识点资料类型（后端按 KN_ORDER 排序，含中文 label 与条数）——知识点页的首层筛选
+  gxKKindOptions() {
+    return ((this.gxCatalog || {}).knowledge_kinds) || [];
+  },
+  gxKChapterOptions() {
+    return ((this.gxCatalog || {}).knowledge_chapters) || [];
+  },
+  // 知识点列表按「资料类型」分节：类型不同可读性差很多（必背清单 vs 课堂课件），
+  // 混在一个列表里就是用户说的「内容很混乱」→ 不筛选时按类型分节展示
+  gxKGroups() {
+    const list = this.gxKList || [];
+    if (this.gxKKind) {
+      return [{ kind: this.gxKKind, label: this.gxKKindLabel(this.gxKKind), items: list }];
+    }
+    const order = this.gxKKindOptions.map(k => k.value);
+    const map = {};
+    list.forEach(k => {
+      const key = k.kind || 'list';
+      if (!map[key]) map[key] = [];
+      map[key].push(k);
+    });
+    return Object.keys(map)
+      .sort((a, b) => {
+        const ia = order.indexOf(a), ib = order.indexOf(b);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      })
+      .map(k => ({ kind: k, label: this.gxKKindLabel(k), items: map[k] }));
+  },
+  // 知识点正文按换行拆段（后端存的是 PDF 抽取原文，直接塞 div 会挤成一大坨）
+  gxKParas() {
+    const text = ((this.gxKDetail || {}).content) || '';
+    return text.split('\n').map(s => s.trim()).filter(Boolean);
+  },
 };
 
 // 错因分析文本拼装（与后端写库格式一致：`【类型】分析` + 记忆锚点）
@@ -234,11 +275,22 @@ export const gaoxiangMethods = {
     const p = new URLSearchParams({ user_id: this.user });
     if (this.gxKDomain) p.set('domain', this.gxKDomain);
     if (this.gxKChapter) p.set('chapter', this.gxKChapter);
+    if (this.gxKKind) p.set('kind', this.gxKKind);
     if ((this.gxKQ || '').trim()) p.set('q', this.gxKQ.trim());
     this.api('/api/gx/knowledge?' + p.toString())
       .then(d => { this.gxKList = (d && d.items) || []; })
       .catch(() => { this.gxKList = []; })
       .finally(() => { this.gxKLoading = false; });
+  },
+  // 资料类型中文名：优先用后端 catalog 的 label，兜底一张本地表（首屏 catalog 未回时也有字）
+  gxKKindLabel(kind) {
+    const hit = (this.gxKKindOptions || []).find(k => k.value === kind);
+    if (hit && hit.label) return hit.label;
+    return (KN_LABELS_FALLBACK[kind] || kind || '知识点');
+  },
+  gxPickKKind(k) {
+    this.gxKKind = k;
+    this.gxLoadKnowledge();
   },
   gxPickDomain(d) {
     this.gxKDomain = d;
@@ -248,7 +300,7 @@ export const gaoxiangMethods = {
   gxPickKChapter(ch) { this.gxKChapter = ch; this.gxLoadKnowledge(); },
   gxSearchKnowledge() { this.gxLoadKnowledge(); },
   gxClearKnowledgeFilter() {
-    this.gxKDomain = ''; this.gxKChapter = ''; this.gxKQ = '';
+    this.gxKDomain = ''; this.gxKChapter = ''; this.gxKQ = ''; this.gxKKind = '';
     this.gxLoadKnowledge();
   },
   gxOpenKnowledge(k) {
