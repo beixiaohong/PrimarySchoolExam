@@ -166,6 +166,19 @@ def test_abs_url(push_on, path, expected):
     assert push.abs_url(path) == expected
 
 
+def test_abs_url_default_domain_is_www(monkeypatch):
+    """未配置 SITE_URL 时，默认域名必须是 www 主域名（与 OneSignal 的 origin 一致）
+
+    回归防护：默认值曾为非 www，而 www 与非 www 是**两个独立 origin**，
+    通知 url 落在另一个源时用户点开看不到自己的登录态（表现为「点开是未登录」）。
+    这条断言把「默认域名」钉死，避免无意改回。
+    """
+    import app.domains.platform.services.push as push
+
+    monkeypatch.setattr(push.sysconfig, "get", lambda key, default="": default)
+    assert push.abs_url("/#/home") == "https://www.liusijin.com/#/home"
+
+
 class _P:
     """轻量偏好替身（只带 in_quiet_hours/pref_allows 需要的属性）"""
 

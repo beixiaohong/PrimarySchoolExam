@@ -953,7 +953,11 @@ sudo systemctl restart <APP_NAME>
 
 ### 16.2 OneSignal 控制台需要做的配置
 
-1. 创建 **Web** 类型的 App，把站点域名填成 `liusijin.com`（OneSignal 会校验域名归属）。
+1. 创建 **Web** 类型的 App，站点域名填**主域名 `www.liusijin.com`**（OneSignal 用它作为
+   `chrome_web_origin` 校验域名归属）。
+   ⚠️ 它必须与**用户实际访问的域名**以及后端 `SITE_URL` **三者一致**：`www.liusijin.com`
+   与 `liusijin.com` 是两个独立 origin，不一致会导致订阅失败、或通知点开落到另一个源
+   （详见《推送通知(OneSignal)接入说明》§15）。
 2. **Platform → Web → 配置 Service Worker**：路径保持默认的 `/OneSignalSDKWorker.js`。
    本项目的 worker 由后端根路径托管（见 16.3），**不需要**把文件放到网站根目录。
 3. 若使用 Safari：填好 Safari Web ID（否则 Safari 用户订阅不上）。

@@ -116,8 +116,14 @@ def push_sdk_config() -> dict:
 
 
 def _base_url() -> str:
-    """站点根地址（推送 url 必须是绝对地址，OneSignal 会原样带进通知）"""
-    base = (sysconfig.get("SITE_URL", "") or "").strip() or "https://liusijin.com"
+    """站点根地址（推送 url 必须是绝对地址，OneSignal 会原样带进通知）
+
+    ⚠️ 默认值必须与 OneSignal 后台的 `chrome_web_origin` 一致，且指向**主域名**。
+    `www.x.com` 与 `x.com` 是两个独立 origin：通知 url 若落在另一个源，用户点开时
+    登录态（localStorage）不在那边，表现为「点开通知是未登录」。
+    本项目主域名以 **www** 为准（与 nginx 证书目录、OneSignal 配置一致）。
+    """
+    base = (sysconfig.get("SITE_URL", "") or "").strip() or "https://www.liusijin.com"
     return base.rstrip("/")
 
 

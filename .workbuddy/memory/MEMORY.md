@@ -13,7 +13,7 @@
 
 ## 二、数据库拓扑（2026-08-25 用户确认）
 - 线上真生产 `115.29.213.131:3306/schoolexam`；**`192.168.2.158` 是它的本地克隆**（本地 `.env` 的 `DB_HOST`，勿改）。
-- **铁律：绝不拿克隆库跑 `tools/seed_*.py` 等写数据脚本**；写线上库只能跑在线上服务器。线上后台 https://liusijin.com/api/admin 用于只读验证。
+- **铁律：绝不拿克隆库跑 `tools/seed_*.py` 等写数据脚本**；写线上库只能跑在线上服务器。线上后台 https://www.liusijin.com/api/admin 用于只读验证。
 - 同步：本地 `.env.prod`（`PROD_DB_*`，**勿提交/外泄**）+ `tools/sync_prod_to_local.py`。上线 = 本地 commit+push → 线上 `git pull` + `sudo bash deploy.sh`（重启触发 `run_migrations()`）。
 
 ## 三、三条硬性铁律
@@ -45,6 +45,7 @@
   · 判「线上代码是否已上线」必须做**存在 vs 不存在对照**：`require_self` 全站挂载，不存在的 `/api/*` 也可能返 401 → 单看一个 401 会误判，需「一个 401（存在）+ 一个 404（不存在）」。
   · 判「线上前端产物是否已重建」：从 `curl <站点>/` 取入口 bundle → grep 本次新增的函数名/文案/常量；⚠️ **懒加载路由的关键字不在入口 chunk**（直接 grep 入口会误判成没部署），要从 `import("./Xxx-hash.js")` 取 chunk 名单独 fetch。
 - **文档里的命令要先跑一遍**同样适用于：本次给用户的 Edge 放行步骤、curl 探测命令（都实测过才写进文档）。
+- **🚨 `www.x.com` 与 `x.com` 是两个独立源**（本项目**主域名＝`www.liusijin.com`**）：通知权限、Service Worker、推送订阅、localStorage 登录态**各自一套，互不相通**。三处必须对齐 —— ①OneSignal 后台的站点域名（`chrome_web_origin`）②后端 `SITE_URL`（未配置时用 `push.py::_base_url()` 的默认值）③用户实际访问的域名。错位症状：**(a)** 设置里改成「允许」页面仍读回 `default`；**(b)** 订阅失败 / `InvalidStateError`；**(c)** **通知能弹但点开是未登录**（推送 `url` 落到另一个源，那边没 token）—— 这个最隐蔽，推送看似成功而体验是断的。**排查第一步先打印 `location.origin`，别凭域名想象**。⚠️ nginx 的 `server_name` 目前同时列了两个域名且**互不重定向**（双源并存），做 301 统一前必须先验证书 SAN 覆盖裸域，否则 `nginx -t` 失败会**中断部署**。详见推送说明 §15。
 
 ## 五、架构约定
 - **import-linter（`.importlinter`）**：九域独立、跨域只经 `contracts.py`；`app.core` 不监控；`app/routers/admin/** -> app.domains.*.contracts` 属白名单；D9 frozen 禁被 D1–D8 import；`app/main.py` 豁免。
@@ -80,5 +81,5 @@ cd web && node node_modules/vite/bin/vite.js build     # 前端构建（admin �
 | 试卷采集 | 写线上库只能跑在线上；须用项目 venv；LibreOffice 必需 | 同上 |
 | 成长体系 | 新埋点一律加 `engagement/services/events.py`；埋在 `commit()` **之后**；读时零聚合；不提供对外加经验端点 | `成长体系与高项备考.md` |
 | 高项备考 | `/quiz/generate` 用独立短会话回读；题库取题必须在 SQL 层排除已做题；`【答案】` 是前后端契约 | 同上 |
-| 消息推送 | 200 无 `id` 必须判失败（两条路径共用 `_parse_resp`）；Email 订阅不算 `Subscribed Users`；**浏览器跟踪防护会拦 OneSignal，自托管 SDK 无效** | `消息推送.md` |
+| 消息推送 | 200 无 `id` 必须判失败（两条路径共用 `_parse_resp`）；Email 订阅不算 `Subscribed Users`；**跟踪防护会拦 OneSignal，自托管 SDK 无效**；**主域名＝www，`SITE_URL` 默认值/OneSignal origin/实际访问域名三者必须一致**（§15） | `消息推送.md` |
 | 前端约定 / 定时任务 | 新 tab 4 处注册；可构建三条判据；调试「静默失效」；调度是静默失效，单任务异常不得终止整轮 | `工程规范-前端与定时任务.md` |

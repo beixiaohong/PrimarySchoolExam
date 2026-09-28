@@ -143,7 +143,7 @@ send_to_users(user_ids, title, body, url="", event="", data=None, dedup_key="")
   "include_aliases": { "external_id": ["<user_id>", "..."] },
   "headings": { "en": "标题", "zh-Hans": "标题" },
   "contents": { "en": "正文", "zh-Hans": "正文" },
-  "url": "https://liusijin.com/#/home",
+  "url": "https://www.liusijin.com/#/home",
   "data": { "event": "study", "kind": "daily_reminder" }
 }
 ```
@@ -186,7 +186,7 @@ web/public/OneSignalSDKWorker.js   ──Vite 构建拷贝──▶  web/dist/On
 验证（用 GET，不要用 `curl -I` —— 那发的是 HEAD）：
 
 ```bash
-curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
+curl -s -D - -o /dev/null https://www.liusijin.com/OneSignalSDKWorker.js | head -8
 ```
 → 200 + `application/javascript` + `no-store` + `Service-Worker-Allowed: /`。
 （路由已同时注册 HEAD，`curl -I` 现在也能返回 200；但 GET 形式在任何版本上都成立，故文档统一用它。）
@@ -258,7 +258,7 @@ curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
 | `ONESIGNAL_REST_API_KEY` | REST API Key，**机密**；以 `KEY` 结尾 → 后台展示自动脱敏 |
 | `ONESIGNAL_SAFARI_WEB_ID` | 可空；不填则 Safari 收不到 |
 | `PUSH_ENABLED` | `false` 一键停推（比逐个清空密钥安全，便于灰度回滚） |
-| `SITE_URL` | 可选；推送 `url` 的站点根地址，默认 `https://liusijin.com` |
+| `SITE_URL` | 可选；推送 `url` 的站点根地址，默认 `https://www.liusijin.com` |
 
 ---
 
@@ -317,16 +317,16 @@ ssh <线上> "cd <部署目录> && mysql -u <user> -p schoolexam -e \
 
 # SW 是否可达（必须 200 + application/javascript + no-store）
 #   用 GET 取响应头：curl -I 发的是 HEAD，旧版本路由只注册了 GET 会返回 405，容易误判
-curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
+curl -s -D - -o /dev/null https://www.liusijin.com/OneSignalSDKWorker.js | head -8
 
 # 通道是否就绪（后台页也有；密钥不回传明文）
-curl -s -H "Authorization: Bearer <admin_token>" https://liusijin.com/api/admin/push/status
+curl -s -H "Authorization: Bearer <admin_token>" https://www.liusijin.com/api/admin/push/status
 #   期望 configured.app_id=true、configured.rest_api_key=true、enabled=true
 ```
 
 **② 浏览器侧绑定**（这一步最容易出错，重点看 `external_id` 有没有绑上）
 
-1. 用 **HTTPS** 打开 https://liusijin.com 并**登录**（游客不调 `OneSignal.login()`，
+1. 用 **HTTPS** 打开 https://www.liusijin.com 并**登录**（游客不调 `OneSignal.login()`，
    没登录就授权的话订阅不会绑到 `user_id` → 后面必报 `no_subscription`）。
 2. 浏览器弹通知授权 → **允许**。（已被拒过的话不会再弹，去站点设置里改）
 3. F12 控制台逐条确认：
@@ -402,11 +402,11 @@ ssh <线上> "cd <部署目录> && mysql -u <user> -p schoolexam -e \
 
 ```bash
 # 1) SW 可达（200 + application/javascript + no-store + Service-Worker-Allowed: /）
-curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
+curl -s -D - -o /dev/null https://www.liusijin.com/OneSignalSDKWorker.js | head -8
 
 # 2) 代码是否真的上线了 —— 必须做「存在 vs 不存在」对照
-curl -s -o /dev/null -w "%{http_code}\n" https://liusijin.com/api/push/prefs          # 期望 401（路由在，待登录）
-curl -s -o /dev/null -w "%{http_code}\n" https://liusijin.com/api/push/zzz-not-exist  # 期望 404（路由不在）
+curl -s -o /dev/null -w "%{http_code}\n" https://www.liusijin.com/api/push/prefs          # 期望 401（路由在，待登录）
+curl -s -o /dev/null -w "%{http_code}\n" https://www.liusijin.com/api/push/zzz-not-exist  # 期望 404（路由不在）
 ```
 
 > 🚨 **第 2 条是判别「代码有没有真上线」的可靠手法**：只看一个 401 会被骗 ——
@@ -471,10 +471,10 @@ python tools/onesignal_probe.py
 
 ```bash
 # 通道与订阅概况（后台页也有）
-curl -s -H "Authorization: Bearer <admin_token>" https://liusijin.com/api/admin/push/status
+curl -s -H "Authorization: Bearer <admin_token>" https://www.liusijin.com/api/admin/push/status
 
 # SW 是否可达（GET 取响应头；别用 curl -I，HEAD 在旧版路由会 405）
-curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
+curl -s -D - -o /dev/null https://www.liusijin.com/OneSignalSDKWorker.js | head -8
 
 # 最近失败记录
 #   后台 → 消息推送 → 最近发送记录（error 列给出 OneSignal 原始错误）
@@ -550,7 +550,7 @@ Brave Shields，以及企业终端的策略强制。
 
 | 浏览器 | 操作 |
 |---|---|
-| **Edge** | 设置 → 隐私、搜索和服务 → **跟踪防护** → 「例外」→ 添加本站域名（须带 `https://`，如 `https://liusijin.com`）；或点地址栏左侧的锁形图标 → 「跟踪器」→ **允许此站点上的跟踪器**。若级别是「严格」，也可临时改回默认的「均衡」 |
+| **Edge** | 设置 → 隐私、搜索和服务 → **跟踪防护** → 「例外」→ 添加本站域名（须带 `https://`，如 `https://www.liusijin.com`）；或点地址栏左侧的锁形图标 → 「跟踪器」→ **允许此站点上的跟踪器**。若级别是「严格」，也可临时改回默认的「均衡」 |
 | **Chrome** | 默认不拦第三方脚本加载；若装了 uBlock/AdGuard，在扩展里放行即可 |
 | **Firefox** | 地址栏盾牌图标 → 关闭「此网站的增强跟踪保护」；或设置 → 隐私 → 把本站加入例外 |
 | **拦截扩展** | uBlock Origin / AdGuard 等对当前站点关闭，或把 `onesignal.com` 加入允许清单 |
@@ -669,3 +669,85 @@ X-WNS-MSG-ID: 6F6A9A307A1FBDD5
 - **Chrome 用户无解**：`grep` 得再干净也没用——这部分受众要么继续走 OneSignal，
   要么用「页面打开时的站内实时提醒」兜底（复用现有 WebSocket 通道 + `Notification` API，
   零第三方依赖、不受跟踪防护拦截，还能覆盖微信内置浏览器里的家长）。
+
+---
+
+## 15. 域名一致性：`www` 与非 `www` 是两个源（务必先读）
+
+### 15.1 事实
+
+浏览器把 `https://www.liusijin.com` 与 `https://liusijin.com` 当作**两个完全独立的网站**。
+凡与「源」（origin）绑定的东西**各自一套**：
+
+| 项目 | 是否按源隔离 |
+|---|---|
+| 通知权限（`Notification.permission`） | ✅ 各一套 |
+| Service Worker 注册 | ✅ 各一套 |
+| **推送订阅**（`pushManager.subscribe`） | ✅ 各一套 |
+| 登录态（localStorage 里的 token） | ✅ 各一套 |
+| Cookie | ✅ 各一套 |
+
+### 15.2 必须对齐的三处
+
+| 位置 | 要求 |
+|---|---|
+| OneSignal 后台的站点域名（`chrome_web_origin`） | 与用户**实际访问**的 origin 一致 |
+| 后端 `SITE_URL`（推送 `url` 字段的来源，见 §10） | 同上；未配置时用代码默认值 |
+| 用户授权/订阅所在的那个源 | 同上 |
+
+**当前决策（2026-09-28）**：主域名定为 **`www.liusijin.com`** —— 它与 nginx 证书目录
+（`/etc/letsencrypt/live/www.liusijin.com/`）和 `deploy.sh` 的证书路径一致。
+OneSignal 后台、`push.py` 的 `SITE_URL` 默认值、本文档全部示例已统一为带 `www`。
+
+### 15.3 三个典型症状与真实原因
+
+| 症状 | 原因 |
+|---|---|
+| 设置里明明改成「允许」，页面仍读回 `default` | 改的权限落到了**另一个源**上 |
+| 订阅失败 / 报 `InvalidStateError` | OneSignal origin 与当前页面 origin 不一致 |
+| 通知能弹出，**点开却是未登录** | 推送 `url` 指向了另一个源（那边 localStorage 没有 token） |
+
+第三行是最隐蔽的：**推送看起来很成功，用户体验却是断的**。
+
+### 15.4 排查第一步
+
+**先打印 `location.origin`，不要凭域名想象。** 本次故障就是靠这一行定位的：
+
+```js
+console.log(location.origin);   // 期望 https://www.liusijin.com
+```
+
+### 15.5 彻底消除双源（可选，须先做前置检查）
+
+现状：`deploy.sh` 生成的 nginx 配置把 `server_name` 写成了 `${DOMAIN} ${DOMAIN_WWW}`，
+**两个域名都直接服务、互不重定向**，所以双源并存。要彻底解决，可在 nginx 里把裸域 301 到 www。
+
+⚠️ **前置检查（必做）**：证书必须同时覆盖两个域名，否则 `nginx -t` 失败会中断部署：
+
+```bash
+sudo openssl x509 -in /etc/letsencrypt/live/www.liusijin.com/fullchain.pem -noout -text \
+  | grep -A1 "Subject Alternative Name"
+# 需同时有 DNS:www.liusijin.com 与 DNS:liusijin.com；缺一个先补：
+#   sudo certbot --nginx -d www.liusijin.com -d liusijin.com
+```
+
+确认后再加裸域跳转：
+
+```nginx
+# 443：裸域 → www（证书路径按上一步的实际结果填）
+server {
+    listen 443 ssl http2;
+    server_name liusijin.com;
+    ssl_certificate     /etc/letsencrypt/live/www.liusijin.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/www.liusijin.com/privkey.pem;
+    return 301 https://www.liusijin.com$request_uri;
+}
+```
+
+> ⚠️ **做 301 前想清楚代价**：跳转会**作废另一个源上已有的授权与订阅**，那些设备要重新授权一次。
+> 目前真实 Web 订阅数接近 0，是迁移成本最低的时机；若将来已有较多用户订阅，更稳妥的做法是
+> **保持双源、只确保 OneSignal 与 `SITE_URL` 指向同一侧**，并接受「两侧都授权过的用户收到两份」
+> 这点少量噪声。
+>
+> 另一个替代方案是**改 OneSignal 与代码去跟随非 www**（把上面三处改成 `liusijin.com`）——
+> 但那样与 nginx 证书目录的命名就分家了，不推荐。
