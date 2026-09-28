@@ -28,7 +28,7 @@
   <!-- ───────── 刷题 ───────── -->
   <div v-if="appCtx.gxSub === 'quiz'" class="card">
     <div class="card-head">
-      <b>刷题</b><span class="card-desc">优先用题库里你没做过的真题；题库不够时 AI 现场补题并入库复用</span>
+      <b>刷题</b><span class="card-desc">默认只用已导入的真题库（不产生 AI 费用）；勾选「AI 补题」后题库不够才由 AI 现场出题并入库复用</span>
     </div>
 
     <div class="gx-row">
@@ -77,6 +77,14 @@
       <button class="btn btn-primary gx-start-btn" :disabled="appCtx.gxQLoading" @click="appCtx.gxQuizStart()">
         {{appCtx.gxQLoading ? '出题中…' : '开始出题'}}
       </button>
+    </div>
+
+    <div class="gx-row">
+      <span class="gx-label">出题源</span>
+      <label class="gx-ai-toggle" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" v-model="appCtx.gxUseAi">
+        允许 AI 出题<span class="card-desc">（勾选后题库不足时由 AI 生成新题，消耗钻石；不勾只刷已导入真题）</span>
+      </label>
     </div>
 
     <div class="gx-row" v-if="appCtx.gxWrong.length">
@@ -155,7 +163,7 @@
       </div>
     </div>
     <div v-else class="card-desc gx-empty">
-      选好知识域 / 资料 / 章节与题型，点「开始出题」。
+      选好知识域 / 资料 / 章节与题型后点「开始出题」。题库没题时想用 AI 补题，需勾选上方「允许 AI 出题」。
     </div>
   </div>
 

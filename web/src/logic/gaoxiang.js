@@ -61,6 +61,7 @@ export function gaoxiangData() {
     gxPassScore: 60,        // 主观题及格线（低于它自动进错题本）
     gxLoading: false,       // 首次进入总开关
     gxCatalog: null,        // {source_kinds, chapters} 只含库里有条目的筛选项
+    gxSecretTaps: 0,        // 隐藏入口计数：设置页「关于」行连点 5 次跳转高项页（不对外展示导航）
     // ── 知识点 ──
     gxKDomain: '',          // '' = 不限知识域
     gxKChapter: '',
@@ -73,6 +74,7 @@ export function gaoxiangData() {
     gxQDomain: '',          // '' = 不限（配合资料筛选刷整套）
     gxQType: 'single',      // single / multi
     gxQCount: 5,
+    gxUseAi: false,         // 勾选后才允许 AI 补题（source='all'）；默认只用已导入的真题库（source='import'），不产生 AI 费用
     gxQSourceKind: '',      // 资料子类：每日一练 / 章节练习 / 仿真模拟…
     gxQChapter: '',         // 规范章节名
     gxQScope: '',           // ''=常规刷题；'wrong'=错题重练
@@ -207,8 +209,18 @@ export const gaoxiangMethods = {
     this.gxLoadProgress();
     this.gxLoadKnowledge();
     this.gxLoadWrong();
-    // 刷题是主路径：进来先给一组「不限知识域」的真题，减少一次点击
-    if (!this.gxQuestions.length && this.gxSub === 'quiz') this.gxQuizStart();
+    // 不再进页自动出题：由用户选好题型/筛选后点「开始练习」（AI 出题还需显式勾选 gxUseAi）
+  },
+
+  // 隐藏入口：设置页「关于」行连点 5 次 → 跳转高项备考（该页不在侧边栏展示，仅供本人使用）
+  gxSecretTap() {
+    this.gxSecretTaps += 1;
+    if (this.gxSecretTaps >= 5) {
+      this.gxSecretTaps = 0;
+      this.goTab('gaoxiang');
+    } else if (this.gxSecretTaps >= 3) {
+      this.showToast(`再点 ${5 - this.gxSecretTaps} 次进入高项备考`);
+    }
   },
 
   // 筛选项（只含库里有条目的）——失败也不影响主流程
@@ -282,11 +294,16 @@ export const gaoxiangMethods = {
       body: JSON.stringify({ user_id: this.user, domain: this.gxQDomain,
                              qtype: this.gxQType, count: this.gxQCount,
                              source_kind: this.gxQSourceKind, chapter: this.gxQChapter,
-                             scope: '' }),
+                             scope: '',
+                             // 未勾选 AI 时只从已导入题库取（import），杜绝误触 AI 扣费
+                             source: this.gxUseAi ? 'all' : 'import' }),
     }).then(d => {
       this.gxQuestions = (d && d.questions) || [];
       this.gxQAiAdded = (d && d.ai_added) || 0;
-      if (!this.gxQuestions.length) this.showToast('这批条件下没找到题，换个筛选再试');
+      if (!this.gxQuestions.length) {
+        this.showToast(this.gxUseAi ? '这批条件下没找到题，换个筛选再试'
+                                    : '题库里没有符合筛选的题目；勾选「允许 AI 出题」可让 AI 补题');
+      }
       this.gxQStartAt = Date.now();
     }).catch(() => this.showToast('出题失败，稍后再试'))
       .finally(() => { this.gxQLoading = false; });
@@ -305,7 +322,7 @@ export const gaoxiangMethods = {
       method: 'POST',
       body: JSON.stringify({ user_id: this.user, domain: '', qtype: this.gxQType,
                              count: this.gxQCount, source_kind: '', chapter: '',
-                             scope: 'wrong' }),
+                             scope: 'wrong', source: 'import' }),
     }).then(d => {
       this.gxQuestions = (d && d.questions) || [];
       this.gxQAiAdded = 0;

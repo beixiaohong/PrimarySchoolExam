@@ -26,9 +26,9 @@ export const NAV_GROUPS = [
       },
       { tab: 'recite', label: '背诵中心', icon: 'recite' },
       { tab: 'goals', label: '学习目标', icon: 'goals' },
-      // 高项备考（软考高级·信息系统项目管理师）：面向**非学生**成人用户的独立备考入口。
-      // 与小学侧完全解耦（题库/错题/进度独立成域），移动端 TabBar 6 项已满故仅桌面侧边栏可见。
-      { tab: 'gaoxiang', label: '高项备考', icon: 'gaoxiang' },
+      // 高项备考（软考高级·信息系统项目管理师）**不对普通用户展示导航**：
+      // 入口 = ① 设置页「关于」行连点 5 次 ② URL 直达 /#/gaoxiang。
+      // 页面本体仍由 App.vue 以 tab='gaoxiang' 渲染，icon 'gaoxiang' 保留。
     ],
   },
   {
