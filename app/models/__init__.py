@@ -58,6 +58,8 @@ from .commerce_order import Order
 from .novel import Novel, NovelChapter, NovelReadProgress
 from .commerce_payment import PayTransaction
 from .level import LevelConfig
+from .gaoxiang import (GxKnowledge, GxQuestion, GxAttempt, GxWrong,
+                       GxCaseGrade, GxProgress)
 
 __all__ = [
     "Word", "WordBook",
@@ -109,4 +111,5 @@ __all__ = [
     "GuardianConsent", "DataExportRequest", "DataDeletionRequest",
     "Novel", "NovelChapter", "NovelReadProgress",
     "LevelConfig",
+    "GxKnowledge", "GxQuestion", "GxAttempt", "GxWrong", "GxCaseGrade", "GxProgress",
 ]
