@@ -256,7 +256,11 @@ web/public/OneSignalSDKWorker.js   ──Vite 构建拷贝──▶  web/dist/On
 
 ---
 
-## 11. 测试（`tests/test_push.py`，33 例）
+## 11. 测试
+
+### 11.1 自动化回归（不需要 OneSignal 账号，沙箱即可跑）
+
+`tests/test_push.py`，33 例：
 
 | 分组 | 覆盖 |
 |---|---|
@@ -269,6 +273,105 @@ web/public/OneSignalSDKWorker.js   ──Vite 构建拷贝──▶  web/dist/On
 
 打桩方式：`monkeypatch.setattr(push, "requests", _FakeRequests)` 与
 `monkeypatch.setattr(push.sysconfig, "get", lambda key, default="": cfg.get(key, default))`。
+
+---
+
+### 11.2 发送目标预演（仍不需要 OneSignal 账号）
+
+只想确认「会推给谁、内容对不对」，不想真发，用 dry-run：
+
+```bash
+# 线上（写库任务只能在线上跑；本地克隆库只能看，别拿来判线上真实名单）
+<venv>/bin/python tools/push_daily_reminder.py --dry-run --limit 50
+```
+
+输出形如 `[push-reminder] 2026-09-28 命中 N 人（active<=7 天）` + 每人一行 `uid | 标题`，
+末尾 `dry-run：未实际发送`。**这一步不走网络、不写库**，纯读。
+
+---
+
+### 11.3 真机端到端验收（唯一能证明「用户真能收到」的方式）
+
+自动化测试全部打桩，证明的是「组装出的请求体是对的」；**收没收到只有真浏览器能证明**。
+按下面顺序走，任何一步不过都对应一个明确的 reason（见 11.4 对照表）。
+
+> ⚠️ 前提：必须 HTTPS 域名（生产 `liusijin.com`）。**HTTP 页面浏览器不提供通知 API**；
+> `localhost` 是唯一例外（`push.js` 已传 `allowLocalhostAsSecureOrigin`，但还需在
+> OneSignal 控制台把该源加入允许列表，且本地库是克隆库，测完别当成线上配置）。
+> iOS Safari 必须先把站点「添加到主屏幕」才支持 Web Push；微信内置浏览器不支持。
+
+**① 后端就绪**
+
+```bash
+# 迁移是否已跑（应有 3 张 push_* 表）
+mysql -h 115.29.213.131 -u <user> -p schoolexam -e \
+  "SHOW TABLES LIKE 'push_%'; SELECT * FROM schema_migrations WHERE version LIKE '083%';"
+
+# SW 是否可达（必须 200 + application/javascript + no-store）
+curl -sI https://liusijin.com/OneSignalSDKWorker.js | head -8
+
+# 通道是否就绪（后台页也有；密钥不回传明文）
+curl -s -H "Authorization: Bearer <admin_token>" https://liusijin.com/api/admin/push/status
+#   期望 configured.app_id=true、configured.rest_api_key=true、enabled=true
+```
+
+**② 浏览器侧绑定**（这一步最容易出错，重点看 `external_id` 有没有绑上）
+
+1. 用 **HTTPS** 打开 https://liusijin.com 并**登录**（游客不调 `OneSignal.login()`，
+   没登录就授权的话订阅不会绑到 `user_id` → 后面必报 `no_subscription`）。
+2. 浏览器弹通知授权 → **允许**。（已被拒过的话不会再弹，去站点设置里改）
+3. F12 控制台逐条确认：
+
+```js
+OneSignal.User.PushSubscription.id        // 应为订阅 id 字符串，非 null
+OneSignal.User.PushSubscription.optedIn   // 应为 true
+OneSignal.User.externalId                 // 应等于你的 user_id  ← 绑定成功的关键判据
+```
+
+4. Application → Service Workers：`OneSignalSDKWorker.js` 状态应为 **activated**、scope `/`。
+
+**③ 点自测按钮**
+
+设置页 →「🔔 消息推送」→ **发送测试推送**（等价 `POST /api/push/test`）。
+成功返回 `{"ok":true,"message":"已发送，请查看系统通知（约 1-3 秒）"}`，
+应在 1~3 秒内看到系统级通知。**注意是系统通知，不是页面内的 toast**——
+页面开着时浏览器可能不弹横幅，去桌面通知中心看。
+
+**④ 后台定向/群发**
+
+后台 →「消息推送」：先看 status 卡片上的已订阅设备数/用户数（**为 0 就是没人成功订阅**，
+先去 ② 排查），再用指定 `user_id` 发测试，最后试群发。
+发送记录表会给每次的 `ok / http_status / error`。
+
+**⑤ 落库核对**（确认绑定与审计真的写进去了）
+
+```sql
+SELECT user_id, subscription_id, platform, opted_in, revoked_at
+  FROM push_subscriptions ORDER BY id DESC LIMIT 10;
+
+SELECT event, ok, http_status, recipients, error, dedup_key, created_at
+  FROM push_logs ORDER BY id DESC LIMIT 10;
+```
+
+`push_logs` 最关键的两个字段：`ok=0` 时看 `error`（OneSignal 原始错误），
+`dedup_key` 为 NULL 表示这条不参与去重（即时推送正常如此）。
+
+---
+
+### 11.4 失败对照表（按接口返回的 `reason` 定位）
+
+| reason | 含义 | 怎么修 |
+|---|---|---|
+| `not_configured` | 后台未填 APP_ID / REST_API_KEY，或 `PUSH_ENABLED=false` | 后台「系统配置 → 消息推送」填齐后等 60 秒 |
+| `no_subscription` | 靶向受众无有效订阅（含 HTTP 200 但无 `id`） | 按 ② 逐条查：没登录 / 没点允许 / `externalId` 为空 / 授权后没刷新页面 |
+| `http_error` | OneSignal 返回非 2xx | 多为 **401：Key 与 App ID 不属于同一应用**，或 Key 已轮换 |
+| `request_failed` | 请求根本没发出去 | 线上出网/防火墙；看应用日志 |
+| `duplicate` | 当天该去重键已发过 | 正常幂等，不是故障（定时提醒一天只发一条） |
+| `no_recipient` | 过滤后无人可发 | 偏好关闭 / 免打扰时段 / 每日上限 8 条用尽 |
+
+> 排查顺序建议：**先看 `reason`，再看 `push_logs.error`，最后才查代码**。
+> 「没收到」和「发送失败」是两件事——`ok=1` 但用户没收到，属于浏览器侧
+> （免打扰/系统通知被关/勿扰模式/多设备只在一台上授权），不属于后端问题。
 
 ---
 

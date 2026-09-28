@@ -145,6 +145,10 @@ cd web && node node_modules/vite/bin/vite.js build     # 前端构建（admin �
 - 🚨 **HTTP 200 但响应无 `id` 表示靶向受众无有效订阅**（OneSignal 约定）→ **必须判为失败**（`ok=False` + `err="no_subscription"`），否则是「假成功」用户收不到。同理：**失败不写 `dedup_key`**，保证可补发。
 - **Service Worker 必须在域名根路径**（scope = 所在目录）；本项目 nginx 全量反代 + `web/dist` 不作静态目录暴露 → 由后端专用路由 `GET /OneSignalSDKWorker.js` 提供（优先 `WEB_DIST_DIR/OneSignalSDKWorker.js`，缺则 `ONESIGNAL_WORKER_FALLBACK` 内联兜底；headers 带 `application/javascript` + `Service-Worker-Allowed: /` + **`Cache-Control: no-store`**（OneSignal 硬要求））。
 - **密钥只走后台「系统配置 → 消息推送」在线填写**（`sysconfig` 优先级：`system_config` 表 > `.env` > 默认值，60s 缓存）；`push_sdk_config()` **不下发 REST_API_KEY**。后台 status 接口**不回传密钥片段**。
+  · 实况（2026-09-28）：本地 `.env` **已含真实凭据**（App ID = 36 位 UUID，REST Key = `os_v2_app_…` 113 位），
+    因此**本地 `http://127.0.0.1:8000` 即可端到端真机测试**（`push.js` 对 localhost 传了
+    `allowLocalhostAsSecureOrigin`，绕开 HTTPS 限制）；本地库 `schoolexam` 已应用迁移 083（3 张 push 表）。
+    ⚠️ 本地测试写的 `push_subscriptions/prefs/logs` 都落在**克隆库**，与线上无关，别据此判线上订阅数。
 - **防打扰四道闸**：设备开关 → 场景偏好（study/im/announce/exam 四类）→ 免打扰时段（`quiet_start/quiet_end`，跨零点反向判断；**不复用** `check_quiet_hours`）→ 每人每日上限 `DAILY_CAP=8`（公告/群发 `_UNLIMITED_EVENTS` 不占额度）。
 - **IM 离线推送**在 `frozen/routers/im.py`：`asyncio.create_task(asyncio.to_thread(_push_offline_members, ...))`（避免阻塞事件循环、不持 DB 连接），只推非在线成员，`key_template="im:{uid}:{chat_id}:{date}"`（每人每群每日一条）。
 - **其它触发点**：后台公告创建联动（`admin_panel.py` 的 `_send_announcement_push`，在 `db.close()` **之后**推送，`dedup_key="announce:{id}"`）；后台手动群发（`target=all|user|grade`，`GRADE_FANOUT_CAP=5000`，需 `announcement:manage` 权限 + `high_risk=True` + 审计）。
