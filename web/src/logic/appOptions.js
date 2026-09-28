@@ -160,7 +160,7 @@ const appOptions = {
     ...favoritesComputed,       // 我的收藏 computed（favoritesHasMore，见 logic/favorites.js）
     ...levelComputed,       // 等级成长 computed（levelNum/levelBadgeText/levelPct/levelLadder/levelIsMax，见 logic/level.js）
     ...gaoxiangComputed,    // 高项备考 computed（gxResultMap/gxAllAnswered/…，见 logic/gaoxiang.js）
-    ...pushComputed,        // 消息推送 computed（pushEnabled/pushStatusText，见 logic/push.js）
+    ...pushComputed,        // 消息推送 computed（pushEnabled/pushDeviceState，见 logic/push.js）
     ...badgesComputed,       // 成就徽章 computed（badgeItems/badgeCats，见 logic/badges.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码

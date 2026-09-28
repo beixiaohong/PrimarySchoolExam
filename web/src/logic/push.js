@@ -60,9 +60,12 @@ export function pushData() {
     pushQuietForm: { start: '', end: '' },   // 免打扰时段编辑态
     pushEventFields: PUSH_EVENT_FIELDS,
     pushDevices: 0,         // 本账号已登记的有效订阅设备数
+    // SDK 是否已完成初始化（= 状态已可判定）。未就绪时界面必须显示「检查中…」，
+    // **不能**显示成「未开启」—— 那是把「还不知道」说成了「没有」（见 pushDeviceState）。
+    pushReady: false,
     // OneSignal 脚本未能加载（被浏览器跟踪防护 / 广告拦截拦掉）。
     // 之前这种情况是**彻底静默**的：SDK 不出现 → 不弹授权提示 → 用户以为功能坏了。
-    // 见 pushStatusText 与 _pushLoadSdk 的超时兜底。
+    // 见 pushDeviceState 与 _pushLoadSdk 的超时兜底。
     pushSdkError: '',
   };
 }
@@ -72,22 +75,42 @@ export const pushComputed = {
   pushEnabled() {
     return !!(this.pushRaw && this.pushRaw.enabled);
   },
-  // 一句话状态：把「为什么收不到」直接写在界面上，减少无效排查
-  pushStatusText() {
-    if (!this.pushRaw) return '检查中…';
-    if (!this.pushEnabled) return '未启用（管理后台尚未配置推送密钥）';
-    // 最容易被误判成「功能坏了」的一类：脚本压根没加载成功。
-    // 常见于 Edge「严格」跟踪防护、Firefox「严格」、uBlock/AdGuard 等把
-    // onesignal.com 当广告追踪器拦掉（它在 disconnect.me 列表里属 Advertising 类）。
+  // 本设备推送的**当前状态**（唯一真相源：界面上的色点 / 文字 / 开关位置都由它驱动）
+  //
+  // 起因：原先只有一个按钮，且按钮上写的是**状态词**（「已开启」/「已关闭」），
+  // 但按钮本身是**动作** —— 点「已开启」其实是把它关掉。用户反馈「不知道当前是开的
+  // 还是关的」，正是因为状态与动作挤在同一个元素上，只靠主色/灰底这点细微差别区分。
+  // 现在拆成三重表达：文字（已开启 / 未开启 / 已被浏览器阻止 / 脚本被拦截 / 检查中…）
+  //   + 色点（绿=开、灰=关、红=被阻止、橙=脚本被拦）+ 真实开关（位置即状态）。
+  //
+  // ⚠️ 未就绪时必须说「检查中…」而不是「未开启」—— 这与 09-28 那类误判同源：
+  //    把「未知」当成了「零」。状态没读回来之前，任何结论都是错的。
+  pushDeviceState() {
+    if (!this.pushRaw) {
+      return { tone: 'muted', title: '检查中…', hint: '正在读取本设备的推送状态' };
+    }
+    if (!this.pushEnabled) {
+      return { tone: 'muted', title: '未开通', hint: '管理后台尚未配置推送密钥' };
+    }
+    // 脚本压根没加载成功：常见于 Edge「严格」跟踪防护、Firefox「严格」、uBlock/AdGuard
+    // 等把 onesignal.com 当广告追踪器拦掉（它在 disconnect.me 列表里属 Advertising 类）。
     if (this.pushSdkError) {
-      return '推送脚本未能加载（多为浏览器跟踪防护/广告拦截），放行本网站后刷新';
+      return { tone: 'warn', title: '脚本被拦截', hint: '浏览器把推送脚本拦掉了，请放行本网站后刷新页面' };
     }
-    if (this.pushPermission === 'denied') return '已被浏览器阻止，请在浏览器设置中允许通知';
+    if (!this.pushReady) {
+      return { tone: 'muted', title: '检查中…', hint: '正在初始化推送服务，稍候片刻' };
+    }
+    if (this.pushPermission === 'denied') {
+      return { tone: 'danger', title: '已被浏览器阻止', hint: '点地址栏的锁图标，把「通知」改为「允许」后刷新页面' };
+    }
     if (this.pushOptedIn) {
-      const extra = this.pushDevices > 1 ? '，共 ' + this.pushDevices + ' 台设备' : '';
-      return '已开启（本设备）' + extra;
+      const extra = this.pushDevices > 1 ? '（本账号共 ' + this.pushDevices + ' 台设备已开启）' : '';
+      return { tone: 'ok', title: '已开启', hint: '这台设备会收到提醒' + extra };
     }
-    return '未开启（本设备）';
+    if (this.pushPermission === 'default') {
+      return { tone: 'muted', title: '未开启', hint: '打开右侧开关后，浏览器会询问是否允许通知' };
+    }
+    return { tone: 'muted', title: '未开启', hint: '这台设备不会收到任何推送' };
   },
 };
 
@@ -177,6 +200,8 @@ export const pushMethods = {
       return OneSignal.login(self.user);
     }).then(function () {
       self._pushSyncState();
+      // 状态已经读回来了，界面才允许下结论（此前一律显示「检查中…」）
+      self.pushReady = true;
       const sid = self._pushSubscriptionId();
       // 已订阅过（同一浏览器回头客）：刷新一次上报，顺带更新 last_seen 与 UA
       if (sid && self.pushOptedIn) self._pushReport(sid);
@@ -348,5 +373,6 @@ export const pushMethods = {
     this.pushDevices = 0;
     // 保留 pushRaw（通道配置与账号无关）与偏好缓存，下次登录会重新拉取覆盖
     this._osInited = false;
+    this.pushReady = false;   // 下次登录要重新判定状态，期间界面显示「检查中…」
   },
 };

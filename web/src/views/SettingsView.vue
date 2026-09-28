@@ -64,7 +64,8 @@
         <div class="card set-card" v-if="appCtx.pushEnabled">
           <div class="card-head">
             <b>🔔 消息推送</b>
-            <span class="more">{{appCtx.pushStatusText}}</span>
+            <!-- 状态徽标：颜色即状态，不必逐字读灰字 -->
+            <span class="push-pill" :class="'is-' + appCtx.pushDeviceState.tone">{{appCtx.pushDeviceState.title}}</span>
           </div>
           <!-- SDK 脚本被浏览器拦掉时不会弹授权提示：必须给出可执行的下一步，否则用户只会反复点开关 -->
           <div class="push-hint push-alert" v-if="appCtx.pushSdkError">
@@ -72,21 +73,35 @@
             所以一直没有弹出授权提示。请把本网站加入「跟踪防护 / 广告拦截」的例外，然后刷新页面。<br>
             <b>Edge</b>：设置 → 隐私、搜索和服务 → 跟踪防护 → 例外 → 添加本站域名
           </div>
-          <!-- 设备开关：浏览器授权的真实开关（关掉后本机不再收到任何推送） -->
-          <div class="info-row">
-            <span>本设备接收推送</span>
-            <button class="btn btn-sm" :class="appCtx.pushOptedIn ? 'btn-primary' : 'btn-ghost'"
-                    :disabled="appCtx.pushLoading" @click="appCtx.pushToggleDevice()">
-              {{appCtx.pushLoading ? '处理中…' : (appCtx.pushOptedIn ? '已开启' : '已关闭')}}
-            </button>
+          <!-- 本设备开关。状态用三重表达：文字 + 色点 + 开关位置。
+               原先是一个按钮、按钮上写着状态词「已开启/已关闭」，点下去却是反向操作，
+               用户看不出当前是开还是关（反馈原话：「我都不知道当前是开的还是关的」）。 -->
+          <div class="info-row push-row">
+            <span class="push-row-main">
+              <span class="push-dot" :class="'is-' + appCtx.pushDeviceState.tone"></span>
+              <span class="push-row-txt">
+                <b>本设备接收推送：{{appCtx.pushDeviceState.title}}</b><br>
+                <em class="push-hint">{{appCtx.pushDeviceState.hint}}</em>
+              </span>
+            </span>
+            <button class="push-switch" role="switch"
+                    :aria-checked="appCtx.pushOptedIn ? 'true' : 'false'"
+                    :class="{on: appCtx.pushOptedIn, busy: appCtx.pushLoading}"
+                    :disabled="appCtx.pushLoading || !appCtx.pushReady"
+                    :title="appCtx.pushOptedIn ? '点击关闭本设备推送' : '点击开启本设备推送'"
+                    @click="appCtx.pushToggleDevice()"><i></i></button>
           </div>
           <!-- 逐场景开关：不接收的场景后端根本不会下发（services/push.py 的 _PREF_FIELD） -->
           <div class="info-row" v-for="f in appCtx.pushEventFields" :key="f.field">
             <span>{{f.label}}<br><em class="push-hint">{{f.desc}}</em></span>
-            <button class="btn btn-sm" :class="appCtx.pushPrefs[f.field] ? 'btn-primary' : 'btn-ghost'"
-                    @click="appCtx.pushSavePref(f.field, !appCtx.pushPrefs[f.field])">
-              {{appCtx.pushPrefs[f.field] ? '接收' : '不接收'}}
-            </button>
+            <span class="push-ctrl">
+              <em class="push-state" :class="appCtx.pushPrefs[f.field] ? 'is-ok' : 'is-off'">{{appCtx.pushPrefs[f.field] ? '接收' : '不接收'}}</em>
+              <button class="push-switch" role="switch"
+                      :aria-checked="appCtx.pushPrefs[f.field] ? 'true' : 'false'"
+                      :class="{on: appCtx.pushPrefs[f.field]}"
+                      :title="appCtx.pushPrefs[f.field] ? '点击改为不接收' : '点击改为接收'"
+                      @click="appCtx.pushSavePref(f.field, !appCtx.pushPrefs[f.field])"><i></i></button>
+            </span>
           </div>
           <!-- 免打扰：用户自设静音时段（与平台宵禁无关，后者只针对未成年人护眼） -->
           <div class="info-row">
@@ -107,7 +122,7 @@
         </div>
         <!-- 通道未配置时也给一行说明：否则用户翻遍设置页也找不到推送开关，只会以为功能坏了 -->
         <div class="card set-card" v-else>
-          <div class="card-head"><b>🔔 消息推送</b><span class="more">{{appCtx.pushStatusText}}</span></div>
+          <div class="card-head"><b>🔔 消息推送</b><span class="push-pill is-muted">{{appCtx.pushDeviceState.title}}</span></div>
           <div class="push-hint">推送通道由管理员在后台「三方配置」中开通；开通后这里会出现开关。</div>
         </div>
 
@@ -157,4 +172,42 @@ export default {
   background:#FFF7E6;border:1px solid #F5D08A;color:#8A5A00}
 .push-time{padding:6px 8px;border:1px solid #E5E1F5;border-radius:8px;font-size:13px;
   background:var(--card,#fff);color:inherit}
+
+/* ── 推送状态可视化：颜色即状态，避免用户只能靠读灰字判断开关 ── */
+
+/* 卡片标题右侧的状态徽标 */
+.push-pill{font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px;
+  background:var(--bg);color:var(--text-3);border:1px solid var(--border)}
+.push-pill.is-ok{background:var(--success-light);color:var(--success);border-color:transparent}
+.push-pill.is-warn{background:var(--warning-light);color:var(--warning);border-color:transparent}
+.push-pill.is-danger{background:var(--danger-light);color:var(--danger);border-color:transparent}
+.push-pill.is-muted{background:var(--bg);color:var(--text-3)}
+
+/* 本设备状态行：色点 + 文字 + 开关 */
+.push-row{align-items:center;gap:10px}
+.push-row-main{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.push-row-txt{display:block;line-height:1.5}
+.push-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:6px;background:var(--text-3)}
+.push-dot.is-ok{background:var(--success)}
+.push-dot.is-warn{background:var(--warning)}
+.push-dot.is-danger{background:var(--danger)}
+.push-dot.is-muted{background:var(--text-3)}
+
+/* 逐场景开关行右侧：状态文字 + 开关 */
+.push-ctrl{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto}
+.push-state{font-style:normal;font-size:12px;font-weight:600}
+.push-state.is-ok{color:var(--success)}
+.push-state.is-off{color:var(--text-3)}
+
+/* 真实开关（位置即状态）。用 role="switch" 的按钮而非 <input type="checkbox">：
+   checkbox 的 :checked 是属性绑定，状态没变化时 Vue 不会重渲染 ——
+   一旦操作失败需要回滚，就会出现「界面开着、数据是关的」这种更糟的不一致。 */
+.push-switch{position:relative;flex:0 0 auto;width:40px;height:22px;padding:0;border-radius:999px;
+  background:#D7DCE8;transition:background .18s;cursor:pointer}
+.push-switch i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s}
+.push-switch.on{background:var(--success)}
+.push-switch.on i{transform:translateX(18px)}
+.push-switch.busy{opacity:.6}
+.push-switch:disabled{opacity:.45;cursor:not-allowed}
 </style>
