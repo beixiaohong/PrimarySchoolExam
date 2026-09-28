@@ -1000,10 +1000,12 @@ sudo systemctl restart <APP_NAME>
 
 | 现象 | 原因与处理 |
 |---|---|
-| 用户点「发送测试推送」提示「没有找到有效订阅」 | 用户未在浏览器弹窗中允许通知。注意 **HTTP 下浏览器不提供通知 API**，必须 HTTPS（本地可用 `127.0.0.1`，代码已放开 `allowLocalhostAsSecureOrigin`） |
+| **推送一直失败，想知道是配置错还是没人订阅** | 先跑只读探测：`venv/bin/python tools/onesignal_probe.py` —— 它直接列出 OneSignal 侧的订阅构成。**订阅里没有 Web 就是「没人订阅」**（别去改密钥）；HTTP 401 才是密钥/App 不匹配 |
+| 用户点「发送测试推送」提示「没有找到有效订阅」 | 先确认 OneSignal 侧确实没有 Web 订阅（见上条）。若确无：用户未在浏览器弹窗中允许通知，或**授权时未登录**导致订阅绑不上账号（`externalId` 为空）。注意 **HTTP 下浏览器不提供通知 API**，必须 HTTPS（本地可用 `127.0.0.1`，代码已放开 `allowLocalhostAsSecureOrigin`） |
 | 后台显示「通道未配置」 | `ONESIGNAL_APP_ID` / `ONESIGNAL_REST_API_KEY` 未填，或 `PUSH_ENABLED=false` |
 | OneSignal 返回 401 | 密钥与 App ID 不属于同一个 OneSignal 应用（最常见），或密钥已轮换 |
-| 200 但没有消息 id | 靶向受众里没有任何有效订阅 —— 代码已判定为**失败**（`reason=no_subscription`），不会假报成功 |
+| 200 但没有消息 id | 靶向受众里没有任何有效订阅 —— 定向与段推送**两条路径都已判定为失败**（`reason=no_subscription`），不会假报成功 |
+| 结果=失败但「错误」列空白 | 2026-09-28 前段推送漏写原因的缺陷，已修；历史记录仍可能为空，可看 `push_logs.http_status`（200 = 无订阅者） |
 | 换账号后旧账号仍收到推送 | 登出时 `pushTeardown()` 会 `OneSignal.logout()` + 调 `/api/push/unsubscribe`；若用户是直接关标签页，可让其在设置页手动关闭设备开关 |
 | 部署后 `/OneSignalSDKWorker.js` 404 | nginx `location /` 未反代到后端，或漏了 16.3 的路由。`curl -s -D - -o /dev/null https://域名/OneSignalSDKWorker.js` 应返回 200 + `application/javascript`（用 GET 取头；`curl -I` 发 HEAD，路由只注册 GET 时会返回 405 而非 404，别被误导） |
 | 手机端收不到 | iOS Safari 要求「添加到主屏幕」后才支持 Web Push；微信内置浏览器不支持，需引导用户用系统浏览器打开 |

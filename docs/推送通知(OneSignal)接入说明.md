@@ -438,6 +438,34 @@ curl -s -o /dev/null -w "%{http_code}\n" https://liusijin.com/api/push/zzz-not-e
 
 ## 12. 运维排查速查
 
+**排查第一步：先分清「配置错」与「没人订阅」**。后台日志只显示「失败」，
+但这两类原因的处理方向完全相反（一个去改密钥、一个去让用户授权），必须先分开。
+探测工具直接问 OneSignal 侧要事实：
+
+```bash
+# 只读：App 概览 + 订阅构成 + 最近通知触达数（不发任何推送，不打印密钥）
+python tools/onesignal_probe.py
+# 线上：cd /home/PrimarySchoolExam && venv/bin/python tools/onesignal_probe.py
+```
+
+判据：
+
+| 探测结果 | 结论 | 动作 |
+|---|---|---|
+| `订阅构成` 里**没有 Web**（只有 Email/移动端，或为空） | **没人订阅** | 让用户登录后点「允许通知」；**别去改密钥** |
+| HTTP 401 | 配置错 | 核对 Key 与 App ID 是否属于**同一个** OneSignal 应用 |
+| `Web 平台域名` ≠ 本站地址 | OneSignal 侧站点 URL 配错 | 改成本站域名后重新授权 |
+
+> **真实案例（2026-09-28）**：线上后台群发与测试推送全部失败，`reason=no_subscription`。
+> 探测显示域名正确、Web 平台已启用、`push_configured()=True`，但
+> **订阅总数 1 且构成是 `{'Email': 1}`** —— 一个 Web Push 订阅都没有，属「没人订阅」。
+> ⚠️ 这类 Email/移动端订阅**不算** `Subscribed Users` 段，所以段推送也发不到，
+> 同样返回 200 无 `id`。
+>
+> 同一次还暴露了一个代码缺陷：`send_to_all`（段推送）漏了「200 无 `id` = 无有效订阅」
+> 的判定，导致后台显示「结果=失败、错误=空」而接口却回「已广播」，两头矛盾且无从排查。
+> 现已抽成 `_parse_resp()` 由两条发送路径共用（`_send_once` / `send_to_all`）。
+
 ```bash
 # 通道与订阅概况（后台页也有）
 curl -s -H "Authorization: Bearer <admin_token>" https://liusijin.com/api/admin/push/status
@@ -454,8 +482,9 @@ curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
 
 | 现象 | 处理 |
 |---|---|
-| 「没有找到有效订阅」 | 用户未授权；HTTP 页面浏览器不提供通知 API，必须 HTTPS；iOS 需「添加到主屏幕」；微信内置浏览器不支持 |
+| 「没有找到有效订阅」 | **先用 `tools/onesignal_probe.py` 确认 OneSignal 侧有没有 Web 订阅**（见上）；若确实没有：用户未授权、或授权时未登录导致绑定不上账号。另外 HTTP 页面浏览器不提供通知 API（必须 HTTPS）；iOS 需「添加到主屏幕」；微信内置浏览器不支持 |
 | 401 | 密钥与 App ID 不属于同一 OneSignal 应用（最常见），或密钥已轮换 |
 | 后台「通道未配置」 | 密钥未填或 `PUSH_ENABLED=false` |
-| 200 无 id | 受众里没有有效订阅（代码判定为失败并记 `no_subscription`） |
+| 200 无 id | 受众里没有有效订阅（两条发送路径均已判定为失败并记 `no_subscription`） |
+| 结果=失败但错误列空白 | 2026-09-28 前 `send_to_all` 的缺陷，已修；历史记录仍可能是空的，看 `push_logs.http_status`（200 = 无订阅者） |
 | 同一天没收到定时提醒 | `dedup_key` 当天已用过（正常幂等），或该用户被偏好/免打扰/日限挡住 |

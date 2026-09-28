@@ -270,6 +270,31 @@ def _post(payload: dict):
         return False, 0, {}, _cut(e, 255)
 
 
+def _parse_resp(ok: bool, resp_body, err: str = "") -> tuple:
+    """解析 OneSignal 响应 → (ok, msg_id, recipients, err)
+
+    **关键约定：HTTP 2xx 但没有 `id` = 靶向受众里没有有效订阅**（用户没授权、或已解绑）。
+    这种情况必须判定为**失败** —— 否则前端会提示「已发送」而用户永远收不到，
+    属于最难排查的一类「假成功」。
+
+    抽成公共函数的原因：定向发送（`_send_once`）与段推送（`send_to_all`）本是两条路径，
+    段推送漏了这段判定，于是同一件事在后台表现为「结果=失败、错误=空」外加接口回「已广播」——
+    正是这次线上群发踩到的坑。统一到一处，避免再次漂移。
+    """
+    msg_id = ""
+    recipients = 0
+    if isinstance(resp_body, dict):
+        msg_id = _cut(resp_body.get("id") or "", 64)
+        try:
+            recipients = int(resp_body.get("recipients") or 0)
+        except Exception:                             # noqa: BLE001
+            recipients = 0
+    if ok and not msg_id:
+        ok = False
+        err = err or "no_subscription"
+    return ok, msg_id, recipients, err
+
+
 def _send_once(external_ids: list, title: str, body: str, url: str,
                event: str, data: dict) -> tuple:
     """发一批（≤BATCH_SIZE 个 external_id）。返回 (ok, status, onesignal_id, recipients, err)"""
@@ -285,20 +310,7 @@ def _send_once(external_ids: list, title: str, body: str, url: str,
         payload["url"] = url
     payload["data"] = dict(data or {}, event=event)
     ok, status, resp_body, err = _post(payload)
-    msg_id = ""
-    recipients = 0
-    if isinstance(resp_body, dict):
-        msg_id = _cut(resp_body.get("id") or "", 64)
-        try:
-            recipients = int(resp_body.get("recipients") or 0)
-        except Exception:                             # noqa: BLE001
-            recipients = 0
-        # OneSignal 的约定：返回 200 但没有 id = 靶向受众里没有有效订阅
-        # （用户没授权、或已解绑）。这种情况**必须判定为失败** ——
-        # 否则前端会提示「已发送」而用户永远收不到，是最难排查的一类假成功。
-        if ok and not msg_id:
-            ok = False
-            err = err or "no_subscription"
+    ok, msg_id, recipients, err = _parse_resp(ok, resp_body, err)
     return ok, status, msg_id, recipients, err
 
 
@@ -434,15 +446,23 @@ def send_to_all(title: str, body: str, url: str = "", event: str = EVENT_BROADCA
     if abs_url_:
         payload["url"] = abs_url_
     ok, status, resp_body, err = _post(payload)
-    recipients = int((resp_body or {}).get("recipients") or 0) if isinstance(resp_body, dict) else 0
-    msg_id = _cut((resp_body or {}).get("id") or "", 64) if isinstance(resp_body, dict) else ""
+    ok, msg_id, recipients, err = _parse_resp(ok, resp_body, err)
     _write_logs([{
         "user_id": "", "event": event, "title": title_s, "body": body_s, "url": abs_url_,
         "dedup_key": None, "onesignal_id": msg_id, "recipients": recipients,
-        "ok": bool(ok and msg_id), "http_status": status, "error": err,
+        "ok": ok, "http_status": status, "error": err,
     }])
-    return {"ok": bool(ok and msg_id), "sent": recipients, "recipients": recipients,
-            "skipped": 0, "reason": "" if ok else "http_error", "message": err or "已广播"}
+    # 失败原因必须区分「没人订阅」与「OneSignal 报错」：前者是运营还没让用户授权，
+    # 后者要核对密钥与 App ID 是否属于同一应用 —— 两者排查方向完全不同。
+    # 口径与 send_to_users 的 reason 取值保持一致。
+    if ok:
+        reason, message = "", "已广播"
+    elif err == "no_subscription":
+        reason, message = "no_subscription", "没有有效订阅者：目标人群尚未授权浏览器通知"
+    else:
+        reason, message = "http_error", (err or "OneSignal 返回错误")
+    return {"ok": ok, "sent": recipients, "recipients": recipients,
+            "skipped": 0, "reason": reason, "message": message}
 
 
 def send_per_user_dedup(user_ids: list, title: str, body: str, url: str = "",

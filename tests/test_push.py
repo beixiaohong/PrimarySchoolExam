@@ -431,6 +431,37 @@ def test_broadcast_uses_segment(push_on, fake_push):
     _cleanup(UID)
 
 
+def test_broadcast_200_without_id_is_failure_not_fake_success(push_on, fake_push):
+    """段推送同样必须遵守「200 无 id = 靶向无有效订阅」，不能报成功且要留下原因
+
+    线上真实踩到：后台点群发后日志显示「结果=失败、错误=空」，而接口同时回「已广播」——
+    两头矛盾且看不出该往哪查。根因是段推送没走 `_send_once` 里那段判定，
+    现已抽成 `_parse_resp` 由两条路径共用。本用例钉住「失败要留痕且原因可读」。
+    """
+    import app.domains.platform.services.push as push
+
+    calls, state = fake_push
+    state["id"] = None
+    state["recipients"] = 0
+    res = push.send_to_all("全校通知", "明天放假", event=push.EVENT_ANNOUNCE)
+    assert res["ok"] is False
+    assert res["recipients"] == 0
+    assert res["reason"] == "no_subscription"
+    assert "订阅" in res["message"], "提示要说清是「没人订阅」而不是密钥问题"
+
+    # 关键：失败也必须把原因写进日志（这就是线上「错误」列为空的那个 bug）
+    s = SessionLocal()
+    try:
+        row = (s.query(PushLog).filter(PushLog.title == "全校通知",
+                                       PushLog.ok.is_(False))
+               .order_by(PushLog.id.desc()).first())
+        assert row is not None, "段推送失败必须留痕，否则后台只看到「失败」二字"
+        assert row.error == "no_subscription"
+        assert row.dedup_key is None, "失败不得占用去重键（要能补发）"
+    finally:
+        s.close()
+
+
 # ── 端点 ──
 
 def test_self_test_endpoint(push_on, fake_push, client):
