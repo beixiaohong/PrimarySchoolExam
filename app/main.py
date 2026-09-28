@@ -23,6 +23,7 @@ from .domains.engine.routers import vocab, study, learning_goals, mastery
 from .domains.commerce.routers import diamond, store
 from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement, region, metrics, compliance
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
+from .domains.assessment.routers import gaoxiang
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
 from .domains.content.routers import novel as novel_reader
 from .domains.engagement.routers import tasks, mood, rewards, goals, pet, tree, badges, cards, focus, calendar, checkin, favorites, level
@@ -128,6 +129,9 @@ app.include_router(favorites.router, prefix="/api/favorites", tags=["收藏夹"]
 # 等级/成长体系（新功能 C）：只读端点，经验一律由服务端行为埋点驱动（无对外加经验接口，防刷级）
 app.include_router(level.router, prefix="/api/level", tags=["等级成长"], dependencies=user_auth_deps)
 app.include_router(ai_quiz.router, prefix="/api/ai-quiz", tags=["AI 趣味出题"], dependencies=[*user_auth_deps, Depends(check_quiet_hours)])
+# 高项备考（软考高级·信息系统项目管理师，面向非学生成人用户）：
+# 不挂 check_quiet_hours —— 成人晚间备考是核心场景，宵禁只针对未成年人护眼
+app.include_router(gaoxiang.router, prefix="/api/gx", tags=["高项备考"], dependencies=user_auth_deps)
 app.include_router(assistant.router, prefix="/api/assistant", tags=["AI 学习助手"], dependencies=user_auth_deps)
 app.include_router(diamond.router, prefix="/api", tags=["钻石系统"])
 app.include_router(store.router, prefix="/api", tags=["用户端交易"])
