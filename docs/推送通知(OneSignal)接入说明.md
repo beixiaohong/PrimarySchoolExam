@@ -183,7 +183,13 @@ web/public/OneSignalSDKWorker.js   ──Vite 构建拷贝──▶  web/dist/On
 **`Cache-Control: no-store`**。no-store 是必须的 —— OneSignal 明确要求 worker 不可长期缓存，
 否则 SDK 升级后老客户端仍跑旧 worker，表现为「后端已更新、老用户收不到推送」。
 
-验证：`curl -I https://liusijin.com/OneSignalSDKWorker.js` → 200 + `application/javascript`。
+验证（用 GET，不要用 `curl -I` —— 那发的是 HEAD）：
+
+```bash
+curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
+```
+→ 200 + `application/javascript` + `no-store` + `Service-Worker-Allowed: /`。
+（路由已同时注册 HEAD，`curl -I` 现在也能返回 200；但 GET 形式在任何版本上都成立，故文档统一用它。）
 
 ---
 
@@ -304,11 +310,14 @@ web/public/OneSignalSDKWorker.js   ──Vite 构建拷贝──▶  web/dist/On
 
 ```bash
 # 迁移是否已跑（应有 3 张 push_* 表）
-mysql -h 115.29.213.131 -u <user> -p schoolexam -e \
-  "SHOW TABLES LIKE 'push_%'; SELECT * FROM schema_migrations WHERE version LIKE '083%';"
+#   ⚠️ 本地没有线上库密码，这条必须在**线上服务器**上执行，别在本地连 115.29.213.131
+ssh <线上> "cd <部署目录> && mysql -u <user> -p schoolexam -e \
+  \"SHOW TABLES LIKE 'push_%'; SELECT * FROM schema_migrations WHERE version LIKE '083%';\""
+#   或更省事：venv/bin/python -c \"from app.migrations.runner import run_migrations; run_migrations()\"（幂等，已应用则秒过）
 
 # SW 是否可达（必须 200 + application/javascript + no-store）
-curl -sI https://liusijin.com/OneSignalSDKWorker.js | head -8
+#   用 GET 取响应头：curl -I 发的是 HEAD，旧版本路由只注册了 GET 会返回 405，容易误判
+curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
 
 # 通道是否就绪（后台页也有；密钥不回传明文）
 curl -s -H "Authorization: Bearer <admin_token>" https://liusijin.com/api/admin/push/status
@@ -358,7 +367,59 @@ SELECT event, ok, http_status, recipients, error, dedup_key, created_at
 
 ---
 
-### 11.4 失败对照表（按接口返回的 `reason` 定位）
+### 11.4 线上验收：与本地测试的三处差异
+
+线上已天然满足 HTTPS（本地是靠 `allowLocalhostAsSecureOrigin` 绕过的），但下面三处**必须区别对待**。
+
+**① 凭据是两份，不会自己同步**
+
+本地 `.env` 里有密钥 **不代表**线上有 —— 线上服务器的 `.env` 是独立的一份。两条填法：
+
+| 方式 | 生效 | 说明 |
+|---|---|---|
+| 线上 `.env` 加 `ONESIGNAL_APP_ID` / `ONESIGNAL_REST_API_KEY` | 需 `systemctl restart` | 改文件、要重启 |
+| 后台「系统配置 → 消息推送」在线填 | **60 秒内自动生效，无需重启** | `system_config` 表优先级高于 `.env` |
+
+判断线上到底配好没有，**直接看后台「消息推送」页的 status 卡片**（`configured.app_id` /
+`configured.rest_api_key` / `enabled`），不要去猜 `.env`。该卡片只回传「是否已配置」，不回传明文。
+
+**② 查库只能在线上服务器上做**
+
+本地没有线上库密码，`115.29.213.131` 从本地连不上：
+
+```bash
+ssh <线上> "cd <部署目录> && mysql -u <user> -p schoolexam -e \
+  \"SELECT user_id, subscription_id, opted_in, revoked_at FROM push_subscriptions ORDER BY id DESC LIMIT 5;\""
+```
+
+**③ 迁移与前端产物都由部署流程产出，没有「单独跑一下」的捷径**
+
+- 建表：`deploy.sh` 重启时 `lifespan` 自动 `run_migrations()`（幂等）→ 3 张 `push_*` 表；
+- 前端：新的设置卡片与新后台页**必须重建 `web/dist`、`admin/dist`**，否则线上页面里根本没有推送开关
+  —— 表现为「翻遍设置页找不到推送」，而接口其实一切正常。
+
+**线上验收最小清单**
+
+```bash
+# 1) SW 可达（200 + application/javascript + no-store + Service-Worker-Allowed: /）
+curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
+
+# 2) 代码是否真的上线了 —— 必须做「存在 vs 不存在」对照
+curl -s -o /dev/null -w "%{http_code}\n" https://liusijin.com/api/push/prefs          # 期望 401（路由在，待登录）
+curl -s -o /dev/null -w "%{http_code}\n" https://liusijin.com/api/push/zzz-not-exist  # 期望 404（路由不在）
+```
+
+> 🚨 **第 2 条是判别「代码有没有真上线」的可靠手法**：只看一个 401 会被骗 ——
+> 若全局鉴权中间件对一切 `/api/*` 兜底（本项目 `require_self` 就是全站挂载的），
+> 那么**不存在的路由也会返回 401**。必须拿一个肯定不存在的路径做对照，
+> 一个 401 + 一个 404 才能证明路由确实注册了。本方法在 2026-09-28 的线上探测中实测有效。
+
+浏览器侧步骤与 11.3 完全一致（HTTPS 打开站点 → **先登录** → 授权 → 设置页「发送测试推送」），
+线上不需要任何额外配置；后台定向与群发也在同一套流程里。
+
+---
+
+### 11.5 失败对照表（按接口返回的 `reason` 定位）
 
 | reason | 含义 | 怎么修 |
 |---|---|---|
@@ -381,8 +442,8 @@ SELECT event, ok, http_status, recipients, error, dedup_key, created_at
 # 通道与订阅概况（后台页也有）
 curl -s -H "Authorization: Bearer <admin_token>" https://liusijin.com/api/admin/push/status
 
-# SW 是否可达
-curl -I https://liusijin.com/OneSignalSDKWorker.js
+# SW 是否可达（GET 取响应头；别用 curl -I，HEAD 在旧版路由会 405）
+curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
 
 # 最近失败记录
 #   后台 → 消息推送 → 最近发送记录（error 列给出 OneSignal 原始错误）

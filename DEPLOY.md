@@ -982,5 +982,5 @@ sudo systemctl restart <APP_NAME>
 | OneSignal 返回 401 | 密钥与 App ID 不属于同一个 OneSignal 应用（最常见），或密钥已轮换 |
 | 200 但没有消息 id | 靶向受众里没有任何有效订阅 —— 代码已判定为**失败**（`reason=no_subscription`），不会假报成功 |
 | 换账号后旧账号仍收到推送 | 登出时 `pushTeardown()` 会 `OneSignal.logout()` + 调 `/api/push/unsubscribe`；若用户是直接关标签页，可让其在设置页手动关闭设备开关 |
-| 部署后 `/OneSignalSDKWorker.js` 404 | nginx `location /` 未反代到后端，或漏了 16.3 的路由。`curl -I https://域名/OneSignalSDKWorker.js` 应返回 200 + `application/javascript` |
+| 部署后 `/OneSignalSDKWorker.js` 404 | nginx `location /` 未反代到后端，或漏了 16.3 的路由。`curl -s -D - -o /dev/null https://域名/OneSignalSDKWorker.js` 应返回 200 + `application/javascript`（用 GET 取头；`curl -I` 发 HEAD，路由只注册 GET 时会返回 405 而非 404，别被误导） |
 | 手机端收不到 | iOS Safari 要求「添加到主屏幕」后才支持 Web Push；微信内置浏览器不支持，需引导用户用系统浏览器打开 |

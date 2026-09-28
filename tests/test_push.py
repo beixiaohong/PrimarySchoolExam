@@ -463,6 +463,19 @@ def test_service_worker_route(client):
     assert "OneSignalSDK.sw.js" in r.text
 
 
+def test_service_worker_accepts_head(client):
+    """HEAD 也要通（回归防线）：运维验 SW 最顺手的是 `curl -I`，那发的是 HEAD。
+
+    `@app.get` 只注册 GET、Starlette 不会自动补 HEAD —— 历史上这里返回 405，
+    会被误判成「路由没生效/部署失败」，白排查一轮。响应体由协议层丢弃即可。
+    """
+    r = client.head("/OneSignalSDKWorker.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    assert r.headers.get("service-worker-allowed") == "/"
+    assert "no-store" in r.headers.get("cache-control", "")
+
+
 # ── 后台 ──
 
 def test_admin_push_status_and_send(client, admin_headers, push_on, fake_push):

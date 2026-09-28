@@ -274,7 +274,8 @@ def novel_index():
     )
 
 
-@app.get("/OneSignalSDKWorker.js", tags=["系统"], include_in_schema=False)
+@app.api_route("/OneSignalSDKWorker.js", methods=["GET", "HEAD"], tags=["系统"],
+               include_in_schema=False)
 def onesignal_service_worker():
     """OneSignal Web Push 的 Service Worker（**必须挂在域名根路径**）。
 
@@ -285,6 +286,10 @@ def onesignal_service_worker():
     为什么必须在根路径：Service Worker 的默认作用域是「文件所在目录」，
     只有放在 `/` 才能覆盖全站（`/assets/xxx.js` 只能管到 /assets/）。
     响应头额外声明 `Service-Worker-Allowed: /` 兜底。
+
+    为什么额外允许 HEAD：`curl -I` 发的就是 HEAD，而 `@app.get` 只注册 GET，
+    Starlette 不会自动补 HEAD —— 于是运维用最顺手的 `curl -I` 验证时会拿到
+    405，误判成「路由没生效」。HEAD 的响应体由协议层丢弃，这里不必特殊处理。
 
     缓存策略：**no-store**。OneSignal 官方明确要求 worker 文件不要被长期缓存 ——
     否则 SDK 升级后客户端仍跑旧 worker，会出现「后端已更新、老用户收不到推送」

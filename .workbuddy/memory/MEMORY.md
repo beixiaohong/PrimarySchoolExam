@@ -41,6 +41,14 @@
 - **🚨 测试 helper 跨 session 竞争**：helper 另开 `SessionLocal()` 插 AuthClient 已 add 的 user_id → REPEATABLE READ 下 `Duplicate entry`。**helper 统一用 `client._db`，finally 不 db.close()**。
 - **🚨 Vue 模板禁裸 `<` 比较**：`l.lv<appCtx.x` 的 `<a` 被 HTML 解析器当起始标签报错 → 比较逻辑一律移入 JS。
 - **敏感词服务有进程内缓存**：改词后须 `from app.domains.frozen.services.sensitive import invalidate_cache; invalidate_cache()`，否则断言 400 会拿到 200。
+- **🚨 `@app.get` 不注册 HEAD → `curl -I` 会拿到 405**：Starlette 不会自动补 HEAD，`curl -I` 发的正是 HEAD。
+  于是「用最顺手的命令验证某路由」反而误判成「路由没生效/部署失败」。需要被 `curl -I` 探的路由用
+  `@app.api_route(path, methods=["GET","HEAD"])`；文档里的验证命令统一写 GET 取头
+  `curl -s -D - -o /dev/null <url>`（不依赖 HEAD，任何版本都成立）。
+  **通用铁律：写进文档/回复的验证命令，必须自己先跑一遍**（曾给 `curl -I` 却没跑，把用户引向误判）。
+- **🚨 判「线上代码是否已上线」必须做「存在 vs 不存在」对照**：`require_self` 是**全站挂载**的鉴权依赖，
+  不存在的 `/api/*` 也可能返回 401 → **单看一个 401 会误判成「路由已上线」**。
+  正确手法：故意探一个不存在的路径，**一个 401（存在）+ 一个 404（不存在）**才能证明路由确实注册。
 - **统一错误信封**：`app/core/middleware.py` 把异常包成 `{code, message, request_id}`，**不是** `{detail}` → 测试断言读 `["message"]`。
 - **MySQL 列/Dialect**：TEXT/MEDIUMTEXT 不允许 DEFAULT(1101)；跨 dialect 加列用 `app/database.py::_ensure_column`；大文本用 `paper.py::_longtext()`（`compiles(MEDIUMTEXT,"sqlite")`），不能靠 try-import 判方言。**唯一索引可空列只允许一个 NULL**（指纹/`dedup_key` 类列必须可空，不能给 `DEFAULT ''`）。
 - **删文件**：`rm`/`Remove-Item` 被 safe-delete shim 拦 → 用 venv python `os.remove()` / `shutil.rmtree(ignore_errors=True)`。
