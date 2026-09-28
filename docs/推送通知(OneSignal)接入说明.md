@@ -500,6 +500,14 @@ python tools/onesignal_probe.py
 > # 实测：Total Subscriptions → {"subscriber_count": 3}（2 Email + 1 Web）
 > #       Active Subscriptions → {"subscriber_count": 2}
 > ```
+>
+> **⚠️ 附带现象（不是故障，别误判）**：**分段广播的响应里 OneSignal 不返回 `recipients`**
+> （定向推送会返回），而 `_parse_resp` 目前把「未返回」与「0」都读成 0，所以后台
+> 「触达订阅」列在群发成功时可能显示 **0**。实测：群发响应 `id=ce3d47be-…`、
+> `recipients=None`，而 OneSignal 侧 `successful=1`。
+> **判定群发成功与否只看有没有拿到 `id`，不看那个 0**；真实触达数到 OneSignal 后台的
+> Message Report 看。若要彻底消除这个歧义，需要让 `_parse_resp` 用 `None` 表示「未返回」，
+> 再让后台把「未返回」显示成「待统计」而不是 0。
 
 ```bash
 # 通道与订阅概况（后台页也有）
