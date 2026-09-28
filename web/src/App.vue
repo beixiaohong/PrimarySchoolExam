@@ -180,6 +180,9 @@
       <!-- ═══════════ 等级成长（新功能 C 等级/经验体系） ═══════════ -->
 <level-view v-if="tab==='level'"></level-view>
 
+      <!-- ═══════════ 高项备考（软考高级·信息系统项目管理师，面向非学生成人用户） ═══════════ -->
+<gaoxiang-view v-if="tab==='gaoxiang'"></gaoxiang-view>
+
       <!-- ═══════════ 成就徽章墙（P2-3 创意 8） ═══════════ -->
 <badges-view v-if="tab==='badges'"></badges-view>
 

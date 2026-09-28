@@ -21,6 +21,8 @@ import { reciteData, reciteComputed, reciteMethods } from './recite.js';
 import { checkinData, checkinComputed, checkinMethods } from './checkin.js';
 import { favoritesData, favoritesComputed, favoritesMethods } from './favorites.js';
 import { levelData, levelComputed, levelMethods } from './level.js';
+// 高项备考（软考高级·信息系统项目管理师，面向非学生成人用户）
+import { gaoxiangData, gaoxiangComputed, gaoxiangMethods } from './gaoxiang.js';
 
 const appOptions = {
   data() {
@@ -41,6 +43,7 @@ const appOptions = {
       ...checkinData(),   // 每日签到 data（checkin/checkinLoading/checkinOverlay，见 logic/checkin.js）
       ...favoritesData(),   // 我的收藏 data（favorites/favoritesTotal/favoritesType/favSet，见 logic/favorites.js）
       ...levelData(),       // 等级成长 data（levelInfo/levelLoading，见 logic/level.js）
+      ...gaoxiangData(),    // 高项备考 data（gxSub/gxQuestions/…，见 logic/gaoxiang.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -154,6 +157,7 @@ const appOptions = {
     ...checkinComputed,       // 每日签到 computed（checkinSignedToday/checkinStreak/checkinNextReward/checkinCalendar，见 logic/checkin.js）
     ...favoritesComputed,       // 我的收藏 computed（favoritesHasMore，见 logic/favorites.js）
     ...levelComputed,       // 等级成长 computed（levelNum/levelBadgeText/levelPct/levelLadder/levelIsMax，见 logic/level.js）
+    ...gaoxiangComputed,    // 高项备考 computed（gxResultMap/gxAllAnswered/…，见 logic/gaoxiang.js）
     ...badgesComputed,       // 成就徽章 computed（badgeItems/badgeCats，见 logic/badges.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码
@@ -321,6 +325,7 @@ const appOptions = {
     ...checkinMethods,       // 每日签到 methods（loadCheckin/doCheckin/openCheckinOverlay/closeCheckinOverlay，见 logic/checkin.js）
     ...favoritesMethods,       // 我的收藏 methods（loadFavorites/loadMoreFavorites/setFavoritesType/toggleFavorite，见 logic/favorites.js）
     ...levelMethods,       // 等级成长 methods（loadLevel/openLevel，见 logic/level.js）
+    ...gaoxiangMethods,    // 高项备考 methods（initGaoxiang/gxQuizStart/…，见 logic/gaoxiang.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -409,6 +414,7 @@ const appOptions = {
       if (t === 'home') { this.loadRewards(); this.loadRewardTimeline(); this.loadParentMsgs(); this.loadNotices(); this.loadDailyTasks(); this.loadCheckin(); }
       if (t === 'favorites') { this.loadFavorites(); }   // 我的收藏（新功能 D）：进入页面重新拉取第一页
       if (t === 'level') { this.loadLevel(); }            // 等级成长（新功能 C）：进页面刷新，保证升级/经验最新
+      if (t === 'gaoxiang') { this.initGaoxiang(); }      // 高项备考（成人考试）：拉知识域/进度/知识点/错题
       if (t === 'practice') { this.loadMathCategories(); if (this.subject === '英语') this.loadGrammarPoints(); }
       if (t === 'recite') { this.reciteSub === 'words' ? this.loadVocabToday() : this.loadClassicalToday(); this.loadClassicalTexts(); }
       if (t === 'wrong') { this.loadWrongItems(); this.loadAnalysis(); this.loadTeachDue(); }

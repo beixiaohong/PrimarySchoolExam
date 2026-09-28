@@ -22,6 +22,8 @@ const ICONS = {
   tree: '<path d="M12 21v-5"/><circle cx="12" cy="9" r="6"/><path d="M9 9.5h.01M15 9.5h.01"/>',
   // 等级成长（tab='level'，成长与激励组）：盾牌 + 星级，表「等级/荣誉」
   level: '<path d="M12 3 4 7v5c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V7l-8-4Z"/><path d="M12 8.5l1.3 2.6 2.9.4-2.1 2 .5 2.9-2.6-1.4-2.6 1.4.5-2.9-2.1-2 2.9-.4Z"/>',
+  // 高项备考（tab='gaoxiang'，学习组）：靶心 + 箭，表「备考目标/成人考试」
+  gaoxiang: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path d="M12 12l6.5-6.5"/><path d="M14.5 5.5h4v4"/>',
   badges: '<circle cx="12" cy="9" r="5"/><path d="M9 13.5 7.5 21 12 18.5 16.5 21 15 13.5"/>',
   cards: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.4"/><path d="M21 16l-5-5L7 20"/>',
   wallet: '<path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2"/><rect x="3" y="9" width="18" height="11" rx="2.5"/><circle cx="16.5" cy="14.5" r="1.3"/>',
