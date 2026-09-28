@@ -962,6 +962,12 @@ sudo systemctl restart <APP_NAME>
    本项目的 worker 由后端根路径托管（见 16.3），**不需要**把文件放到网站根目录。
 3. 若使用 Safari：填好 Safari Web ID（否则 Safari 用户订阅不上）。
 4. 取 `App ID` 与 `REST API Key`（Settings → Keys & IDs）。
+5. **检查订阅提示（Prompt）**：OneSignal 自己的弹窗文案**不随浏览器语言翻译**，默认恒为英文
+   （只有浏览器原生权限弹窗会跟随语言）。本项目建议在
+   **Settings → Push & In-App → Web Settings → Permission Prompt Setup** 把
+   **Email/Phone Prompt 移除** —— 后端只用 `push` 频道，收集来的邮箱一条都不会用，
+   且与站内带验证码的「绑定邮箱」重复。理由、中文文案与验证方法见
+   《推送通知(OneSignal)接入说明》§16。
 
 ### 16.3 Service Worker 为什么由后端托管
 

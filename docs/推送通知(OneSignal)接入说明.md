@@ -791,3 +791,82 @@ server {
 >
 > 另一个替代方案是**改 OneSignal 与代码去跟随非 www**（把上面三处改成 `liusijin.com`）——
 > 但那样与 nginx 证书目录的命名就分家了，不推荐。
+
+---
+
+## 16. 订阅提示（Prompt）的文案与语言（2026-09-28 定位）
+
+### 16.1 现象
+
+访客进站后会弹出一个**要求输入邮箱**的提示（Slidedown），文案是**英文**。
+它一度看起来像「凭空冒出来的」——因为我们从没在代码里写过这个弹窗。
+
+### 16.2 事实：它不在我们代码里，而且改代码没用
+
+| 核对项 | 结果 |
+|---|---|
+| 全仓检索 `prompt` / `slidedown` / 邮箱输入弹窗 | **无**（本站自己的「绑定邮箱」在设置页，中文、还带 6 位验证码） |
+| `GET /apps/{app_id}`（App 配置接口） | **不返回任何 prompt 字段** → 提示配置只存在于 OneSignal 后台 |
+| App 里那条 2024-10-15 建立的 Email 订阅 `beidou669@icloud.com` | 与 App 创建同日，是该提示长期存在的旁证 |
+
+⚠️ **不要去改 `OneSignal.init` 的 `promptOptions`**。官方 Web SDK 参考写得很明确：
+
+> Init options only work with **Custom Code Setup**. Otherwise, these are configured in the
+> OneSignal dashboard.
+
+本 App 的提示是**后台**配的（否则它根本不会出现），所以代码里的 `promptOptions.text`
+**不会生效** —— 改了代码、重新部署，弹窗照旧是英文，白折腾一轮。
+
+### 16.3 为什么是英文
+
+OneSignal 的**软提示（Slidedown / Email-Phone）文案不随浏览器语言自动翻译**。
+官方 FAQ 原话：
+
+> How do I translate or localize the prompt?
+> Use the Custom Code Setup to programmatically detect the user's browser language and
+> initialize the OneSignal SDK with different text. **The native permission prompt
+> automatically translates to the browser's set language.**
+
+即：**只有浏览器原生权限弹窗**会跟随浏览器语言（中文 Edge 显示中文）；OneSignal 自己的
+弹窗默认英文，后台没填自定义文案时就用那份英文默认值。
+
+### 16.4 改法（都在 OneSignal 后台，二选一）
+
+路径：**Settings → Push & In-App → Web Settings → Permission Prompt Setup**
+
+- **A. 改成中文**：点列表里那条 **Email/Phone Prompt**（或 Add Prompt → Email/Phone Prompt）
+  → 选择显示哪些字段（邮箱 / 手机号）、填**文本标签**、设自动弹出延迟 → **Done** → 下一页再 **Save**。
+- **B. 直接删掉（推荐，理由见 16.5）**：同一屏把该提示移除。
+
+### 16.5 为什么建议删掉，而不是翻译成中文
+
+1. **收来的邮箱我们从不使用**：后端所有发送都走 `target_channel: "push"`
+   （`services/push.py` 的 `_send_once` / `send_to_all`），Email 频道一条都没发过。
+2. **与站内「绑定邮箱」重复且冲突**：设置页那个是**带 6 位验证码**的账号绑定；这个提示收集的
+   邮箱进的是 OneSignal 的 Email 订阅，与 `users` 表无关。家长在提示里填了邮箱，回站内一看
+   仍是「未绑定」，只会更困惑。
+3. **无从校验归属**：OneSignal 的 Email 不做验证码校验，因此**不能**当作账号体系的一部分，
+   也不能用于找回密码。
+4. 多一个弹窗就多一层摩擦，而它恰好挡在**我们刚跑通的推送授权流程**前面。
+
+> 保留它的合理前提只有一个：将来真要启用 OneSignal 的 **Email 通道**发信。
+> 在那之前，它只是白收集数据。
+
+### 16.6 若保留，可照抄的中文文案
+
+后台文本字段的限制（官方）：**操作提示 ≤90 字符、按钮 ≤15 字符**；字体/颜色/字号不可改。
+
+| 字段 | 建议中文 |
+|---|---|
+| 操作提示 actionMessage | `留下邮箱，重要通知也能发到你的邮箱` |
+| 邮箱标签 emailLabel | `请输入邮箱` |
+| 确认按钮 acceptButton | `订阅` |
+| 取消按钮 cancelButton | `以后再说` |
+
+### 16.7 ⚠️ 改完怎么验证（这里有个坑）
+
+Slidedown 类提示（Push / Category / **Email-Phone 都算**）有**退避逻辑**：
+被关闭一次后 **3 天**内不再出现、第二次 **7 天**、第三次起 **30 天**。
+
+所以改完在**原来那个浏览器里多半看不到**，极易误判成「没生效」。正确验证方式：
+用**无痕 / InPrivate 窗口**打开站点（或换浏览器 profile、清站点数据）。
