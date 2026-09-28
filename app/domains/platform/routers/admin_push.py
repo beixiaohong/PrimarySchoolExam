@@ -78,9 +78,11 @@ def admin_push_status(admin=Depends(_require_admin)):
 def admin_push_send(req: SendReq, admin=Depends(_require_admin)):
     """向目标人群推送。
 
-    - target=all：用 OneSignal 分段「Subscribed Users」一次广播，**不逐个过滤用户偏好**
-      （运营公告属必达级别；也避免为上万人拼一个巨大请求）。返回的 recipients
-      是 OneSignal 侧实际触达的订阅数。
+    - target=all：用 OneSignal 预置分段（`push.SEGMENT_ALL_SUBSCRIBERS`）一次广播，
+      **不逐个过滤用户偏好**（运营公告属必达级别；也避免为上万人拼一个巨大请求）。
+      返回的 recipients 是 OneSignal 侧实际触达的订阅数。
+      ⚠️ 该分段名由 OneSignal 侧维护、会变；失效时接口返回 200 但无 id，
+      现象等同「没人订阅」—— 群发突然 0 触达时先核对段名（见 push.py 常量处注释）。
     - target=user/grade：按 external_id 定向，逐用户**尊重偏好开关与免打扰时段**。
 
     返回：{ok, sent, recipients, skipped, reason, message}。

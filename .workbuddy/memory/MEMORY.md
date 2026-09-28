@@ -81,5 +81,5 @@ cd web && node node_modules/vite/bin/vite.js build     # 前端构建（admin �
 | 试卷采集 | 写线上库只能跑在线上；须用项目 venv；LibreOffice 必需 | 同上 |
 | 成长体系 | 新埋点一律加 `engagement/services/events.py`；埋在 `commit()` **之后**；读时零聚合；不提供对外加经验端点 | `成长体系与高项备考.md` |
 | 高项备考 | `/quiz/generate` 用独立短会话回读；题库取题必须在 SQL 层排除已做题；`【答案】` 是前后端契约 | 同上 |
-| 消息推送 | 200 无 `id` 必须判失败（两条路径共用 `_parse_resp`）；Email 订阅不算 `Subscribed Users`；**跟踪防护会拦 OneSignal，自托管 SDK 无效**；**主域名＝www，`SITE_URL` 默认值/OneSignal origin/实际访问域名三者必须一致**（§15） | `消息推送.md` |
+| 消息推送 | 200 无 `id` 必须判失败（两条路径共用 `_parse_resp`）—— 但它有**两种**截然不同的原因：没人订阅 / **群发段名过期**（用常量 `SEGMENT_ALL_SUBSCRIBERS`，禁写字面量）；**跟踪防护会拦 OneSignal，自托管 SDK 无效**；**主域名＝www，`SITE_URL` 默认值/OneSignal origin/实际访问域名三者必须一致**（§15）。排查先跑 `tools/onesignal_probe.py`（含分段名核对节） | `消息推送.md` |
 | 前端约定 / 定时任务 | 新 tab 4 处注册；可构建三条判据；调试「静默失效」；调度是静默失效，单任务异常不得终止整轮 | `工程规范-前端与定时任务.md` |

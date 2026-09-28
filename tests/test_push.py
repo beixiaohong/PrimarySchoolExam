@@ -439,9 +439,23 @@ def test_broadcast_uses_segment(push_on, fake_push):
     res = push.send_to_all("全校通知", "明天放假", event=push.EVENT_ANNOUNCE)
     assert res["ok"] is True and res["recipients"] == 3
     body = calls[0]["json"]
-    assert body["included_segments"] == ["Subscribed Users"]
+    assert body["included_segments"] == [push.SEGMENT_ALL_SUBSCRIBERS]
     assert "include_aliases" not in body
     _cleanup(UID)
+
+
+def test_broadcast_segment_name_is_pinned():
+    """群发段名是 OneSignal 侧的契约，改名会让群发**静默**变成 0 触达
+
+    2026-09-28 实际踩到：OneSignal 把预置段从「用户」维度（旧名 `Subscribed Users`）
+    改成「订阅」维度，旧名失效 —— 接口返回 200 但不带 id，现象与「没有任何订阅者」
+    完全一样，后台一直显示「群发 0 人 / no_subscription」，排查方向被带偏。
+    改动此值前，必须先用 GET /apps/{app_id}/segments 核对 OneSignal 侧的真实段名，
+    并同步本断言（它就是用来在你漏做核对时把测试打红的）。
+    """
+    import app.domains.platform.services.push as push
+
+    assert push.SEGMENT_ALL_SUBSCRIBERS == "Total Subscriptions"
 
 
 def test_broadcast_200_without_id_is_failure_not_fake_success(push_on, fake_push):
@@ -535,7 +549,7 @@ def test_admin_push_status_and_send(client, admin_headers, push_on, fake_push):
         "target": "all", "event": "announce"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
-    assert calls[0]["json"]["included_segments"] == ["Subscribed Users"]
+    assert calls[0]["json"]["included_segments"] == ["Total Subscriptions"]
 
     r = client.get("/api/admin/push/logs", headers=admin_headers)
     assert r.status_code == 200

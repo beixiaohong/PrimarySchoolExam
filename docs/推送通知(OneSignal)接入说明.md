@@ -458,16 +458,48 @@ python tools/onesignal_probe.py
 | `订阅构成` 里**没有 Web**（只有 Email/移动端，或为空） | **没人订阅** | 让用户登录后点「允许通知」；**别去改密钥** |
 | HTTP 401 | 配置错 | 核对 Key 与 App ID 是否属于**同一个** OneSignal 应用 |
 | `Web 平台域名` ≠ 本站地址 | OneSignal 侧站点 URL 配错 | 改成本站域名后重新授权 |
+| 群发 0 人，但**定向推送成功** | **分段名已过期**（不是没人订阅） | 按下方「案例二」核对段名，别去查订阅 |
 
-> **真实案例（2026-09-28）**：线上后台群发与测试推送全部失败，`reason=no_subscription`。
-> 探测显示域名正确、Web 平台已启用、`push_configured()=True`，但
-> **订阅总数 1 且构成是 `{'Email': 1}`** —— 一个 Web Push 订阅都没有，属「没人订阅」。
-> ⚠️ 这类 Email/移动端订阅**不算** `Subscribed Users` 段，所以段推送也发不到，
-> 同样返回 200 无 `id`。
+> **案例一：真的没人订阅（2026-09-28）** —— 线上后台群发与测试推送全部失败，
+> `reason=no_subscription`。探测显示域名正确、Web 平台已启用、`push_configured()=True`，
+> 但**订阅总数 1 且构成是 `{'Email': 1}`** —— 一个 Web Push 订阅都没有，属「没人订阅」。
+> ⚠️ 这类 Email/移动端订阅**不能**用于 Web Push，所以段推送同样发不到，也返回 200 无 `id`。
 >
 > 同一次还暴露了一个代码缺陷：`send_to_all`（段推送）漏了「200 无 `id` = 无有效订阅」
 > 的判定，导致后台显示「结果=失败、错误=空」而接口却回「已广播」，两头矛盾且无从排查。
 > 现已抽成 `_parse_resp()` 由两条发送路径共用（`_send_once` / `send_to_all`）。
+
+> **案例二：分段名过期（当天第二次踩坑，⚠️ 更隐蔽）**
+>
+> 用户订阅成功后，**定向推送已经能触达**（后台日志 `触达订阅 1 / 成功`，拿到消息 id），
+> 但**后台群发仍然 0 人**。根因不是订阅，而是代码里写死的分段名 **已被 OneSignal 改名**：
+>
+> | 旧名（曾写死在代码里） | App 内**实际存在**的 6 个预置段（实测） |
+> |---|---|
+> | `Subscribed Users` | `Total Subscriptions`、`Active Subscriptions`、`Inactive Subscriptions`、`Engaged Subscriptions`、`All SMS Subscriptions`、`All Email Subscriptions` |
+>
+> OneSignal 把预置段从「用户（Users）」维度改成了「订阅（Subscriptions）」维度。
+> 引用一个**不存在的段**时，接口**返回 200 却不带 `id`** → 被 `_parse_resp` 判成
+> `no_subscription` → 提示「还没人授权通知」，而真相是「段名过期」。**同一个错误码、
+> 两种完全不同的原因**，这是本次排查最绕的地方。
+>
+> 现状：段名已抽为常量 `push.SEGMENT_ALL_SUBSCRIBERS`（含核对手册注释），
+> 并有 `test_broadcast_segment_name_is_pinned` 钉住它；`no_subscription` 的返回文案
+> 也已改成**两种原因并列提示**，不再只喊「没人订阅」。
+>
+> **核对段名的只读命令**（群发 0 人时的第一步，先跑它再看订阅）：
+>
+> ```bash
+> # 列出全部段名
+> curl -s -H "Authorization: Key $ONESIGNAL_REST_API_KEY" \
+>   https://api.onesignal.com/apps/$ONESIGNAL_APP_ID/segments
+>
+> # 查某段实际人数（<segment_id> 换成上一步拿到的 id）
+> curl -s -H "Authorization: Key $ONESIGNAL_REST_API_KEY" \
+>   https://api.onesignal.com/apps/$ONESIGNAL_APP_ID/segments/<segment_id>
+> # 实测：Total Subscriptions → {"subscriber_count": 3}（2 Email + 1 Web）
+> #       Active Subscriptions → {"subscriber_count": 2}
+> ```
 
 ```bash
 # 通道与订阅概况（后台页也有）

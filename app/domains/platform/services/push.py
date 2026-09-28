@@ -35,6 +35,19 @@ BATCH_SIZE = 1000        # 单请求 external_id 上限 20000；取 1000 便于�
 MAX_LOG_ROWS = 200       # 超过则只写一行汇总，避免群发写出几千行日志
 DAILY_CAP = 8            # 自动事件每人每日上限；公告/群发（announce/broadcast）不受限
 
+# 群发（broadcast）用的 OneSignal 预置分段名。
+#
+# ⚠️ 不要在 payload 里写段名字面量。OneSignal 调整过预置段的命名（从「用户」维度改为
+# 「订阅」维度），旧名 `Subscribed Users` 已不存在 —— 而**段名失效时接口返回 200、却不带 id**，
+# 现象与「没有任何订阅者」完全一样，极易把排查带偏（2026-09-28 实际踩过：
+# 后台群发一直「0 人 / no_subscription」，真因是段名过期，而非没人订阅）。
+#
+# 核对手册（只读，不打印任何密钥）：
+#   GET https://api.onesignal.com/apps/{app_id}/segments        → 列出全部段名
+#   GET https://api.onesignal.com/apps/{app_id}/segments/{sid}  → {"subscriber_count": N}
+# 群发「0 人」时的第一步就是跑上面两条，先确认段名仍然存在。
+SEGMENT_ALL_SUBSCRIBERS = "Total Subscriptions"   # 全部已授权订阅者（含各渠道）
+
 # ── 事件常量（与前端 push.js、prefs 字段、push_logs.event 三处对齐）──
 EVENT_STUDY = "study"          # 学习提醒：作业 / 打卡 / 复习
 EVENT_IM = "im"                # 私信离线提醒
@@ -434,7 +447,9 @@ def send_to_all(title: str, body: str, url: str = "", event: str = EVENT_BROADCA
     """向全部订阅者广播（不按 external_id 定向）。
 
     用于后台「全体群发」：无需先查全站用户列表，也避免把上万人塞进一次请求。
-    `included_segments` 用 OneSignal 默认分段「Subscribed Users」= 所有已授权订阅者。
+    `included_segments` 用 OneSignal 预置分段 `SEGMENT_ALL_SUBSCRIBERS`（全部已授权订阅者）。
+    ⚠️ 段名会随 OneSignal 侧调整而失效，失效时接口**返回 200 但无 id**，看起来就像
+    「没人订阅」—— 群发突然 0 触达时，先按常量处的注释核对段名，别急着下结论。
     """
     title_s, body_s = _cut(title, 120), _cut(body, 500)
     if not push_configured():
@@ -443,7 +458,7 @@ def send_to_all(title: str, body: str, url: str = "", event: str = EVENT_BROADCA
     payload = {
         "app_id": _app_id(),
         "target_channel": "push",
-        "included_segments": ["Subscribed Users"],
+        "included_segments": [SEGMENT_ALL_SUBSCRIBERS],
         "headings": {"en": title_s, "zh-Hans": title_s},
         "contents": {"en": body_s, "zh-Hans": body_s},
         "data": dict(data or {}, event=event),
@@ -464,7 +479,12 @@ def send_to_all(title: str, body: str, url: str = "", event: str = EVENT_BROADCA
     if ok:
         reason, message = "", "已广播"
     elif err == "no_subscription":
-        reason, message = "no_subscription", "没有有效订阅者：目标人群尚未授权浏览器通知"
+        # 两种可能都必须提示：① 真的没人订阅；② OneSignal 侧该分段不存在或被改名。
+        # 两者现象完全一样（200 但无 id），只提示前者会把排查方向带偏
+        # （2026-09-28 实际踩过：群发一直 0 人，真因是段名过期而非没人订阅）。
+        reason = "no_subscription"
+        message = ("没有触达任何订阅者：目标人群尚未授权浏览器通知，"
+                   "或 OneSignal 侧分段名已失效（核对方法见 SEGMENT_ALL_SUBSCRIBERS 注释）")
     else:
         reason, message = "http_error", (err or "OneSignal 返回错误")
     return {"ok": ok, "sent": recipients, "recipients": recipients,
