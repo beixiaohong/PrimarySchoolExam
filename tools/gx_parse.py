@@ -30,6 +30,7 @@
 **不使用 dataclass / `from __future__ import annotations`** —— 本模块会被按路径加载
 （未注册 sys.modules）时字符串注解解析会抛 AttributeError，详见 tools/preflight.py。
 """
+import difflib
 import hashlib
 import re
 import sys
@@ -1103,9 +1104,13 @@ def parse_essay_lines(lines: list, meta: dict) -> dict:
 _CH_HEAD = re.compile(r"^第\s*(\d{1,2})\s*章[\s\u3000]*(.*)$")
 _SEC_HEAD = re.compile(r"^(\d{1,2}\.\d{1,2})\s+(\S.{1,40})$")
 _FILL_LINE = re.compile(r"[（(]\s*[）)]")
+# 括号里已有内容（即「带答案版」的特征）；与 _FILL_LINE 互斥使用
+_FILL_FILLED = re.compile(r"[（(][^）)]+[）)]")
+# 合并「无答案版 + 带答案版」后，正文里两段之间的分隔标记（前端据此折叠答案）
+FILL_ANS_SEP = "\n\n【答案】\n"
 
 
-def parse_knowledge_lines(lines: list, meta: dict) -> dict:
+def parse_knowledge_lines(lines: list, meta: dict, pages: list = None) -> dict:
     """解析知识点类资料 → {"items":[{"title","content","chapter","kind"}]}
 
     排版差异很大，采用「标题切分 + 正文聚合」的稳妥策略：
@@ -1113,10 +1118,14 @@ def parse_knowledge_lines(lines: list, meta: dict) -> dict:
     - 其余行归入当前卡片正文（保留换行，便于阅读）；
     - 卡片正文过短（< 20 字）的丢弃，避免产生一堆只有标题的空卡。
     填空辅助记忆清单按行拆成独立条目（每一行本身就是一条自测题）。
+
+    `pages` 为 `read_pdf()` 的原始分页结果，只有填空清单用得上：那份资料**自带两版**
+    （前几页无答案、后几页带答案），必须按页切分才能合并，靠 `lines` 分不出边界。
+    不传 `pages` 时退化为旧行为（全篇按行成条），老调用方不受影响。
     """
     kind = meta.get("sub") or KN_LIST
     if kind == KN_RECITE:
-        return _parse_fill(lines, meta)
+        return _parse_fill(lines, meta, pages=pages)
     if kind in (KN_MINDMAP,):
         return _parse_mindmap(lines, meta)
     if kind == KN_SLIDE:
@@ -1205,13 +1214,138 @@ def _split_long(text: str, limit: int) -> list:
     return chunks or [text]
 
 
-def _parse_fill(lines: list, meta: dict) -> dict:
+def _fill_skel(text: str) -> str:
+    """填空条目骨架：抹掉括号内容与所有标点空白，用于对齐「空版 / 答案版」同一道题
+
+    抹掉括号内容后，两版同一道题的骨架只差 PDF 断行位置，difflib 才配得准。
+    """
+    s = re.sub(r"[（(][^）)]*[）)]", "", text or "")
+    return re.sub(r"[\W_]+", "", s)
+
+
+def fill_is_blank_item(text: str) -> bool:
+    """条目是否属于「无答案版」：正文里还留着空括号 `（）`
+
+    存量数据修复脚本（`tools/fix_gx_recite_merge.py`）用它把库里的旧行切成两版：
+    它与页级判据等价 —— 带答案版的页面里一个空括号都没有，所以「含空括号」即无答案版。
+    """
+    return bool(_FILL_LINE.search(text or ""))
+
+
+def _fill_split_pages(pages: list):
+    """按页切出填空清单的两版 → (无答案版页, 带答案版页)；结构不符返回 None
+
+    实测 32/32 份「填空辅助记忆清单」都是：前若干页无答案（整页含空括号 `（）`），
+    其后是带答案版（整页不含空括号、且含带内容的括号），且进入答案版后不再回头。
+    所以判据取「整页是否含空括号」——按页判比分边界干净，不会把版切错。
+    """
+    k = 0
+    for page in pages:
+        t = "\n".join(page)
+        if _FILL_FILLED.search(t) and not _FILL_LINE.search(t):
+            break
+        k += 1
+    if k == 0 or k >= len(pages):
+        return None
+    return pages[:k], pages[k:]
+
+
+def _fill_groups(blank_items: list, ans_items: list) -> list:
+    """把「空版 / 答案版」条目配对 → `[[空版条目...], 答案版条目 or None]`
+
+    为什么不按下标硬配：两版条目顺序一致，但 PDF 断行不同会出现「空版拆成 2 条、
+    答案版并成 1 条」（第 1 章「车联网的 3 层体系」就是这样），硬配会让其后条目全部错位。
+    故用**骨架序列**做 difflib 对齐。
+
+    单独抽出来是为了让存量数据修复脚本（`tools/fix_gx_recite_merge.py`）复用同一套配对规则
+    —— 两处必须一致，否则「重导入」与「就地修复」会得到不同结果。
+    """
+    ka = [_fill_skel(x["content"]) for x in blank_items]
+    kb = [_fill_skel(x["content"]) for x in ans_items]
+    groups = []       # [[空版条目...], 答案版条目 or None]
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+            None, ka, kb, autojunk=False).get_opcodes():
+        if tag == "insert":                       # 答案版多出来的条目
+            for j in range(j1, j2):
+                groups.append([[], ans_items[j]])
+            continue
+        if tag == "delete":                       # 空版多出来的条目 → 并进上一条
+            for i in range(i1, i2):
+                if groups:
+                    groups[-1][0].append(blank_items[i])
+                else:
+                    groups.append([[blank_items[i]], None])
+            continue
+        n = min(i2 - i1, j2 - j1)                 # equal / replace 里成对的部分
+        for d in range(n):
+            groups.append([[blank_items[i1 + d]], ans_items[j1 + d]])
+        for i in range(i1 + n, i2):
+            if groups:
+                groups[-1][0].append(blank_items[i])
+            else:
+                groups.append([[blank_items[i]], None])
+        for j in range(j1 + n, j2):
+            groups.append([[], ans_items[j]])
+    return groups
+
+
+def _fill_merge(blank_items: list, ans_items: list) -> list:
+    """「无答案版」与「带答案版」配对合并成一条知识点
+
+    配对结果分三种：
+    - 两版都有   → 一条，正文 = 空版 + `【答案】` + 答案版（自测与答案都不丢）
+    - 只有答案版 → 一条（原样保留）
+    - 只有空版   → 一条（答案版漏了它：宁可留空，也不悄悄丢内容）
+    """
+    merged = []
+    for blanks, ans in _fill_groups(blank_items, ans_items):
+        if ans is None:
+            item = dict(blanks[0])
+            item["content"] = "\n".join(x["content"] for x in blanks)
+        elif not blanks:
+            item = dict(ans)
+        else:
+            ask = "\n".join(x["content"] for x in blanks)
+            item = dict(ans)
+            item["content"] = ask + FILL_ANS_SEP + ans["content"]
+            # 标题取空版：空版一定有空括号可断句，「两化融合，是指（信息化）和…」这类
+            # 带答案版没有断点，会被整段当成标题
+            item["title"] = blanks[0]["title"] or ans["title"]
+            item["summary"] = ask[:180]
+            item["has_blank"] = True
+        # 正文变了必须重算指纹：否则与未合并版撞同一指纹，重导入时不会更新
+        item["fingerprint"] = fingerprint(item["content"])
+        merged.append(item)
+    return merged
+
+
+def _parse_fill(lines: list, meta: dict, pages: list = None) -> dict:
     """填空辅助记忆清单：先按句末标点把**断句碎片**合并成完整条目，再取前段作短标题
 
-    坑：PDF 每个条目常被拆成 2~3 个物理行（`…其中，（）安全是一种静` / `态安全；（）安全…`），
+    坑 1：PDF 每个条目常被拆成 2~3 个物理行（`…其中，（）安全是一种静` / `态安全；（）安全…`），
     按行成条会产出大量半句碎片 —— 用户看到的就是「知识点页很乱」。
     标题另做裁剪（截到 `----`/`（）`/冒号前），列表才读得下去；全文仍保留在正文里。
+
+    坑 2（2026-09-28 修）：**同一份 PDF 自带两版** —— 前几页无答案、后几页带答案。
+    原先整篇按行成条，于是每个知识点落库两条：一条全是 `（）`、一条带答案；
+    用户点开空的那条只看到一串空括号，反馈「空没填上」。
+    修法：按页切两版 → 各自成条 → 按序配对**合并成一条**（正文 = 空版 + 【答案】 + 答案版）。
     """
+    if pages and not lines:
+        lines = flatten(pages)      # 只给了分页结果时兜底出行，避免落进空列表
+    if pages:
+        split = _fill_split_pages(pages)
+        if split:
+            blank_pages, ans_pages = split
+            blank_items = _fill_items(flatten(blank_pages), meta)["items"]
+            ans_items = _fill_items(flatten(ans_pages), meta)["items"]
+            if blank_items and ans_items:
+                return {"items": _fill_merge(blank_items, ans_items)}
+    return _fill_items(lines, meta)
+
+
+def _fill_items(lines: list, meta: dict) -> dict:
+    """单版填空清单 → 条目（合并断行碎片 + 裁短标题）"""
     entries, cur, chapter = [], "", ""
     for raw in lines:
         line = raw.strip()
@@ -1487,7 +1621,7 @@ def parse_file(path, rel_path: str = "") -> dict:
         elif info["category"] == CAT_ESSAY:
             out = parse_essay_lines(lines, meta)
         else:
-            out = parse_knowledge_lines(lines, meta)
+            out = parse_knowledge_lines(lines, meta, pages=pages)
     except Exception as e:
         result["error"] = f"解析异常：{type(e).__name__}: {e}"
         return result

@@ -59,6 +59,18 @@ const WRONG_TABS = [
   { k: 'essay', label: '论文' },
 ];
 
+// 填空速记（kind=recite）：一份清单里同时存「填空题目 + 答案」，正文形如
+//   `题目（）；\n\n【答案】\n题目（答案）；`
+// 分隔标记由 `tools/gx_parse.py::FILL_ANS_SEP` 写入 —— 改后端必须同步这里。
+// 用「【答案】整行」匹配（而不是死比空行个数）更耐改：后端调整空行也不影响折叠。
+const GX_K_ANS_RE = /\n+[【\[]答案[】\]]\n+/;
+
+function gxKSplitAnswer(text) {
+  const m = GX_K_ANS_RE.exec(text || '');
+  if (!m) return [text || '', ''];
+  return [text.slice(0, m.index), text.slice(m.index + m[0].length)];
+}
+
 export function gaoxiangData() {
   return {
     // ── 通用 ──
@@ -77,6 +89,7 @@ export function gaoxiangData() {
     gxKList: [],            // 列表（无正文）
     gxKLoading: false,
     gxKDetail: null,        // 当前阅读的知识点（含 content）
+    gxKShowAnswer: false,   // 填空速记：答案默认折叠，点「显示答案」才展开（保留自测手感）
     gxKGenning: false,      // AI 生成中
     // ── 刷题 ──
     gxQDomain: '',          // '' = 不限（配合资料筛选刷整套）
@@ -223,9 +236,18 @@ export const gaoxiangComputed = {
       .map(k => ({ kind: k, label: this.gxKKindLabel(k), items: map[k] }));
   },
   // 知识点正文按换行拆段（后端存的是 PDF 抽取原文，直接塞 div 会挤成一大坨）
-  gxKParas() {
-    const text = ((this.gxKDetail || {}).content) || '';
-    return text.split('\n').map(s => s.trim()).filter(Boolean);
+  // 填空速记的正文是「题目 + 【答案】 + 答案」三段式：答案单独拿出来（默认折叠），
+  // 其它资料类型拆不出答案，原样走 gxKAskParas，互不影响。
+  gxKAskParas() {
+    const [ask] = gxKSplitAnswer(((this.gxKDetail || {}).content) || '');
+    return ask.split('\n').map(s => s.trim()).filter(Boolean);
+  },
+  gxKAnswerParas() {
+    const [, ans] = gxKSplitAnswer(((this.gxKDetail || {}).content) || '');
+    return ans.split('\n').map(s => s.trim()).filter(Boolean);
+  },
+  gxKHasAnswer() {
+    return this.gxKAnswerParas.length > 0;
   },
 };
 
@@ -304,11 +326,13 @@ export const gaoxiangMethods = {
     this.gxLoadKnowledge();
   },
   gxOpenKnowledge(k) {
+    this.gxKShowAnswer = false;      // 每次打开都从「只显示题目」开始，才留着自测手感
     this.api(`/api/gx/knowledge/${k.id}?user_id=${encodeURIComponent(this.user)}`)
       .then(d => { this.gxKDetail = d || null; })
       .catch(() => this.showToast('读取失败，稍后再试'));
   },
-  gxCloseKnowledge() { this.gxKDetail = null; },
+  gxCloseKnowledge() { this.gxKDetail = null; this.gxKShowAnswer = false; },
+  gxKToggleAnswer() { this.gxKShowAnswer = !this.gxKShowAnswer; },
   // AI 生成该知识域知识点（慢操作，按钮转圈防重复）
   gxGenerateKnowledge() {
     if (this.gxKGenning) return;

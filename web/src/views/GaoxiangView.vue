@@ -505,7 +505,16 @@
         <span class="gx-modal-src" v-if="appCtx.gxKDetail.source_file">出处：{{appCtx.gxKDetail.source_file}}</span>
       </div>
       <div class="gx-modal-body gx-kcontent">
-        <p v-for="(para, i) in appCtx.gxKParas" :key="i">{{para}}</p>
+        <p v-for="(para, i) in appCtx.gxKAskParas" :key="i">{{para}}</p>
+      </div>
+      <!-- 填空速记：答案默认折叠 —— 先自己填，再点开对答案，保留原本的自测用法 -->
+      <div class="gx-fill-answer" v-if="appCtx.gxKHasAnswer">
+        <button class="gx-fill-btn" @click="appCtx.gxKToggleAnswer()">
+          {{appCtx.gxKShowAnswer ? '收起答案' : '显示答案'}}
+        </button>
+        <div class="gx-fill-body" v-if="appCtx.gxKShowAnswer">
+          <p v-for="(para, i) in appCtx.gxKAnswerParas" :key="i">{{para}}</p>
+        </div>
       </div>
     </div>
   </div>
@@ -618,6 +627,15 @@ export default {
 /* 知识点正文：PDF 抽取原文按行分段，去掉挤成一大坨的观感 */
 .gx-kcontent p{margin:0 0 10px;line-height:1.8;font-size:14px}
 .gx-kcontent p:last-child{margin-bottom:0}
+
+/* 填空速记的答案区：默认折叠（先自测再对答案），展开后用底色与题目区分开 */
+.gx-fill-answer{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line,#E5EAF4)}
+.gx-fill-btn{padding:6px 14px;border:1px solid var(--primary,#4E7CF6);border-radius:8px;
+  background:transparent;color:var(--primary,#4E7CF6);font-size:13px;cursor:pointer}
+.gx-fill-btn:hover{background:var(--primary-light,#EAF0FE)}
+.gx-fill-body{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--primary-light,#EAF0FE)}
+.gx-fill-body p{margin:0 0 8px;line-height:1.8;font-size:14px}
+.gx-fill-body p:last-child{margin-bottom:0}
 
 .gx-pick-list{margin-top:10px;display:flex;flex-direction:column;gap:8px;
   max-height:280px;overflow:auto}
