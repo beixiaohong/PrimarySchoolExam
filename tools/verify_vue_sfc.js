@@ -25,12 +25,18 @@ const targets = [
   'web/src/components/im/ImGroupInfo.vue',
   // 高项备考（面向非学生成人用户：/api/gx 全套端点的前端页）
   'web/src/views/GaoxiangView.vue',
+  // 设置页（含消息推送开关卡片：/api/push 前端）
+  'web/src/views/SettingsView.vue',
   // 小说站独立入口（web/novel.html + src/novel/*，独立 Vue 应用）
   'web/src/novel/App.vue',
   'web/src/novel/views/HomeView.vue',
   'web/src/novel/views/ShelfView.vue',
   'web/src/novel/views/BookView.vue',
   'web/src/novel/views/ReaderView.vue',
+  // 管理后台：消息推送群发页（/api/admin/push/*）。admin 工程缺 unplugin-auto-import
+  // 时无法整体构建，用本脚本单文件校验能提前发现模板/脚本语法错误。
+  'admin/src/views/Push.vue',
+  'admin/src/views/Announcements.vue',
 ];
 
 let totalErrors = 0;

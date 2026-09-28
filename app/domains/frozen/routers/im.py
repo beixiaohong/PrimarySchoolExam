@@ -41,6 +41,9 @@ from app.domains.frozen.services.im_crud import (
     delete_message as delete_message_crud,
 )
 from app.domains.identity.contracts import require_user
+# 离线推送：跨域只能经 platform 的 contracts（frozen 域不得直连其 services）
+from app.domains.platform.contracts import (EVENT_IM as PUSH_EVENT_IM,
+                                            send_per_user_dedup)
 from app.domains.frozen.services.voice_transcode import (
     AUDIO_MIME_TYPES,
     MAX_AUDIO_SIZE,
@@ -50,6 +53,7 @@ from app.domains.frozen.services.voice_transcode import (
 )
 from app.domains.frozen.services.sensitive import check_text, record_hit
 
+import asyncio
 import json
 import logging
 import os
@@ -819,6 +823,64 @@ async def websocket_endpoint(websocket: WebSocket):
             pass
 
 
+def _push_offline_members(chat_id, sender_id: str, sender_nickname: str,
+                          content, message_type):
+    """给「当前不在线」的会话成员发一条离线推送提醒（OneSignal Web Push）。
+
+    设计要点：
+    - 只推给**没有 WebSocket 连接**的成员：在线用户屏幕上已经有这条消息了，
+      再推一条系统通知纯属打扰（这也正是「离线提醒」的语义）。
+    - 逐人去重键 `im:{uid}:{chat_id}:{date}`：同一会话当天只提醒一次 ——
+      群里连发 20 条消息时，离线成员不该收到 20 条推送。
+    - 非文本消息只发类型占位符（[图片]/[语音]…），**不把 file_path 等内部字段外泄**。
+    - 全程 try/except 且由调用方放进线程执行：推送属增量能力，
+      失败或变慢都不得影响消息本身的发送与广播。
+
+    必须只在 `handle_message` 的 DB 短会话**关闭之后**调用（DB 连接池铁律）。
+    """
+    try:
+        with SessionLocal() as db:
+            rows = (db.query(GroupMember.user_id)
+                    .filter(GroupMember.chat_id == chat_id,
+                            GroupMember.user_id != sender_id)
+                    .limit(500).all())
+        members = [str(r[0]) for r in rows if r[0]]
+        if not members:
+            return
+
+        # 在线成员跳过（user_connections 由 ConnectionManager 维护）
+        online = set(manager.user_connections.keys())
+        targets = [u for u in members if u not in online]
+        if not targets:
+            return
+
+        if message_type == MessageType.TEXT:
+            preview = (content or "").strip().replace("\n", " ")
+        else:
+            preview = {
+                MessageType.IMAGE: "[图片]",
+                MessageType.FILE: "[文件]",
+                MessageType.VOICE: "[语音]",
+                MessageType.VIDEO: "[视频]",
+                MessageType.RED_PACKET: "[红包]",
+                MessageType.SYSTEM: "[系统消息]",
+            }.get(message_type, "[新消息]")
+        preview = (preview or "[新消息]")[:60]
+
+        send_per_user_dedup(
+            targets,
+            sender_nickname or "新消息",
+            preview,
+            url="/#/im",
+            event=PUSH_EVENT_IM,
+            # {uid} 由服务端替换；会话与日期在此拼好，保证「每会话每天每人一条」
+            key_template="im:{uid}:%s:%s" % (chat_id, datetime.now().strftime("%Y-%m-%d")),
+            data={"chat_id": str(chat_id), "kind": "im_offline"},
+        )
+    except Exception as e:                            # noqa: BLE001
+        logger.warning("IM 离线推送失败（不影响消息发送）：%s", e)
+
+
 async def handle_message(message_data: dict, user_id: str, nickname: str):
     """处理消息发送（权限校验 + 落库 + 广播，全程短会话）。
 
@@ -896,6 +958,12 @@ async def handle_message(message_data: dict, user_id: str, nickname: str):
         }),
         chat_id,
     )
+    # 离线成员推送提醒：DB 短会话已关闭，且丢到后台线程执行 ——
+    # 推送涉及外部 HTTP（OneSignal），await 会把这 1~10s 加在消息响应上，
+    # 而在线成员早已通过上面的 WS 广播收到消息，没必要等。
+    asyncio.create_task(asyncio.to_thread(
+        _push_offline_members, chat_id, user_id, nickname, content, message_type))
+
     return {
         "id": msg_id,
         "chat_id": str(chat_id),

@@ -60,6 +60,7 @@ from .commerce_payment import PayTransaction
 from .level import LevelConfig
 from .gaoxiang import (GxKnowledge, GxQuestion, GxAttempt, GxWrong,
                        GxCaseGrade, GxProgress, GxMaterial)
+from .push import PushSubscription, PushPref, PushLog
 
 __all__ = [
     "Word", "WordBook",
@@ -113,4 +114,5 @@ __all__ = [
     "LevelConfig",
     "GxKnowledge", "GxQuestion", "GxAttempt", "GxWrong", "GxCaseGrade", "GxProgress",
     "GxMaterial",
+    "PushSubscription", "PushPref", "PushLog",
 ]

@@ -96,18 +96,67 @@ def dashboard_stats(admin: "Admin" = Depends(_require_admin), db: Session = Depe
 # ═══════════════════════ 系统公告 ═══════════════════════
 
 class AnnouncementCreate(BaseModel):
-    """发布系统公告请求：标题、内容、投放范围与目标、是否置顶。"""
+    """发布系统公告请求：标题、内容、投放范围与目标、是否置顶、是否同时推送。"""
     title: str
     content: str
     target_type: str = "all"   # all / grade / user
     target_value: str = None
     is_pinned: bool = False
+    # 是否同时下发浏览器推送（OneSignal）。默认 False：公告是低频动作，
+    # 但推送会即时打断所有在线用户，应由管理员显式勾选而非默认打扰。
+    push: bool = False
+
+
+def _send_announcement_push(ann_id: int, title: str, content: str,
+                            target_type: str, target_value: str):
+    """公告发布后联动推送（尽力而为，失败不影响公告本身）。
+
+    调用前提：公告已 commit，且请求级 DB 会话**已关闭** ——
+    本函数会发起外部 HTTP（OneSignal），持连等待会耗尽连接池。
+    """
+    try:
+        from ..services import push
+
+        if not push.push_configured():
+            return {"ok": False, "reason": "not_configured", "message": "推送通道未配置"}
+        # 推送正文取公告正文摘要：系统通知栏本身会截断，长正文只会被腰斩
+        body = (content or "").strip().replace("\n", " ")[:120] or "点击查看详情"
+        url = "/#/home"
+        # announce 属运营类事件：不占用户每日推送额度（否则一条公告就把额度吃光）
+        if target_type == "user" and target_value:
+            return push.notify_user(str(target_value).strip(), title, body, url=url,
+                                    event=push.EVENT_ANNOUNCE,
+                                    data={"announcement_id": ann_id},
+                                    dedup_key="announce:%d" % ann_id)
+        if target_type == "grade" and target_value:
+            try:
+                grade = int(str(target_value).strip())
+            except ValueError:
+                return {"ok": False, "reason": "bad_target", "message": "年级取值非法"}
+            from app.database import SessionLocal
+            from app.models.user import User
+
+            with SessionLocal() as db:
+                uids = [r[0] for r in db.query(User.user_id)
+                        .filter(User.grade == grade).limit(5000).all() if r[0]]
+            if not uids:
+                return {"ok": False, "reason": "no_recipient", "message": "该年级没有用户"}
+            return push.send_to_users(uids, title, body, url=url,
+                                      event=push.EVENT_ANNOUNCE,
+                                      data={"announcement_id": ann_id},
+                                      dedup_key="announce:%d" % ann_id)
+        # 全体：走 OneSignal 分段广播（不逐个枚举用户）
+        return push.send_to_all(title, body, url=url, event=push.EVENT_ANNOUNCE,
+                                data={"announcement_id": ann_id})
+    except Exception as e:                            # noqa: BLE001
+        logger.warning("公告推送失败（公告本身已发布）：%s", e)
+        return {"ok": False, "reason": "error", "message": str(e)[:120]}
 
 
 @router.post("/announcements", summary="发布系统公告",
              dependencies=[Depends(require_perm("announcement:manage"))])
 def create_announcement(req: AnnouncementCreate, admin: "Admin" = Depends(_require_admin), db: Session = Depends(get_db)):
-    """发布系统公告并记审计日志。"""
+    """发布系统公告并记审计日志；可选同时下发浏览器推送。"""
     ann = Announcement(
         title=req.title, content=req.content, target_type=req.target_type,
         target_value=req.target_value, is_pinned=req.is_pinned,
@@ -117,7 +166,17 @@ def create_announcement(req: AnnouncementCreate, admin: "Admin" = Depends(_requi
     db.commit()
     db.refresh(ann)
     _audit(db, admin, "announcement_create", str(ann.id), req.title)
-    return {"ok": True, "id": ann.id}
+    ann_id, ann_title = ann.id, ann.title
+    target_type, target_value = ann.target_type, ann.target_value
+
+    push_res = None
+    if req.push:
+        # 🚨 先释放请求级 DB 会话再发外部 HTTP：推送最长 10s 超时，
+        # 持连等待会占用连接池连接（历史上曾因此把全站拖到超时）。
+        db.close()
+        push_res = _send_announcement_push(ann_id, ann_title, req.content,
+                                          target_type, target_value)
+    return {"ok": True, "id": ann_id, "push": push_res}
 
 
 @router.get("/announcements", summary="公告列表(后台)")

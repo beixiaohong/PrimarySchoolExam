@@ -48,6 +48,11 @@
         <el-form-item label="置顶">
           <el-switch v-model="form.is_pinned" />
         </el-form-item>
+        <!-- 发布公告时可选同时推送：默认关闭，避免无意中打断全体用户 -->
+        <el-form-item label="同时推送">
+          <el-switch v-model="form.push" />
+          <span class="push-hint">向该受众下发浏览器推送（需用户已授权；不占每人每日额度）</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="open = false">取消</el-button>
@@ -65,14 +70,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const rows = ref([])
 const open = ref(false)
 const saving = ref(false)
-const form = ref({ title: '', content: '', target_type: 'all', target_value: '', is_pinned: false })
+const form = ref({ title: '', content: '', target_type: 'all', target_value: '', is_pinned: false, push: false })
 
 async function load() {
   const { data } = await api.get('/api/admin/announcements')
   rows.value = data.items
 }
 function openCreate() {
-  form.value = { title: '', content: '', target_type: 'all', target_value: '', is_pinned: false }
+  form.value = { title: '', content: '', target_type: 'all', target_value: '', is_pinned: false, push: false }
   open.value = true
 }
 async function submit() {
@@ -82,8 +87,13 @@ async function submit() {
   }
   saving.value = true
   try {
-    await api.post('/api/admin/announcements', form.value)
-    ElMessage.success('已发布')
+    const { data } = await api.post('/api/admin/announcements', form.value)
+    // 勾选了推送时，把推送结果也告知：失败（未配置/无订阅者）不能让管理员误以为已送达
+    if (form.value.push && data && data.push && !data.push.ok) {
+      ElMessage.warning('公告已发布，但推送未成功：' + (data.push.message || data.push.reason || ''))
+    } else {
+      ElMessage.success('已发布')
+    }
     open.value = false
     load()
   } catch (e) {
@@ -109,4 +119,5 @@ onMounted(load)
 
 <style scoped>
 .toolbar { display: flex; gap: 10px; margin-bottom: 4px; }
+.push-hint { color: #909399; font-size: 12px; margin-left: 10px; }
 </style>

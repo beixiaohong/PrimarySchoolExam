@@ -1,0 +1,312 @@
+// 消息推送（OneSignal Web Push）前端逻辑
+//
+// 职责：登录后初始化 SDK、绑定 external_id（= 本系统 user_id）、上报订阅 ID、
+//       维护用户的逐场景偏好，登出时解绑。
+//
+// 三条设计约束（都是踩过的坑，改动前务必先读）：
+// 1. **SDK 懒加载**：只有后端 `/api/push/config` 返回 enabled=true 才去加载
+//    OneSignal 的外部脚本。通道未配置时零第三方请求 —— 否则控制台持续报错，
+//    用户以为功能坏了，其实只是后台没填密钥。
+// 2. **登录后才 login()**：游客状态绝不调用 OneSignal.login()，
+//    否则订阅会被绑到空/错误的 external_id，之后该设备收不到任何定向推送。
+// 3. **失败全静默**：推送是增量能力，任何一步失败都不得影响登录、答题等主流程，
+//    所以这里所有请求与 SDK 调用都包了 try/catch，只提示不抛出。
+//
+// 字段与 `logic/gaoxiang.js` 等保持一致的三字典导出：pushData() / pushComputed / pushMethods。
+
+// OneSignal Web SDK v16（页面脚本）。Service Worker 由后端根路径
+// `/OneSignalSDKWorker.js` 托管（见 web/public/OneSignalSDKWorker.js 与 app/main.py）。
+const OS_SDK_SRC = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+
+// 设置页的场景开关清单：field 与后端 push_prefs 的列名、/api/push/prefs 的入参一一对应。
+// 只在前端维护一份展示文案，开关的**实际生效**在后端（services/push.py 的 _PREF_FIELD），
+// 前端关掉只是不发请求，不构成安全边界。
+const PUSH_EVENT_FIELDS = [
+  { field: 'enable_study', label: '学习提醒', desc: '作业未完成、打卡断签、错题到复习时间' },
+  { field: 'enable_im', label: '私信提醒', desc: '对方发来消息、而你当前不在线时' },
+  { field: 'enable_announce', label: '公告通知', desc: '老师与管理员发布的公告、站内信' },
+  { field: 'enable_exam', label: '考试与成绩', desc: '交卷出分、成绩单生成' },
+];
+
+function _detectBrowser() {
+  const ua = (navigator.userAgent || '').toLowerCase();
+  if (ua.indexOf('micromessenger') > -1) return 'WeChat';
+  if (ua.indexOf('edg/') > -1) return 'Edge';
+  if (ua.indexOf('firefox') > -1) return 'Firefox';
+  if (ua.indexOf('chrome') > -1) return 'Chrome';
+  if (ua.indexOf('safari') > -1) return 'Safari';
+  return 'Other';
+}
+
+function _detectDevice() {
+  const ua = navigator.userAgent || '';
+  if (/iPad|Tablet/i.test(ua)) return 'Tablet';
+  if (/Mobile|Android|iPhone/i.test(ua)) return 'Mobile';
+  return 'Desktop';
+}
+
+export function pushData() {
+  return {
+    pushRaw: null,          // /api/push/config 原始响应（enabled / app_id / events）
+    pushPrefs: {
+      // 逐场景偏好；后端无记录时也是这套默认值（缺行 = 全开）
+      enable_study: true, enable_im: true, enable_announce: true, enable_exam: true,
+      quiet_start: '', quiet_end: '',
+    },
+    pushPermission: '',     // 浏览器通知权限：default / granted / denied
+    pushOptedIn: false,     // 本设备是否已订阅
+    pushLoading: false,     // 设备开关操作进行中
+    pushTesting: false,     // 测试推送进行中
+    pushQuietForm: { start: '', end: '' },   // 免打扰时段编辑态
+    pushEventFields: PUSH_EVENT_FIELDS,
+    pushDevices: 0,         // 本账号已登记的有效订阅设备数
+  };
+}
+
+export const pushComputed = {
+  // 通道是否可用：后端已填 OneSignal 密钥且 PUSH_ENABLED 未关闭
+  pushEnabled() {
+    return !!(this.pushRaw && this.pushRaw.enabled);
+  },
+  // 一句话状态：把「为什么收不到」直接写在界面上，减少无效排查
+  pushStatusText() {
+    if (!this.pushRaw) return '检查中…';
+    if (!this.pushEnabled) return '未启用（管理后台尚未配置推送密钥）';
+    if (this.pushPermission === 'denied') return '已被浏览器阻止，请在浏览器设置中允许通知';
+    if (this.pushOptedIn) {
+      const extra = this.pushDevices > 1 ? '，共 ' + this.pushDevices + ' 台设备' : '';
+      return '已开启（本设备）' + extra;
+    }
+    return '未开启（本设备）';
+  },
+};
+
+export const pushMethods = {
+  /* ─────────── 初始化 ─────────── */
+
+  // 登录成功后调用（onLoginOk / 恢复会话处）。幂等：重复调用只跑一次。
+  pushInit() {
+    if (!this.user) return;                       // 游客不初始化（约束 2）
+    if (this._osInited || this._osBooting) return;
+    this._osBooting = true;
+    this.api('/api/push/config')
+      .then(cfg => {
+        this.pushRaw = cfg || {};
+        if (cfg && cfg.prefs) {
+          this.pushPrefs = Object.assign({}, this.pushPrefs, cfg.prefs);
+          this.pushQuietForm = { start: cfg.prefs.quiet_start || '', end: cfg.prefs.quiet_end || '' };
+        }
+        if (!cfg || !cfg.enabled || !cfg.app_id) return null;   // 约束 1：不加载 SDK
+        return this._pushLoadSdk().then(OS => this._pushBoot(OS, cfg));
+      })
+      .catch(() => { /* 静默：推送不可用不影响登录 */ })
+      .finally(() => { this._osBooting = false; });
+  },
+
+  // 动态注入 OneSignal 页面脚本（只注入一次）
+  _pushLoadSdk() {
+    if (window.OneSignal && window.OneSignal.User) return Promise.resolve(window.OneSignal);
+    if (this._osPromise) return this._osPromise;
+    this._osPromise = new Promise((resolve, reject) => {
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      // v16 的 SDK 通过 OneSignalDeferred 队列回调交付实例
+      window.OneSignalDeferred.push(function (OneSignal) { resolve(OneSignal); });
+      const s = document.createElement('script');
+      s.src = OS_SDK_SRC;
+      s.defer = true;
+      s.onerror = () => { this._osPromise = null; reject(new Error('OneSignal SDK 加载失败')); };
+      document.head.appendChild(s);
+    });
+    return this._osPromise;
+  },
+
+  // 初始化 SDK + 绑定 external_id + 登记订阅
+  _pushBoot(OneSignal, cfg) {
+    const self = this;
+    const host = (location.hostname || '');
+    return OneSignal.init({
+      appId: cfg.app_id,
+      safari_web_id: cfg.safari_web_id || undefined,
+      // Service Worker 由后端根路径托管（必须显式指定：默认路径可用，
+      // 但写明后即使 OneSignal 改了默认值也能生效）
+      serviceWorkerPath: '/OneSignalSDKWorker.js',
+      // 本地开发（http://127.0.0.1）也允许订阅，否则没法在本地验证链路
+      allowLocalhostAsSecureOrigin: host === 'localhost' || host === '127.0.0.1',
+      notifyButton: { enable: false },   // 不用 OneSignal 自带的铃铛，界面统一由本站控制
+    }).then(function () {
+      self._os = OneSignal;
+      self._osInited = true;
+      self._pushBindEvents(OneSignal);
+      // external_id = 本系统 user_id：后端按它定向推送
+      return OneSignal.login(self.user);
+    }).then(function () {
+      self._pushSyncState();
+      const sid = self._pushSubscriptionId();
+      // 已订阅过（同一浏览器回头客）：刷新一次上报，顺带更新 last_seen 与 UA
+      if (sid && self.pushOptedIn) self._pushReport(sid);
+      // 我的订阅设备数（仅用于界面展示）
+      self.api('/api/push/status')
+        .then(d => { self.pushDevices = (d && d.subscribed_devices) || 0; })
+        .catch(() => {});
+    });
+  },
+
+  // 订阅状态变化 / 权限变化时同步到界面与后端
+  _pushBindEvents(OneSignal) {
+    const self = this;
+    try {
+      // 用户可能在浏览器层面手动改权限、或换设备，这里统一跟随 SDK 的真实状态
+      OneSignal.User.PushSubscription.addEventListener('change', function (event) {
+        const cur = (event && event.current) || {};
+        self.pushOptedIn = !!cur.optedIn;
+        if (cur.id && cur.optedIn) self._pushReport(cur.id);
+      });
+      OneSignal.Notifications.addEventListener('permissionChange', function (p) {
+        self.pushPermission = p;
+      });
+    } catch (e) { /* 老版本 SDK 无此事件：忽略 */ }
+  },
+
+  // 读 SDK 当前状态到界面
+  _pushSyncState() {
+    try {
+      const OS = this._os;
+      this.pushPermission = (OS.Notifications && OS.Notifications.permission) || '';
+      this.pushOptedIn = !!(OS.User && OS.User.PushSubscription && OS.User.PushSubscription.optedIn);
+    } catch (e) { /* 忽略 */ }
+  },
+
+  _pushSubscriptionId() {
+    try {
+      return (this._os && this._os.User && this._os.User.PushSubscription
+        && this._os.User.PushSubscription.id) || '';
+    } catch (e) { return ''; }
+  },
+
+  // 上报订阅（后端按 subscription_id 幂等 upsert）
+  _pushReport(subscriptionId) {
+    if (!subscriptionId) return Promise.resolve();
+    return this.api('/api/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify({
+        subscription_id: subscriptionId,
+        platform: 'web',
+        device_type: _detectDevice(),
+        browser: _detectBrowser(),
+        user_agent: (navigator.userAgent || '').slice(0, 250),
+        opted_in: true,
+      }),
+    }).catch(() => {});
+  },
+
+  /* ─────────── 用户操作 ─────────── */
+
+  // 本设备推送开关
+  pushToggleDevice() {
+    if (this.pushLoading) return;
+    if (!this._osInited || !this._os) {
+      this.showToast('推送服务未就绪，请刷新页面后重试');
+      return;
+    }
+    const self = this;
+    this.pushLoading = true;
+    const OS = this._os;
+    const P = OS.User.PushSubscription;
+    let task;
+    if (this.pushOptedIn) {
+      task = P.optOut().then(function () {
+        self.pushOptedIn = false;
+        // 后端也解绑：SDK 侧解绑失败时，至少后端不会再拿这个订阅发消息
+        return self.api('/api/push/unsubscribe', {
+          method: 'POST',
+          body: JSON.stringify({ subscription_id: self._pushSubscriptionId() }),
+        }).catch(function () {});
+      }).then(function () { self.showToast('已关闭本设备的推送'); });
+    } else {
+      // 先申请浏览器权限：denied 状态下无法再弹窗，只能引导用户去浏览器设置改
+      task = Promise.resolve()
+        .then(function () {
+          if (OS.Notifications.permission === 'default') return OS.Notifications.requestPermission();
+          return null;
+        })
+        .then(function () {
+          self._pushSyncState();
+          if (OS.Notifications.permission === 'denied') {
+            self.showToast('浏览器已阻止通知：请点地址栏左侧的锁图标，把「通知」改为允许');
+            return null;
+          }
+          return P.optIn().then(function () {
+            self._pushSyncState();
+            const sid = self._pushSubscriptionId();
+            return self._pushReport(sid);
+          }).then(function () {
+            self.showToast('已开启推送，将收到学习提醒');
+            return self.api('/api/push/status').then(function (d) {
+              self.pushDevices = (d && d.subscribed_devices) || 0;
+            }).catch(function () {});
+          });
+        });
+    }
+    task.catch(function () { self.showToast('操作失败，请稍后重试'); })
+      .finally(function () { self.pushLoading = false; });
+  },
+
+  // 场景开关（乐观更新 + 失败回滚）
+  pushSavePref(field, value) {
+    const patch = {};
+    patch[field] = value;
+    const backup = Object.assign({}, this.pushPrefs);
+    this.pushPrefs = Object.assign({}, this.pushPrefs, patch);
+    this.api('/api/push/prefs', { method: 'PUT', body: JSON.stringify(patch) })
+      .then(d => { if (d) this.pushPrefs = Object.assign({}, this.pushPrefs, d); })
+      .catch(() => {
+        this.pushPrefs = backup;              // 回滚，避免界面显示与后端不一致
+        this.showToast('保存失败，请稍后重试');
+      });
+  },
+
+  // 免打扰时段
+  pushSaveQuiet() {
+    const start = (this.pushQuietForm.start || '').trim();
+    const end = (this.pushQuietForm.end || '').trim();
+    if ((start && !end) || (!start && end)) {
+      this.showToast('免打扰时段需要同时填写开始与结束，或都留空');
+      return;
+    }
+    this.api('/api/push/prefs', {
+      method: 'PUT', body: JSON.stringify({ quiet_start: start, quiet_end: end }),
+    }).then(d => {
+      if (d) {
+        this.pushPrefs = Object.assign({}, this.pushPrefs, d);
+        this.pushQuietForm = { start: d.quiet_start || '', end: d.quiet_end || '' };
+      }
+      this.showToast(start ? '免打扰时段已保存' : '免打扰已关闭');
+    }).catch(() => this.showToast('保存失败，请稍后重试'));
+  },
+
+  // 测试推送（端到端验证）
+  pushSendTest() {
+    if (this.pushTesting) return;
+    this.pushTesting = true;
+    this.api('/api/push/test', { method: 'POST', body: JSON.stringify({}) })
+      .then(d => this.showToast((d && d.message) || '已发送'))
+      .catch(e => this.showToast((e && e.message) || '发送失败，请稍后重试'))
+      .finally(() => { this.pushTesting = false; });
+  },
+
+  // 登出：解绑浏览器侧 + 后端侧（公共电脑上必须做，否则下一位使用者会看到你的通知）
+  pushTeardown() {
+    try {
+      if (this._osInited && this._os) {
+        if (this._os.User && this._os.User.PushSubscription) this._os.User.PushSubscription.optOut();
+        if (this._os.logout) this._os.logout();     // 解除 external_id 绑定
+      }
+    } catch (e) { /* 忽略 */ }
+    this.api('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({}) })
+      .catch(() => {});
+    this.pushOptedIn = false;
+    this.pushDevices = 0;
+    // 保留 pushRaw（通道配置与账号无关）与偏好缓存，下次登录会重新拉取覆盖
+    this._osInited = false;
+  },
+};

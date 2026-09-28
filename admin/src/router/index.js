@@ -12,6 +12,7 @@ const routes = [
   { path: '/datacenter', name: 'datacenter', component: () => import('../views/DataCenter.vue') },
   { path: '/manage', name: 'manage', component: () => import('../views/Manage.vue') },
   { path: '/announcements', name: 'announcements', component: () => import('../views/Announcements.vue') },
+  { path: '/push', name: 'push', component: () => import('../views/Push.vue') },
   { path: '/textbooks', name: 'textbooks', component: () => import('../views/Textbooks.vue') },
   { path: '/content', name: 'content', component: () => import('../views/Content.vue') },
   { path: '/novel', name: 'novel', component: () => import('../views/Novel.vue') },

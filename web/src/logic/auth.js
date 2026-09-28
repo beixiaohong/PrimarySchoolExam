@@ -45,6 +45,8 @@ export const authMethods = {
     this.grade = r.grade || 6;
     this.subject = r.subject || '英语';
     this.saveUser();
+    // 消息推送：登录成功后才绑定 external_id（游客状态绑定会写错账号，见 logic/push.js）
+    this.pushInit();
     this.showToast(`欢迎回来，${this.userName}！`);
     this.loadAuthInfo();
     this.loadWeather();

@@ -22,6 +22,7 @@
 13. [项目结构](#13-项目结构)
 14. [常见问题](#14-常见问题)
 15. [定时任务（调度器）运维](#15-定时任务调度器运维)
+16. [消息推送（OneSignal）](#16-消息推送onesignal)
 
 ---
 
@@ -815,6 +816,12 @@ crontab 每 15 分钟唤醒它一次，由它决定哪些任务到期该跑。
 | `ledger_recurring_daily` | 01:00 | 账本周期交易自动执行（生成账单 + 联动余额） | `next_run` 推进到未来，重跑不重复出账 |
 | `im_red_packet_expire` | 01:10 | 24h 未领完的红包剩余钻石退回发送者 | 状态置 `EXPIRED` 后不再命中 |
 | `vip_expire_downgrade` | 02:00 | 会员到期降级 | 只处理已过期未降级的 |
+| `push_daily_reminder` | **19:00** | 每日学习提醒推送（作业未完成 / 即将断签） | `dedup_key=study:{uid}:{date}` 当天只发一次 |
+
+> ⚠️ `push_daily_reminder` **刻意不排凌晨 01:00**（与其它采集/汇总类不同）：
+> 推送必须在用户活跃时段才有意义 —— 凌晨推等于不推，还会被系统通知折叠。
+> 19:00 是学生做作业的高峰，提醒转化最好。该时刻与 `check_quiet_hours` 不冲突：
+> 宵禁只拦答题类接口，推送走的是 OneSignal 对外 HTTP，不经过那些端点。
 
 > 另有 2 个任务处于 `enabled=False` 停用状态（`seed_junior_grade7` / `backfill_paper_answers`），
 > 保留配置便于随时恢复 —— 改回 `True` 即可，不必重写定义。
@@ -893,3 +900,87 @@ venv/bin/python tools/ops_check.py --state tools/.scheduler_state.json
   日志里会打印提示。
 - **排查不到任务为什么不跑**：`ops_check.py --state` 先看状态，再看
   `grep -E "跳过|配置错误|fail" /var/log/scheduler.log`。
+
+---
+
+## 16. 消息推送（OneSignal）
+
+浏览器 Web Push：用户授权后即可收到**学习提醒 / 私信离线提醒 / 公告 / 成绩**四类通知，
+管理员可在后台群发。通道未配置时整体降级为「不发送」，前端也不加载 SDK，不影响任何既有功能。
+
+### 16.1 上线三步
+
+```bash
+# ① 拉代码并重启（迁移 083 会自动建 3 张 push_* 表）
+cd <部署目录> && git pull && sudo bash deploy.sh
+
+# ② 重建前端（SettingsView 新增了推送设置卡片，不重建则不显示）
+cd web && npm run build && cd ..
+cd admin && npm run build && cd ..          # 后台新增「消息推送」页
+sudo systemctl restart <APP_NAME>
+
+# ③ 填 OneSignal 密钥（**推荐在后台填，不用改 .env 也不用重启**）
+#    管理后台 → 系统配置 → 「消息推送」分组：
+#      ONESIGNAL_APP_ID        = OneSignal App ID
+#      ONESIGNAL_REST_API_KEY  = REST API Key（机密，展示时自动脱敏）
+#      ONESIGNAL_SAFARI_WEB_ID = Safari Web ID（可空；不填则 Safari 收不到）
+#      PUSH_ENABLED            = true
+#    也可写进 .env（同名字段），后台值优先；写入后 60 秒内生效。
+```
+
+### 16.2 OneSignal 控制台需要做的配置
+
+1. 创建 **Web** 类型的 App，把站点域名填成 `liusijin.com`（OneSignal 会校验域名归属）。
+2. **Platform → Web → 配置 Service Worker**：路径保持默认的 `/OneSignalSDKWorker.js`。
+   本项目的 worker 由后端根路径托管（见 16.3），**不需要**把文件放到网站根目录。
+3. 若使用 Safari：填好 Safari Web ID（否则 Safari 用户订阅不上）。
+4. 取 `App ID` 与 `REST API Key`（Settings → Keys & IDs）。
+
+### 16.3 Service Worker 为什么由后端托管
+
+部署形态是 nginx 把 `location /` **全量反代**给 FastAPI，`web/dist` 并没有作为静态目录
+暴露出去（只单独挂了 `/assets`、`/qr`）。而 OneSignal 要求的 worker 必须能通过
+`https://域名/OneSignalSDKWorker.js` 访问（Service Worker 的默认作用域 = 文件所在目录，
+只有放在根路径才能覆盖全站）。因此后端专门加了这条路由：
+
+| 位置 | 作用 |
+|---|---|
+| `web/public/OneSignalSDKWorker.js` | 源文件，Vite 构建时原样拷到 `dist/` |
+| `app/main.py` 的 `GET /OneSignalSDKWorker.js` | 运行时托管：优先读 `dist/`，缺失时返回内联等价内容 |
+| `ONESIGNAL_WORKER_FALLBACK`（`app/main.py`） | dist 未构建时的兜底副本，内容须与上面文件一致 |
+
+该路由响应头带 `Service-Worker-Allowed: /` 与 `Cache-Control: no-store` ——
+**no-store 是必须的**：OneSignal 官方要求 worker 不可长期缓存，否则 SDK 升级后
+老客户端仍跑旧 worker，表现为「后端已更新、老用户收不到推送」，极难排查。
+
+### 16.4 数据表（迁移 `083_push_onesignal.py`）
+
+| 表 | 用途 | 关键点 |
+|---|---|---|
+| `push_subscriptions` | 每条订阅 = 一个浏览器/设备 | `subscription_id` 唯一；`external_id` 就是 `users.user_id`；`revoked_at` 非空表示已解绑 |
+| `push_prefs` | 用户逐场景开关 + 免打扰时段 | 缺行 = 全部开启（注册时不写行） |
+| `push_logs` | 发送审计 + 幂等去重 | `dedup_key` 唯一索引**可空**：即时推送写 NULL，只有定时/事件类才占用去重键 |
+
+> ⚠️ `dedup_key` 必须可空：MySQL 唯一索引允许多个 NULL，但只允许一个空串。
+> 若给 `DEFAULT ''`，第二条不参与去重的推送就会撞唯一键而发不出去（与 082 的 `fingerprint` 同坑）。
+
+### 16.5 防打扰四道闸（改动发送逻辑前务必先读）
+
+1. **设备开关**：浏览器未授权/用户关掉 → 根本没有订阅，OneSignal 收不到。
+2. **场景偏好**：`push_prefs` 的四个开关，关掉的类别后端**不放行**（`_PREF_FIELD`）。
+3. **免打扰时段**：用户自设静音窗口，跨零点区间反向判断（如 22:00–07:00）。
+   注意这与平台的 `check_quiet_hours`（未成年人护眼宵禁，会拦截接口）**语义不同，刻意不复用**。
+4. **每人每日上限** `DAILY_CAP=8`：仅自动事件受限；公告/群发（`announce`/`broadcast`）不占额度 ——
+   否则一条公告就能把用户的额度吃光，后续真实提醒全被吞掉。
+
+### 16.6 常见问题
+
+| 现象 | 原因与处理 |
+|---|---|
+| 用户点「发送测试推送」提示「没有找到有效订阅」 | 用户未在浏览器弹窗中允许通知。注意 **HTTP 下浏览器不提供通知 API**，必须 HTTPS（本地可用 `127.0.0.1`，代码已放开 `allowLocalhostAsSecureOrigin`） |
+| 后台显示「通道未配置」 | `ONESIGNAL_APP_ID` / `ONESIGNAL_REST_API_KEY` 未填，或 `PUSH_ENABLED=false` |
+| OneSignal 返回 401 | 密钥与 App ID 不属于同一个 OneSignal 应用（最常见），或密钥已轮换 |
+| 200 但没有消息 id | 靶向受众里没有任何有效订阅 —— 代码已判定为**失败**（`reason=no_subscription`），不会假报成功 |
+| 换账号后旧账号仍收到推送 | 登出时 `pushTeardown()` 会 `OneSignal.logout()` + 调 `/api/push/unsubscribe`；若用户是直接关标签页，可让其在设置页手动关闭设备开关 |
+| 部署后 `/OneSignalSDKWorker.js` 404 | nginx `location /` 未反代到后端，或漏了 16.3 的路由。`curl -I https://域名/OneSignalSDKWorker.js` 应返回 200 + `application/javascript` |
+| 手机端收不到 | iOS Safari 要求「添加到主屏幕」后才支持 Web Push；微信内置浏览器不支持，需引导用户用系统浏览器打开 |

@@ -23,6 +23,7 @@ import { favoritesData, favoritesComputed, favoritesMethods } from './favorites.
 import { levelData, levelComputed, levelMethods } from './level.js';
 // 高项备考（软考高级·信息系统项目管理师，面向非学生成人用户）
 import { gaoxiangData, gaoxiangComputed, gaoxiangMethods } from './gaoxiang.js';
+import { pushData, pushComputed, pushMethods } from './push.js';
 
 const appOptions = {
   data() {
@@ -44,6 +45,7 @@ const appOptions = {
       ...favoritesData(),   // 我的收藏 data（favorites/favoritesTotal/favoritesType/favSet，见 logic/favorites.js）
       ...levelData(),       // 等级成长 data（levelInfo/levelLoading，见 logic/level.js）
       ...gaoxiangData(),    // 高项备考 data（gxSub/gxQuestions/…，见 logic/gaoxiang.js）
+      ...pushData(),        // 消息推送 data（pushPrefs/pushOptedIn/…，见 logic/push.js）
       // 天气（P3：首页卡片 + 城市配置）
       weather: null, cityInput: '',
       // 导航
@@ -158,6 +160,7 @@ const appOptions = {
     ...favoritesComputed,       // 我的收藏 computed（favoritesHasMore，见 logic/favorites.js）
     ...levelComputed,       // 等级成长 computed（levelNum/levelBadgeText/levelPct/levelLadder/levelIsMax，见 logic/level.js）
     ...gaoxiangComputed,    // 高项备考 computed（gxResultMap/gxAllAnswered/…，见 logic/gaoxiang.js）
+    ...pushComputed,        // 消息推送 computed（pushEnabled/pushStatusText，见 logic/push.js）
     ...badgesComputed,       // 成就徽章 computed（badgeItems/badgeCats，见 logic/badges.js）
     isAccountCredential() {
       // 登录统一为邮箱 + 密码
@@ -326,6 +329,7 @@ const appOptions = {
     ...favoritesMethods,       // 我的收藏 methods（loadFavorites/loadMoreFavorites/setFavoritesType/toggleFavorite，见 logic/favorites.js）
     ...levelMethods,       // 等级成长 methods（loadLevel/openLevel，见 logic/level.js）
     ...gaoxiangMethods,    // 高项备考 methods（initGaoxiang/gxQuizStart/…，见 logic/gaoxiang.js）
+    ...pushMethods,        // 消息推送 methods（pushInit/pushToggleDevice/pushSavePref/…，见 logic/push.js）
     /* ─────────── 通用 ─────────── */
     api(path, opts = {}) {
       // 家长解锁期间自动携带家长密码头（服务端敏感接口校验 X-Parent-Pwd）
@@ -401,6 +405,9 @@ const appOptions = {
       return '周' + '日一二三四五六'[d.getDay()];
     },
     logout() {
+      // 推送必须先解绑：公共电脑上退出账号后，若订阅仍挂在旧 external_id 上，
+      // 下一位使用者会看到「某某的学习提醒」通知（隐私问题）
+      this.pushTeardown();
       localStorage.removeItem('zx_user');
       localStorage.removeItem('zx_token');
       sessionStorage.removeItem('zx_parent_pwd');
@@ -2500,6 +2507,9 @@ const appOptions = {
       this.refreshAll();
       this.loadAuthInfo();
       this.loadWeather();
+      // 恢复会话时也要初始化推送：刷新页面不会走 onLoginOk，
+      // 少了这一句会出现「刷新前能收到推送、刷新后收不到」的诡异现象
+      this.pushInit();
     }
   },
 }

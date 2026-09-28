@@ -13,6 +13,7 @@
           <el-menu-item index="/datacenter">数据中心</el-menu-item>
           <el-menu-item index="/manage">账本·IM 管理</el-menu-item>
           <el-menu-item index="/announcements">系统公告</el-menu-item>
+          <el-menu-item index="/push">消息推送</el-menu-item>
           <el-menu-item index="/textbooks">教材版本</el-menu-item>
           <el-menu-item index="/content">内容管理</el-menu-item>
           <el-menu-item index="/novel">小说站</el-menu-item>

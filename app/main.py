@@ -21,7 +21,7 @@ from .migrations.runner import run_migrations
 from .routers import admin
 from .domains.engine.routers import vocab, study, learning_goals, mastery
 from .domains.commerce.routers import diamond, store
-from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement, region, metrics, compliance
+from .domains.platform.routers import search, ai, qa, assistant, weather, admin_panel, announcement, region, metrics, compliance, push as push_router, admin_push
 from .domains.assessment.routers import math, exam, challenge, teach, dictation, ai_quiz, grading
 from .domains.assessment.routers import gaoxiang
 from .domains.content.routers import words, phrases, classical, grammar, reading, textbook, courses, knowledge
@@ -46,6 +46,14 @@ apply_logging()
 
 # P5 工程化前端构建产物（Vite build 输出，唯一托管的前端）
 WEB_DIST_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
+# OneSignal Web Push 的 Service Worker 内容（与 web/public/OneSignalSDKWorker.js 保持一致）。
+# 内联一份作兜底：dist 未构建时 `/OneSignalSDKWorker.js` 仍要返回可用内容，
+# 否则本地开发（不跑 vite build）或构建失败时，推送订阅会直接不可用。
+ONESIGNAL_WORKER_FALLBACK = (
+    "// OneSignal Web Push Service Worker —— 由后端根路径托管\n"
+    "// 见 app/main.py 的 /OneSignalSDKWorker.js（scope 必须为 / 才能覆盖全站）\n"
+    "importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');\n"
+)
 # 定义输出目录路径（用于存储生成的试卷等文件）
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 # 确保输出目录存在
@@ -151,6 +159,9 @@ if ENABLE_IM:
     app.include_router(frozen_admin_im.router, prefix="/api/admin", tags=["管理后台-IM数据"])
 # 学生端公告/站内信：内部用 require_user 鉴权
 app.include_router(announcement.router, prefix="/api/announcements", tags=["系统公告"])
+# 消息推送（OneSignal Web Push）：浏览器订阅登记 + 偏好；后台群发在 admin_push
+app.include_router(push_router.router, prefix="/api/push", tags=["消息推送"], dependencies=user_auth_deps)
+app.include_router(admin_push.router, prefix="/api/admin", tags=["管理后台-消息推送"])
 # 小说站：内容门户，游客可读（不挂 user_auth_deps）；仅进度/书架接口内部要求登录
 app.include_router(novel_reader.router, prefix="/api/novel", tags=["小说站"])
 app.include_router(textbook.router, prefix="/api/textbook", tags=["教材版本"], dependencies=user_auth_deps)
@@ -261,6 +272,41 @@ def novel_index():
         status_code=404,
         detail="小说站未构建：请执行 `cd web && npm run build` 生成 web/dist/novel.html。",
     )
+
+
+@app.get("/OneSignalSDKWorker.js", tags=["系统"], include_in_schema=False)
+def onesignal_service_worker():
+    """OneSignal Web Push 的 Service Worker（**必须挂在域名根路径**）。
+
+    为什么需要这个路由：部署形态是 nginx 把 `location /` 全量反代给 FastAPI，
+    并没有把 web/dist 整体作为静态目录暴露，所以 Vite 拷进 dist 的 worker 文件
+    不会被自动托管 —— 少了它 OneSignal 初始化会直接失败（订阅永远拿不到）。
+
+    为什么必须在根路径：Service Worker 的默认作用域是「文件所在目录」，
+    只有放在 `/` 才能覆盖全站（`/assets/xxx.js` 只能管到 /assets/）。
+    响应头额外声明 `Service-Worker-Allowed: /` 兜底。
+
+    缓存策略：**no-store**。OneSignal 官方明确要求 worker 文件不要被长期缓存 ——
+    否则 SDK 升级后客户端仍跑旧 worker，会出现「后端已更新、老用户收不到推送」
+    这类极难排查的问题。
+
+    dist 未构建时返回内联的等价内容（而非 404）：内容与 web/public 下的一致，
+    保证开发机没跑 `npm run build` 时推送链路依然可用。
+    """
+    from fastapi.responses import Response
+
+    worker = WEB_DIST_DIR / "OneSignalSDKWorker.js"
+    headers = {
+        "Content-Type": "application/javascript; charset=utf-8",
+        "Service-Worker-Allowed": "/",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    }
+    if worker.exists():
+        return FileResponse(worker, media_type="application/javascript", headers=headers)
+    return Response(content=ONESIGNAL_WORKER_FALLBACK, media_type="application/javascript",
+                    headers=headers)
 
 
 @app.get("/health", tags=["系统"])

@@ -33,6 +33,23 @@ _EXPORTS = {
     "mail_configured": ("app.domains.platform.services.mailer", "mail_configured"),
     "send_sms": ("app.domains.platform.services.sms", "send_sms"),
     "sms_configured": ("app.domains.platform.services.sms", "sms_configured"),
+    # 消息推送（OneSignal Web Push）—— 与邮件/短信并列的第三条通知通道。
+    # 其它域（frozen 的 IM 离线提醒、assessment 的成绩通知等）只能经此调用，
+    # 不得 import app.domains.platform.services.push。
+    "push": ("app.domains.platform.services.push", None),
+    "send_push": ("app.domains.platform.services.push", "send_to_users"),
+    "notify_user": ("app.domains.platform.services.push", "notify_user"),
+    "notify_users": ("app.domains.platform.services.push", "notify_users"),
+    "send_per_user_dedup": ("app.domains.platform.services.push", "send_per_user_dedup"),
+    "push_configured": ("app.domains.platform.services.push", "push_configured"),
+    # 事件常量：调用方（frozen 的 IM、assessment 的成绩等）必须用这些字面量，
+    # 不要自己拼字符串 —— 它们同时决定偏好开关与每日限额口径。
+    "EVENT_STUDY": ("app.domains.platform.services.push", "EVENT_STUDY"),
+    "EVENT_IM": ("app.domains.platform.services.push", "EVENT_IM"),
+    "EVENT_ANNOUNCE": ("app.domains.platform.services.push", "EVENT_ANNOUNCE"),
+    "EVENT_EXAM": ("app.domains.platform.services.push", "EVENT_EXAM"),
+    "EVENT_BROADCAST": ("app.domains.platform.services.push", "EVENT_BROADCAST"),
+    "EVENT_TEST": ("app.domains.platform.services.push", "EVENT_TEST"),
     # 系统配置与免打扰
     "sysconfig": ("app.domains.platform.services.sysconfig", None),
     "check_quiet_hours": ("app.domains.platform.routers.quiet_hours", "check_quiet_hours"),

@@ -20,6 +20,11 @@ CONFIG_GROUPS = {
     "天气": ["QWEATHER_API_KEY", "QWEATHER_API_HOST", "IPINFO_API_TOKEN"],
     "邮件": ["MAIL_SERVER", "MAIL_PORT", "MAIL_ADDRESS", "MAIL_PASSWORD"],
     "短信（预留）": ["SMS_PROVIDER", "SMS_API_KEY"],
+    # 消息推送（OneSignal Web Push）。APP_ID 会下发到前端（本就公开），
+    # REST_API_KEY 以 KEY 结尾 → 命中 SECRET_HINTS，后台展示时自动脱敏。
+    # PUSH_ENABLED=false 可一键停推（比逐个清空密钥安全，便于灰度回滚）。
+    "消息推送": ["ONESIGNAL_APP_ID", "ONESIGNAL_REST_API_KEY",
+                 "ONESIGNAL_SAFARI_WEB_ID", "PUSH_ENABLED"],
 }
 SECRET_HINTS = ("KEY", "PASSWORD", "TOKEN")
 

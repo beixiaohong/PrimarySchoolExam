@@ -131,6 +131,23 @@ JOBS = [
         "command": ["tools/expire_red_packets.py"],
         "timeout": 300,
     },
+    {
+        # 每日学习提醒推送（OneSignal Web Push）。
+        # 🚨 刻意**不排凌晨 01:00**（与其它采集/汇总任务不同）：推送必须在用户活跃时段
+        # 才有意义（凌晨推等于不推，还会被系统通知折叠掉）。19:00 是学生做作业的高峰，
+        # 提醒转化最好。该时刻与 check_quiet_hours（未成年人护眼宵禁）不冲突 ——
+        # 宵禁只拦答题类接口，推送走的是 OneSignal 的对外 HTTP，不经过那些端点。
+        # 幂等：脚本按 `study:{user_id}:{date}` 去重，重跑不会重复打扰。
+        "name": "push_daily_reminder",
+        "kind": "daily",
+        "at": "19:00",
+        "valid_from": "2026-09-28",
+        "valid_until": None,
+        "max_runs": None,
+        "weekday": None,
+        "command": ["tools/push_daily_reminder.py"],
+        "timeout": 1800,          # 上千人逐个发送，给足 30 分钟
+    },
 ]
 
 

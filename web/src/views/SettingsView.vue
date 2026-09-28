@@ -59,6 +59,52 @@
           </div>
         </div>
 
+        <!-- ═══ 分组：通知设置（OneSignal Web Push，逻辑见 logic/push.js）═══ -->
+        <div class="set-group-title">通知设置</div>
+        <div class="card set-card" v-if="appCtx.pushEnabled">
+          <div class="card-head">
+            <b>🔔 消息推送</b>
+            <span class="more">{{appCtx.pushStatusText}}</span>
+          </div>
+          <!-- 设备开关：浏览器授权的真实开关（关掉后本机不再收到任何推送） -->
+          <div class="info-row">
+            <span>本设备接收推送</span>
+            <button class="btn btn-sm" :class="appCtx.pushOptedIn ? 'btn-primary' : 'btn-ghost'"
+                    :disabled="appCtx.pushLoading" @click="appCtx.pushToggleDevice()">
+              {{appCtx.pushLoading ? '处理中…' : (appCtx.pushOptedIn ? '已开启' : '已关闭')}}
+            </button>
+          </div>
+          <!-- 逐场景开关：不接收的场景后端根本不会下发（services/push.py 的 _PREF_FIELD） -->
+          <div class="info-row" v-for="f in appCtx.pushEventFields" :key="f.field">
+            <span>{{f.label}}<br><em class="push-hint">{{f.desc}}</em></span>
+            <button class="btn btn-sm" :class="appCtx.pushPrefs[f.field] ? 'btn-primary' : 'btn-ghost'"
+                    @click="appCtx.pushSavePref(f.field, !appCtx.pushPrefs[f.field])">
+              {{appCtx.pushPrefs[f.field] ? '接收' : '不接收'}}
+            </button>
+          </div>
+          <!-- 免打扰：用户自设静音时段（与平台宵禁无关，后者只针对未成年人护眼） -->
+          <div class="info-row">
+            <span>免打扰时段<br><em class="push-hint">该时段内不推送，留空表示不启用</em></span>
+            <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+              <input type="time" v-model="appCtx.pushQuietForm.start" class="push-time">
+              <em class="push-hint">至</em>
+              <input type="time" v-model="appCtx.pushQuietForm.end" class="push-time">
+              <button class="btn btn-sm btn-ghost" @click="appCtx.pushSaveQuiet()">保存</button>
+            </span>
+          </div>
+          <div class="detail-actions" style="margin-top:12px">
+            <button class="btn btn-ghost btn-sm" :disabled="appCtx.pushTesting" @click="appCtx.pushSendTest()">
+              {{appCtx.pushTesting ? '发送中…' : '发送测试推送'}}
+            </button>
+            <span class="more" style="margin-left:8px">收不到时先点这里自检</span>
+          </div>
+        </div>
+        <!-- 通道未配置时也给一行说明：否则用户翻遍设置页也找不到推送开关，只会以为功能坏了 -->
+        <div class="card set-card" v-else>
+          <div class="card-head"><b>🔔 消息推送</b><span class="more">{{appCtx.pushStatusText}}</span></div>
+          <div class="push-hint">推送通道由管理员在后台「三方配置」中开通；开通后这里会出现开关。</div>
+        </div>
+
         <!-- ═══ 分组：数据与其他 ═══ -->
         <div class="set-group-title">数据与其他</div>
         <div class="card set-card">
@@ -96,3 +142,10 @@ export default {
   inject: ['appCtx'],
 }
 </script>
+
+<style scoped>
+/* 推送设置专用样式：卡片/行/按钮沿用全局的 set-card / info-row / btn，这里只补两处新元素 */
+.push-hint{font-style:normal;font-size:12px;color:var(--muted,#909399);line-height:1.5}
+.push-time{padding:6px 8px;border:1px solid #E5E1F5;border-radius:8px;font-size:13px;
+  background:var(--card,#fff);color:inherit}
+</style>
