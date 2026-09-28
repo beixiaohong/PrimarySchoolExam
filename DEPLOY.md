@@ -260,10 +260,10 @@ scp -r data/gx_materials root@115.29.213.131:/home/PrimarySchoolExam/data/
 
 # ③ 线上：写库（幂等，可重复跑）
 cd /home/PrimarySchoolExam
-.venv/bin/python tools/import_gx_materials.py stats                    # 先看包里有几条
-.venv/bin/python tools/import_gx_materials.py load --dry-run --limit 200   # 试跑
-.venv/bin/python tools/import_gx_materials.py load                     # 正式入库
-.venv/bin/python tools/import_gx_materials.py materials --category 选择题练习
+venv/bin/python tools/import_gx_materials.py stats                    # 先看包里有几条
+venv/bin/python tools/import_gx_materials.py load --dry-run --limit 200   # 试跑
+venv/bin/python tools/import_gx_materials.py load                     # 正式入库
+venv/bin/python tools/import_gx_materials.py materials --category 选择题练习
 ```
 
 - 前置：迁移 `081_gaoxiang.py`（6 张备考表）与 `082_gx_materials.py`（资料归档表 + 资料维度列），
@@ -781,17 +781,40 @@ venv/bin/python tools/preflight.py --stage full
 > 于是在应用导入期直接崩溃。**修法：把包补进 `requirements.txt` 后重新部署。**
 > 提交前跑 `python tools/dep_audit.py` 或 `tools/regression_check.py` 就能提前拦住。
 
-### 14.5 管理后台默认密码
+### 14.5 管理后台账号与密码
 
-首次部署后管理员账号：`admin` / `Admin@123`
+首次部署后管理员账号：`admin` / `Admin@123`（**改过密码后此默认值即失效**）
 
 ```bash
-# 修改密码（通过 API）
+# 正常改密码（需要知道旧密码，走 API）
 curl -X POST https://你的域名/api/admin/change-password \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"old_password":"Admin@123","new_password":"新密码"}'
+  -d '{"old_password":"旧密码","new_password":"新密码"}'
 ```
+
+**忘记密码**（不需要旧密码，改用运维脚本）：
+
+`tools/reset_admin_pwd.py` 直接改写 `admins.password_hash` 并清空 token 强制重新登录；
+密码规则 4–32 位；账号不存在时按默认凭证创建（`role=super`）。
+
+```bash
+# 线上（必须在服务器上跑，本地没有线上库凭据）
+cd /home/PrimarySchoolExam
+venv/bin/python tools/reset_admin_pwd.py --password "新密码"
+# 指定其它账号：--username ops
+
+# 本地（改的是本地 .env 指向的克隆库）
+.venv/Scripts/python.exe tools/reset_admin_pwd.py --password "新密码"
+```
+
+> ⚠️ 两个必知点：
+> 1. **脚本改的是「它连接的那个库」**——在本地跑只改克隆库，线上照样登不上；
+>    要让线上生效必须在服务器上执行（这也是为什么它不能做成 HTTP 接口）。
+> 2. 脚本会清空 `admins.token`，**该账号现有后台会话立即失效**，需重新登录。
+
+> `admins` 是**单槽 token**（每个账号只有一列 `token`，不是多会话表）：任何一次新登录都会顶掉
+> 该账号此前的会话，表现为「A 登录后 B 被登出」。需要多人并行使用后台时，各自建账号。
 
 ### 14.6 线上库安全
 
