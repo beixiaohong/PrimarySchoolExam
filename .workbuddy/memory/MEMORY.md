@@ -62,6 +62,12 @@
 - **后台子模块路由范式**：`app/routers/admin/*` 必须 `from . import router` 复用共享 `APIRouter()`（自建会全部 404），并在 `__init__.py` 补 import + `from .<module> import *`。
 - **域内路由**：`app/domains/<domain>/routers/*.py`；跨域出口写在 `app/domains/<domain>/contracts.py` 的 `_EXPORTS` 白名单。
 - **管理后台**：密码 `ke5eghq357`（pbkdf2-sha256/200k）；重置用服务器本机 `python tools/reset_admin_pwd.py --password "新密码"`（4-32 位）。本地访问 `cd admin && npm run build` + `python run.py` → `http://127.0.0.1:8000/admin/`（别单独开 5173，无代理）。
+- **🚨 admin token 是「单槽」的**：`admin_login` 把新 token 写在 `admin.token` 单列（非多会话表）→
+  **任何一次新登录立即让旧 token 失效**。所以「用凭据登线上后台做只读验证」会把用户正在用的会话踢下线，
+  用户在线时不要替他登录；该类只读核验交给用户在后台自己看。
+- **🔧 判「线上前端产物是否已重建」可完全无凭据完成**：①从 `curl <站点>/` 取入口 bundle 路径
+  ②grep 本次新增的**函数名/中文文案/常量** ③⚠️ **懒加载路由的关键字不在入口 chunk 里**
+  （直接 grep 入口会误判成「没部署」）——需从入口提取 `import("./Xxx-hash.js")` 的 chunk 名再单独 fetch 校验。
 - **路由表必须走 `app.openapi()["paths"]`**：本项目 `include_router` 惰性（`app.routes` 元素是 `_IncludedRouter`、`path` 为 None），直接遍历得 0 条 → 会误报全部路由缺失。**比对路径要归一化参数段**（后端 `{gid}` vs 前端具体 id）。
 
 ## 六、测试
