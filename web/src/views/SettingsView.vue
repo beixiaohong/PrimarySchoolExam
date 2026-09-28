@@ -78,6 +78,8 @@
         <div class="card set-card">
           <div class="card-head"><b>⚙️ 其他</b></div>
           <div class="info-row"><span>极速模式（答题动画加速）</span><button class="btn btn-sm" :class="appCtx.turbo ? 'btn-primary' : 'btn-ghost'" @click="appCtx.toggleTurbo()">{{appCtx.turbo ? '已开启' : '已关闭'}}</button></div>
+          <!-- 高项备考隐藏入口：普通用户不可见入口，连点 5 次跳转（逻辑见 logic/gaoxiang.js gxSecretTap） -->
+          <div class="info-row" style="cursor:pointer" role="button" @click="appCtx.gxSecretTap()"><span>关于</span><b>智学学堂 v1.0</b></div>
           <div class="detail-actions" style="margin-top:14px">
             <button class="btn btn-danger" @click="appCtx.logout()">退出登录</button>
           </div>
