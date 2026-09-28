@@ -59,7 +59,7 @@ from .novel import Novel, NovelChapter, NovelReadProgress
 from .commerce_payment import PayTransaction
 from .level import LevelConfig
 from .gaoxiang import (GxKnowledge, GxQuestion, GxAttempt, GxWrong,
-                       GxCaseGrade, GxProgress)
+                       GxCaseGrade, GxProgress, GxMaterial)
 
 __all__ = [
     "Word", "WordBook",
@@ -112,4 +112,5 @@ __all__ = [
     "Novel", "NovelChapter", "NovelReadProgress",
     "LevelConfig",
     "GxKnowledge", "GxQuestion", "GxAttempt", "GxWrong", "GxCaseGrade", "GxProgress",
+    "GxMaterial",
 ]

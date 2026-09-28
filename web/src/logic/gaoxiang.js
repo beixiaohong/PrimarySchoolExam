@@ -1,53 +1,118 @@
 // gaoxiang.js：软考高项备考（面向非学生成人用户）的 data / computed / methods。
 // 仅依赖通用 api/goTab/showToast（通用方法保留在主文件）；与其他 logic/* 经展开运算符
 // 合并后 this 仍绑定同一实例。后端契约见 app/domains/assessment/routers/gaoxiang.py：
-//   GET  /api/gx/domains                    -> {domains:[十大知识域], qtypes}
-//   GET  /api/gx/knowledge?user_id&domain   -> {items:[{id,domain,code,title,summary}]}
+//   GET  /api/gx/domains                    -> {domains, qtypes, chapters, wrong_kinds, pass_score}
+//   GET  /api/gx/catalog                    -> {source_kinds:[{value,count}], chapters:[...], qtypes}
+//   GET  /api/gx/knowledge?user_id&domain&chapter&kind&q
+//                                           -> {items:[{id,domain,code,title,summary,chapter,kind,source_file}]}
 //   GET  /api/gx/knowledge/{kid}?user_id    -> {id,...,content}
 //   POST /api/gx/knowledge/generate         {user_id,domain} -> {generated,added}
-//   POST /api/gx/quiz/generate              {user_id,domain,qtype,count} -> {questions:[{id,qtype,question,options}]}
-//   POST /api/gx/quiz/submit                {user_id,answers:[{question_id,answer,duration_ms}]} -> {results:[{question_id,is_correct,correct,analysis}]}
-//   GET  /api/gx/wrong?user_id              -> {items:[...],count}
+//   POST /api/gx/quiz/generate              {user_id,domain,qtype,count,source_kind,chapter,scope}
+//                                           -> {count,ai_added,questions:[{id,qtype,question,options,chapter,source_kind,deck}]}
+//   POST /api/gx/quiz/submit                {user_id,answers:[{question_id,answer,duration_ms}]}
+//                                           -> {wrong_count, results:[{question_id,judged,is_correct,correct,analysis}]}
+//   GET  /api/gx/case/list|/essay/list      ?user_id&domain&chapter&source_kind
+//                                           -> {items:[{id,title,domain,chapter,source_kind,sub_count,background}]}
+//   GET  /api/gx/case/{qid} | /essay/{qid}  -> {background, sub_questions:[{q,answer,points}], ...}
+//   POST /api/gx/case/generate              {user_id,domain} -> {question_id,...}
+//   POST /api/gx/case/grade                 {user_id,question_id,user_answer}
+//                                           -> {score,feedback,pass_score,in_wrong_book}
+//   POST /api/gx/essay/grade                {user_id,question_id,user_answer}
+//                                           -> {score,rubric:[{dim,score,comment}],feedback,pass_score,in_wrong_book}
+//   GET  /api/gx/wrong?user_id&kind          -> {items:[...],count,by_kind:{choice,case,essay}}
+//   POST /api/gx/wrong/analyze              {user_id,question_id|0,limit,force}
+//                                           -> {analyzed,items:[{question_id,ok,reason_type,analysis,tips}]}
 //   POST /api/gx/wrong/master               {user_id,question_id}
-//   POST /api/gx/case/generate              {user_id,domain} -> {question_id,background,sub_questions:[{q,points}]}
-//   POST /api/gx/case/grade                 {user_id,question_id,user_answer} -> {score,feedback}
 //   GET  /api/gx/progress?user_id           -> {domains:[...], summary:{...}}
 //
-// 设计约定：判分在服务端（答案不下发前端），前端只做展示与提交；AI 生成均可能慢
-// （数秒），相关按钮一律带 loading 防重复点击。
+// 设计约定：
+// 1. 判分在服务端（答案不下发前端），前端只做展示与提交；AI 生成均可能慢（数秒），
+//    相关按钮一律带 loading 防重复点击。
+// 2. **错题闭环**：选择题提交后自动对答错的题（最多 AUTO_ANALYZE_MAX 道）调
+//    `/wrong/analyze` 拿错因并就地展示，做到「做完立刻有分析」；分析与缓存都在服务端，
+//    再看错题本不再重复扣费。案例/论文批改低于 60 分由服务端自动入错题本，前端同样自动分析。
+
+// 论文四维评分：维度中文名与权重（与后端 ESSAY_GRADE_SYSTEM_PROMPT 保持一致）
+const RUBRIC_LABELS = {
+  relevance: '切题与完整性',
+  structure: '结构与管理过程',
+  practice: '项目实践与真实性',
+  writing: '文字表达与字数',
+};
+const RUBRIC_WEIGHTS = { relevance: 35, structure: 25, practice: 25, writing: 15 };
+
+// 一次提交最多自动分析几道错题：每题一次 AI 调用（数秒），限量以免提交后长等待
+const AUTO_ANALYZE_MAX = 3;
+
+// 错题本题型分栏（与后端 WRONG_KINDS 对齐）
+const WRONG_TABS = [
+  { k: '', label: '全部' },
+  { k: 'choice', label: '选择题' },
+  { k: 'case', label: '案例' },
+  { k: 'essay', label: '论文' },
+];
 
 export function gaoxiangData() {
   return {
     // ── 通用 ──
-    gxSub: 'quiz',          // 子页签：knowledge / quiz / case / wrong / progress（默认刷题，备考主路径）
-    gxDomains: [],          // 十大知识域
+    gxSub: 'quiz',          // 子页签：quiz / knowledge / case / essay / wrong / progress
+    gxDomains: [],          // 考纲 24 章（章名即知识域名）
+    gxChapters: [],         // [{no,name,label}] 供章节下拉兜底
+    gxPassScore: 60,        // 主观题及格线（低于它自动进错题本）
     gxLoading: false,       // 首次进入总开关
+    gxCatalog: null,        // {source_kinds, chapters} 只含库里有条目的筛选项
     // ── 知识点 ──
-    gxKDomain: '整体管理',
+    gxKDomain: '',          // '' = 不限知识域
+    gxKChapter: '',
+    gxKQ: '',               // 关键词（标题/正文模糊匹配）
     gxKList: [],            // 列表（无正文）
     gxKLoading: false,
     gxKDetail: null,        // 当前阅读的知识点（含 content）
     gxKGenning: false,      // AI 生成中
     // ── 刷题 ──
-    gxQDomain: '整体管理',
+    gxQDomain: '',          // '' = 不限（配合资料筛选刷整套）
     gxQType: 'single',      // single / multi
     gxQCount: 5,
-    gxQuestions: [],        // [{id,qtype,question,options}]
+    gxQSourceKind: '',      // 资料子类：每日一练 / 章节练习 / 仿真模拟…
+    gxQChapter: '',         // 规范章节名
+    gxQScope: '',           // ''=常规刷题；'wrong'=错题重练
+    gxQuestions: [],        // [{id,qtype,question,options,chapter,source_kind}]
     gxAnswers: {},          // qid → 'A'/'ABD'
-    gxQResult: null,        // {results:[{question_id,is_correct,correct,analysis}]}
+    gxQResult: null,        // {wrong_count, results:[{question_id,judged,is_correct,correct,analysis}]}
     gxQLoading: false,
     gxQSubmitting: false,
     gxQStartAt: 0,          // 本组题开始时间（算用时）
+    gxQAiAdded: 0,          // 本组题里 AI 现场补了几道
+    // 错因分析：{question_id: 分析文本}，就地展示避免整表重载
+    gxReasonMap: {},
+    gxAnalyzing: null,      // {total,done} 自动分析进度；null=不在分析
     // ── 案例分析 ──
-    gxC_domain: '风险管理',
-    gxC_question: null,     // {question_id, background, sub_questions}
-    gxC_answer: '',         // 作答全文（一个文本框，考生自己组织分点）
-    gxC_result: null,       // {score, feedback}
-    gxC_loading: false,
-    gxC_grading: false,
+    gxCaseDomain: '',
+    gxCaseList: [],         // 资料案例题列表
+    gxCaseListLoading: false,
+    gxCaseDetail: null,     // {id,title,background,sub_questions:[{q,answer,points}],analysis}
+    gxCaseExtra: null,      // AI 现场出的题（未落库则无 id，走 question_text 批改）
+    gxC_answer: '',         // 作答全文
+    gxC_result: null,       // {score,feedback,pass_score,in_wrong_book}
+    gxCaseGrading: false,
+    gxCaseGenning: false,
+    gxCaseShowAnswer: false,// 是否展开参考答案要点（批改后才建议看）
+    // ── 论文练习 ──
+    gxEssayDomain: '',
+    gxEssayList: [],
+    gxEssayLoading: false,
+    gxEssayDetail: null,    // {id,title,background,sub_questions（论述要求）,...}
+    gxE_answer: '',
+    gxE_result: null,       // {score,rubric,feedback,pass_score,in_wrong_book}
+    gxEssayGrading: false,
+    gxEssayShowReq: true,   // 是否展开论述要求
     // ── 错题本 ──
     gxWrong: [],
+    gxWrongKind: '',        // '' / choice / case / essay
+    gxWrongByKind: { choice: 0, case: 0, essay: 0 },
     gxWrongLoading: false,
+    gxWrongAnalyzing: 0,    // 正在分析哪道题（question_id），0=无
+    gxWrongBatchAnalyzing: false,
     // ── 进度 ──
     gxProgress: null,
   };
@@ -70,15 +135,62 @@ export const gaoxiangComputed = {
     return ((this.gxQResult && this.gxQResult.results) || [])
       .filter(r => r.is_correct === true).length;
   },
+  // 未判分的题数（资料里没抓到的题：无参考答案，不计错、不入错题本）
+  gxUngradedCount() {
+    return ((this.gxQResult && this.gxQResult.results) || [])
+      .filter(r => r.judged === false).length;
+  },
+  // 本组错题数（服务端已入错题本）
+  gxWrongCountOfQuiz() {
+    return ((this.gxQResult && this.gxQResult.results) || [])
+      .filter(r => r.judged && r.is_correct === false).length;
+  },
   // 案例作答是否可提交（至少 20 字，避免空跑一次 AI）
   gxC_canSubmit() {
-    return (this.gxC_answer || '').trim().length >= 20 && !this.gxC_grading;
+    return (this.gxC_answer || '').trim().length >= 20 && !this.gxCaseGrading;
   },
+  // 论文正文是否可提交（服务端要求 ≥100 字；2000 字才是考试要求，前端只做提示）
+  gxE_canSubmit() {
+    return (this.gxE_answer || '').trim().length >= 100 && !this.gxEssayGrading && !!this.gxEssayDetail;
+  },
+  // 论文字数（去空白计，贴近期刊/考试的「字数」口径）
+  gxEssayWords() {
+    return (this.gxE_answer || '').replace(/\s/g, '').length;
+  },
+  // 论文四维评分行（补中文维度名与权重，模板直接渲染）
+  gxEssayRubric() {
+    return (((this.gxE_result || {}).rubric) || []).map(r => ({
+      dim: r.dim,
+      label: RUBRIC_LABELS[r.dim] || r.dim,
+      weight: RUBRIC_WEIGHTS[r.dim] || 0,
+      score: r.score,
+      comment: r.comment,
+    }));
+  },
+  // 错题本按当前分栏过滤（服务端已给 by_kind 计数，这里只做前端过滤，省一次请求）
+  gxWrongShown() {
+    if (!this.gxWrongKind) return this.gxWrong;
+    return this.gxWrong.filter(w => w.kind === this.gxWrongKind);
+  },
+  gxWrongTabs() { return WRONG_TABS; },
   // 进度总览（未加载时兜底空结构）
   gxProgressRows() {
     return (this.gxProgress && this.gxProgress.domains) || [];
   },
+  // 点选 chip 时统一按 value 取（catalog 项为 {value,count}）
+  gxSourceKindOptions() {
+    return ((this.gxCatalog || {}).source_kinds) || [];
+  },
+  gxChapterOptions() {
+    return ((this.gxCatalog || {}).chapters) || [];
+  },
 };
+
+// 错因分析文本拼装（与后端写库格式一致：`【类型】分析` + 记忆锚点）
+function reasonText(it) {
+  return `【${(it && it.reason_type) || '其它'}】${(it && it.analysis) || ''}`
+    + (((it && it.tips)) ? `\n记忆锚点：${it.tips}` : '');
+}
 
 export const gaoxiangMethods = {
   /* ─────────── 进入页面（goTab('gaoxiang') 钩子调用） ─────────── */
@@ -87,17 +199,31 @@ export const gaoxiangMethods = {
     if (!this.gxDomains.length) {
       this.api('/api/gx/domains').then(d => {
         this.gxDomains = (d && d.domains) || [];
+        this.gxChapters = (d && d.chapters) || [];
+        if (d && d.pass_score) this.gxPassScore = d.pass_score;
       }).catch(() => {});
     }
+    this.gxLoadCatalog();
     this.gxLoadProgress();
     this.gxLoadKnowledge();
     this.gxLoadWrong();
+    // 刷题是主路径：进来先给一组「不限知识域」的真题，减少一次点击
+    if (!this.gxQuestions.length && this.gxSub === 'quiz') this.gxQuizStart();
+  },
+
+  // 筛选项（只含库里有条目的）——失败也不影响主流程
+  gxLoadCatalog() {
+    this.api('/api/gx/catalog').then(d => { this.gxCatalog = d || null; }).catch(() => {});
   },
 
   /* ─────────── 知识点 ─────────── */
   gxLoadKnowledge() {
     this.gxKLoading = true;
-    this.api(`/api/gx/knowledge?user_id=${encodeURIComponent(this.user)}&domain=${encodeURIComponent(this.gxKDomain)}`)
+    const p = new URLSearchParams({ user_id: this.user });
+    if (this.gxKDomain) p.set('domain', this.gxKDomain);
+    if (this.gxKChapter) p.set('chapter', this.gxKChapter);
+    if ((this.gxKQ || '').trim()) p.set('q', this.gxKQ.trim());
+    this.api('/api/gx/knowledge?' + p.toString())
       .then(d => { this.gxKList = (d && d.items) || []; })
       .catch(() => { this.gxKList = []; })
       .finally(() => { this.gxKLoading = false; });
@@ -107,20 +233,27 @@ export const gaoxiangMethods = {
     this.gxKDetail = null;
     this.gxLoadKnowledge();
   },
+  gxPickKChapter(ch) { this.gxKChapter = ch; this.gxLoadKnowledge(); },
+  gxSearchKnowledge() { this.gxLoadKnowledge(); },
+  gxClearKnowledgeFilter() {
+    this.gxKDomain = ''; this.gxKChapter = ''; this.gxKQ = '';
+    this.gxLoadKnowledge();
+  },
   gxOpenKnowledge(k) {
     this.api(`/api/gx/knowledge/${k.id}?user_id=${encodeURIComponent(this.user)}`)
       .then(d => { this.gxKDetail = d || null; })
       .catch(() => this.showToast('读取失败，稍后再试'));
   },
-  gxClearKnowledge() { this.gxKDetail = null; },
   gxCloseKnowledge() { this.gxKDetail = null; },
   // AI 生成该知识域知识点（慢操作，按钮转圈防重复）
   gxGenerateKnowledge() {
     if (this.gxKGenning) return;
+    const domain = this.gxKDomain || this.gxDomains[0] || '';
+    if (!domain) return;
     this.gxKGenning = true;
     this.api('/api/gx/knowledge/generate', {
       method: 'POST',
-      body: JSON.stringify({ user_id: this.user, domain: this.gxKDomain }),
+      body: JSON.stringify({ user_id: this.user, domain: domain }),
     }).then(d => {
       const added = (d && d.added) || 0;
       this.showToast(added > 0 ? `已生成 ${added} 个新知识点` : '该知识域知识点已齐（无新增）');
@@ -132,17 +265,51 @@ export const gaoxiangMethods = {
   /* ─────────── 刷题 ─────────── */
   gxQuizDomain(d) { this.gxQDomain = d; },
   gxQuizType(t) { this.gxQType = t; },
+  gxQuizCount(n) { this.gxQCount = n; },
+  gxQuizSourceKind(v) { this.gxQSourceKind = (this.gxQSourceKind === v ? '' : v); },
+  gxQuizChapter(v) { this.gxQChapter = v; },
+  gxResetQuizFilter() {
+    this.gxQSourceKind = ''; this.gxQChapter = ''; this.gxQDomain = '';
+  },
   gxQuizStart() {
     if (this.gxQLoading) return;
     this.gxQLoading = true;
+    this.gxQScope = '';
     this.gxQuestions = []; this.gxAnswers = {}; this.gxQResult = null;
+    this.gxReasonMap = {}; this.gxAnalyzing = null;
     this.api('/api/gx/quiz/generate', {
       method: 'POST',
       body: JSON.stringify({ user_id: this.user, domain: this.gxQDomain,
-                             qtype: this.gxQType, count: this.gxQCount }),
+                             qtype: this.gxQType, count: this.gxQCount,
+                             source_kind: this.gxQSourceKind, chapter: this.gxQChapter,
+                             scope: '' }),
     }).then(d => {
       this.gxQuestions = (d && d.questions) || [];
-      if (!this.gxQuestions.length) this.showToast('没出出题来，稍后再试一次');
+      this.gxQAiAdded = (d && d.ai_added) || 0;
+      if (!this.gxQuestions.length) this.showToast('这批条件下没找到题，换个筛选再试');
+      this.gxQStartAt = Date.now();
+    }).catch(() => this.showToast('出题失败，稍后再试'))
+      .finally(() => { this.gxQLoading = false; });
+  },
+  // 错题重练：把错题本里未掌握的题凑一组抽出来（服务端 scope=wrong 不再过滤「做过的题」）
+  gxQuizWrongStart(qtype) {
+    if (this.gxQLoading) return;
+    if (!this.gxWrong.length) { this.showToast('错题本是空的，先去刷几组题'); return; }
+    this.gxSub = 'quiz';
+    this.gxQLoading = true;
+    this.gxQScope = 'wrong';
+    this.gxQType = qtype || 'single';
+    this.gxQuestions = []; this.gxAnswers = {}; this.gxQResult = null;
+    this.gxReasonMap = {}; this.gxAnalyzing = null;
+    this.api('/api/gx/quiz/generate', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: this.user, domain: '', qtype: this.gxQType,
+                             count: this.gxQCount, source_kind: '', chapter: '',
+                             scope: 'wrong' }),
+    }).then(d => {
+      this.gxQuestions = (d && d.questions) || [];
+      this.gxQAiAdded = 0;
+      if (!this.gxQuestions.length) this.showToast('没有待重练的错题了');
       this.gxQStartAt = Date.now();
     }).catch(() => this.showToast('出题失败，稍后再试'))
       .finally(() => { this.gxQLoading = false; });
@@ -153,7 +320,8 @@ export const gaoxiangMethods = {
     const letter = (opt || '').trim().charAt(0).toUpperCase();
     if (!/^[A-Z]$/.test(letter)) return;
     if (q.qtype === 'multi') {
-      const cur = new Set((this.gxAnswers[q.id] || '').split('')).add(letter);
+      const cur = new Set((this.gxAnswers[q.id] || '').split('').filter(c => /[A-Z]/.test(c)));
+      cur.add(letter);
       this.gxAnswers = Object.assign({}, this.gxAnswers,
         { [q.id]: [...cur].sort().join('') });
     } else {
@@ -181,71 +349,243 @@ export const gaoxiangMethods = {
       this.gxQResult = d || { results: [] };
       this.gxLoadWrong();      // 答错可能新增错题，静默刷新错题本
       this.gxLoadProgress();   // 进度同步刷新
+      // 做完立刻分析错题（限量，避免长等待；余下的可在错题本逐题点分析）
+      const wrongIds = ((d && d.results) || [])
+        .filter(r => r.judged && r.is_correct === false)
+        .map(r => r.question_id);
+      if (wrongIds.length) {
+        this.showToast(`答错 ${wrongIds.length} 题，已入错题本，正在分析错因…`);
+        this.gxAutoAnalyze(wrongIds);
+      }
     }).catch(() => this.showToast('提交失败，稍后再试'))
       .finally(() => { this.gxQSubmitting = false; });
   },
-  // 单题反馈样式：对/错/未找到
+  // 单题反馈样式：对/错/未判分
   gxResultClass(qid) {
     const r = this.gxResultMap[qid];
     if (!r) return '';
+    if (r.judged === false) return 'skip';
     return r.is_correct === true ? 'ok' : 'bad';
   },
+  // 自动错因分析：串行调用（每题一次 AI），逐题回填，不阻塞页面
+  gxAutoAnalyze(ids) {
+    const todo = (ids || []).slice(0, AUTO_ANALYZE_MAX);
+    if (!todo.length) return;
+    this.gxAnalyzing = { total: todo.length, done: 0 };
+    const step = (i) => {
+      if (i >= todo.length) {
+        this.gxAnalyzing = null;
+        this.gxLoadWrong();     // 分析结果已落库，刷新错题本带上错因
+        return;
+      }
+      this.api('/api/gx/wrong/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: this.user, question_id: todo[i] }),
+      }).then(d => {
+        const it = ((d && d.items) || [])[0];
+        if (it && it.ok) {
+          this.gxReasonMap = Object.assign({}, this.gxReasonMap,
+            { [it.question_id]: reasonText(it) });
+        }
+      }).catch(() => {}).finally(() => {
+        this.gxAnalyzing = { total: todo.length, done: i + 1 };
+        step(i + 1);
+      });
+    };
+    step(0);
+  },
 
-  /* ─────────── 案例分析 ─────────── */
-  gxCdomain(d) { this.gxC_domain = d; },
-  gxCaseStart() {
-    if (this.gxC_loading) return;
-    this.gxC_loading = true;
-    this.gxC_question = null; this.gxC_answer = ''; this.gxC_result = null;
+  /* ─────────── 案例分析（资料真题 + AI 现场出题） ─────────── */
+  gxCaseDomainPick(d) {
+    this.gxCaseDomain = (this.gxCaseDomain === d ? '' : d);
+    this.gxLoadCaseList();
+  },
+  gxLoadCaseList() {
+    this.gxCaseListLoading = true;
+    const p = new URLSearchParams({ user_id: this.user, limit: '50' });
+    if (this.gxCaseDomain) p.set('domain', this.gxCaseDomain);
+    this.api('/api/gx/case/list?' + p.toString())
+      .then(d => { this.gxCaseList = (d && d.items) || []; })
+      .catch(() => { this.gxCaseList = []; })
+      .finally(() => { this.gxCaseListLoading = false; });
+  },
+  gxOpenCase(item) {
+    if (!item || !item.id) return;
+    this.gxCaseDetail = null; this.gxCaseExtra = null;
+    this.gxC_answer = ''; this.gxC_result = null; this.gxCaseShowAnswer = false;
+    this.api(`/api/gx/case/${item.id}?user_id=${encodeURIComponent(this.user)}`)
+      .then(d => { this.gxCaseDetail = d || null; })
+      .catch(() => this.showToast('读取案例题失败，稍后再试'));
+  },
+  gxCloseCase() {
+    this.gxCaseDetail = null; this.gxCaseExtra = null;
+    this.gxC_answer = ''; this.gxC_result = null;
+  },
+  // AI 现场出一道案例大题（落库后按 id 走同一套渲染与批改）
+  gxCaseGenAI() {
+    if (this.gxCaseGenning) return;
+    const domain = this.gxCaseDomain || this.gxDomains[0] || '';
+    if (!domain) return;
+    this.gxCaseGenning = true;
     this.api('/api/gx/case/generate', {
       method: 'POST',
-      body: JSON.stringify({ user_id: this.user, domain: this.gxC_domain }),
+      body: JSON.stringify({ user_id: this.user, domain: domain }),
     }).then(d => {
-      this.gxC_question = d || null;
-      if (!d) this.showToast('没出出来，稍后再试一次');
+      if (!d || !d.question_id) { this.showToast('没出出来，稍后再试一次'); return; }
+      this.gxCaseDetail = { id: d.question_id, title: 'AI 现场出题（' + domain + '）',
+                            domain: domain, background: d.background,
+                            sub_questions: d.sub_questions || [] };
+      this.gxCaseExtra = d.question_id;
+      this.gxC_answer = ''; this.gxC_result = null; this.gxCaseShowAnswer = false;
+      this.showToast('已出题，写在下面提交批改');
     }).catch(() => this.showToast('出题失败，稍后再试'))
-      .finally(() => { this.gxC_loading = false; });
+      .finally(() => { this.gxCaseGenning = false; });
   },
   gxCaseGrade() {
-    if (!this.gxC_canSubmit || !this.gxC_question) return;
-    this.gxC_grading = true;
+    if (!this.gxC_canSubmit || !this.gxCaseDetail) return;
+    this.gxCaseGrading = true;
     this.api('/api/gx/case/grade', {
       method: 'POST',
       body: JSON.stringify({ user_id: this.user,
-                             question_id: this.gxC_question.question_id,
+                             question_id: this.gxCaseDetail.id || null,
                              user_answer: this.gxC_answer }),
     }).then(d => {
       this.gxC_result = d || null;
       this.gxLoadProgress();
+      this.gxCaseShowAnswer = true;   // 批改后自动展开参考答案要点，对照着看
+      if (d && d.in_wrong_book) {
+        this.showToast(`得分低于 ${this.gxPassScore}，已入错题本，正在分析错因…`);
+        this.gxAutoAnalyze([this.gxCaseDetail.id]);
+      }
+      this.gxLoadWrong();
     }).catch(() => this.showToast('批改失败，稍后再试'))
-      .finally(() => { this.gxC_grading = false; });
+      .finally(() => { this.gxCaseGrading = false; });
+  },
+  gxToggleCaseAnswer() { this.gxCaseShowAnswer = !this.gxCaseShowAnswer; },
+
+  /* ─────────── 论文练习 ─────────── */
+  gxEssayDomainPick(d) {
+    this.gxEssayDomain = (this.gxEssayDomain === d ? '' : d);
+    this.gxLoadEssay();
+  },
+  gxLoadEssay() {
+    this.gxEssayLoading = true;
+    const p = new URLSearchParams({ user_id: this.user, limit: '50' });
+    if (this.gxEssayDomain) p.set('domain', this.gxEssayDomain);
+    this.api('/api/gx/essay/list?' + p.toString())
+      .then(d => { this.gxEssayList = (d && d.items) || []; })
+      .catch(() => { this.gxEssayList = []; })
+      .finally(() => { this.gxEssayLoading = false; });
+  },
+  gxOpenEssay(item) {
+    if (!item || !item.id) return;
+    this.gxEssayDetail = null;
+    this.gxE_answer = ''; this.gxE_result = null; this.gxEssayShowReq = true;
+    this.api(`/api/gx/essay/${item.id}?user_id=${encodeURIComponent(this.user)}`)
+      .then(d => {
+        this.gxEssayDetail = d || null;
+        this.gxE_answer = '';
+      })
+      .catch(() => this.showToast('读取论文题失败，稍后再试'));
+  },
+  gxOpenEssayById(qid) {
+    if (!qid) return;
+    this.gxSub = 'essay';
+    this.gxOpenEssay({ id: qid });
+  },
+  gxCloseEssay() {
+    this.gxEssayDetail = null; this.gxE_answer = ''; this.gxE_result = null;
+  },
+  gxToggleEssayReq() { this.gxEssayShowReq = !this.gxEssayShowReq; },
+  gxEssayGrade() {
+    if (!this.gxE_canSubmit) return;
+    this.gxEssayGrading = true;
+    this.api('/api/gx/essay/grade', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: this.user,
+                             question_id: this.gxEssayDetail.id,
+                             user_answer: this.gxE_answer }),
+    }).then(d => {
+      this.gxE_result = d || null;
+      this.gxLoadProgress();
+      if (d && d.in_wrong_book) {
+        this.showToast(`得分低于 ${this.gxPassScore}，已入错题本，正在分析错因…`);
+        this.gxAutoAnalyze([this.gxEssayDetail.id]);
+      }
+      this.gxLoadWrong();
+    }).catch(() => this.showToast('批改失败，稍后再试'))
+      .finally(() => { this.gxEssayGrading = false; });
   },
 
   /* ─────────── 错题本 ─────────── */
   gxLoadWrong() {
     this.gxWrongLoading = true;
     this.api(`/api/gx/wrong?user_id=${encodeURIComponent(this.user)}`)
-      .then(d => { this.gxWrong = (d && d.items) || []; })
+      .then(d => {
+        this.gxWrong = (d && d.items) || [];
+        this.gxWrongByKind = (d && d.by_kind) || { choice: 0, case: 0, essay: 0 };
+        // 错因已落库的同步进 gxReasonMap，刷题页与错题本共用一份展示
+        const m = Object.assign({}, this.gxReasonMap);
+        this.gxWrong.forEach(w => { if (w.wrong_reason) m[w.question_id] = w.wrong_reason; });
+        this.gxReasonMap = m;
+      })
       .catch(() => { this.gxWrong = []; })
       .finally(() => { this.gxWrongLoading = false; });
   },
+  gxPickWrongKind(k) { this.gxWrongKind = k; },
   gxMasterWrong(w) {
     this.api('/api/gx/wrong/master', {
       method: 'POST',
       body: JSON.stringify({ user_id: this.user, question_id: w.question_id }),
-    }).then(() => this.gxLoadWrong())
+    }).then(() => { this.showToast('已标记掌握'); this.gxLoadWrong(); })
       .catch(() => this.showToast('操作失败，稍后再试'));
   },
-  // 从错题重做：复用刷题区（把这道题装进刷题组）
+  // 单题错因分析（手动触发，命中缓存时几乎瞬时返回）
+  gxAnalyzeWrong(w) {
+    if (this.gxWrongAnalyzing) return;
+    this.gxWrongAnalyzing = w.question_id;
+    this.api('/api/gx/wrong/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: this.user, question_id: w.question_id }),
+    }).then(d => {
+      const it = ((d && d.items) || [])[0];
+      if (!it || !it.ok) { this.showToast('分析失败，稍后再试'); return; }
+      this.gxReasonMap = Object.assign({}, this.gxReasonMap,
+        { [it.question_id]: reasonText(it) });
+    }).catch(() => this.showToast('分析失败，稍后再试'))
+      .finally(() => { this.gxWrongAnalyzing = 0; });
+  },
+  // 批量补分析（服务端每次最多 5 题，串行不并发避免超时）
+  gxAnalyzeWrongBatch() {
+    if (this.gxWrongBatchAnalyzing) return;
+    this.gxWrongBatchAnalyzing = true;
+    this.api('/api/gx/wrong/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: this.user, limit: 3 }),
+    }).then(d => {
+      const n = (d && d.analyzed) || 0;
+      this.showToast(n > 0 ? `已分析 ${n} 道错题` : '没有待分析的错题');
+      this.gxLoadWrong();
+    }).catch(() => this.showToast('分析失败，稍后再试'))
+      .finally(() => { this.gxWrongBatchAnalyzing = false; });
+  },
+  // 从错题重做：选择题复用刷题区；案例/论文跳到各自页签打开原题
   gxRetryWrong(w) {
+    if (w.kind === 'case') { this.gxSub = 'case'; this.gxOpenCase({ id: w.question_id }); return; }
+    if (w.kind === 'essay') { this.gxOpenEssayById(w.question_id); return; }
     this.gxSub = 'quiz';
-    this.gxQDomain = w.domain;
+    this.gxQScope = '';
+    this.gxQDomain = w.domain || '';
     this.gxQType = w.qtype === 'multi' ? 'multi' : 'single';
+    this.gxQSourceKind = ''; this.gxQChapter = '';
     this.gxQuestions = [{ id: w.question_id, qtype: w.qtype || 'single',
-                          question: w.question, options: w.options }];
+                          question: w.question, options: w.options,
+                          chapter: w.chapter, source_kind: w.source_kind }];
     this.gxAnswers = {}; this.gxQResult = null;
     this.gxQStartAt = Date.now();
   },
+  // 错因分析文本（错题本与刷题页共用）
+  gxReasonOf(qid) { return this.gxReasonMap[qid] || ''; },
 
   /* ─────────── 进度 ─────────── */
   gxLoadProgress() {
@@ -263,5 +603,7 @@ export const gaoxiangMethods = {
     if (sub === 'wrong') this.gxLoadWrong();
     if (sub === 'progress') this.gxLoadProgress();
     if (sub === 'knowledge' && !this.gxKList.length) this.gxLoadKnowledge();
+    if (sub === 'case' && !this.gxCaseList.length) this.gxLoadCaseList();
+    if (sub === 'essay' && !this.gxEssayList.length) this.gxLoadEssay();
   },
 };

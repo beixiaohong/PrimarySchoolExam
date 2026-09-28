@@ -272,21 +272,47 @@ cd web && node node_modules/vite/bin/vite.js build    # 前端构建（127 模�
 - 与 `regression_check.py` 第 [5] 项的分工：源码级（扫 `web/src`，严格相等，提交前发现）
   vs 产物级（扫 dist，宽松匹配，部署时发现），**互补而非重复实现**。
 
-## 🎯 高项备考模块（软考高级·信息系统项目管理师，2026-09-28 新增）
-**面向非学生成人用户**的独立备考入口：后端 `/api/gx`（11 端点，assessment 域），
+## 🎯 高项备考模块（软考高级·信息系统项目管理师，2026-09-28 新增/当日扩展完）
+**面向非学生成人用户**的独立备考入口：后端 `/api/gx`（**19 端点**，assessment 域），
 前端 tab `gaoxiang`（桌面侧边栏「学习」组；移动 TabBar 6 项已满故不加）。
+模块说明见 `docs/高项备考模块说明.md`（含资料流水线/错题闭环/表结构/端点表/踩坑）。
 - **与小学题库完全解耦**（小学 subject+grade 维度被错题/统计/收藏大量下游假设，
-  成人职业考试是「十大知识域 + 单选/多选/案例」，复用会污染小学口径）：
-  独立 6 表 `gx_knowledge / gx_questions / gx_attempts / gx_wrongs / gx_case_grades / gx_progress`
-  （迁移 `081_gaoxiang.py`，幂等）。
+  成人职业考试是「考纲 24 章 + 单选/多选/案例/论文」，复用会污染小学口径）：
+  独立 **7 表** `gx_knowledge / gx_questions / gx_attempts / gx_wrongs / gx_case_grades /
+  gx_progress / gx_materials`（迁移 `081_gaoxiang.py` + `082_gx_materials.py`，均幂等）。
 - **不挂 `check_quiet_hours`**：成人晚间备考是核心场景，宵禁只针对未成年人护眼。
-- 出题**题库优先**（先取用户未做过的落库题，不足才 AI 补生成并落库 → 同内容不重复扣费）；
-  **服务端判分**（答案存库不下发；多选须全对）；错题闭环同构小学（连对 3 次自动掌握）；
-  案例：AI 出大题 → 学员作答 → AI 按要点批改评分 0-100。
-- 真题导入预留口子：`gx_questions.source=ai|import` + `year`（导入工具待做）。
+- 出题**题库优先** + **服务端判分**（答案存库不下发；多选须全对）；错题闭环同构小学（连对 3 次自动掌握）。
 - 🚨 **`/quiz/generate` 必须用独立短会话回读**：AI 补题写库后用请求级会话（`Depends(get_db)`）
   回读会因 REPEATABLE READ 快照冻结读不到新行（症状："AI 出题成功但返 0 题"）。
   范式：短会话1 查题库 → **会话外**调 AI → 短会话2 回读。
-- 测试：`tests/test_gaoxiang.py` 26 例，AI 端点用 `monkeypatch.setattr(
-  "app.domains.platform.contracts.chat_with", fake)` 打桩（契约层惰性模块可直接改属性）。
-  验证"题库优先不调 AI"时 **count 必须等于库存数**（count>库存时 AI 补题是预期行为）。
+- 🚨 **题库取题必须在 SQL 层排除已做题**（`~exists()` 相关子查询）。旧实现「取 `n*8` 行再 Python 剔除」
+  在用户做满 40 道后窗口内全是旧题 → 明明有上千道真题却判「资料不够」回退 AI 出题（白扣费）。
+  防回归：`tests/test_gaoxiang.py::test_quiz_pick_excludes_done_at_sql_level`。
+- **考纲 24 章**（不是十大知识域）：真实资料覆盖全书，只认十大域会让大半题目无处归置。
+  章节归一三级回退：章号表达式 → 小节号（`第6.4.1节`→第6章）→ 域名反查（别名表长键优先）。
+
+### 备考资料 → 题库流水线（本地打包 → 线上写库）
+- `tools/gx_parse.py`（解析引擎：分类/章节归一/五种解析器/指纹）→
+  `tools/gx_pack.py`（本地跑，读 PDF 写 `data/gx_materials/pack_*.json` + manifest）→
+  scp 上传 → 线上 `tools/import_gx_materials.py load`（幂等 upsert，`stats`/`--dry-run` 先看）。
+- **四类**：知识点 / 选择题练习 / 案例分析练习 / 论文练习（未命中规则进「其他」归档并记 reason）。
+- 实测：602 文件 → 442 解析单元 → 去重后 **4544 条**（知识 2851 / 选择 1670 / 案例 17 / 论文 6）。
+- **幂等靠内容指纹**（sha1 前 16 位）唯一索引；`fingerprint` 列必须**可空**（唯一索引只允许一个 NULL，
+  AI 现场出的题不带指纹）。导入与 AI 生成共用同一指纹口径 → 不重复入库。
+- ⚠️ `tools/gx_pack.py` 前置自检 `gx.taxonomy_check()`：考纲归一不可用时**直接中止**
+  （否则 `_domains_of()` 静默吞异常 → 7000+ 条知识域全空）。
+- ⚠️ 解析器高发坑：选项分隔符要含全角句点 `．`（资料写 `A．技术创新；`）、
+  答案段判据（问题号回退/与题干重复行不计）、`无解析/有解析` 去重要在 **stem** 上判（不是带 `.pdf` 的路径）。
+
+### 错题闭环（用户核心需求：「做完自动分析错题 + 入库 + 后续重练」）
+- 入错题本：选择题答错；案例/论文批改 < 60 分（`SUBJECTIVE_PASS_SCORE`）。
+  **资料无参考答案的题 `judged=false`**：不判错、不入库、不计分（打印版约 5% 无答案，误判会污染错题本）。
+- **错因分析是懒生成**：判分接口必须快（一次最多 20 题），AI 分析每题数秒 → 不能同步做。
+  提交后前端立刻调 `POST /api/gx/wrong/analyze`（一次自动分析最多 3 题，其余错题本手动），
+  结果落 `gx_wrongs.wrong_reason` 缓存，再看不再扣费。
+- 重练：`quiz_pick(scope="wrong")` **不再过滤「做过的题」**（否则永远刷不到），按 `wrong_count` 降序。
+- `sub_questions` 三种形态：选择题 NULL；案例 `[{q,answer,points}]`（`answer` 是参考答案要点，
+  批改评分依据）；论文 `[{q,answer:"",points:0}]`（`q` 是论述要求）。
+- 测试：`tests/test_gx_materials.py` 39 例 + `tests/test_gaoxiang.py` 40 例，AI 用
+  `monkeypatch.setattr("app.domains.platform.contracts.chat_with", fake)` 打桩；
+  验证「题库优先不调 AI」时 **count 必须等于库存数**（count>库存时 AI 补题是预期行为）。

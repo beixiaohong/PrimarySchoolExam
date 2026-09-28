@@ -241,6 +241,40 @@ FLUSH PRIVILEGES;
 
 ---
 
+### 5.5 高项备考资料导入（可选，一次性）
+
+软考高项「PDF 备考资料 → 题库」分两段执行：**本地解析打包、线上写库**。
+拆成两段的原因：解析依赖 PyMuPDF 与 LibreOffice（本地方便），而写库必须落在线上库
+（本地 `.env` 指向的是线上库的**克隆**，铁律：绝不对克隆库跑写库脚本）。
+
+```bash
+# ① 本地：解析资料 → 数据包（不连数据库，约 45 秒）
+.venv/Scripts/python.exe tools/gx_pack.py \
+    --root "temp/软考【高项】2026年5月班备考资料" --out data/gx_materials
+# 产出 4 个包 + 清单：pack_knowledge.json / pack_choice.json / pack_case.json /
+#                      pack_essay.json / manifest.json（含分类明细与字段覆盖率）
+
+# ② 上传数据包到服务器（只传数据包，不传原始资料）
+scp -r data/gx_materials root@115.29.213.131:/home/PrimarySchoolExam/data/
+
+# ③ 线上：写库（幂等，可重复跑）
+cd /home/PrimarySchoolExam
+.venv/bin/python tools/import_gx_materials.py stats                    # 先看包里有几条
+.venv/bin/python tools/import_gx_materials.py load --dry-run --limit 200   # 试跑
+.venv/bin/python tools/import_gx_materials.py load                     # 正式入库
+.venv/bin/python tools/import_gx_materials.py materials --category 选择题练习
+```
+
+- 前置：迁移 `081_gaoxiang.py`（6 张备考表）与 `082_gx_materials.py`（资料归档表 + 资料维度列），
+  `deploy.sh` 重启时会自动执行，先部署再导入。
+- **幂等口径**：内容指纹（sha1 前 16 位，`gx_questions.fingerprint` / `gx_knowledge.fingerprint`
+  唯一索引）—— 重复导入只更新既有行，不会产生重复题。
+- 体量参考：602 个文件 → 442 个解析单元 → 去重后 4544 条（知识点 2851 / 选择题 1670 /
+  案例 17 / 论文 6）；写库分钟级。
+- 不导入也不影响使用：题库为空时刷题会退回 AI 现场出题（按 token 扣钻石）。
+
+---
+
 ## 6. 前端构建
 
 ### 6.1 孩子端（web/）
@@ -598,18 +632,20 @@ venv/bin/python tools/endpoint_snapshot.py
 ### 12.4 高项备考模块（面向非学生成人用户）
 
 软考高级「信息系统项目管理师」备考入口，与小学侧**完全解耦**（独立建表、独立错题闭环、
-独立进度口径），入口 `/api/gx`（11 个端点）+ 前端 tab `gaoxiang`。
+独立进度口径），入口 `/api/gx`（19 个端点）+ 前端 tab `gaoxiang`。
+模块细节见 [docs/高项备考模块说明.md](docs/高项备考模块说明.md)。
 
 | 项 | 说明 |
 |---|---|
-| 数据表 | `gx_knowledge` / `gx_questions` / `gx_attempts` / `gx_wrongs` / `gx_case_grades` / `gx_progress`（迁移 `081_gaoxiang.py`，幂等） |
-| 出题策略 | **题库优先**：先取该用户未做过的落库题，不足才 AI 补生成并落库 → 同一内容不重复扣费 |
-| 判分 | **服务端判分**（答案存库、不下发前端），多选须全对；错题闭环与小学同构（重做连对 3 次自动掌握） |
-| 案例分析 | AI 出大题（背景 + 子问题）→ 学员作答 → AI 按要点批改评分（0-100）并落 `gx_case_grades` |
-| 真题导入 | 预留口子：`gx_questions.source=ai\|import` + `year`（历年真题导入工具为后续项） |
+| 数据表 | `gx_knowledge` / `gx_questions` / `gx_attempts` / `gx_wrongs` / `gx_case_grades` / `gx_progress` / `gx_materials`（迁移 `081_gaoxiang.py` + `082_gx_materials.py`，幂等） |
+| 出题策略 | **题库优先**：先在 SQL 层排除该用户已做过的落库题（`NOT EXISTS` 子查询），不足才 AI 补生成并落库 → 同一内容不重复扣费 |
+| 判分 | **服务端判分**（答案存库、不下发前端），多选须全对；资料里没抓到参考答案的题 `judged=false`，不判错不入库 |
+| 错题闭环 | 答错（或案例/论文批改 < 60 分）→ 入错题本 → AI 错因分析落 `wrong_reason` 缓存 → 错题重练（错得多的先练），重做连对 3 次自动掌握 |
+| 案例 / 论文 | 资料真题可直接做；案例 AI 按要点批改，论文 AI 四维评分（切题 35 / 结构 25 / 实践 25 / 文字 15） |
+| 真题导入 | **已实现**：本地 `tools/gx_pack.py` 解析资料 → 数据包，线上 `tools/import_gx_materials.py load` 幂等入库（步骤见 [§5.5](#55-高项备考资料导入可选一次性)） |
 | **不挂宵禁** | 该模块**不挂** `check_quiet_hours` —— 面向成人，晚间备考是核心场景；宵禁只针对未成年人护眼 |
 | 移动端 | TabBar 固定 6 项已满，入口仅桌面侧边栏「学习」组 |
-| 计费 | AI 调用按 token 扣钻（`gx_knowledge`/`gx_quiz`/`gx_case`），计费失败不阻断 |
+| 计费 | AI 调用按 token 扣钻（`gx_knowledge`/`gx_quiz`/`gx_case`/`gx_essay`/`gx_wrong`），计费失败不阻断 |
 
 > 铁律依旧：AI 调用一律在 DB 会话之外执行（`chat_with` 可能重试数秒），成功后才开短会话
 > 落库/扣费；`/quiz/generate` 因需回读 AI 刚落库的新行，全程使用独立短会话

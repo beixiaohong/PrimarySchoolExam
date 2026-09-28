@@ -20,7 +20,7 @@ from app.database import SessionLocal
 from app.models.gaoxiang import (GxKnowledge, GxQuestion, GxAttempt,
                                  GxWrong, GxCaseGrade, GxProgress)
 from app.domains.assessment.services.gaoxiang import (
-    GX_DOMAINS, MASTER_STREAK, QTYPE_SINGLE, QTYPE_MULTI, QTYPE_CASE,
+    GX_DOMAINS, MASTER_STREAK, QTYPE_SINGLE, QTYPE_MULTI, QTYPE_CASE, QTYPE_ESSAY,
     normalize_letters, grade_choice, parse_questions, parse_case,
     parse_knowledge, progress_overview, record_choice_attempt,
 )
@@ -117,7 +117,11 @@ def test_domains_endpoint(client):
     assert r.status_code == 200
     body = r.json()
     assert body["domains"] == GX_DOMAINS
-    assert len(body["domains"]) == 10
+    # 完整考纲 = 第1~24章（早期只列十大知识域，导入资料覆盖全 24 章后扩展）
+    assert len(body["domains"]) == 24
+    assert len(set(body["domains"])) == 24          # 无重名
+    for must in ("信息化发展", "进度管理", "绩效域", "法律法规与标准规范"):
+        assert must in body["domains"]
 
 
 # ── ② 判分纯函数 ──
@@ -404,6 +408,374 @@ def test_record_choice_attempt_multi_partial_is_wrong(db_session=None):
         assert out["is_correct"] is False
         wrong = s.query(GxWrong).filter_by(user_id=uid, question_id=qid).first()
         assert wrong is not None and wrong.wrong_count == 1
+    finally:
+        _cleanup(uid)
+        s.close()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 备考资料导入扩展（082）：筛选出题 / 案例·论文入口 / 错因分析 / 资料审计
+# 覆盖需求：「分类存储四类资料」+「做完自动分析错题并入库、后续重练」
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _seed_imported(db, qtype=QTYPE_SINGLE, answer="B", domain="质量管理",
+                   chapter="第12章 质量管理", source_kind="每日一练",
+                   title="", sub=None, question="高项导入题：控制质量的输出是什么？"):
+    """模拟一条「资料导入」的题（带资料维度字段）"""
+    q = GxQuestion(domain=domain, qtype=qtype, question=question, title=title,
+                   chapter=chapter, source_kind=source_kind, source_file="t.pdf",
+                   deck="", seq=1,
+                   options_json=json.dumps(["A. 变更请求", "B. 核实的可交付成果",
+                                            "C. 工作绩效信息", "D. 质量报告"],
+                                           ensure_ascii=False) if qtype != QTYPE_CASE else None,
+                   answer=answer, analysis="质量控制的输出含核实的可交付成果。",
+                   sub_questions=json.dumps(sub, ensure_ascii=False) if sub else None)
+    db.add(q)
+    db.commit()
+    return q.id
+
+
+# ── ① 无参考答案的题不得被判错（打印版资料本来就无答案） ──
+
+def test_quiz_submit_unanswered_question_is_not_judged(client):
+    s = SessionLocal()
+    try:
+        qid = _seed_imported(s, answer="", question="高项导入题：本题资料未给答案？")
+    finally:
+        s.close()
+    r = client.post("/api/gx/quiz/submit", json={
+        "user_id": GX_UID, "answers": [{"question_id": qid, "answer": "A"}]})
+    assert r.status_code == 200
+    out = r.json()["results"][0]
+    assert out["judged"] is False and out["is_correct"] is None
+    assert r.json()["wrong_count"] == 0
+    s = SessionLocal()
+    try:
+        # 不判错 → 不污染错题本（否则正确答案的题会被反复塞进错题本）
+        assert s.query(GxWrong).filter_by(user_id=GX_UID, question_id=qid).first() is None
+        assert s.query(GxAttempt).filter_by(user_id=GX_UID, question_id=qid).count() == 1
+    finally:
+        s.close()
+
+
+# ── ② 资料维度出题与筛选 ──
+
+def test_quiz_generate_filters_by_source_and_chapter(client, fake_ai):
+    s = SessionLocal()
+    try:
+        hit = _seed_imported(s, question="高项导入题：命中筛选的题？")
+        _seed_imported(s, source_kind="仿真模拟", chapter="第10章 进度管理",
+                       question="高项导入题：不该被选中的题？")
+    finally:
+        s.close()
+    r = client.post("/api/gx/quiz/generate", json={
+        "user_id": GX_UID, "qtype": "single", "count": 5, "source": "import",
+        "source_kind": "每日一练", "chapter": "第12章 质量管理"})
+    assert r.status_code == 200
+    ids = [q["id"] for q in r.json()["questions"]]
+    assert ids == [hit]
+    assert fake_ai == []                       # source=import → 不调 AI、不扣费
+    assert r.json()["questions"][0]["chapter"] == "第12章 质量管理"
+
+
+def test_quiz_generate_scope_wrong_repractices_done_questions(client):
+    """错题重练：必须能出「已做过」的题（常规出题会把它排除掉）"""
+    s = SessionLocal()
+    try:
+        qid = _seed_imported(s, answer="B", question="高项导入题：错题重练习题？")
+    finally:
+        s.close()
+    # 先做一遍（答错）→ 进错题本
+    client.post("/api/gx/quiz/submit", json={
+        "user_id": GX_UID, "answers": [{"question_id": qid, "answer": "A"}]})
+    # 常规出题不会再出这道
+    r = client.post("/api/gx/quiz/generate", json={
+        "user_id": GX_UID, "qtype": "single", "count": 5, "source": "import"})
+    assert qid not in [q["id"] for q in r.json()["questions"]]
+    # 错题重练能出
+    r = client.post("/api/gx/quiz/generate", json={
+        "user_id": GX_UID, "qtype": "single", "count": 5, "scope": "wrong"})
+    assert r.json()["scope"] == "wrong"
+    assert qid in [q["id"] for q in r.json()["questions"]]
+
+
+def test_quiz_generate_rejects_bad_scope(client):
+    r = client.post("/api/gx/quiz/generate", json={
+        "user_id": GX_UID, "qtype": "single", "scope": "whatever"})
+    assert r.status_code == 400
+
+
+def test_quiz_pick_excludes_done_at_sql_level(client):
+    """防回归：已做题必须在 SQL 层排除，不能用「取 n*8 行再删」
+
+    旧实现取窗口 = n*8 行后才剔除已做题：用户做过 25 道、请求 3 道时（窗口 24 行全做过）
+    会误判「资料不够」→ 回退 AI 出题（白扣费），而库里其实还有上百道没做过的真题。
+    """
+    uid = "gx_test_uid_sqlwin"
+    kind = "SQL窗口回归"          # 专属资料子类：把本用例的题与库里其他残留题隔开
+    n = 30
+    s = SessionLocal()
+    try:
+        ids = []
+        for i in range(n):
+            q = GxQuestion(domain="质量管理", qtype=QTYPE_SINGLE,
+                           question=f"高项导入题：SQL 窗口回归 {i}？", answer="B",
+                           chapter="第12章 质量管理", source_kind=kind)
+            s.add(q)
+            s.flush()
+            ids.append(q.id)
+        s.commit()
+        # 前 25 道已做（> 旧窗口 n*8=24），剩 5 道没做过
+        for qid in ids[:25]:
+            s.add(GxAttempt(user_id=uid, question_id=qid, user_answer="A",
+                            is_correct=False, duration_ms=0))
+        s.commit()
+    finally:
+        s.close()
+    try:
+        r = client.post("/api/gx/quiz/generate", json={
+            "user_id": uid, "qtype": "single", "count": 3, "source": "import",
+            "source_kind": kind})
+        assert r.status_code == 200
+        got = [q["id"] for q in r.json()["questions"]]
+        assert len(got) == 3, "窗口内已做不应导致判定「没题了」"
+        assert all(g in ids[25:] for g in got)      # 只会抽到没做过的
+    finally:
+        s = SessionLocal()
+        try:
+            s.query(GxAttempt).filter(GxAttempt.user_id == uid).delete()
+            s.query(GxQuestion).filter(GxQuestion.id.in_(ids)).delete(
+                synchronize_session=False)
+            s.commit()
+        finally:
+            s.close()
+
+
+# ── ③ 筛选项与资料审计端点 ──
+
+def test_catalog_endpoint(client):
+    s = SessionLocal()
+    try:
+        _seed_imported(s, question="高项导入题：catalog 用题？")
+    finally:
+        s.close()
+    r = client.get("/api/gx/catalog")
+    assert r.status_code == 200
+    body = r.json()
+    kinds = {k["value"]: k["count"] for k in body["source_kinds"]}
+    chapters = {c["value"]: c["count"] for c in body["chapters"]}
+    assert kinds.get("每日一练", 0) >= 1
+    assert chapters.get("第12章 质量管理", 0) >= 1
+    assert body["qtypes"].get("single", 0) >= 1
+
+
+def test_materials_endpoint(client):
+    from app.models.gaoxiang import GxMaterial
+    s = SessionLocal()
+    try:
+        s.query(GxMaterial).filter(GxMaterial.rel_path == "t/测试资料.pdf").delete()
+        s.add(GxMaterial(rel_path="t/测试资料.pdf", category="选择题练习",
+                         sub_kind="每日一练", title="测试资料", ext="pdf",
+                         size_bytes=1, items=5, reason="命中规则"))
+        s.commit()
+    finally:
+        s.close()
+    r = client.get("/api/gx/materials?category=选择题练习")
+    assert r.status_code == 200
+    body = r.json()
+    assert any(m["rel_path"] == "t/测试资料.pdf" for m in body["items"])
+    assert any(x["sub_kind"] == "每日一练" for x in body["summary"])
+    s = SessionLocal()
+    try:
+        s.query(GxMaterial).filter(GxMaterial.rel_path == "t/测试资料.pdf").delete()
+        s.commit()
+    finally:
+        s.close()
+
+
+# ── ④ 案例题入口 ──
+
+SUB = [{"q": "请指出存在的问题", "answer": "未制定计划", "points": 10}]
+
+
+def test_case_list_and_detail(client):
+    s = SessionLocal()
+    try:
+        qid = _seed_imported(s, qtype=QTYPE_CASE, answer="", title="试题一",
+                             source_kind="案例专题", chapter="第8章 整体管理",
+                             domain="整体管理", sub=SUB,
+                             question="高项导入案例：某公司承接政务项目……")
+    finally:
+        s.close()
+    r = client.get(f"/api/gx/case/list?user_id={GX_UID}&source_kind=案例专题")
+    assert r.status_code == 200
+    rows = r.json()["items"]
+    assert [x["id"] for x in rows] == [qid]
+    assert rows[0]["sub_count"] == 1 and rows[0]["title"] == "试题一"
+
+    r = client.get(f"/api/gx/case/{qid}?user_id={GX_UID}")
+    body = r.json()
+    assert body["sub_questions"][0]["points"] == 10
+    assert "政务项目" in body["background"]
+    # 题型不匹配必须 400（论文详情接口不认案例题）
+    assert client.get(f"/api/gx/essay/{qid}?user_id={GX_UID}").status_code == 400
+
+
+def test_case_grade_below_pass_enrolls_wrong_book(client, fake_ai, monkeypatch):
+    """案例批改低于及格线（60）自动进错题本，供后续「错题重练」"""
+    s = SessionLocal()
+    try:
+        qid = _seed_imported(s, qtype=QTYPE_CASE, answer="", title="试题一",
+                             sub=SUB, question="高项导入案例：背景材料……")
+    finally:
+        s.close()
+    monkeypatch.setattr("app.domains.assessment.routers.gaoxiang._call_ai",
+                        lambda *a, **k: {"text": json.dumps(
+                            {"score": 40, "feedback": "要点几乎全漏"},
+                            ensure_ascii=False), "prompt_tokens": 10, "completion_tokens": 5})
+    r = client.post("/api/gx/case/grade", json={
+        "user_id": GX_UID, "question_id": qid, "user_answer": "随便答几句"})
+    assert r.status_code == 200
+    assert r.json()["score"] == 40 and r.json()["in_wrong_book"] is True
+    s = SessionLocal()
+    try:
+        w = s.query(GxWrong).filter_by(user_id=GX_UID, question_id=qid).first()
+        assert w is not None and w.kind == "case" and w.last_score == 40
+    finally:
+        s.close()
+    # 错题本按题型分栏能捞到案例题
+    r = client.get(f"/api/gx/wrong?user_id={GX_UID}&kind=case")
+    assert [i["question_id"] for i in r.json()["items"]] == [qid]
+    assert r.json()["by_kind"]["case"] == 1
+
+
+# ── ⑤ 论文题入口与四维评分 ──
+
+def test_essay_list_detail_and_grade(client, monkeypatch):
+    s = SessionLocal()
+    try:
+        qid = _seed_imported(s, qtype=QTYPE_ESSAY, answer="", title="论信息系统项目的范围管理",
+                             domain="范围管理", chapter="第9章 范围管理",
+                             source_kind="论文练习", question="实施项目范围管理的目的……",
+                             sub=[{"q": "1、概要叙述你参与的项目", "answer": "", "points": 0},
+                                  {"q": "2、论述你对范围管理的认识", "answer": "", "points": 0}])
+    finally:
+        s.close()
+    r = client.get(f"/api/gx/essay/list?user_id={GX_UID}")
+    assert [x["id"] for x in r.json()["items"]] == [qid]
+    assert r.json()["items"][0]["title"].startswith("论信息系统项目")
+
+    # 正文太短 → 400（论文必须有分量）
+    assert client.post("/api/gx/essay/grade", json={
+        "user_id": GX_UID, "question_id": qid, "user_answer": "太短"}).status_code == 400
+
+    fake = json.dumps({"rubric": [
+        {"dim": "relevance", "score": 80, "comment": "切题"},
+        {"dim": "structure", "score": 60, "comment": "过程描述略粗"},
+        {"dim": "practice", "score": 70, "comment": "有数据"},
+        {"dim": "writing", "score": 90, "comment": "流畅"}],
+        "feedback": "总体不错，过程描述再细化"}, ensure_ascii=False)
+    monkeypatch.setattr("app.domains.assessment.routers.gaoxiang._call_ai",
+                        lambda *a, **k: {"text": fake, "prompt_tokens": 10,
+                                         "completion_tokens": 5})
+    r = client.post("/api/gx/essay/grade", json={
+        "user_id": GX_UID, "question_id": qid, "user_answer": "正文" * 200})
+    assert r.status_code == 200
+    body = r.json()
+    # 加权总分 = (80*35 + 60*25 + 70*25 + 90*15) / 100 = 74
+    assert body["score"] == 74
+    assert len(body["rubric"]) == 4
+    assert body["in_wrong_book"] is False            # 达线不入错题本
+    s = SessionLocal()
+    try:
+        g = s.query(GxCaseGrade).filter_by(user_id=GX_UID).first()
+        assert g.kind == "essay" and g.rubric_json and json.loads(g.rubric_json)[0]["label"] == "切题与完整性"
+    finally:
+        s.close()
+
+
+# ── ⑥ 错因分析（懒生成 + 缓存） ──
+
+def test_wrong_analyze_generates_and_caches(client, monkeypatch):
+    s = SessionLocal()
+    try:
+        qid = _seed_imported(s, answer="B", question="高项导入题：错因分析用题？")
+    finally:
+        s.close()
+    client.post("/api/gx/quiz/submit", json={
+        "user_id": GX_UID, "answers": [{"question_id": qid, "answer": "A"}]})
+
+    fake = json.dumps({"reason_type": "概念混淆", "analysis": "你把XX和YY搞混了。",
+                       "tips": "口诀：先章程后计划"}, ensure_ascii=False)
+    seen = []
+
+    def _ai(user_id, system, user, max_tokens=900, **kw):
+        seen.append(user)
+        return {"text": fake, "prompt_tokens": 10, "completion_tokens": 5}
+
+    monkeypatch.setattr("app.domains.assessment.routers.gaoxiang._call_ai", _ai)
+    r = client.post("/api/gx/wrong/analyze", json={"user_id": GX_UID,
+                                                  "question_id": qid})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["analyzed"] == 1
+    assert body["items"][0]["reason_type"] == "概念混淆"
+    assert "概念混淆" in seen[0] or "题干" in seen[0]      # prompt 带上了题目与错选
+
+    # 已分析的题不再重复扣费（默认只看 wrong_reason 为空的）
+    r2 = client.post("/api/gx/wrong/analyze", json={"user_id": GX_UID, "limit": 5})
+    assert r2.json()["analyzed"] == 0
+    # 错题列表带上缓存的错因
+    rows = client.get(f"/api/gx/wrong?user_id={GX_UID}").json()["items"]
+    target = [x for x in rows if x["question_id"] == qid][0]
+    assert "你把XX和YY搞混了" in target["wrong_reason"]
+    assert target["kind"] == "choice"
+
+
+# ── ⑦ 纯函数：论文加权与错因 prompt ──
+
+def test_parse_essay_grade_weights_rubric():
+    from app.domains.assessment.services.gaoxiang import parse_essay_grade
+    fake = json.dumps({"rubric": [{"dim": "relevance", "score": 100, "comment": ""},
+                                  {"dim": "structure", "score": 100, "comment": ""},
+                                  {"dim": "practice", "score": 100, "comment": ""},
+                                  {"dim": "writing", "score": 100, "comment": ""}],
+                       "feedback": "满分"}, ensure_ascii=False)
+    got = parse_essay_grade(fake)
+    assert got["score"] == 100 and len(got["rubric"]) == 4
+    # 只有总分没有四维 → 用总分兜底
+    assert parse_essay_grade('{"score": 55, "feedback": "x"}')["score"] == 55
+    assert parse_essay_grade("不是 JSON") is None
+
+
+def test_build_wrong_analysis_prompt_includes_choices():
+    from app.domains.assessment.services.gaoxiang import build_wrong_analysis_prompt
+    q = GxQuestion(domain="质量管理", qtype=QTYPE_SINGLE, question="题干E",
+                   options_json=json.dumps(["A. 甲", "B. 乙"], ensure_ascii=False),
+                   answer="B", analysis="解析E")
+    text = build_wrong_analysis_prompt(q, "A")
+    for must in ("题干E", "A. 甲", "正确答案：B", "考生所选：A", "解析E"):
+        assert must in text
+
+
+def test_record_subjective_grade_pass_accumulates_streak():
+    """主观题达线 → 累计连对、更新最高分；未达线 → 入错题本并记 last_score"""
+    from app.domains.assessment.services.gaoxiang import record_subjective_grade
+    s = SessionLocal()
+    uid = "gx_test_uid_subj"
+    _cleanup(uid)
+    try:
+        qid = _seed_imported(s, qtype=QTYPE_CASE, answer="", sub=SUB,
+                             question="高项导入案例：主观题连对测试……")
+        q = s.get(GxQuestion, qid)
+        out = record_subjective_grade(s, uid, q, "case", 40)
+        assert out["passed"] is False and out["added"] is True
+        w = s.query(GxWrong).filter_by(user_id=uid, question_id=qid).first()
+        assert w.kind == "case" and w.last_score == 40 and w.best_score == 40
+        # 重做达线 → 连对 1 次，最高分更新，但仍未掌握
+        record_subjective_grade(s, uid, q, "case", 85)
+        s.refresh(w)
+        assert w.correct_streak == 1 and w.best_score == 85 and w.is_mastered is False
     finally:
         _cleanup(uid)
         s.close()
