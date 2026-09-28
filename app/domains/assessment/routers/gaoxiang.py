@@ -189,39 +189,46 @@ def _gen_questions(req: QuizGenReq, need: int) -> list:
 
 
 @router.post("/quiz/generate", summary="刷题出题（题库优先，不足 AI 补）")
-def quiz_generate(req: QuizGenReq, db: Session = Depends(get_db)):
+def quiz_generate(req: QuizGenReq):
+    """不依赖 Depends(get_db)：AI 补题写库后需回读新行，请求级会话在
+    REPEATABLE READ 下快照冻结读不到 —— 全程用独立短会话（与铁律一致）。"""
     _check_domain(req.domain)
     if req.qtype not in (gx.QTYPE_SINGLE, gx.QTYPE_MULTI):
         raise HTTPException(400, "qtype 只能是 single 或 multi（案例题走 /case/generate）")
     count = max(1, min(int(req.count or 5), 10))
 
-    # 1) 题库优先：取该用户在此题型/知识域下未做过的题
-    done = {r[0] for r in db.query(GxAttempt.question_id)
-            .filter(GxAttempt.user_id == req.user_id).all()}
-    rows = (db.query(GxQuestion)
-            .filter(GxQuestion.domain == req.domain, GxQuestion.qtype == req.qtype)
-            .order_by(GxQuestion.id).all())
-    fresh = [r for r in rows if r.id not in done]
-    picked = fresh[:count]
+    # 1) 题库优先（短会话一）：取该用户在此题型/知识域下未做过的题
+    picked_ids = []
+    s1 = SessionLocal()
+    try:
+        done = {r[0] for r in s1.query(GxAttempt.question_id)
+                .filter(GxAttempt.user_id == req.user_id).all()}
+        rows = (s1.query(GxQuestion.id)
+                .filter(GxQuestion.domain == req.domain, GxQuestion.qtype == req.qtype)
+                .order_by(GxQuestion.id).all())
+        picked_ids = [r[0] for r in rows if r[0] not in done][:count]
+    finally:
+        s1.close()
 
-    # 2) 不足则 AI 补生成落库（新会话写库后回读 id）
-    if len(picked) < count:
-        need = count - len(picked)
-        req.count = need
-        new_ids = _gen_questions(req, need)
-        if new_ids:
-            new_rows = db.query(GxQuestion).filter(GxQuestion.id.in_(new_ids)).all()
-            picked.extend(new_rows)
+    # 2) 不足则 AI 补生成落库（会话外调 AI；_gen_questions 内部用独立会话写库）
+    if len(picked_ids) < count:
+        picked_ids.extend(_gen_questions(req, count - len(picked_ids)))
 
-    import json as _json
+    # 3) 短会话二回读（能读到 AI 刚落库的新行）
     items = []
-    for r in picked:
-        try:
-            options = _json.loads(r.options_json) if r.options_json else None
-        except ValueError:
-            options = None
-        items.append({"id": r.id, "qtype": r.qtype, "question": r.question,
-                      "options": options})
+    s2 = SessionLocal()
+    try:
+        import json as _json
+        for r in s2.query(GxQuestion).filter(GxQuestion.id.in_(picked_ids)) \
+                   .order_by(GxQuestion.id).all():
+            try:
+                options = _json.loads(r.options_json) if r.options_json else None
+            except ValueError:
+                options = None
+            items.append({"id": r.id, "qtype": r.qtype, "question": r.question,
+                          "options": options})
+    finally:
+        s2.close()
     return {"domain": req.domain, "qtype": req.qtype, "count": len(items), "questions": items}
 
 

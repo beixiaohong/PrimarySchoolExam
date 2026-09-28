@@ -7,8 +7,11 @@ output/
 primary_school.db
 web/node_modules/
 web/dist/
+# vite 加载配置时会生成的时间戳临时文件（构建后残留，不应入库）
+web/vite.config.js.timestamp-*.mjs
 admin/node_modules/
 admin/dist/
+admin/vite.config.js.timestamp-*.mjs
 tools/mysql_backup_*.json
 demo/
 .paper_cache/
