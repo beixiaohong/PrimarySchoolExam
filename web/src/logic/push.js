@@ -60,6 +60,10 @@ export function pushData() {
     pushQuietForm: { start: '', end: '' },   // 免打扰时段编辑态
     pushEventFields: PUSH_EVENT_FIELDS,
     pushDevices: 0,         // 本账号已登记的有效订阅设备数
+    // OneSignal 脚本未能加载（被浏览器跟踪防护 / 广告拦截拦掉）。
+    // 之前这种情况是**彻底静默**的：SDK 不出现 → 不弹授权提示 → 用户以为功能坏了。
+    // 见 pushStatusText 与 _pushLoadSdk 的超时兜底。
+    pushSdkError: '',
   };
 }
 
@@ -72,6 +76,12 @@ export const pushComputed = {
   pushStatusText() {
     if (!this.pushRaw) return '检查中…';
     if (!this.pushEnabled) return '未启用（管理后台尚未配置推送密钥）';
+    // 最容易被误判成「功能坏了」的一类：脚本压根没加载成功。
+    // 常见于 Edge「严格」跟踪防护、Firefox「严格」、uBlock/AdGuard 等把
+    // onesignal.com 当广告追踪器拦掉（它在 disconnect.me 列表里属 Advertising 类）。
+    if (this.pushSdkError) {
+      return '推送脚本未能加载（多为浏览器跟踪防护/广告拦截），放行本网站后刷新';
+    }
     if (this.pushPermission === 'denied') return '已被浏览器阻止，请在浏览器设置中允许通知';
     if (this.pushOptedIn) {
       const extra = this.pushDevices > 1 ? '，共 ' + this.pushDevices + ' 台设备' : '';
@@ -104,17 +114,43 @@ export const pushMethods = {
   },
 
   // 动态注入 OneSignal 页面脚本（只注入一次）
+  //
+  // ⚠️ 必须带超时兜底：脚本被跟踪防护 / 广告拦截拦掉时，`onerror` **不保证触发**
+  // （请求可能在浏览器内部就被丢弃）。没有超时的话这个 Promise 会永远 pending，
+  // 界面停在「未开启」，用户和我们都拿不到任何线索 —— 线上真实踩过。
   _pushLoadSdk() {
     if (window.OneSignal && window.OneSignal.User) return Promise.resolve(window.OneSignal);
     if (this._osPromise) return this._osPromise;
+    const self = this;
     this._osPromise = new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        self._osPromise = null;                 // 允许下一次登录重试
+        self.pushSdkError = 'SCRIPT_BLOCKED';
+        reject(new Error('OneSignal SDK 加载超时（脚本可能被浏览器拦截）'));
+      }, 10000);
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       // v16 的 SDK 通过 OneSignalDeferred 队列回调交付实例
-      window.OneSignalDeferred.push(function (OneSignal) { resolve(OneSignal); });
+      window.OneSignalDeferred.push(function (OneSignal) {
+        clearTimeout(timer);
+        if (settled) return;                    // 已判失败：不翻转界面状态
+        settled = true;
+        self.pushSdkError = '';
+        resolve(OneSignal);
+      });
       const s = document.createElement('script');
       s.src = OS_SDK_SRC;
       s.defer = true;
-      s.onerror = () => { this._osPromise = null; reject(new Error('OneSignal SDK 加载失败')); };
+      s.onerror = () => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        this._osPromise = null;
+        this.pushSdkError = 'SCRIPT_BLOCKED';
+        reject(new Error('OneSignal SDK 加载失败'));
+      };
       document.head.appendChild(s);
     });
     return this._osPromise;
@@ -205,7 +241,11 @@ export const pushMethods = {
   pushToggleDevice() {
     if (this.pushLoading) return;
     if (!this._osInited || !this._os) {
-      this.showToast('推送服务未就绪，请刷新页面后重试');
+      // 区分「还在加载」与「已经确定加载不上」：后者要给出可执行的下一步，
+      // 否则用户只会反复点开关、反复刷新，永远不知道是浏览器把脚本拦了。
+      this.showToast(this.pushSdkError
+        ? '推送脚本被浏览器拦截：请关闭跟踪防护/广告拦截后刷新页面'
+        : '推送服务未就绪，请刷新页面后重试');
       return;
     }
     const self = this;

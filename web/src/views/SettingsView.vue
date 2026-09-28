@@ -66,6 +66,12 @@
             <b>🔔 消息推送</b>
             <span class="more">{{appCtx.pushStatusText}}</span>
           </div>
+          <!-- SDK 脚本被浏览器拦掉时不会弹授权提示：必须给出可执行的下一步，否则用户只会反复点开关 -->
+          <div class="push-hint push-alert" v-if="appCtx.pushSdkError">
+            浏览器把推送脚本当作广告追踪器拦掉了（OneSignal 在跟踪防护列表里属「广告」类），
+            所以一直没有弹出授权提示。请把本网站加入「跟踪防护 / 广告拦截」的例外，然后刷新页面。<br>
+            <b>Edge</b>：设置 → 隐私、搜索和服务 → 跟踪防护 → 例外 → 添加本站域名
+          </div>
           <!-- 设备开关：浏览器授权的真实开关（关掉后本机不再收到任何推送） -->
           <div class="info-row">
             <span>本设备接收推送</span>
@@ -146,6 +152,9 @@ export default {
 <style scoped>
 /* 推送设置专用样式：卡片/行/按钮沿用全局的 set-card / info-row / btn，这里只补两处新元素 */
 .push-hint{font-style:normal;font-size:12px;color:var(--muted,#909399);line-height:1.5}
+/* 被浏览器拦截时的醒目提示（普通 .push-hint 是灰色小字，不够引起注意） */
+.push-alert{margin:8px 0 4px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.7;
+  background:#FFF7E6;border:1px solid #F5D08A;color:#8A5A00}
 .push-time{padding:6px 8px;border:1px solid #E5E1F5;border-radius:8px;font-size:13px;
   background:var(--card,#fff);color:inherit}
 </style>

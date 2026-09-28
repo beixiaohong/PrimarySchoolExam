@@ -438,6 +438,9 @@ curl -s -o /dev/null -w "%{http_code}\n" https://liusijin.com/api/push/zzz-not-e
 
 ## 12. 运维排查速查
 
+**排查第 0 步：先确认前端的推送脚本有没有被浏览器拦掉**。若用户说「从来没见到过授权提示」，
+大概率不是后端问题，而是浏览器把 OneSignal 当广告追踪器阻止了加载 —— 见 **§13**（含放行步骤）。
+
 **排查第一步：先分清「配置错」与「没人订阅」**。后台日志只显示「失败」，
 但这两类原因的处理方向完全相反（一个去改密钥、一个去让用户授权），必须先分开。
 探测工具直接问 OneSignal 侧要事实：
@@ -488,3 +491,99 @@ curl -s -D - -o /dev/null https://liusijin.com/OneSignalSDKWorker.js | head -8
 | 200 无 id | 受众里没有有效订阅（两条发送路径均已判定为失败并记 `no_subscription`） |
 | 结果=失败但错误列空白 | 2026-09-28 前 `send_to_all` 的缺陷，已修；历史记录仍可能是空的，看 `push_logs.http_status`（200 = 无订阅者） |
 | 同一天没收到定时提醒 | `dedup_key` 当天已用过（正常幂等），或该用户被偏好/免打扰/日限挡住 |
+
+---
+
+## 13. 浏览器跟踪防护会把 OneSignal 拦掉（2026-09-28 定位，重要）
+
+### 13.1 事实：OneSignal 在跟踪防护列表里属于「广告」
+
+Microsoft Edge 的跟踪防护**直接使用 disconnect.me 的开源 Tracker Protection 列表**做分类
+（Edge 官方文档 *Tracking prevention in Microsoft Edge*）。在该列表中：
+
+```
+分类 Advertising → 公司条目 OneSignal → 归属域名 onesignal.com
+```
+
+`cdn.onesignal.com`（SDK 脚本、SW 的 importScripts 目标）与 `api.onesignal.com`
+（拉配置 / 注册订阅 / 上报 external_id）都是它的子域，按 Edge 的后缀匹配规则
+（最多回溯 4 层标签）**都会被判定为广告追踪器**。
+
+### 13.2 Edge 各防护级别对「广告」类的处置（官方表）
+
+| 级别 | Advertising | Analytics | Content | Fingerprinting | Social |
+|---|---|---|---|---|---|
+| 基本 Basic | – | – | – | 阻止存储+加载 | – |
+| **均衡 Balanced（默认）** | **仅阻止存储** | – | 仅阻止存储 | 阻止存储+加载 | 仅阻止存储 |
+| 严格 Strict | **阻止存储 + 阻止加载** | 阻止存储+加载 | 仅阻止存储 | 阻止存储+加载 | 阻止存储+加载 |
+
+（– = 不拦；「阻止加载」= 请求在到达网络之前就被丢弃）
+
+这解释了两件事：
+
+- **默认「均衡」的用户仍能订阅**：广告类只被挡 localStorage/IndexedDB，脚本本身照常下载。
+- **「严格」的用户彻底收不到**：`cdn.onesignal.com` 被阻止加载 → `window.OneSignal` 永不出现
+  → 前端**连授权提示都不会弹**（不是用户点了拒绝，而是根本没机会问）
+  → 后端所有推送必然 `no_subscription`。
+
+同样效果的还有：Firefox「严格」跟踪保护、uBlock Origin / AdGuard 等拦截扩展、
+Brave Shields，以及企业终端的策略强制。
+
+### 13.3 🚫 一条走过的弯路：自托管 SDK 资源**解决不了**这个问题
+
+直觉是「把 `OneSignalSDK.page.es6.js` 下载到自己域名、SW 改成
+`importScripts('/OneSignalSDK.sw.js')`」就能绕过拦截。**分析后否掉了**：
+
+- 静态脚本换成第一方确实能加载；
+- 但 SDK 运行期仍必须请求 **`api.onesignal.com`**（拉配置、注册订阅、上报 external_id），
+  它与 `cdn.onesignal.com` 同属 `onesignal.com` 实体 → Strict 下照样**阻止加载**
+  → 订阅仍然建不起来。
+
+也就是说，自托管只能骗过「按 URL 匹配」的静态拦截，骗不过「按域名清单」的跟踪防护，
+反而多背两个需要手动跟进版本升级的第三方文件。**不要走这条路。**
+
+> 附带发现：v16 的 `OneSignalSDK.page.js` 只是 590 字节的 loader，内部**硬编码**了
+> `https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.es6.js?v=160610`，
+> 所以连 loader 本身也没法自托管。
+
+### 13.4 让用户放行（可照抄的步骤）
+
+| 浏览器 | 操作 |
+|---|---|
+| **Edge** | 设置 → 隐私、搜索和服务 → **跟踪防护** → 「例外」→ 添加本站域名（须带 `https://`，如 `https://liusijin.com`）；或点地址栏左侧的锁形图标 → 「跟踪器」→ **允许此站点上的跟踪器**。若级别是「严格」，也可临时改回默认的「均衡」 |
+| **Chrome** | 默认不拦第三方脚本加载；若装了 uBlock/AdGuard，在扩展里放行即可 |
+| **Firefox** | 地址栏盾牌图标 → 关闭「此网站的增强跟踪保护」；或设置 → 隐私 → 把本站加入例外 |
+| **拦截扩展** | uBlock Origin / AdGuard 等对当前站点关闭，或把 `onesignal.com` 加入允许清单 |
+
+放行后**必须做两步**才生效：
+
+1. 强制刷新页面（`Ctrl+Shift+R`）；
+2. 若此前 SW 注册失败过，先清掉坏状态：DevTools → Application → Service Workers →
+   **Unregister**，再刷新。
+
+### 13.5 怎么确认「确实被拦了」
+
+1. **界面**：设置页「🔔 消息推送」的状态会直接显示
+   **「推送脚本未能加载（多为浏览器跟踪防护/广告拦截）」** —— 前端在 SDK 注入处加了
+   10 秒超时兜底（脚本被拦时 `onerror` **不保证触发**，没有超时就会永远停在「未开启」，
+   用户和我们什么都看不出来）。
+2. **DevTools Console**：出现 `Tracking Prevention blocked access to storage for <URL>`
+   或 `Tracking Prevention blocked a resource load for ...`（Edge 官方给的判据）。
+3. **DevTools Network**：`cdn.onesignal.com/...page.es6.js` 显示为 `(blocked:other)` 或无响应。
+
+### 13.6 影响面与后续选择
+
+| 人群 | OneSignal 方案能否触达 |
+|---|---|
+| Chrome 默认 / Edge 均衡 / Safari | ✅ 可以（仍需用户点「允许」） |
+| Edge 严格、Firefox 严格、装了拦截扩展、企业策略终端 | ❌ 完全不可用 |
+
+若这部分用户占比不可接受，**唯一根治办法是改成本站第一方的 Web Push**：
+自建 Service Worker（如 `/push-sw.js`）+ 标准 VAPID 订阅，后端直接投递到浏览器推送服务
+（`fcm.googleapis.com` / `updates.push.services.mozilla.com` / Apple）。
+这些端点域名不在追踪器清单里，**不会被跟踪防护拦**，也不再依赖任何第三方。
+
+现有三张表（`push_subscriptions` / `push_prefs` / `push_logs`）、防打扰四道闸、
+后台发送页与发送日志都可原样复用，实际只需替换「投递层」。
+注意：iOS 需 16.4+ 且「添加到主屏幕」后才支持；需新增依赖 `pywebpush`
+→ ⚠️ **必须同步 `requirements.txt`**，否则线上启动即 `ModuleNotFoundError`（铁律 2）。
