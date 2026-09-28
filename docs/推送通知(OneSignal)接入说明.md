@@ -578,12 +578,94 @@ Brave Shields，以及企业终端的策略强制。
 | Chrome 默认 / Edge 均衡 / Safari | ✅ 可以（仍需用户点「允许」） |
 | Edge 严格、Firefox 严格、装了拦截扩展、企业策略终端 | ❌ 完全不可用 |
 
-若这部分用户占比不可接受，**唯一根治办法是改成本站第一方的 Web Push**：
-自建 Service Worker（如 `/push-sw.js`）+ 标准 VAPID 订阅，后端直接投递到浏览器推送服务
-（`fcm.googleapis.com` / `updates.push.services.mozilla.com` / Apple）。
-这些端点域名不在追踪器清单里，**不会被跟踪防护拦**，也不再依赖任何第三方。
+直觉上「改成本站第一方 Web Push」可以根治——自建 Service Worker + 标准 VAPID 订阅，投递到
+`fcm.googleapis.com` / `updates.push.services.mozilla.com` / Apple 这些**不在追踪器清单里**的端点。
 
-现有三张表（`push_subscriptions` / `push_prefs` / `push_logs`）、防打扰四道闸、
-后台发送页与发送日志都可原样复用，实际只需替换「投递层」。
-注意：iOS 需 16.4+ 且「添加到主屏幕」后才支持；需新增依赖 `pywebpush`
-→ ⚠️ **必须同步 `requirements.txt`**，否则线上启动即 `ModuleNotFoundError`（铁律 2）。
+> ⚠️ **但 2026-09-28 的全链路实测推翻了这条路**：它只在 **Edge / Firefox / Safari** 上成立，
+> **Chrome 与 Opera 永久不行**——投递由**服务器**发起，而线上服务器到 `fcm.googleapis.com`
+> 被网络阻断（Google 系整体不可达）。详见 **§14**（含已实测跑通的 Edge 路线与两个必踩的坑）。
+>
+> **结论：保持 OneSignal。** 它的投递在自家海外服务器上，恰好绕过这个限制，覆盖面反而最大。
+
+---
+
+## 14. 自建原生 Web Push 的可行性（2026-09-28 全链路实测，备案）
+
+> 本节是**备案材料**：万一 OneSignal 不可用（服务中断、又被某浏览器拦、成本变化），
+> 照这里的事实链可以直接判断「值不值得自建、能覆盖谁、第一步改什么」，不必重新摸索。
+> 触发本次实测的起因是 §13 的跟踪防护问题——但结论是**不该自建**。
+
+### 14.1 决定性事实：各浏览器推送端点的可达性
+
+Web Push 的**订阅端点由浏览器硬编码**，网站无法选择。所以「服务器能不能投递」取决于
+**服务器到那个端点域名的网络通不通**。实测（同一台线上阿里云服务器）：
+
+| 投递端点 | 归属浏览器 | 线上服务器 | 沙箱（国内本地） | 判据 |
+|---|---|---|---|---|
+| `fcm.googleapis.com` | **Chrome / 国产 Chromium** | ❌ 超时 `exit=124` | ❌ 重置 `exit=56` | DNS 正常（216.239.x.x），**TCP 层阻断** |
+| `*.notify.windows.com` | **Edge（Windows）** | ✅ `404` | ✅ `404` | 404 = TLS+HTTP 往返成功，只是路径不对 |
+| `updates.push.services.mozilla.com` | Firefox | ✅ `406` | ✅ `406` | 同上 |
+| `web.push.apple.com` | Safari / iOS | ✅ `405` | ✅ `405` | 同上 |
+| `push.opera.com` | Opera | ❌ | ❌ `56` | 同上 |
+
+- 🚨 **认知修正**：Edge 的 Web Push 端点**不是 FCM，而是微软自家的 WNS**（`*.notify.windows.com`）。
+  Edge 有 `ForceBuiltInPushMessagingClient` 策略（用内置 WNS 客户端连 WNS），这条链路独立于 Google。
+  很多人（包括本文档初版）以为 Chromium 系全走 FCM，是错的。
+- `www.google.com`、`www.googleapis.com` **同样不可达** → 不是 FCM 被特判，是**服务器出网到 Google 整体被阻断**。
+
+**判「通不通」的方法**：404/405/406 这类「应用层错误码」= **网络是通的**；只有超时/连接重置才是不可达。
+
+### 14.2 覆盖面：OneSignal 反而更大
+
+| 路线 | Chrome | Edge | Firefox | Safari | 依赖第三方 |
+|---|---|---|---|---|---|
+| **OneSignal**（现状） | ✅ | ✅ | ✅ | ✅ | 是 |
+| 自建原生 Web Push | ❌ **服务器发不出去** | ✅ | ✅ | ✅ | 否 |
+
+自建方案卡在一个死结上：**Chrome 的订阅端点是 FCM，而服务器到 FCM 被阻断**。
+浏览器侧能不能到 FCM 是用户自己的事，而「投递」这一步由服务器发起，救不了。
+
+> 附带一个容易混淆的点：用户浏览器实测 `fcm.googleapis.com` 返回 **403**（不是网络错误），
+> 说明**用户侧**能连 FCM（该用户疑似走代理）。但**普通家长不开代理时，Chrome 连订阅都建不起来**——
+> 这也可能是 OneSignal 后台长期「零 Web 订阅」的另一半原因（与 §13 的跟踪防护并列）。
+> **Chrome / Opera 用户的 Web Push 在国内无论用谁家服务都发不出去**，换服务商救不了。
+
+### 14.3 已实测跑通的 Edge 路线（HTTP 201）
+
+在隔离环境装 `pywebpush`（2.5.0）后向用户真实 Edge 端点投递，**一次 400、补头后 201**：
+
+```
+X-WNS-STATUS: received
+X-WNS-NOTIFICATIONSTATUS: received
+X-WNS-MSG-ID: 6F6A9A307A1FBDD5
+```
+
+`received` 是 WNS 的明确回执 → **服务器 → WNS → 设备** 链路成立，无需任何中转/代理/出海通道。
+补充经验：**Edge 无需保持浏览器打开即可收到；Firefox 必须开着浏览器**。
+
+### 14.4 🚨 两个必须记住的坑
+
+1. **发到 WNS 必须带 `x-wns-cache-policy` 头**，否则返回**裸 400 且响应体为空**，
+   真因只写在响应头里（`X-WNS-ERROR-DESCRIPTION: "Ttl value conflicts with X-WNS-Cache-Policy."`）。
+   规则：`ttl == 0` → `no-cache`；`ttl > 0` → `cache`。写法 `webpush(..., headers={"x-wns-cache-policy": "no-cache"})`。
+   参考 pywebpush issue #162。
+2. **同一个源下只能存在一个推送订阅**：用临时 VAPID 密钥建的订阅会与 OneSignal 的密钥冲突，
+   之后 OneSignal 订阅会报 `InvalidStateError`。**验证完必须退订**：
+   ```js
+   const r = await navigator.serviceWorker.getRegistration();
+   const s = await r.pushManager.getSubscription();
+   if (s) await s.unsubscribe();
+   ```
+
+### 14.5 若将来真要启用，缺口清单
+
+- **自有 Service Worker**：现有挂的是 OneSignal 的 SW，它只认自家格式的 payload；
+  自建需自己的 SW（`push` 事件 → `showNotification`），并复用本站 SW 路由的
+  `Cache-Control: no-store` + `Service-Worker-Allowed: /`（见 §6）。
+- **订阅登记**：现有 `push_subscriptions` 存的是 OneSignal player id，需扩列或新增表存
+  `endpoint` + `p256dh` + `auth`（即 `subscription.toJSON()` 的形态）。
+- **投递层**：新增 `pywebpush` 依赖 → ⚠️ **必须同步 `requirements.txt`**，否则线上启动即
+  `ModuleNotFoundError`（铁律 2）；VAPID 密钥对需持久化进配置（**不要** commit 私钥）。
+- **Chrome 用户无解**：`grep` 得再干净也没用——这部分受众要么继续走 OneSignal，
+  要么用「页面打开时的站内实时提醒」兜底（复用现有 WebSocket 通道 + `Notification` API，
+  零第三方依赖、不受跟踪防护拦截，还能覆盖微信内置浏览器里的家长）。
