@@ -74,8 +74,18 @@
 ## 测试经验（高复用）
 - **MySQL REPEATABLE READ 余额断言陷阱**：长生命周期测试会话首次 `SELECT` 后快照冻结，读不到接口内部 `diamond.grant`（新建会话）已提交的新余额 → 余额差断言误判为 0。修法：余额断言用独立 `SessionLocal()` 会话读取最新已提交值，并按「前后差值」判定（参考 `tests/test_checkin.py` 的 `_read_balance`）。
 - conftest 不做事务回滚：每用例用专属用户 + 显式 token + finally 清理自身数据，避免跨用例污染钻石余额断言。
-- **判「全量测试通过」看退出码，别 grep 摘要**：`pytest -q > file` 重定向/管道下末尾只剩 warnings 块，
-  无 `N passed` 行，grep `passed` 会空手而归。失败时 pytest 退出码必非 0，故以 **EXIT=0** 为准。
+- **判「全量测试通过」看 `--junit-xml` 的 failures/errors 计数**（2026-09-28 修订）：
+  `pytest -q > file` 重定向下末尾只剩 warnings 块、无 `N passed` 行，grep 会空手而归；
+  而**沙箱里 `EXIT=$?` 与 stdout 都可能被 safe-delete 拦截器污染**（它在 pytest 收尾
+  清理 tmp 目录时注入 `[SAFE_DELETE_BULK_CONFIRM_REQUIRED]`，把 `FAILURES`/summary 段冲掉）。
+  **可靠判据 = JUnit XML 的计数**：`pytest -q --junit-xml=temp/_junit.xml`，
+  读 `<testsuite tests=.. failures=.. errors=..>`。
+- 🚨 **不要给全量 pytest 加 `--basetemp=temp/pt`（上一轮我给的建议已作废）**：
+  pytest 收尾会 `rmtree` 该目录，用例多时触发本机批量删除守护 → 抛 `SystemExit` →
+  fixture finalizer 未消费 → **后续用例在 setup 阶段连锁报错**（`assert not self._finalizers`），
+  一次可造成 25 例与代码无关的假失败。**阈值是数量**，所以小批量跑（如 74 例）正常、
+  全量（626 例）才炸 —— 极易误判成"代码回归"或"并发改文件竞态"（我都误判过）。
+  **正确做法：用默认临时目录**（系统 temp 在守护 bypass 名单内）。
 
 ## 🧩 前端新增一个 tab 页面（4 处注册，漏一处页面就空白/图标缺失）
 1. `web/src/main.js`：`import XxxView from './views/XxxView.vue'` + `app.component('XxxView', XxxView)`。
@@ -243,3 +253,40 @@ cd web && node node_modules/vite/bin/vite.js build    # 前端构建（127 模�
   历史错误：docstring 写 `/opt/venv/bin/python`，线上并不存在 → 任务完全不跑且只往 root 邮箱发错误）：
   `*/15 * * * * cd /home/PrimarySchoolExam && /home/PrimarySchoolExam/venv/bin/python tools/scheduler.py >> /var/log/scheduler.log 2>&1`
 - 新增/改 JOBS 后**必跑** `python tools/ops_check.py`，且**新脚本必须 git add**。
+
+## 🧷 前端产物与后端契约（2026-09-24 定案，commit 81d4cd6）
+- `tools/build_info.py`（纯标准库，可在 venv 半坏时跑）：
+  - 源码指纹覆盖 `src/ public/ 入口HTML package(-lock).json vite配置`，**含逐文件摘要**
+    （能直接说"构建后又改了哪几个文件"）；
+  - `write` → `dist/.build-info.json`；`needs-build` 退出码 **0=需构建 / 1=无需**
+    （其它码按"需构建"处理）；`dump_api_paths` 经 `app.openapi()["paths"]` 取路由表（失败降级）；
+  - `route_exists` 用**段级匹配**（`{param}` 通配 + 模板串前缀）：产物里 `` `/api/x/${id}` ``
+    只剩静态前缀，要求严格相等会大量误报。
+- `deploy.sh`：`frontend_needs_build` 改用**内容指纹**判据（mtime 仅作兜底）。原 mtime 判据
+  只看 `src/ package.json vite.config.js`，**漏 `index.html`/`novel.html`/`public/` 与"删除源文件"**
+  → 线上静默沿用旧 dist，界面与代码不一致却毫无提示。
+- `preflight.py` full 阶段新增两项（均 **WARN**，不阻断）：`check_dist_assets`
+  （入口引用的 JS/CSS 缺失 → 白屏）与 `check_frontend_contract`（产物过期 / 前后端契约错位）。
+  它们在**前端构建之后**跑 → 此时仍报不配对即为源码级真问题，高置信度。
+- **admin 产物前缀是 `/admin/assets/...`**（vite base=/admin），不是 web 的 `/assets/`。
+- 与 `regression_check.py` 第 [5] 项的分工：源码级（扫 `web/src`，严格相等，提交前发现）
+  vs 产物级（扫 dist，宽松匹配，部署时发现），**互补而非重复实现**。
+
+## 🎯 高项备考模块（软考高级·信息系统项目管理师，2026-09-28 新增）
+**面向非学生成人用户**的独立备考入口：后端 `/api/gx`（11 端点，assessment 域），
+前端 tab `gaoxiang`（桌面侧边栏「学习」组；移动 TabBar 6 项已满故不加）。
+- **与小学题库完全解耦**（小学 subject+grade 维度被错题/统计/收藏大量下游假设，
+  成人职业考试是「十大知识域 + 单选/多选/案例」，复用会污染小学口径）：
+  独立 6 表 `gx_knowledge / gx_questions / gx_attempts / gx_wrongs / gx_case_grades / gx_progress`
+  （迁移 `081_gaoxiang.py`，幂等）。
+- **不挂 `check_quiet_hours`**：成人晚间备考是核心场景，宵禁只针对未成年人护眼。
+- 出题**题库优先**（先取用户未做过的落库题，不足才 AI 补生成并落库 → 同内容不重复扣费）；
+  **服务端判分**（答案存库不下发；多选须全对）；错题闭环同构小学（连对 3 次自动掌握）；
+  案例：AI 出大题 → 学员作答 → AI 按要点批改评分 0-100。
+- 真题导入预留口子：`gx_questions.source=ai|import` + `year`（导入工具待做）。
+- 🚨 **`/quiz/generate` 必须用独立短会话回读**：AI 补题写库后用请求级会话（`Depends(get_db)`）
+  回读会因 REPEATABLE READ 快照冻结读不到新行（症状："AI 出题成功但返 0 题"）。
+  范式：短会话1 查题库 → **会话外**调 AI → 短会话2 回读。
+- 测试：`tests/test_gaoxiang.py` 26 例，AI 端点用 `monkeypatch.setattr(
+  "app.domains.platform.contracts.chat_with", fake)` 打桩（契约层惰性模块可直接改属性）。
+  验证"题库优先不调 AI"时 **count 必须等于库存数**（count>库存时 AI 补题是预期行为）。

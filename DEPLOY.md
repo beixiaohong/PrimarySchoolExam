@@ -566,13 +566,20 @@ cd /home/PrimarySchoolExam
 # 安装开发依赖
 venv/bin/pip install -r requirements-dev.txt
 
-# 运行全部测试（268 用例 / 39 文件）
+# 运行全部测试（626 用例）
 venv/bin/python -m pytest tests -q
 
 # 运行特定测试文件
 venv/bin/python -m pytest tests/test_ai_vip.py -v
-venv/bin/python -m pytest tests/test_s4_fulfillment.py -v
+venv/bin/python -m pytest tests/test_gaoxiang.py -v
 ```
+
+> **不要给全量测试指定 `--basetemp` 到项目目录内**（例如 `--basetemp=temp/pt`）：
+> pytest 收尾会 `rmtree` 该目录，用例多时会触发本机安全删除守护的「批量删除」拦截并抛
+> `SystemExit`，导致 fixture finalizer 未消费 → **后续用例在 setup 阶段连锁报错**
+> （`assert not self._finalizers`），表现为一片与代码无关的假失败。
+> 用例少时不会触发（阈值是数量），所以会出现"小批量跑过、全量跑挂"的迷惑现象。
+> 用默认临时目录即可；判"是否真通过"看 `--junit-xml` 的 failures/errors 计数。
 
 ### 12.2 测试隔离
 
@@ -587,6 +594,26 @@ venv/bin/python -m pytest tests/test_s4_fulfillment.py -v
 venv/bin/python tools/endpoint_snapshot.py
 # 输出到 endpoint_baseline.txt，记录全部 METHOD + path
 ```
+
+### 12.4 高项备考模块（面向非学生成人用户）
+
+软考高级「信息系统项目管理师」备考入口，与小学侧**完全解耦**（独立建表、独立错题闭环、
+独立进度口径），入口 `/api/gx`（11 个端点）+ 前端 tab `gaoxiang`。
+
+| 项 | 说明 |
+|---|---|
+| 数据表 | `gx_knowledge` / `gx_questions` / `gx_attempts` / `gx_wrongs` / `gx_case_grades` / `gx_progress`（迁移 `081_gaoxiang.py`，幂等） |
+| 出题策略 | **题库优先**：先取该用户未做过的落库题，不足才 AI 补生成并落库 → 同一内容不重复扣费 |
+| 判分 | **服务端判分**（答案存库、不下发前端），多选须全对；错题闭环与小学同构（重做连对 3 次自动掌握） |
+| 案例分析 | AI 出大题（背景 + 子问题）→ 学员作答 → AI 按要点批改评分（0-100）并落 `gx_case_grades` |
+| 真题导入 | 预留口子：`gx_questions.source=ai\|import` + `year`（历年真题导入工具为后续项） |
+| **不挂宵禁** | 该模块**不挂** `check_quiet_hours` —— 面向成人，晚间备考是核心场景；宵禁只针对未成年人护眼 |
+| 移动端 | TabBar 固定 6 项已满，入口仅桌面侧边栏「学习」组 |
+| 计费 | AI 调用按 token 扣钻（`gx_knowledge`/`gx_quiz`/`gx_case`），计费失败不阻断 |
+
+> 铁律依旧：AI 调用一律在 DB 会话之外执行（`chat_with` 可能重试数秒），成功后才开短会话
+> 落库/扣费；`/quiz/generate` 因需回读 AI 刚落库的新行，全程使用独立短会话
+> （请求级会话在 REPEATABLE READ 下快照冻结，读不到新行）。
 
 ---
 
