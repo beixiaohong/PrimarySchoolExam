@@ -46,17 +46,31 @@
         <span class="more">学期解锁 · 课堂同步 · 小升初衔接 · 英语词书单元</span>
       </summary>
       <div class="pc-fold-body">
+        <!-- 开关统一用 components/StateSwitch.vue：状态 = 文字 + 颜色，动作 = 开关位置。
+             原先这些按钮上写的是状态词「已开启/已关闭」，但按钮是动作 —— 点它与读它互相干扰。 -->
         <div class="pc-row" style="justify-content:space-between">
           <span style="font-size:13px;color:#3a4a6b">预习下学期（提前解锁下学期词书/古诗文）</span>
-          <button class="btn btn-sm" :class="appCtx.studyFlags.include_next ? 'btn-primary' : 'btn-ghost'" @click="appCtx.toggleStudyFlag('include_next')">{{appCtx.studyFlags.include_next ? '已开启' : '已关闭'}}</button>
+          <state-switch :on="!!appCtx.studyFlags.include_next"
+                        :label="appCtx.studyFlags.include_next ? '已开启' : '已关闭'"
+                        :tone="appCtx.studyFlags.include_next ? 'ok' : 'off'"
+                        :title="appCtx.studyFlags.include_next ? '点击关闭预习下学期' : '点击开启预习下学期'"
+                        @toggle="appCtx.toggleStudyFlag('include_next')" />
         </div>
         <div class="pc-row" style="justify-content:space-between">
           <span style="font-size:13px;color:#3a4a6b">课堂同步（背单词/听写按教学进度的当前单元）</span>
-          <button class="btn btn-sm" :class="appCtx.studyFlags.sync_mode ? 'btn-primary' : 'btn-ghost'" @click="appCtx.toggleStudyFlag('sync_mode')">{{appCtx.studyFlags.sync_mode ? '已开启' : '已关闭'}}</button>
+          <state-switch :on="!!appCtx.studyFlags.sync_mode"
+                        :label="appCtx.studyFlags.sync_mode ? '已开启' : '已关闭'"
+                        :tone="appCtx.studyFlags.sync_mode ? 'ok' : 'off'"
+                        :title="appCtx.studyFlags.sync_mode ? '点击关闭课堂同步' : '点击开启课堂同步'"
+                        @toggle="appCtx.toggleStudyFlag('sync_mode')" />
         </div>
         <div class="pc-row" style="justify-content:space-between" v-if="appCtx.grade===6">
           <span style="font-size:13px;color:#3a4a6b">小升初衔接（六年级新学批次混入 30% 七年级内容）</span>
-          <button class="btn btn-sm" :class="appCtx.studyFlags.xsc_bridge ? 'btn-primary' : 'btn-ghost'" @click="appCtx.toggleStudyFlag('xsc_bridge')">{{appCtx.studyFlags.xsc_bridge ? '已开启' : '已关闭'}}</button>
+          <state-switch :on="!!appCtx.studyFlags.xsc_bridge"
+                        :label="appCtx.studyFlags.xsc_bridge ? '已开启' : '已关闭'"
+                        :tone="appCtx.studyFlags.xsc_bridge ? 'ok' : 'off'"
+                        :title="appCtx.studyFlags.xsc_bridge ? '点击关闭小升初衔接' : '点击开启小升初衔接'"
+                        @toggle="appCtx.toggleStudyFlag('xsc_bridge')" />
         </div>
         <div class="pc-subtitle">📖 教学进度 <span class="more">孩子英语当前词书/单元，课堂同步按此出题</span></div>
         <div class="pc-row" style="flex-wrap:wrap;gap:8px">

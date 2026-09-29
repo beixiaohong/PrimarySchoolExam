@@ -27,6 +27,10 @@ const targets = [
   'web/src/views/GaoxiangView.vue',
   // 设置页（含消息推送开关卡片：/api/push 前端）
   'web/src/views/SettingsView.vue',
+  // 统一开关控件（状态 = 文字 + 颜色，动作 = 开关位置；全站唯一实现，勿在页面里另写）
+  'web/src/components/StateSwitch.vue',
+  // 家长端·学习配置（预习下学期 / 课堂同步 / 小升初衔接 三个开关）
+  'web/src/components/parent/ParentStudyConfig.vue',
   // 小说站独立入口（web/novel.html + src/novel/*，独立 Vue 应用）
   'web/src/novel/App.vue',
   'web/src/novel/views/HomeView.vue',

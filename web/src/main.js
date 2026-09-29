@@ -43,6 +43,7 @@ import GaoxiangView from './views/GaoxiangView.vue'
 import AntiCheatInput from './components/AntiCheatInput.vue'
 // B3 全站图标统一：内联 SVG 图标集（nav.js / App.vue 侧边栏 & TabBar 统一引用）
 import AppIcon from './components/AppIcon.vue'
+import StateSwitch from './components/StateSwitch.vue'
 
 // 周报分享截图依赖（旧版经 CDN 挂到 window，这里改用 npm 依赖并保持 window 引用）
 window.html2canvas = html2canvas
@@ -102,5 +103,6 @@ app.component('LevelView', LevelView)
 app.component('GaoxiangView', GaoxiangView)
 app.component('AntiCheatInput', AntiCheatInput)
 app.component('AppIcon', AppIcon)
+app.component('StateSwitch', StateSwitch)
 // 挂载到 index.html 中的 #app 节点
 app.mount('#app')

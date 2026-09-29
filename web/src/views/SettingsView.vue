@@ -84,24 +84,20 @@
                 <em class="push-hint">{{appCtx.pushDeviceState.hint}}</em>
               </span>
             </span>
-            <button class="push-switch" role="switch"
-                    :aria-checked="appCtx.pushOptedIn ? 'true' : 'false'"
-                    :class="{on: appCtx.pushOptedIn, busy: appCtx.pushLoading}"
-                    :disabled="appCtx.pushLoading || !appCtx.pushReady"
-                    :title="appCtx.pushOptedIn ? '点击关闭本设备推送' : '点击开启本设备推送'"
-                    @click="appCtx.pushToggleDevice()"><i></i></button>
+            <!-- 左侧已写明状态（色点 + 文字），这里不再重复 label，只留开关本身 -->
+            <state-switch :on="!!appCtx.pushOptedIn" :busy="appCtx.pushLoading"
+                          :disabled="appCtx.pushLoading || !appCtx.pushReady"
+                          :title="appCtx.pushOptedIn ? '点击关闭本设备推送' : '点击开启本设备推送'"
+                          @toggle="appCtx.pushToggleDevice()" />
           </div>
           <!-- 逐场景开关：不接收的场景后端根本不会下发（services/push.py 的 _PREF_FIELD） -->
           <div class="info-row" v-for="f in appCtx.pushEventFields" :key="f.field">
             <span>{{f.label}}<br><em class="push-hint">{{f.desc}}</em></span>
-            <span class="push-ctrl">
-              <em class="push-state" :class="appCtx.pushPrefs[f.field] ? 'is-ok' : 'is-off'">{{appCtx.pushPrefs[f.field] ? '接收' : '不接收'}}</em>
-              <button class="push-switch" role="switch"
-                      :aria-checked="appCtx.pushPrefs[f.field] ? 'true' : 'false'"
-                      :class="{on: appCtx.pushPrefs[f.field]}"
-                      :title="appCtx.pushPrefs[f.field] ? '点击改为不接收' : '点击改为接收'"
-                      @click="appCtx.pushSavePref(f.field, !appCtx.pushPrefs[f.field])"><i></i></button>
-            </span>
+            <state-switch :on="!!appCtx.pushPrefs[f.field]"
+                          :label="appCtx.pushPrefs[f.field] ? '接收' : '不接收'"
+                          :tone="appCtx.pushPrefs[f.field] ? 'ok' : 'off'"
+                          :title="appCtx.pushPrefs[f.field] ? '点击改为不接收' : '点击改为接收'"
+                          @toggle="appCtx.pushSavePref(f.field, !appCtx.pushPrefs[f.field])" />
           </div>
           <!-- 免打扰：用户自设静音时段（与平台宵禁无关，后者只针对未成年人护眼） -->
           <div class="info-row">
@@ -144,7 +140,12 @@
         </div>
         <div class="card set-card">
           <div class="card-head"><b>⚙️ 其他</b></div>
-          <div class="info-row"><span>极速模式（答题动画加速）</span><button class="btn btn-sm" :class="appCtx.turbo ? 'btn-primary' : 'btn-ghost'" @click="appCtx.toggleTurbo()">{{appCtx.turbo ? '已开启' : '已关闭'}}</button></div>
+          <!-- 状态 = 文字 + 颜色，动作 = 开关位置（统一控件 StateSwitch，勿在此另写一套） -->
+          <div class="info-row"><span>极速模式（答题动画加速）</span>
+            <state-switch :on="!!appCtx.turbo" :label="appCtx.turbo ? '已开启' : '已关闭'"
+                          :tone="appCtx.turbo ? 'ok' : 'off'"
+                          :title="appCtx.turbo ? '点击关闭极速模式' : '点击开启极速模式'"
+                          @toggle="appCtx.toggleTurbo()" /></div>
           <!-- 高项备考隐藏入口：普通用户不可见入口，连点 5 次跳转（逻辑见 logic/gaoxiang.js gxSecretTap） -->
           <div class="info-row" style="cursor:pointer" role="button" @click="appCtx.gxSecretTap()"><span>关于</span><b>智学学堂 v1.0</b></div>
           <div class="detail-actions" style="margin-top:14px">
@@ -165,7 +166,7 @@ export default {
 </script>
 
 <style scoped>
-/* 推送设置专用样式：卡片/行/按钮沿用全局的 set-card / info-row / btn，这里只补两处新元素 */
+/* 推送设置专用样式：卡片/行沿用全局的 set-card / info-row / btn，开关用 components/StateSwitch.vue */
 .push-hint{font-style:normal;font-size:12px;color:var(--muted,#909399);line-height:1.5}
 /* 被浏览器拦截时的醒目提示（普通 .push-hint 是灰色小字，不够引起注意） */
 .push-alert{margin:8px 0 4px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.7;
@@ -193,21 +194,7 @@ export default {
 .push-dot.is-danger{background:var(--danger)}
 .push-dot.is-muted{background:var(--text-3)}
 
-/* 逐场景开关行右侧：状态文字 + 开关 */
-.push-ctrl{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto}
-.push-state{font-style:normal;font-size:12px;font-weight:600}
-.push-state.is-ok{color:var(--success)}
-.push-state.is-off{color:var(--text-3)}
-
-/* 真实开关（位置即状态）。用 role="switch" 的按钮而非 <input type="checkbox">：
-   checkbox 的 :checked 是属性绑定，状态没变化时 Vue 不会重渲染 ——
-   一旦操作失败需要回滚，就会出现「界面开着、数据是关的」这种更糟的不一致。 */
-.push-switch{position:relative;flex:0 0 auto;width:40px;height:22px;padding:0;border-radius:999px;
-  background:#D7DCE8;transition:background .18s;cursor:pointer}
-.push-switch i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
-  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s}
-.push-switch.on{background:var(--success)}
-.push-switch.on i{transform:translateX(18px)}
-.push-switch.busy{opacity:.6}
-.push-switch:disabled{opacity:.45;cursor:not-allowed}
+/* 逐场景开关行的「状态文字 + 开关」、以及本设备行的开关，已统一由
+   components/StateSwitch.vue 提供（状态 = 文字 + 颜色，动作 = 开关位置）。
+   此处不再保留第二套开关样式，否则同一判定会漂移成两种实现。 */
 </style>
