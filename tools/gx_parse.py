@@ -1223,6 +1223,35 @@ def _fill_skel(text: str) -> str:
     return re.sub(r"[\W_]+", "", s)
 
 
+def _fill_to_full(text: str) -> str:
+    """把填空答案版条目转成**完整知识点**（去掉填空提示与答案括号，答案直接嵌入）。
+
+    原 PDF 排版是「题干 + ----（答案）」的题目形式，学习场景下用户只想看到：
+        「4 个信息安全层次是设备安全、数据安全、内容安全、行为安全；…」
+    而不是：
+        「4 个信息安全层次是----（设备）安全、（数据）安全…」
+
+    处理步骤：
+    1. 把物理断行合并成一行（PDF 常把一句拆到多行）；
+    2. 去掉填空占位符 `----`；
+    3. 去掉答案括号 `（答案）`，把答案直接嵌入正文；
+    4. 去掉因 PDF 断词在汉字之间产生的多余空格。
+    """
+    s = (text or "").replace("\n", " ")
+    # 去掉连续破折号/下划线占位符（PDF 里常见 ----、____ 或更长的破折号）
+    s = re.sub(r"[_—-]{2,}", "", s)
+    # 去掉答案括号，保留内容。填空清单里所有括号都是答案，直接展开是安全的。
+    s = re.sub(r"[（(]([^（）()]+)[）)]", r"\1", s)
+    # 清理 PDF 断词在汉字间产生的空格（如「信息安 全」→「信息安全」），迭代直到稳定
+    prev = None
+    while prev != s:
+        prev = s
+        s = re.sub(r"([\u4e00-\u9fff]) ([\u4e00-\u9fff])", r"\1\2", s)
+    # 清多余空格，但保留英文/数字与中文之间的合理间隔
+    s = re.sub(r" +", " ", s).strip()
+    return s
+
+
 def fill_is_blank_item(text: str) -> bool:
     """条目是否属于「无答案版」：正文里还留着空括号 `（）`
 
@@ -1290,12 +1319,15 @@ def _fill_groups(blank_items: list, ans_items: list) -> list:
 
 
 def _fill_merge(blank_items: list, ans_items: list) -> list:
-    """「无答案版」与「带答案版」配对合并成一条知识点
+    """「无答案版」与「带答案版」配对合并成一条**完整知识点**（答案直接嵌入正文）。
+
+    2026-09-29 改：用户反馈「知识点主要是用来学习的，不要出现这种题目」。
+    因此填空清单不再保留「题目 + 【答案】 + 答案」的自测形态，而是直接展成陈述句。
 
     配对结果分三种：
-    - 两版都有   → 一条，正文 = 空版 + `【答案】` + 答案版（自测与答案都不丢）
-    - 只有答案版 → 一条（原样保留）
-    - 只有空版   → 一条（答案版漏了它：宁可留空，也不悄悄丢内容）
+    - 两版都有   → 正文 = _fill_to_full(答案版)，标题取空版（空版带填空断点，标题更干净）
+    - 只有答案版 → 一条（原样转成完整知识点）
+    - 只有空版   → 一条（答案版漏了它：宁可留空题，也不悄悄丢内容；但 kind 仍改成 list）
     """
     merged = []
     for blanks, ans in _fill_groups(blank_items, ans_items):
@@ -1304,15 +1336,18 @@ def _fill_merge(blank_items: list, ans_items: list) -> list:
             item["content"] = "\n".join(x["content"] for x in blanks)
         elif not blanks:
             item = dict(ans)
+            item["content"] = _fill_to_full(ans["content"])
         else:
-            ask = "\n".join(x["content"] for x in blanks)
             item = dict(ans)
-            item["content"] = ask + FILL_ANS_SEP + ans["content"]
+            item["content"] = _fill_to_full(ans["content"])
             # 标题取空版：空版一定有空括号可断句，「两化融合，是指（信息化）和…」这类
             # 带答案版没有断点，会被整段当成标题
             item["title"] = blanks[0]["title"] or ans["title"]
-            item["summary"] = ask[:180]
-            item["has_blank"] = True
+            # 摘要取完整知识点的开头，不再是空题
+            item["summary"] = item["content"][:180]
+        # 填空清单在学习场景下就是「知识点清单」：前端不再渲染填空速记标签/答案按钮
+        item["kind"] = KN_LIST
+        item["has_blank"] = False
         # 正文变了必须重算指纹：否则与未合并版撞同一指纹，重导入时不会更新
         item["fingerprint"] = fingerprint(item["content"])
         merged.append(item)
@@ -1320,16 +1355,17 @@ def _fill_merge(blank_items: list, ans_items: list) -> list:
 
 
 def _parse_fill(lines: list, meta: dict, pages: list = None) -> dict:
-    """填空辅助记忆清单：先按句末标点把**断句碎片**合并成完整条目，再取前段作短标题
+    """填空辅助记忆清单 → 直接解析成**完整知识点**。
 
     坑 1：PDF 每个条目常被拆成 2~3 个物理行（`…其中，（）安全是一种静` / `态安全；（）安全…`），
     按行成条会产出大量半句碎片 —— 用户看到的就是「知识点页很乱」。
-    标题另做裁剪（截到 `----`/`（）`/冒号前），列表才读得下去；全文仍保留在正文里。
 
-    坑 2（2026-09-28 修）：**同一份 PDF 自带两版** —— 前几页无答案、后几页带答案。
-    原先整篇按行成条，于是每个知识点落库两条：一条全是 `（）`、一条带答案；
-    用户点开空的那条只看到一串空括号，反馈「空没填上」。
-    修法：按页切两版 → 各自成条 → 按序配对**合并成一条**（正文 = 空版 + 【答案】 + 答案版）。
+    坑 2：同一份 PDF 自带两版 —— 前几页无答案、后几页带答案。按页切分后配对，
+    用答案版生成完整知识点，空版只用来取标题与对齐顺序。
+
+    2026-09-29 改：用户反馈「知识点主要是用来学习的，不要出现这种题目」。
+    因此最终 content 是答案直接嵌入正文的陈述句（kind 也改成 KN_LIST），
+    前端不再展示「填空速记」标签和「显示/收起答案」按钮。
     """
     if pages and not lines:
         lines = flatten(pages)      # 只给了分页结果时兜底出行，避免落进空列表
@@ -1345,7 +1381,7 @@ def _parse_fill(lines: list, meta: dict, pages: list = None) -> dict:
 
 
 def _fill_items(lines: list, meta: dict) -> dict:
-    """单版填空清单 → 条目（合并断行碎片 + 裁短标题）"""
+    """单版填空清单 → 完整知识点条目（合并断行碎片 + 裁短标题 + 答案嵌入）"""
     entries, cur, chapter = [], "", ""
     for raw in lines:
         line = raw.strip()
@@ -1385,14 +1421,18 @@ def _fill_items(lines: list, meta: dict) -> dict:
     for text in entries:
         if len(text) < 8:
             continue
+        is_blank = bool(_FILL_LINE.search(text))
+        is_filled = bool(_FILL_FILLED.search(text))
+        # 只有带答案的条目才转成完整知识点；纯空版先原样保留（解析异常兜底）
+        full_text = _fill_to_full(text) if (is_filled and not is_blank) else text
         items.append({
             "title": _fill_title(text),
-            "summary": text[:180],
-            "content": text,
+            "summary": full_text[:180],
+            "content": full_text,
             "chapter": chapter,
             "domain": meta.get("domain") or "",
-            "kind": KN_RECITE,
-            "has_blank": bool(_FILL_LINE.search(text)),
+            "kind": KN_LIST,
+            "has_blank": is_blank,
             "source_file": meta.get("source_file") or "",
         })
     for x in items:

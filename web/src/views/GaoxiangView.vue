@@ -509,14 +509,8 @@
         <span class="gx-read-badge" v-if="appCtx.gxKDetail.read">✓ 已读</span>
         <span class="gx-modal-src" v-if="appCtx.gxKDetail.source_file">出处：{{appCtx.gxKDetail.source_file}}</span>
       </div>
-      <div class="gx-modal-body gx-kcontent" v-html="appCtx.gxKAskHtml"></div>
-      <!-- 填空速记：答案默认折叠 —— 先自己填，再点开对答案，保留原本的自测用法 -->
-      <div class="gx-fill-answer" v-if="appCtx.gxKHasAnswer">
-        <button class="gx-fill-btn" @click="appCtx.gxKToggleAnswer()">
-          {{appCtx.gxKShowAnswer ? '收起答案' : '显示答案'}}
-        </button>
-        <div class="gx-fill-body" v-if="appCtx.gxKShowAnswer" v-html="appCtx.gxKAnswerHtml"></div>
-      </div>
+      <!-- 正文：填空清单已在数据层转成完整知识点，直接展示 content -->
+      <div class="gx-modal-body gx-kcontent" v-html="appCtx.gxKHtml"></div>
     </div>
   </div>
 </div>
@@ -654,16 +648,6 @@ export default {
 .gx-kcontent :deep(.gx-k-li-tx){line-height:1.8}
 .gx-kcontent :deep(.gx-k-blank){display:inline-block;min-width:4em;height:1em;
   border-bottom:1.5px solid currentColor;opacity:.55;margin:0 2px}
-.gx-fill-body :deep(.gx-k-blank){border-bottom-color:#4E7CF6;opacity:.9}
-
-/* 填空速记的答案区：默认折叠（先自测再对答案），展开后用底色与题目区分开 */
-.gx-fill-answer{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line,#E5EAF4)}
-.gx-fill-btn{padding:6px 14px;border:1px solid var(--primary,#4E7CF6);border-radius:8px;
-  background:transparent;color:var(--primary,#4E7CF6);font-size:13px;cursor:pointer}
-.gx-fill-btn:hover{background:var(--primary-light,#EAF0FE)}
-.gx-fill-body{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--primary-light,#EAF0FE)}
-.gx-fill-body :deep(p){margin:0 0 8px;line-height:1.8;font-size:14px}
-.gx-fill-body :deep(p:last-child){margin-bottom:0}
 
 .gx-pick-list{margin-top:10px;display:flex;flex-direction:column;gap:8px;
   max-height:280px;overflow:auto}

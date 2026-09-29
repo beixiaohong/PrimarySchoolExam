@@ -122,24 +122,35 @@ def _fill_meta():
 
 
 def test_fill_merge_joins_blank_and_answer_versions():
-    """两版必须合并成**一条**：正文先空后答，标题取空版（空版才有断句点）"""
+    """两版必须合并成**一条**完整知识点：答案直接嵌入正文，不再是题目+答案"""
     out = gx.parse_knowledge_lines([], _fill_meta(), pages=[_BLANK_PAGE, _ANS_PAGE])
     items = out["items"]
     assert len(items) == 1, "无答案版与带答案版必须合并，不能各留一条"
+    assert gx.FILL_ANS_SEP not in items[0]["content"], "不应再保留【答案】分隔"
+    # 填空提示与答案括号都已去掉，答案直接嵌入正文
+    assert "----" not in items[0]["content"]
+    assert "（系统规划）" not in items[0]["content"]
+    assert "系统规划" in items[0]["content"]
     assert items[0]["content"] == (
-        "信息系统生命周期的5 阶段是----（）、（）、（）、（）、（）；"
-        + gx.FILL_ANS_SEP
-        + "信息系统生命周期的5 阶段是----（系统规划）、（系统分析）、（系统设计）、（系统实施）、（系统运维）；"
+        "信息系统生命周期的5 阶段是系统规划、系统分析、系统设计、系统实施、系统运维；"
     )
     assert items[0]["title"] == "信息系统生命周期的5 阶段"
-    assert items[0]["summary"].startswith("信息系统生命周期的5 阶段是----（）"), "列表摘要应是题目（空版）"
+    # 摘要也应是完整知识点，不再是空题
+    assert "系统规划" in items[0]["summary"]
+    assert "（）" not in items[0]["summary"]
+    assert items[0]["kind"] == gx.KN_LIST, "填空清单在学习场景下应视为知识点清单"
     # 指纹按合并后的正文算：否则与「未合并版」撞同一指纹，重导入不会更新旧行
     assert len(items[0]["fingerprint"]) == 16
 
 
-def test_fill_answer_separator_is_stable_contract():
-    """`FILL_ANS_SEP` 是前后端契约（前端据此把答案折叠起来），改动必须同步前端"""
-    assert gx.FILL_ANS_SEP == "\n\n【答案】\n"
+def test_fill_to_full_expands_blanks_into_plain_text():
+    """`_fill_to_full` 把填空答案版转成完整知识点：去掉 ----、去掉答案括号、清理断词空格"""
+    raw = "4 个信息安全层次是----（设备）安全、（数据）安全、（内容）安全、（行为）安全；"
+    full = gx._fill_to_full(raw)
+    assert full == "4 个信息安全层次是设备安全、数据安全、内容安全、行为安全；"
+    # 也测跨行断词：PDF 常把「信息安 全」拆成两行
+    raw2 = "数据安全是一种\n静态安全；行为安全是一种动态安全；"
+    assert gx._fill_to_full(raw2) == "数据安全是一种静态安全；行为安全是一种动态安全；"
 
 
 def test_fill_merge_tolerates_split_drift():
@@ -159,10 +170,13 @@ def test_fill_merge_tolerates_split_drift():
     out = gx.parse_knowledge_lines([], _fill_meta(), pages=[blank_page, ans_page])
     items = out["items"]
     assert len(items) == 2, "空版 3 条 + 答案版 2 条 → 合并后应恰好 2 条"
-    assert "（端）系统" in items[0]["content"]
-    assert "汇聚了多源海量信息" in items[0]["content"].split(gx.FILL_ANS_SEP)[0], \
-        "空版的第二条碎片要并进车联网这一条，而不是另起一条"
-    assert "（沉浸式体验）" in items[1]["content"]
+    assert "端系统" in items[0]["content"] and "（端）" not in items[0]["content"]
+    # 空版的第二条碎片要并进车联网这一条，而不是另起一条
+    assert "汇聚了多源海量信息" in items[0]["content"]
+    assert "沉浸式体验" in items[1]["content"] and "（沉浸式体验）" not in items[1]["content"]
+    for it in items:
+        assert it["kind"] == gx.KN_LIST
+        assert gx.FILL_ANS_SEP not in it["content"]
 
 
 def test_fill_without_pages_keeps_two_versions():
@@ -201,7 +215,7 @@ def test_fill_corpus_merges_every_blank_with_its_answer():
     if not pdfs:
         pytest.skip("语料目录存在但没有填空清单 PDF")
 
-    total = pairs = 0
+    total = blank_left = 0
     for path in sorted(pdfs):
         meta = gx.classify(path.replace("\\", "/"))
         pages = gx.read_pdf(path)
@@ -209,13 +223,13 @@ def test_fill_corpus_merges_every_blank_with_its_answer():
         total += len(items)
         for it in items:
             content = it["content"]
-            pairs += int(gx.FILL_ANS_SEP.strip() in content)
-            # 只空无答 = 还留着空括号、却搜不到答案 → 合并漏了
-            assert not (gx.fill_is_blank_item(content)
-                        and gx.FILL_ANS_SEP.strip() not in content), \
-                "合并漏了：%s → %s" % (os.path.basename(path), it["title"])
+            # 转成完整知识点后不应再保留填空分隔与空括号
+            assert gx.FILL_ANS_SEP.strip() not in content, \
+                "不应再保留【答案】分隔：%s → %s" % (os.path.basename(path), it["title"])
+            if gx.fill_is_blank_item(content):
+                blank_left += 1
+    assert blank_left <= 5, "转成完整知识点后仍留空括号的条目应极少（≤5），实际 %d" % blank_left
     assert total == 490, "32 份清单合并后应共 490 条"
-    assert pairs == 464
 
 
 
@@ -239,7 +253,7 @@ def _plan(rows):
 
 
 def test_fix_plan_merges_blank_and_answer_rows():
-    """空版行 + 答案版行 → 合并进答案行、删掉空版行，标题取空版"""
+    """空版行 + 答案版行 → 转成完整知识点、保留答案版那一行、删掉空版行，标题取空版"""
     ask = "信息系统生命周期的5 阶段是----（）、（）、（）、（）、（）；"
     ans = "信息系统生命周期的5 阶段是----（系统规划）、（系统分析）、（系统设计）、（系统实施）、（系统运维）；"
     rows = [_Row(ask, title="信息系统生命周期的5 阶段"),
@@ -248,21 +262,25 @@ def test_fix_plan_merges_blank_and_answer_rows():
     assert note == ""
     assert len(updates) == 1 and updates[0][0] is rows[1], "保留的必须是答案版那一行"
     payload = updates[0][1]
-    assert payload["content"] == ask + gx.FILL_ANS_SEP + ans
+    assert payload["content"] == (
+        "信息系统生命周期的5 阶段是系统规划、系统分析、系统设计、系统实施、系统运维；"
+    )
+    assert gx.FILL_ANS_SEP not in payload["content"]
     assert payload["title"] == "信息系统生命周期的5 阶段"
-    assert payload["summary"] == ask[:500]
+    assert "系统规划" in payload["summary"] and "（）" not in payload["summary"]
+    assert payload["kind"] == gx.KN_LIST
     assert payload["seq"] == 0
     assert len(payload["fingerprint"]) == 16
     assert deletes == [rows[0]]
 
 
 def test_fix_plan_result_is_not_blank_only():
-    """合并后若仍是「只空无答」，等于没修 —— 这正是用户报的问题"""
+    """合并后不应再是「只空无答」的题目形式 —— 这正是用户报的问题"""
     rows = [_Row("题（）；"), _Row("题（答）；")]
     updates, deletes, _ = _plan(rows)
     merged = updates[0][1]["content"]
-    assert gx.fill_is_blank_item(merged), "正文仍应含空括号（它就是题目）"
-    assert not (gx.fill_is_blank_item(merged) and gx.FILL_ANS_SEP.strip() not in merged)
+    assert merged == "题答；", "答案应直接嵌入正文"
+    assert not gx.fill_is_blank_item(merged), "合并后不应再含空括号"
 
 
 def test_fix_plan_merges_multiple_blank_fragments():
@@ -275,8 +293,11 @@ def test_fix_plan_merges_multiple_blank_fragments():
     assert note == ""
     assert len(updates) == 1 and updates[0][0] is a1
     assert set(deletes) == {b1, b2}
-    ask, _, answer = updates[0][1]["content"].partition(gx.FILL_ANS_SEP)
-    assert "汇聚了多源海量信息" in ask and "（云）系统" in answer
+    content = updates[0][1]["content"]
+    assert gx.FILL_ANS_SEP not in content
+    assert "端系统" in content and "（端）" not in content
+    assert "汇聚了多源海量信息" in content
+    assert "云系统" in content and "（云）" not in content
 
 
 def test_fix_plan_is_idempotent():
@@ -307,7 +328,7 @@ def test_fix_plan_keeps_answer_only_row_with_renumbered_seq():
 
 
 def test_fix_script_end_to_end_and_idempotent():
-    """整脚本落库跑一遍：两版旧数据 → --apply → 只剩答案版一行，且重复执行不变"""
+    """整脚本落库跑一遍：两版旧数据 → --apply → 只剩完整知识点一行，且重复执行不变"""
     from app.database import SessionLocal
     from app.models.gaoxiang import GxKnowledge
     import fix_gx_recite_merge as gxfix
@@ -347,12 +368,15 @@ def test_fix_script_end_to_end_and_idempotent():
             rows = db.query(GxKnowledge).filter(GxKnowledge.source_file == tag).all()
             assert len(rows) == 1, "空版行必须被删掉"
             assert rows[0].id == ids[1], "保留的必须是答案版那一行"
-            assert gx.FILL_ANS_SEP in rows[0].content and "（系统规划）" in rows[0].content
+            assert gx.FILL_ANS_SEP not in rows[0].content
+            assert "----" not in rows[0].content and "（系统规划）" not in rows[0].content
+            assert "系统规划" in rows[0].content
+            assert rows[0].kind == gx.KN_LIST
             assert rows[0].seq == 0
         finally:
             db.close()
 
-        # 幂等：再跑一次不能又多删多改
+        # 幂等：再跑一次不能又多删多改（kind 已变 list，不会再被查出来）
         assert gxfix.main(["--apply", "--source-like", tag]) == 0
         db = SessionLocal()
         try:

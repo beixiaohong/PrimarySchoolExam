@@ -75,21 +75,38 @@ def plan_file(rows: list):
     for idx, (bits, ans) in enumerate(gx._fill_groups(blanks, answers)):
         if ans is None:
             # 空版独有：答案版漏了这一条，没有可比对的答案，保留原样（只是序号归位）
-            updates.append((rows[bits[0]["_i"]], {"seq": idx}))
+            # 顺手把它转成完整知识点，去掉题目形式
+            row = rows[bits[0]["_i"]]
+            full = gx._fill_to_full(row.content or "")
+            updates.append((row, {
+                "seq": idx,
+                "content": full,
+                "summary": full[:500],
+                "fingerprint": gx.fingerprint(full),
+                "kind": gx.KN_LIST,
+            }))
             continue
         arow = rows[k + ans["_i"]]
+        full = gx._fill_to_full(arow.content or "")
         if not bits:
-            updates.append((arow, {"seq": idx}))
+            # 答案版独有：直接转完整知识点
+            updates.append((arow, {
+                "seq": idx,
+                "content": full,
+                "summary": full[:500],
+                "fingerprint": gx.fingerprint(full),
+                "kind": gx.KN_LIST,
+            }))
             continue
         ask = "\n".join(b["content"] for b in bits)
-        content = ask + gx.FILL_ANS_SEP + (arow.content or "")
         updates.append((arow, {
-            "content": content,
+            "content": full,
             "title": (bits[0]["title"] or arow.title or "")[:200],
-            "summary": ask[:500],
+            "summary": full[:500],
             # 正文变了 → 指纹必须重算：否则与新导入版本撞同一指纹，重导入不会更新
-            "fingerprint": gx.fingerprint(content),
+            "fingerprint": gx.fingerprint(full),
             "seq": idx,
+            "kind": gx.KN_LIST,
         }))
         # 空版行删掉；车联网那类「空版拆 2 条」的情况会把两条一起并进来
         deletes.extend(rows[b["_i"]] for b in bits)
@@ -130,8 +147,9 @@ def main(argv=None):
             q = q.filter(K.source_file.like("%" + args.source_like + "%"))
         rows = q.all()
         if not rows:
-            raise SystemExit("没有找到 kind=recite 且 source_file 非空的条目 —— "
-                             "确认资料是否已导入，或用 --source-like 缩小范围")
+            # 幂等：已修复过的数据 kind 会变成 list，再次查询自然为空 —— 这是成功，不是失败
+            print("没有找到 kind=recite 且 source_file 非空的条目 —— 已修复或无待修复数据")
+            return 0
 
         by_file = {}
         for r in rows:

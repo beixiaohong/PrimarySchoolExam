@@ -46,7 +46,7 @@ const AUTO_ANALYZE_MAX = 3;
 
 // 知识点资料类型中文名兜底（正常从后端 catalog.knowledge_kinds 取，这里保证首屏不空白）
 const KN_LABELS_FALLBACK = {
-  list: '知识点清单', mindmap: '思维导图', recite: '填空速记', must: '必背考点',
+  list: '知识点清单', mindmap: '思维导图', recite: '速记清单', must: '必背考点',
   formula: '公式汇总', mnemonic: '记忆口诀', itto: '过程与ITTO', slide: '课堂课件',
   textbook: '教材考纲', ref: '参考汇总', ai: 'AI 生成',
 };
@@ -59,22 +59,11 @@ const WRONG_TABS = [
   { k: 'essay', label: '论文' },
 ];
 
-// 填空速记（kind=recite）：一份清单里同时存「填空题目 + 答案」，正文形如
-//   `题目（）；\n\n【答案】\n题目（答案）；`
-// 分隔标记由 `tools/gx_parse.py::FILL_ANS_SEP` 写入 —— 改后端必须同步这里。
-// 用「【答案】整行」匹配（而不是死比空行个数）更耐改：后端调整空行也不影响折叠。
-const GX_K_ANS_RE = /\n+[【\[]答案[】\]]\n+/;
-
-function gxKSplitAnswer(text) {
-  const m = GX_K_ANS_RE.exec(text || '');
-  if (!m) return [text || '', ''];
-  return [text.slice(0, m.index), text.slice(m.index + m[0].length)];
-}
-
 /* ── 正文结构化（展现形式优化）─────────────────────────────────────
  * 后端存的是 PDF/AI 抽取原文。直接平铺 <p> 会把「1.」「（1）」「一、」条目
- * 和小标题糊成一大坨，填空速记的「（）」也只是两个普通括号。这里把每行分类成
- * 小标题 / 条目 / 段落，连续条目归组为列表，再把**空括号**切成填空空框片段。
+ * 和小标题糊成一大坨。这里把每行分类成小标题 / 条目 / 段落，连续条目归组为列表。
+ * 空括号（万一还有遗留数据）渲染为填空线；数据层已把填空清单转成完整知识点，
+ * 正常不应再出现空框。
  * 只输出结构（gxKParseBlocks）与输出 HTML（gxKBlocksHtml）分离：结构可单测，
  * HTML 拼装前对每段文本做转义（内容来自自家库的 PDF/AI 抽取，转义是双保险）。
  */
@@ -183,7 +172,6 @@ export function gaoxiangData() {
     gxKList: [],            // 列表（无正文）
     gxKLoading: false,
     gxKDetail: null,        // 当前阅读的知识点（含 content）
-    gxKShowAnswer: false,   // 填空速记：答案默认折叠，点「显示答案」才展开（保留自测手感）
     gxKGenning: false,      // AI 生成中
     // ── 刷题 ──
     gxQDomain: '',          // '' = 不限（配合资料筛选刷整套）
@@ -335,19 +323,10 @@ export const gaoxiangComputed = {
                    readN: readN(map[k]) }));
   },
   // 知识点正文结构化 HTML（后端存的是 PDF 抽取原文，直接塞 div 会挤成一大坨）：
-  // 小标题/条目/填空空框的解析与拼装见顶部 gxKParseBlocks / gxKBlocksHtml。
-  // 填空速记的正文是「题目 + 【答案】 + 答案」三段式：答案单独渲染（默认折叠），
-  // 其它资料类型拆不出答案，原样走 gxKAskHtml，互不影响。
-  gxKAskHtml() {
-    const [ask] = gxKSplitAnswer(((this.gxKDetail || {}).content) || '');
-    return gxKBlocksHtml(ask);
-  },
-  gxKAnswerHtml() {
-    const [, ans] = gxKSplitAnswer(((this.gxKDetail || {}).content) || '');
-    return gxKBlocksHtml(ans);
-  },
-  gxKHasAnswer() {
-    return this.gxKAnswerHtml.length > 0;
+  // 小标题/条目/空框的解析与拼装见顶部 gxKParseBlocks / gxKBlocksHtml。
+  // 2026-09-29：填空速记已统一转成完整知识点，不再分「题目 / 答案」两段展示。
+  gxKHtml() {
+    return gxKBlocksHtml(((this.gxKDetail || {}).content) || '');
   },
 };
 
@@ -426,7 +405,6 @@ export const gaoxiangMethods = {
     this.gxLoadKnowledge();
   },
   gxOpenKnowledge(k) {
-    this.gxKShowAnswer = false;      // 每次打开都从「只显示题目」开始，才留着自测手感
     this.api(`/api/gx/knowledge/${k.id}?user_id=${encodeURIComponent(this.user)}`)
       .then(d => {
         this.gxKDetail = d || null;
@@ -441,8 +419,7 @@ export const gaoxiangMethods = {
   gxMarkRead(id) {
     this.gxKList = (this.gxKList || []).map(k => (k.id === id ? { ...k, read: true } : k));
   },
-  gxCloseKnowledge() { this.gxKDetail = null; this.gxKShowAnswer = false; },
-  gxKToggleAnswer() { this.gxKShowAnswer = !this.gxKShowAnswer; },
+  gxCloseKnowledge() { this.gxKDetail = null; },
   // AI 生成该知识域知识点（慢操作，按钮转圈防重复）
   gxGenerateKnowledge() {
     if (this.gxKGenning) return;
