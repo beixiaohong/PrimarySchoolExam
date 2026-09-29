@@ -33,6 +33,7 @@
 - **🚨 日期列比较**：`Column(Date)` 读回是 `datetime.date`，`str(d) in dates` 恒 False（曾致 streak 徽章永不可得）→ 用 `while d in dates`（date 对象比较），参考 `checkin.py::_checkin_streak`。
 - **🚨 测试 helper 跨 session 竞争**：helper 另开 `SessionLocal()` 插 AuthClient 已 add 的 user_id → REPEATABLE READ 下 `Duplicate entry` → **helper 统一用 `client._db`，finally 不 close()**。
 - **🚨 Vue 模板禁裸 `<` 比较**：`l.lv<appCtx.x` 的 `<a` 被 HTML 解析器当起始标签 → 比较逻辑一律移入 JS。
+- **🚨 scoped 样式不作用于 `v-html` 产出的 DOM**（2026-09-29）：v-html 节点没有 `data-v-xxx` 属性，编译后规则 `.box .x[data-v-x]` 一条都匹配不上 —— 而**编译/构建/测试全绿**，只有肉眼能发现样式没生效。**所有作用于 v-html 内容的后代选择器必须 `:deep()` 穿透**（`.box :deep(.x)` → `.box[data-v-x] .x`）；判据：构建产物里的选择器若属性挂在**子选择器**上即未穿透。
 - **敏感词服务有进程内缓存**：改词后须 `from app.domains.frozen.services.sensitive import invalidate_cache; invalidate_cache()`，否则断言 400 会拿到 200。
 - **统一错误信封**：`app/core/middleware.py` 把异常包成 `{code, message, request_id}`，**不是** `{detail}` → 测试断言响应体读 `["message"]`。
 - **MySQL 列/Dialect**：TEXT/MEDIUMTEXT 不允许 DEFAULT（1101）；跨 dialect 加列用 `app/database.py::_ensure_column`；大文本用 `paper.py::_longtext()`，不能靠 try-import 判方言。**唯一索引可空列只允许一个 NULL**（指纹 / `dedup_key` 必须可空，不能 `DEFAULT ''`）。
