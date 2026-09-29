@@ -167,21 +167,34 @@ function _gxKSegs(line) {
 }
 
 export function gxKParseBlocks(text) {
-  const lines = _gxKPreprocess(text).split('\n').map(s => s.trim()).filter(Boolean);
+  /** 结构化正文。行首缩进即层级（每 2 个空格一级）——
+   *  由 `tools/gx_pdf_tree.py` 按 PDF 真实缩进坐标生成，与 PDF 视觉排版一一对应。
+   *  旧数据没有缩进（level 恒为 0），此时退回用 •/◦/▪ 符号类别判层级，行为不变。
+   */
+  const lines = _gxKPreprocess(text).split('\n');
   const blocks = [];
-  for (const line of lines) {
+  for (const raw of lines) {
+    if (!raw.trim()) continue;
+    // 不能用 trim() 丢掉缩进：层级就带在前导空格里
+    const lead = (raw.match(/^[ \t]*/) || [''])[0];
+    const level = Math.floor(lead.replace(/\t/g, '  ').length / 2);
+    const line = raw.trim();
     const k = _gxKLineKind(line);
     if (k.kind === 'h') {
-      blocks.push({ type: 'h', text: line });
+      blocks.push({ type: 'h', text: line, level });
     } else if (k.kind === 'desc') {
-      blocks.push({ type: 'desc', segs: _gxKSegs(k.rest) });
+      blocks.push({ type: 'desc', segs: _gxKSegs(k.rest), level });
     } else if (k.kind === 'li') {
       const segs = _gxKSegs(k.rest);
       const last = blocks[blocks.length - 1];
-      if (last && last.type === 'ul' && last.cls === k.cls) last.items.push({ no: k.no, segs });
-      else blocks.push({ type: 'ul', cls: k.cls, items: [{ no: k.no, segs }] });
+      // 层级不同不归为同一组，否则不同级条目会被并成一个列表
+      if (last && last.type === 'ul' && last.cls === k.cls && last.level === level) {
+        last.items.push({ no: k.no, segs });
+      } else {
+        blocks.push({ type: 'ul', cls: k.cls, level, items: [{ no: k.no, segs }] });
+      }
     } else {
-      blocks.push({ type: 'p', segs: _gxKSegs(line) });
+      blocks.push({ type: 'p', segs: _gxKSegs(line), level });
     }
   }
   return blocks;
@@ -192,28 +205,37 @@ function _gxKEsc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function _gxKLevel(cls) {
-  if (cls === 'b3') return 'l3';
-  if (cls === 'b2') return 'l2';
-  if (cls === 'b1') return 'l1';
-  return '';
+function _gxKLv(b) {
+  /** 层级：行首缩进优先（PDF 重解析数据）；没有缩进时退回用符号类别判（旧数据） */
+  if (b.level > 0) return b.level;
+  if (b.cls === 'b3') return 3;
+  if (b.cls === 'b2') return 2;
+  if (b.cls === 'b1') return 1;
+  return 0;
 }
 
 export function gxKBlocksHtml(text) {
   const segsHtml = segs => segs.map(sg =>
     sg.blank ? '<span class="gx-k-blank"></span>' : _gxKEsc(sg.s)).join('');
+  // 层级 → class（最多 5 级），交给 CSS 决定缩进量
+  const lvCls = lv => (lv > 0 ? 'gx-k-lv' + Math.min(lv, 5) : '');
   return gxKParseBlocks(text).map(b => {
-    if (b.type === 'h') return '<div class="gx-k-h">' + _gxKEsc(b.text) + '</div>';
+    if (b.type === 'h') {
+      return '<div class="gx-k-h ' + lvCls(_gxKLv(b)) + '">' + _gxKEsc(b.text) + '</div>';
+    }
     if (b.type === 'ul') {
-      const lv = _gxKLevel(b.cls);
-      return '<div class="gx-k-ul' + (lv ? ' gx-k-ul-' + lv : '') + '">' + b.items.map(li =>
-        '<div class="gx-k-li' + (lv ? ' gx-k-li-' + lv : '') + '">'
+      const lv = lvCls(_gxKLv(b));
+      return '<div class="gx-k-ul ' + lv + '">' + b.items.map(li =>
+        '<div class="gx-k-li">'
         + (li.no ? '<span class="gx-k-li-no">' + _gxKEsc(li.no) + '</span>' : '')
         + '<span class="gx-k-li-tx">' + segsHtml(li.segs) + '</span></div>').join('')
         + '</div>';
     }
-    if (b.type === 'desc') return '<p class="gx-k-desc">' + segsHtml(b.segs) + '</p>';
-    return '<p>' + segsHtml(b.segs) + '</p>';
+    if (b.type === 'desc') {
+      // 描述已有 .gx-k-desc 的固定缩进，再叠加层级缩进
+      return '<p class="gx-k-desc ' + lvCls(_gxKLv(b)) + '">' + segsHtml(b.segs) + '</p>';
+    }
+    return '<p class="' + lvCls(_gxKLv(b)) + '">' + segsHtml(b.segs) + '</p>';
   }).join('');
 }
 

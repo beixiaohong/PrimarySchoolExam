@@ -646,15 +646,22 @@ export default {
 .gx-kcontent :deep(.gx-k-li-no){flex:0 0 auto;min-width:2.2em;text-align:right;color:#0e7490;
   font-weight:600;font-size:13px;opacity:.9}
 .gx-kcontent :deep(.gx-k-li-tx){line-height:1.8}
-/* 层级缩进：PDF 用 `----` 分隔的层级结构展开后，•/◦/▪ 分别对应 1/2/3 级 */
-.gx-kcontent :deep(.gx-k-li-l2){padding-left:1.5em}
-.gx-kcontent :deep(.gx-k-li-l3){padding-left:3em}
-/* 描述行：PDF 里「术语」后面紧跟的解释，缩进且不带项目符号（贴近原排版） */
+/* 层级缩进：正文里的「每 2 个空格」= PDF 里的一级缩进（由 tools/gx_pdf_tree.py
+   按 PDF 缩进坐标生成）。旧数据没有缩进，靠 •/◦/▪ 符号类别也归入同一套 class。 */
+.gx-kcontent :deep(.gx-k-lv1){padding-left:1.4em}
+.gx-kcontent :deep(.gx-k-lv2){padding-left:2.8em}
+.gx-kcontent :deep(.gx-k-lv3){padding-left:4.2em}
+.gx-kcontent :deep(.gx-k-lv4){padding-left:5.6em}
+.gx-kcontent :deep(.gx-k-lv5){padding-left:7em}
+/* 描述行：PDF 里「术语」后面紧跟的解释，缩进且不带项目符号（贴近原排版）。
+   2.4em 是没有层级信息的旧数据的兜底；有层级时按层级走。 */
 .gx-kcontent :deep(.gx-k-desc){padding-left:2.4em;margin:0 0 6px;line-height:1.8;
   font-size:14px;opacity:.92}
-.gx-kcontent :deep(.gx-k-ul-l2 .gx-k-li-l1),
-.gx-kcontent :deep(.gx-k-ul-l3 .gx-k-li-l1),
-.gx-kcontent :deep(.gx-k-ul-l3 .gx-k-li-l2){margin-top:4px}
+.gx-kcontent :deep(.gx-k-desc.gx-k-lv1){padding-left:1.6em}
+.gx-kcontent :deep(.gx-k-desc.gx-k-lv2){padding-left:3em}
+.gx-kcontent :deep(.gx-k-desc.gx-k-lv3){padding-left:4.4em}
+.gx-kcontent :deep(.gx-k-desc.gx-k-lv4){padding-left:5.8em}
+.gx-kcontent :deep(.gx-k-desc.gx-k-lv5){padding-left:7.2em}
 .gx-kcontent :deep(.gx-k-blank){display:inline-block;min-width:4em;height:1em;
   border-bottom:1.5px solid currentColor;opacity:.55;margin:0 2px}
 
