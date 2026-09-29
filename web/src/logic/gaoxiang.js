@@ -71,6 +71,100 @@ function gxKSplitAnswer(text) {
   return [text.slice(0, m.index), text.slice(m.index + m[0].length)];
 }
 
+/* ── 正文结构化（展现形式优化）─────────────────────────────────────
+ * 后端存的是 PDF/AI 抽取原文。直接平铺 <p> 会把「1.」「（1）」「一、」条目
+ * 和小标题糊成一大坨，填空速记的「（）」也只是两个普通括号。这里把每行分类成
+ * 小标题 / 条目 / 段落，连续条目归组为列表，再把**空括号**切成填空空框片段。
+ * 只输出结构（gxKParseBlocks）与输出 HTML（gxKBlocksHtml）分离：结构可单测，
+ * HTML 拼装前对每段文本做转义（内容来自自家库的 PDF/AI 抽取，转义是双保险）。
+ */
+// 小标题：章/节行、中文序号行（短且不成句）、多级编号行（如 1.2 / 2.3.1）。
+// 判定保守 —— 长行宁可当段落，误判标题比漏判标题更伤排版。
+const GX_K_H_RE = [
+  /^第[一二三四五六七八九十百\d]{1,4}[章节讲篇]/,
+  /^[一二三四五六七八九十]{1,3}、/,
+  /^\d{1,2}(?:\.\d{1,2}){1,2}(?!\d)\s/,
+];
+// 条目前缀：1. / 1、 / 1． / （1） / (1) / • 等。`(?!\d)` 防止把多级编号「1.2」
+// 吃成条目「1.」+ 正文「2 xxx」（多级编号已先被标题规则接走，这里是双保险）。
+const GX_K_LI_RES = [
+  [/^（\d{1,3}）\s*/, null], [/^\(\d{1,3}\)\s*/, null], [/^\d{1,3}[、．](?!\d)/, null],
+  [/^\d{1,3}\.(?!\d)\s*/, null], [/^[•·●▪◦]\s?/, '•'], [/^[-–]\s+/, '•'],
+];
+// 空括号（允许内部空白）→ 填空空框。括号里有内容（如「（如 GB/T）」）不动。
+const GX_K_BLANK_RE = /（\s*）|\(\s*\)/g;
+
+function _gxKLineKind(line) {
+  if (line.length <= 40 && GX_K_H_RE.some(re => re.test(line))
+      && !(line.length > 30 && line.includes('。'))) {
+    return { kind: 'h' };
+  }
+  for (const [re, fixed] of GX_K_LI_RES) {
+    const m = re.exec(line);
+    if (m) {
+      const no = fixed != null ? fixed : m[0].trim();
+      // 前缀形态类：括号序号 / 数字序号 / 圆点 —— 不同类不归同一组（层级感）
+      const cls = fixed != null ? 'b' : (/^[（(]/.test(no) ? 'p' : 'n');
+      return { kind: 'li', no, cls, rest: line.slice(m[0].length).trim() };
+    }
+  }
+  return { kind: 'p' };
+}
+
+// 一行 → 文本/空框片段序列（blank=true 的位置渲染为填空线）
+function _gxKSegs(line) {
+  const segs = [];
+  let last = 0, m;
+  GX_K_BLANK_RE.lastIndex = 0;
+  while ((m = GX_K_BLANK_RE.exec(line))) {
+    if (m.index > last) segs.push({ s: line.slice(last, m.index), blank: false });
+    segs.push({ s: m[0], blank: true });
+    last = m.index + m[0].length;
+  }
+  if (last < line.length) segs.push({ s: line.slice(last), blank: false });
+  return segs.length ? segs : [{ s: line, blank: false }];
+}
+
+export function gxKParseBlocks(text) {
+  const lines = (text || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const blocks = [];
+  for (const line of lines) {
+    const k = _gxKLineKind(line);
+    if (k.kind === 'h') {
+      blocks.push({ type: 'h', text: line });
+    } else if (k.kind === 'li') {
+      const segs = _gxKSegs(k.rest);
+      const last = blocks[blocks.length - 1];
+      if (last && last.type === 'ul' && last.cls === k.cls) last.items.push({ no: k.no, segs });
+      else blocks.push({ type: 'ul', cls: k.cls, items: [{ no: k.no, segs }] });
+    } else {
+      blocks.push({ type: 'p', segs: _gxKSegs(line) });
+    }
+  }
+  return blocks;
+}
+
+function _gxKEsc(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+export function gxKBlocksHtml(text) {
+  const segsHtml = segs => segs.map(sg =>
+    sg.blank ? '<span class="gx-k-blank"></span>' : _gxKEsc(sg.s)).join('');
+  return gxKParseBlocks(text).map(b => {
+    if (b.type === 'h') return '<div class="gx-k-h">' + _gxKEsc(b.text) + '</div>';
+    if (b.type === 'ul') {
+      return '<div class="gx-k-ul">' + b.items.map(li =>
+        '<div class="gx-k-li">'
+        + (li.no ? '<span class="gx-k-li-no">' + _gxKEsc(li.no) + '</span>' : '')
+        + '<span class="gx-k-li-tx">' + segsHtml(li.segs) + '</span></div>').join('')
+        + '</div>';
+    }
+    return '<p>' + segsHtml(b.segs) + '</p>';
+  }).join('');
+}
+
 export function gaoxiangData() {
   return {
     // ── 通用 ──
@@ -235,19 +329,20 @@ export const gaoxiangComputed = {
       })
       .map(k => ({ kind: k, label: this.gxKKindLabel(k), items: map[k] }));
   },
-  // 知识点正文按换行拆段（后端存的是 PDF 抽取原文，直接塞 div 会挤成一大坨）
-  // 填空速记的正文是「题目 + 【答案】 + 答案」三段式：答案单独拿出来（默认折叠），
-  // 其它资料类型拆不出答案，原样走 gxKAskParas，互不影响。
-  gxKAskParas() {
+  // 知识点正文结构化 HTML（后端存的是 PDF 抽取原文，直接塞 div 会挤成一大坨）：
+  // 小标题/条目/填空空框的解析与拼装见顶部 gxKParseBlocks / gxKBlocksHtml。
+  // 填空速记的正文是「题目 + 【答案】 + 答案」三段式：答案单独渲染（默认折叠），
+  // 其它资料类型拆不出答案，原样走 gxKAskHtml，互不影响。
+  gxKAskHtml() {
     const [ask] = gxKSplitAnswer(((this.gxKDetail || {}).content) || '');
-    return ask.split('\n').map(s => s.trim()).filter(Boolean);
+    return gxKBlocksHtml(ask);
   },
-  gxKAnswerParas() {
+  gxKAnswerHtml() {
     const [, ans] = gxKSplitAnswer(((this.gxKDetail || {}).content) || '');
-    return ans.split('\n').map(s => s.trim()).filter(Boolean);
+    return gxKBlocksHtml(ans);
   },
   gxKHasAnswer() {
-    return this.gxKAnswerParas.length > 0;
+    return this.gxKAnswerHtml.length > 0;
   },
 };
 

@@ -504,17 +504,13 @@
         <span class="gx-q-badge" v-if="appCtx.gxKDetail.kind">{{appCtx.gxKKindLabel(appCtx.gxKDetail.kind)}}</span>
         <span class="gx-modal-src" v-if="appCtx.gxKDetail.source_file">出处：{{appCtx.gxKDetail.source_file}}</span>
       </div>
-      <div class="gx-modal-body gx-kcontent">
-        <p v-for="(para, i) in appCtx.gxKAskParas" :key="i">{{para}}</p>
-      </div>
+      <div class="gx-modal-body gx-kcontent" v-html="appCtx.gxKAskHtml"></div>
       <!-- 填空速记：答案默认折叠 —— 先自己填，再点开对答案，保留原本的自测用法 -->
       <div class="gx-fill-answer" v-if="appCtx.gxKHasAnswer">
         <button class="gx-fill-btn" @click="appCtx.gxKToggleAnswer()">
           {{appCtx.gxKShowAnswer ? '收起答案' : '显示答案'}}
         </button>
-        <div class="gx-fill-body" v-if="appCtx.gxKShowAnswer">
-          <p v-for="(para, i) in appCtx.gxKAnswerParas" :key="i">{{para}}</p>
-        </div>
+        <div class="gx-fill-body" v-if="appCtx.gxKShowAnswer" v-html="appCtx.gxKAnswerHtml"></div>
       </div>
     </div>
   </div>
@@ -624,9 +620,25 @@ export default {
 .gx-kitem-meta{font-size:12px;opacity:.65}
 .gx-kitem-sum{font-size:13px;line-height:1.6;opacity:.8;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-/* 知识点正文：PDF 抽取原文按行分段，去掉挤成一大坨的观感 */
-.gx-kcontent p{margin:0 0 10px;line-height:1.8;font-size:14px}
-.gx-kcontent p:last-child{margin-bottom:0}
+/* 知识点正文：PDF 抽取原文按行分段，去掉挤成一大坨的观感。
+   ⚠️ 正文由 v-html 渲染（见 logic/gaoxiang.js 的 gxKBlocksHtml），v-html 产出的 DOM
+   **不带 scoped 的 data-v 属性**，故所有后代选择器必须用 :deep() 穿透——否则一条都不生效
+   （正文挤成一坨、填空空框不显示）。改这里时别把 :deep() 去掉。 */
+.gx-kcontent :deep(p){margin:0 0 10px;line-height:1.8;font-size:14px}
+.gx-kcontent :deep(p:last-child){margin-bottom:0}
+/* 结构化正文：小标题 / 编号条目 / 填空空框（解析见 logic/gaoxiang.js 的 gxKParseBlocks） */
+.gx-kcontent :deep(.gx-k-h){margin:14px 0 8px;padding-left:8px;border-left:3px solid #0e7490;
+  font-weight:700;font-size:14.5px;line-height:1.6}
+.gx-kcontent :deep(.gx-k-h:first-child){margin-top:0}
+.gx-kcontent :deep(.gx-k-ul){margin:0 0 10px;display:flex;flex-direction:column;gap:6px}
+.gx-kcontent :deep(.gx-k-ul:last-child){margin-bottom:0}
+.gx-kcontent :deep(.gx-k-li){display:flex;gap:6px;align-items:baseline}
+.gx-kcontent :deep(.gx-k-li-no){flex:0 0 auto;min-width:2.2em;text-align:right;color:#0e7490;
+  font-weight:600;font-size:13px;opacity:.9}
+.gx-kcontent :deep(.gx-k-li-tx){line-height:1.8}
+.gx-kcontent :deep(.gx-k-blank){display:inline-block;min-width:4em;height:1em;
+  border-bottom:1.5px solid currentColor;opacity:.55;margin:0 2px}
+.gx-fill-body :deep(.gx-k-blank){border-bottom-color:#4E7CF6;opacity:.9}
 
 /* 填空速记的答案区：默认折叠（先自测再对答案），展开后用底色与题目区分开 */
 .gx-fill-answer{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line,#E5EAF4)}
@@ -634,8 +646,8 @@ export default {
   background:transparent;color:var(--primary,#4E7CF6);font-size:13px;cursor:pointer}
 .gx-fill-btn:hover{background:var(--primary-light,#EAF0FE)}
 .gx-fill-body{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--primary-light,#EAF0FE)}
-.gx-fill-body p{margin:0 0 8px;line-height:1.8;font-size:14px}
-.gx-fill-body p:last-child{margin-bottom:0}
+.gx-fill-body :deep(p){margin:0 0 8px;line-height:1.8;font-size:14px}
+.gx-fill-body :deep(p:last-child){margin-bottom:0}
 
 .gx-pick-list{margin-top:10px;display:flex;flex-direction:column;gap:8px;
   max-height:280px;overflow:auto}
