@@ -649,6 +649,9 @@ export default {
 /* 层级缩进：PDF 用 `----` 分隔的层级结构展开后，•/◦/▪ 分别对应 1/2/3 级 */
 .gx-kcontent :deep(.gx-k-li-l2){padding-left:1.5em}
 .gx-kcontent :deep(.gx-k-li-l3){padding-left:3em}
+/* 描述行：PDF 里「术语」后面紧跟的解释，缩进且不带项目符号（贴近原排版） */
+.gx-kcontent :deep(.gx-k-desc){padding-left:2.4em;margin:0 0 6px;line-height:1.8;
+  font-size:14px;opacity:.92}
 .gx-kcontent :deep(.gx-k-ul-l2 .gx-k-li-l1),
 .gx-kcontent :deep(.gx-k-ul-l3 .gx-k-li-l1),
 .gx-kcontent :deep(.gx-k-ul-l3 .gx-k-li-l2){margin-top:4px}

@@ -90,17 +90,24 @@ const GX_K_LI_RES = [
 // 空括号（允许内部空白）→ 填空空框。括号里有内容（如「（如 GB/T）」）不动。
 const GX_K_BLANK_RE = /（\s*）|\(\s*\)/g;
 // PDF 层级分隔符：「网络存储3种技术----直接附加存储DAS ----无需网络…」
-// 一行里出现多个 ---- 时，展开成缩进列表项（•/◦/▪）。
+// 一行里出现多个 ---- 时，展开成「主题 / 术语 / 描述」（见 _gxKPreprocess）。
 const GX_K_DASH_SEP_RE = /[-—]{2,}/;
+// 描述行标记：预处理器给「最后一段（描述）」加的前缀 —— 渲染为缩进段落、不带符号
+const GX_K_DESC_RE = /^»\s?/;
 
 function _gxKPreprocess(text) {
-  /** 把 PDF 里用 `----` 连接的层级结构展开成独立列表行。
+  /** 把 PDF 里用 `----` 连接的层级结构展开成「主题 / 术语 / 描述」。
+
+   * PDF 原排版是缩进树（`----` 实为缩进引导线），但 PDF 文本抽取**不保留缩进**
+   * （实测 fitz get_text 每行 x0 全为 0），所以只能按 `----` 分段还原：
+   * **最后一段是描述，前面各段是主题 / 子术语**——这与原 PDF 一致
+   * （如「网络存储3种技术----DAS----无需网络…」里 DAS 是术语、其后是它的描述）。
    *
    * 例：
    *   网络存储3种技术----直接附加存储DAS ----无需网络…；
    * → 网络存储3种技术
    *   • 直接附加存储DAS
-   *   ◦ 无需网络…；
+   *     无需网络…；            （缩进段落，不带符号，贴近 PDF 观感）
    *
    * 行首以 ---- 开头（上一行的延续）时，第一级不输出，直接从 • 开始。
    * 只处理确实含 `----` 且能拆出 ≥2 个非空片段的行，避免误伤正文里的少量横线。
@@ -114,16 +121,23 @@ function _gxKPreprocess(text) {
     const clean = parts.filter(Boolean);
     if (clean.length < 2) return line;
     const head = leading ? '' : clean.shift() + '\n';
+    // 最后一段是描述（缩进段落、不带符号）；中间各段是逐级子术语
+    const desc = clean.pop();
     const markers = ['•', '◦', '▪'];
     const body = clean.map((p, i) => {
       const marker = markers[Math.min(i, markers.length - 1)] || '•';
       return marker + ' ' + p;
-    }).join('\n');
-    return (head + body).trim();
+    });
+    body.push('» ' + desc);
+    return (head + body.join('\n')).trim();
   }).join('\n');
 }
 
 function _gxKLineKind(line) {
+  // 描述行（由预处理器从 ---- 末段展开）：缩进段落，不参与列表分组
+  if (GX_K_DESC_RE.test(line)) {
+    return { kind: 'desc', rest: line.replace(GX_K_DESC_RE, '') };
+  }
   if (line.length <= 40 && GX_K_H_RE.some(re => re.test(line))
       && !(line.length > 30 && line.includes('。'))) {
     return { kind: 'h' };
@@ -159,6 +173,8 @@ export function gxKParseBlocks(text) {
     const k = _gxKLineKind(line);
     if (k.kind === 'h') {
       blocks.push({ type: 'h', text: line });
+    } else if (k.kind === 'desc') {
+      blocks.push({ type: 'desc', segs: _gxKSegs(k.rest) });
     } else if (k.kind === 'li') {
       const segs = _gxKSegs(k.rest);
       const last = blocks[blocks.length - 1];
@@ -196,6 +212,7 @@ export function gxKBlocksHtml(text) {
         + '<span class="gx-k-li-tx">' + segsHtml(li.segs) + '</span></div>').join('')
         + '</div>';
     }
+    if (b.type === 'desc') return '<p class="gx-k-desc">' + segsHtml(b.segs) + '</p>';
     return '<p>' + segsHtml(b.segs) + '</p>';
   }).join('');
 }
