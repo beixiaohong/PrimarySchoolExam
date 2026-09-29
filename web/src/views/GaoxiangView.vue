@@ -646,6 +646,12 @@ export default {
 .gx-kcontent :deep(.gx-k-li-no){flex:0 0 auto;min-width:2.2em;text-align:right;color:#0e7490;
   font-weight:600;font-size:13px;opacity:.9}
 .gx-kcontent :deep(.gx-k-li-tx){line-height:1.8}
+/* 层级缩进：PDF 用 `----` 分隔的层级结构展开后，•/◦/▪ 分别对应 1/2/3 级 */
+.gx-kcontent :deep(.gx-k-li-l2){padding-left:1.5em}
+.gx-kcontent :deep(.gx-k-li-l3){padding-left:3em}
+.gx-kcontent :deep(.gx-k-ul-l2 .gx-k-li-l1),
+.gx-kcontent :deep(.gx-k-ul-l3 .gx-k-li-l1),
+.gx-kcontent :deep(.gx-k-ul-l3 .gx-k-li-l2){margin-top:4px}
 .gx-kcontent :deep(.gx-k-blank){display:inline-block;min-width:4em;height:1em;
   border-bottom:1.5px solid currentColor;opacity:.55;margin:0 2px}
 

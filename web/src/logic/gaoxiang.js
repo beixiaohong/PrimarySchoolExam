@@ -62,6 +62,10 @@ const WRONG_TABS = [
 /* ── 正文结构化（展现形式优化）─────────────────────────────────────
  * 后端存的是 PDF/AI 抽取原文。直接平铺 <p> 会把「1.」「（1）」「一、」条目
  * 和小标题糊成一大坨。这里把每行分类成小标题 / 条目 / 段落，连续条目归组为列表。
+ *
+ * 知识点清单 PDF 常见「----」层级分隔（如「网络存储3种技术----DAS----无需网络…」），
+ * 预处理器 _gxKPreprocess 把它展开成 • / ◦ / ▪ 多层列表，避免所有内容糊成一段。
+ *
  * 空括号（万一还有遗留数据）渲染为填空线；数据层已把填空清单转成完整知识点，
  * 正常不应再出现空框。
  * 只输出结构（gxKParseBlocks）与输出 HTML（gxKBlocksHtml）分离：结构可单测，
@@ -74,26 +78,60 @@ const GX_K_H_RE = [
   /^[一二三四五六七八九十]{1,3}、/,
   /^\d{1,2}(?:\.\d{1,2}){1,2}(?!\d)\s/,
 ];
-// 条目前缀：1. / 1、 / 1． / （1） / (1) / • 等。`(?!\d)` 防止把多级编号「1.2」
+// 条目前缀：1. / 1、 / 1． / （1） / (1) / • / ◦ / ▪ 等。`(?!\d)` 防止把多级编号「1.2」
 // 吃成条目「1.」+ 正文「2 xxx」（多级编号已先被标题规则接走，这里是双保险）。
+// 圆点分三级：•(l1) ◦(l2) ▪(l3)，用于把 PDF 里的「----」层级展开成缩进列表。
 const GX_K_LI_RES = [
-  [/^（\d{1,3}）\s*/, null], [/^\(\d{1,3}\)\s*/, null], [/^\d{1,3}[、．](?!\d)/, null],
-  [/^\d{1,3}\.(?!\d)\s*/, null], [/^[•·●▪◦]\s?/, '•'], [/^[-–]\s+/, '•'],
+  [/^（\d{1,3}）\s*/, null, 'p'], [/^\(\d{1,3}\)\s*/, null, 'p'],
+  [/^\d{1,3}[、．](?!\d)/, null, 'n'], [/^\d{1,3}\.(?!\d)\s*/, null, 'n'],
+  [/^[-–]\s+/, '•', 'b1'],
+  [/^[•·●]\s?/, '•', 'b1'], [/^◦\s?/, '◦', 'b2'], [/^▪\s?/, '▪', 'b3'],
 ];
 // 空括号（允许内部空白）→ 填空空框。括号里有内容（如「（如 GB/T）」）不动。
 const GX_K_BLANK_RE = /（\s*）|\(\s*\)/g;
+// PDF 层级分隔符：「网络存储3种技术----直接附加存储DAS ----无需网络…」
+// 一行里出现多个 ---- 时，展开成缩进列表项（•/◦/▪）。
+const GX_K_DASH_SEP_RE = /[-—]{2,}/;
+
+function _gxKPreprocess(text) {
+  /** 把 PDF 里用 `----` 连接的层级结构展开成独立列表行。
+   *
+   * 例：
+   *   网络存储3种技术----直接附加存储DAS ----无需网络…；
+   * → 网络存储3种技术
+   *   • 直接附加存储DAS
+   *   ◦ 无需网络…；
+   *
+   * 行首以 ---- 开头（上一行的延续）时，第一级不输出，直接从 • 开始。
+   * 只处理确实含 `----` 且能拆出 ≥2 个非空片段的行，避免误伤正文里的少量横线。
+   */
+  return (text || '').split('\n').map(line => {
+    if (!GX_K_DASH_SEP_RE.test(line)) return line;
+    const parts = line.split(GX_K_DASH_SEP_RE).map(s => s.trim());
+    const leading = parts[0] === '';
+    if (leading) parts.shift();
+    // 去掉两端空串后不足两段，保持原样
+    const clean = parts.filter(Boolean);
+    if (clean.length < 2) return line;
+    const head = leading ? '' : clean.shift() + '\n';
+    const markers = ['•', '◦', '▪'];
+    const body = clean.map((p, i) => {
+      const marker = markers[Math.min(i, markers.length - 1)] || '•';
+      return marker + ' ' + p;
+    }).join('\n');
+    return (head + body).trim();
+  }).join('\n');
+}
 
 function _gxKLineKind(line) {
   if (line.length <= 40 && GX_K_H_RE.some(re => re.test(line))
       && !(line.length > 30 && line.includes('。'))) {
     return { kind: 'h' };
   }
-  for (const [re, fixed] of GX_K_LI_RES) {
+  for (const [re, fixed, cls] of GX_K_LI_RES) {
     const m = re.exec(line);
     if (m) {
       const no = fixed != null ? fixed : m[0].trim();
-      // 前缀形态类：括号序号 / 数字序号 / 圆点 —— 不同类不归同一组（层级感）
-      const cls = fixed != null ? 'b' : (/^[（(]/.test(no) ? 'p' : 'n');
       return { kind: 'li', no, cls, rest: line.slice(m[0].length).trim() };
     }
   }
@@ -115,7 +153,7 @@ function _gxKSegs(line) {
 }
 
 export function gxKParseBlocks(text) {
-  const lines = (text || '').split('\n').map(s => s.trim()).filter(Boolean);
+  const lines = _gxKPreprocess(text).split('\n').map(s => s.trim()).filter(Boolean);
   const blocks = [];
   for (const line of lines) {
     const k = _gxKLineKind(line);
@@ -138,14 +176,22 @@ function _gxKEsc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function _gxKLevel(cls) {
+  if (cls === 'b3') return 'l3';
+  if (cls === 'b2') return 'l2';
+  if (cls === 'b1') return 'l1';
+  return '';
+}
+
 export function gxKBlocksHtml(text) {
   const segsHtml = segs => segs.map(sg =>
     sg.blank ? '<span class="gx-k-blank"></span>' : _gxKEsc(sg.s)).join('');
   return gxKParseBlocks(text).map(b => {
     if (b.type === 'h') return '<div class="gx-k-h">' + _gxKEsc(b.text) + '</div>';
     if (b.type === 'ul') {
-      return '<div class="gx-k-ul">' + b.items.map(li =>
-        '<div class="gx-k-li">'
+      const lv = _gxKLevel(b.cls);
+      return '<div class="gx-k-ul' + (lv ? ' gx-k-ul-' + lv : '') + '">' + b.items.map(li =>
+        '<div class="gx-k-li' + (lv ? ' gx-k-li-' + lv : '') + '">'
         + (li.no ? '<span class="gx-k-li-no">' + _gxKEsc(li.no) + '</span>' : '')
         + '<span class="gx-k-li-tx">' + segsHtml(li.segs) + '</span></div>').join('')
         + '</div>';
