@@ -80,4 +80,4 @@ cd web && node node_modules/vite/bin/vite.js build     # 前端构建（admin �
 | 成长体系 | 新埋点一律加 `engagement/services/events.py`；埋在 `commit()` **之后**；读时零聚合；不提供对外加经验端点 | `成长体系与高项备考.md` |
 | 高项备考 | `/quiz/generate` 用独立短会话回读；题库取题必须在 SQL 层排除已做题；`【答案】` 是前后端契约；知识点正文结构化唯一实现 `gxKParseBlocks`/`gxKBlocksHtml`（配 `:deep()`） | 同上 |
 | 消息推送 | 200 无 `id` 必须判失败（两条路径共用 `_parse_resp`），但有**两种**原因：没人订阅 / **群发段名过期**（用常量 `SEGMENT_ALL_SUBSCRIBERS`，禁字面量）；**跟踪防护会拦 OneSignal，自托管 SDK 无效**；**主域名＝www，三者必须一致**。排查先跑 `tools/onesignal_probe.py` | `消息推送.md` |
-| 前端约定 / 定时任务 | 新 tab 4 处注册；可构建三条判据；调试「静默失效」；调度是静默失效，单任务异常不得终止整轮 | `工程规范-前端与定时任务.md` |
+| 前端约定 / 定时任务 | 新 tab 4 处注册；可构建三条判据；**开关统一用 `components/StateSwitch.vue`（禁「按钮上写状态词」）**；调试「静默失效」；调度是静默失效，单任务异常不得终止整轮 | `工程规范-前端与定时任务.md` |
