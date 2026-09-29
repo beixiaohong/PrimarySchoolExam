@@ -545,6 +545,11 @@ export default {
 </script>
 
 <style scoped>
+/* 本文件样式分两类：
+   1) 普通结构化样式（如 .gx-hero / .gx-tab / .gx-kitem / 已读徽标 .gx-read-badge）—— scoped 正常作用，无需特殊处理；
+   2) 知识点正文（下方 .gx-kcontent 段）—— 由 v-html 渲染，产出的 DOM 不带 scoped 的 data-v 属性，
+      故其后所有选择器必须用 :deep() 穿透，详见该段顶部注释。改这里时别把 :deep() 去掉。
+   已读徽标（.gx-read-badge）/ 类型角标（.gx-kitem-tag）/ 分组头「已读 x」（.gx-kgroup-read）均属第 1) 类。 */
 .gx-hero{background:linear-gradient(135deg,#1e3a8a,#0e7490)}
 .gx-hero-stat{text-align:right;color:#fff}
 .gx-hero-num{font-size:30px;font-weight:800;line-height:1.1}
