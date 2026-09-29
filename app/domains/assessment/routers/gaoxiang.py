@@ -240,10 +240,13 @@ def list_knowledge(user_id: str, domain: str = "", chapter: str = "", kind: str 
     rows = query.order_by(GxKnowledge.domain, GxKnowledge.chapter,
                           GxKnowledge.seq, GxKnowledge.id) \
                 .limit(max(1, min(int(limit or 200), 500))).all()
+    # 已读标记：一次 IN 查询取集合，避免逐条查询（N+1）
+    read_ids = gx.read_knowledge_ids(db, user_id, [k.id for k in rows])
     return {"items": [{"id": k.id, "domain": k.domain, "code": k.code,
                        "title": k.title, "summary": k.summary,
                        "chapter": k.chapter, "kind": k.kind,
-                       "source_file": k.source_file} for k in rows]}
+                       "source_file": k.source_file,
+                       "read": k.id in read_ids} for k in rows]}
 
 
 @router.get("/knowledge/{kid}", summary="知识点详情")
@@ -251,9 +254,15 @@ def knowledge_detail(kid: int, user_id: str, db: Session = Depends(get_db)):
     k = db.get(GxKnowledge, kid)
     if k is None:
         raise HTTPException(404, "知识点不存在")
+    # 打开即记为已读（幂等，service 内保证「仅首次才 +1」）。
+    # GET 带写副作用在这里可接受：唯一写入是「插一行已读」，重复请求结果相同；
+    # 且前端只在用户点击时拉详情（无预取/无轮询），不会把没看过的标成已读。
+    first_read = gx.mark_knowledge_read(db, user_id, k.id, k.domain)
+    db.commit()
     return {"id": k.id, "domain": k.domain, "code": k.code, "title": k.title,
             "summary": k.summary, "content": k.content, "chapter": k.chapter,
-            "kind": k.kind, "source_file": k.source_file}
+            "kind": k.kind, "source_file": k.source_file,
+            "read": True, "first_read": first_read}
 
 
 @router.post("/knowledge/generate", summary="AI 生成知识域知识点")

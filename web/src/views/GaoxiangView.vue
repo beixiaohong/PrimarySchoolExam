@@ -216,12 +216,16 @@
       <div v-for="g in appCtx.gxKGroups" :key="g.kind" class="gx-kgroup">
         <div class="gx-kgroup-head" v-if="!appCtx.gxKKind">
           <b>{{g.label}}</b><span class="gx-kgroup-n">{{g.items.length}} 条</span>
+          <span class="gx-kgroup-n gx-kgroup-read" v-if="g.readN">已读 {{g.readN}}</span>
         </div>
         <div class="gx-klist">
           <div v-for="k in g.items" :key="k.id" class="gx-kitem" @click="appCtx.gxOpenKnowledge(k)">
             <div class="gx-kitem-head">
               <b>{{k.title}}</b>
-              <span class="gx-kitem-tag">{{appCtx.gxKKindLabel(k.kind)}}</span>
+              <span class="gx-kitem-flags">
+                <span class="gx-read-badge" v-if="k.read">已读</span>
+                <span class="gx-kitem-tag">{{appCtx.gxKKindLabel(k.kind)}}</span>
+              </span>
             </div>
             <span class="gx-kitem-meta" v-if="k.domain || k.chapter">
               {{k.domain || '未归类'}}<template v-if="k.chapter"> · {{k.chapter}}</template>
@@ -502,6 +506,7 @@
         <span class="gx-q-badge" v-if="appCtx.gxKDetail.domain">{{appCtx.gxKDetail.domain}}</span>
         <span class="gx-q-badge" v-if="appCtx.gxKDetail.chapter">{{appCtx.gxKDetail.chapter}}</span>
         <span class="gx-q-badge" v-if="appCtx.gxKDetail.kind">{{appCtx.gxKKindLabel(appCtx.gxKDetail.kind)}}</span>
+        <span class="gx-read-badge" v-if="appCtx.gxKDetail.read">✓ 已读</span>
         <span class="gx-modal-src" v-if="appCtx.gxKDetail.source_file">出处：{{appCtx.gxKDetail.source_file}}</span>
       </div>
       <div class="gx-modal-body gx-kcontent" v-html="appCtx.gxKAskHtml"></div>
@@ -617,6 +622,12 @@ export default {
 .gx-kitem-head b{font-size:14px;line-height:1.5}
 .gx-kitem-tag{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:6px;
   background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;white-space:nowrap}
+.gx-kitem-flags{flex:0 0 auto;display:flex;align-items:center;gap:6px}
+/* 已读标记：打开详情即记已读（后端幂等，仅首次才计入「读过知识点」）。
+   明细表 gx_knowledge_reads 是真相源，gx_progress.knowledge_read 只是它的去重计数。 */
+.gx-read-badge{flex:0 0 auto;font-size:11px;padding:1px 6px;border-radius:6px;
+  background:#E6F9F0;color:#1F9D63;font-weight:600;white-space:nowrap}
+.gx-kgroup-read{opacity:1;color:#1F9D63}
 .gx-kitem-meta{font-size:12px;opacity:.65}
 .gx-kitem-sum{font-size:13px;line-height:1.6;opacity:.8;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}

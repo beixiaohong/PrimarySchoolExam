@@ -8,7 +8,8 @@
 ④ quiz/generate 题库优先：题库有未做过题时不触发 AI（不扣费不出新题）；
 ⑤ AI 生成端点（mock chat_with）：知识点生成落库去重、案例批改评分落记录；
 ⑥ 进度端点：全部考纲知识域都返回（没学过的为 0），正确率口径一致；
-⑦ 校验：非法知识域 400、不存在知识点/错题 404。
+⑦ 校验：非法知识域 400、不存在知识点/错题 404；
+⑧ 知识点已读闭环：打开详情即已读且**仅首次**计数、列表按条给 read 标记、已读按用户隔离。
 
 conftest 强制 MySQL 测试库；不做事务回滚 → 每用例专属 user_id，finally 清理自身数据。
 """
@@ -18,7 +19,7 @@ import pytest
 
 from app.database import SessionLocal
 from app.models.gaoxiang import (GxKnowledge, GxQuestion, GxAttempt,
-                                 GxWrong, GxCaseGrade, GxProgress)
+                                 GxWrong, GxCaseGrade, GxProgress, GxKnowledgeRead)
 from app.domains.assessment.services.gaoxiang import (
     GX_DOMAINS, MASTER_STREAK, QTYPE_SINGLE, QTYPE_MULTI, QTYPE_CASE, QTYPE_ESSAY,
     normalize_letters, grade_choice, parse_questions, parse_case,
@@ -50,6 +51,7 @@ def _cleanup(uid):
         s.query(GxAttempt).filter(GxAttempt.user_id == uid).delete()
         s.query(GxWrong).filter(GxWrong.user_id == uid).delete()
         s.query(GxCaseGrade).filter(GxCaseGrade.user_id == uid).delete()
+        s.query(GxKnowledgeRead).filter(GxKnowledgeRead.user_id == uid).delete()
         s.query(GxProgress).filter(GxProgress.user_id == uid).delete()
         s.query(GxQuestion).filter(GxQuestion.question.like("高项%")).delete()
         s.query(GxKnowledge).filter(GxKnowledge.title.like("高项%")).delete()
@@ -779,3 +781,107 @@ def test_record_subjective_grade_pass_accumulates_streak():
     finally:
         _cleanup(uid)
         s.close()
+
+
+# ── ⑧ 知识点「已读」闭环（084_gx_knowledge_reads） ──
+# 钉死三件事：①打开详情即已读，且**只在首次**累加计数；②列表按条给 read 标记；
+# ③已读按用户隔离。
+# 计数语义很关键：`gx_progress.knowledge_read` 是**去重条数**（= gx_knowledge_reads
+# 的行数），不是「打开次数」——否则用户重复翻看同一条就能把「读过知识点」刷成天文数字。
+
+GX_RD_UID = "gx_test_read_uid"
+GX_RD_UID_B = "gx_test_read_uid_b"
+
+
+def _seed_read_knowledge(db, title):
+    """造一条测试知识点（标题/正文都带「高项」前缀，_cleanup 按此前缀清理）"""
+    k = GxKnowledge(domain="风险管理", title=title,
+                    content=title + "正文：风险登记册是风险管理过程的核心输出。")
+    db.add(k)
+    db.commit()
+    return k.id   # commit 后立刻取 id（会话由调用方关，close 后属性过期读不到）
+
+
+def _read_map(client, uid, kw):
+    """按关键词取知识点列表 → {id: read}。关键词带每个用例自己的标记，
+    避免正文关键词把别的用例造的数据也捞进来。"""
+    r = client.get(f"/api/gx/knowledge?user_id={uid}&q={kw}")
+    assert r.status_code == 200
+    return {it["id"]: it["read"] for it in r.json()["items"]}
+
+
+def _summary_read(client, uid, domain="风险管理"):
+    """从进度端点读 (总已读, 该域已读)"""
+    r = client.get(f"/api/gx/progress?user_id={uid}")
+    assert r.status_code == 200
+    dom = {d["domain"]: d for d in r.json()["domains"]}.get(domain) or {}
+    return r.json()["summary"]["knowledge_read"], dom.get("knowledge_read")
+
+
+def test_knowledge_read_marks_and_counts_only_once(client):
+    uid = GX_RD_UID
+    _cleanup(uid)
+    s = SessionLocal()
+    try:
+        k1 = _seed_read_knowledge(s, "高项已读测试A甲")
+        k2 = _seed_read_knowledge(s, "高项已读测试A乙")
+    finally:
+        s.close()
+    try:
+        # 初始：两条都未读
+        before = _read_map(client, uid, "高项已读测试A")
+        assert before[k1] is False and before[k2] is False
+
+        # 首次打开详情 → 记为已读
+        r = client.get(f"/api/gx/knowledge/{k1}?user_id={uid}")
+        assert r.status_code == 200
+        assert r.json()["read"] is True and r.json()["first_read"] is True
+
+        # 再打开同一条 → 幂等：仍是已读，但不再是首次（不重复计数）
+        r = client.get(f"/api/gx/knowledge/{k1}?user_id={uid}")
+        assert r.json()["read"] is True and r.json()["first_read"] is False
+
+        # 列表按条打标记：只有甲已读
+        after = _read_map(client, uid, "高项已读测试A")
+        assert after[k1] is True and after[k2] is False
+
+        # 进度计数 = 1（重复打开没把它刷成 2），且落在正确的知识域上
+        total, by_domain = _summary_read(client, uid, "风险管理")
+        assert total == 1 and by_domain == 1
+    finally:
+        _cleanup(uid)
+
+
+def test_knowledge_read_isolated_between_users(client):
+    uid, uid_b = GX_RD_UID, GX_RD_UID_B
+    _cleanup(uid)
+    _cleanup(uid_b)
+    s = SessionLocal()
+    try:
+        kid = _seed_read_knowledge(s, "高项已读测试B隔离")
+    finally:
+        s.close()
+    try:
+        assert client.get(f"/api/gx/knowledge/{kid}?user_id={uid}"
+                          ).json()["read"] is True
+        # 另一个用户看同一条：仍未读，计数为 0（已读是 per-user 的）
+        assert _read_map(client, uid_b, "高项已读测试B")[kid] is False
+        assert _summary_read(client, uid_b) == (0, 0)
+    finally:
+        _cleanup(uid)
+        _cleanup(uid_b)
+
+
+def test_knowledge_read_404_creates_nothing(client):
+    """不存在的知识点 404，且不留已读记录（404 判定在记已读之前）"""
+    uid = GX_RD_UID
+    _cleanup(uid)
+    try:
+        assert client.get(f"/api/gx/knowledge/999999?user_id={uid}").status_code == 404
+        s = SessionLocal()
+        try:
+            assert s.query(GxKnowledgeRead).filter_by(user_id=uid).count() == 0
+        finally:
+            s.close()
+    finally:
+        _cleanup(uid)

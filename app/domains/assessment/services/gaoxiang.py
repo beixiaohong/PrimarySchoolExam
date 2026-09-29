@@ -16,9 +16,11 @@ import logging
 import re
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.gaoxiang import GxKnowledge, GxQuestion, GxAttempt, GxWrong, GxProgress
+from app.models.gaoxiang import (GxKnowledge, GxQuestion, GxAttempt, GxWrong, GxProgress,
+                                 GxKnowledgeRead)
 
 logger = logging.getLogger("gaoxiang")
 
@@ -397,6 +399,46 @@ def _bump_progress(db: Session, user_id: str, domain: str, **inc) -> None:
     for k, v in inc.items():
         setattr(row, k, (getattr(row, k) or 0) + v)
     row.last_at = datetime.now()
+
+
+def mark_knowledge_read(db: Session, user_id: str, knowledge_id: int, domain: str) -> bool:
+    """标记知识点已读（幂等）。返回 True 表示**这次是首次阅读**。
+
+    这是「已读」唯一的写入口 —— 明细与计数必须一起动，分开写迟早会漂移：
+    · 首次：插明细行 + `gx_progress.knowledge_read + 1`
+    · 再次：什么都不做（所以反复打开同一条不会把「读过知识点」刷大）
+
+    并发首次打开（连点两下、双开页面）会撞唯一索引 → `flush()` 立刻暴露，
+    捕获后回滚，让另一条请求的记录生效（此时本函数返回 False：本来也不是首次）。
+    注意 `flush()` 而非 `commit()`：事务边界仍归调用方（与 record_choice_attempt 同构）。
+    """
+    existed = db.query(GxKnowledgeRead.id).filter_by(
+        user_id=user_id, knowledge_id=knowledge_id).first()
+    if existed is not None:
+        return False
+    db.add(GxKnowledgeRead(user_id=user_id, knowledge_id=knowledge_id))
+    try:
+        db.flush()                  # 立刻校验唯一索引，不留到 commit 才炸
+    except IntegrityError:
+        db.rollback()               # 并发下另一个请求已插入 → 以它的为准
+        return False
+    _bump_progress(db, user_id, domain or GX_DOMAINS[0], knowledge_read=1)
+    return True
+
+
+def read_knowledge_ids(db: Session, user_id: str, ids) -> set:
+    """批量取「这批知识点里已读过哪些」的 ID 集合（列表页打已读标记用）
+
+    一次 IN 查询，避免逐条 SELECT 的 N+1；入参为空直接返回空集
+    （不能让 `in_([])` 进 SQL —— 部分方言下语义易踩，索性短路）。
+    """
+    clean = [int(i) for i in (ids or []) if i]
+    if not clean:
+        return set()
+    rows = db.query(GxKnowledgeRead.knowledge_id).filter(
+        GxKnowledgeRead.user_id == user_id,
+        GxKnowledgeRead.knowledge_id.in_(clean)).all()
+    return {r[0] for r in rows}
 
 
 def record_choice_attempt(db: Session, user_id: str, question: GxQuestion,

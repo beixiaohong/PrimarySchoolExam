@@ -185,6 +185,33 @@ class GxProgress(Base):
     last_at = Column(DateTime, default=datetime.now, comment="最近学习时间")
 
 
+class GxKnowledgeRead(Base):
+    """知识点已读明细（user_id + knowledge_id 一行，唯一索引保证幂等）
+
+    为什么需要这张表（而不是只靠 GxProgress.knowledge_read）：
+    `knowledge_read` 是个**计数**，只能回答「读过几条」，回答不了「哪几条读过」——
+    列表上的「已读」标记必须按条查，计数满足不了。两者分工明确：
+
+        gx_knowledge_reads  = 真相源（哪几条读过、什么时候读的）
+        gx_progress.knowledge_read = 它的去重计数缓存（进度页显示用，避免读时聚合）
+
+    计数只在**首次**阅读时 +1（见 services/gaoxiang.mark_knowledge_read），
+    所以「读过知识点」= 去重条数，反复打开同一条不会把数字刷大。
+    """
+    __tablename__ = "gx_knowledge_reads"
+    __table_args__ = (
+        Index("ux_gx_kread_user_kn", "user_id", "knowledge_id", unique=True),
+        Index("ix_gx_kread_user_time", "user_id", "read_at"),
+        {"comment": "高项备考：知识点已读明细（user_id+knowledge_id 唯一）"},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键自增")
+    user_id = Column(String(64), nullable=False, comment="用户标识", index=True)
+    knowledge_id = Column(Integer, nullable=False, comment="知识点 ID（gx_knowledge.id）",
+                          index=True)
+    read_at = Column(DateTime, default=datetime.now, comment="首次阅读时间")
+
+
 class GxMaterial(Base):
     """备考资料归档清单（源文件 → 类别 → 解析条目数的审计表）
 

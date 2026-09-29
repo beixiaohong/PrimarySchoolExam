@@ -312,8 +312,12 @@ export const gaoxiangComputed = {
   // 混在一个列表里就是用户说的「内容很混乱」→ 不筛选时按类型分节展示
   gxKGroups() {
     const list = this.gxKList || [];
+    // readN = 该节里已读了几条（分组头显示「已读 x」）。已读状态由列表接口给出
+    // （后端按 user 批量查 gx_knowledge_reads，见 routers/gaoxiang.list_knowledge）
+    const readN = (items) => items.filter(k => k.read).length;
     if (this.gxKKind) {
-      return [{ kind: this.gxKKind, label: this.gxKKindLabel(this.gxKKind), items: list }];
+      return [{ kind: this.gxKKind, label: this.gxKKindLabel(this.gxKKind),
+                items: list, readN: readN(list) }];
     }
     const order = this.gxKKindOptions.map(k => k.value);
     const map = {};
@@ -327,7 +331,8 @@ export const gaoxiangComputed = {
         const ia = order.indexOf(a), ib = order.indexOf(b);
         return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       })
-      .map(k => ({ kind: k, label: this.gxKKindLabel(k), items: map[k] }));
+      .map(k => ({ kind: k, label: this.gxKKindLabel(k), items: map[k],
+                   readN: readN(map[k]) }));
   },
   // 知识点正文结构化 HTML（后端存的是 PDF 抽取原文，直接塞 div 会挤成一大坨）：
   // 小标题/条目/填空空框的解析与拼装见顶部 gxKParseBlocks / gxKBlocksHtml。
@@ -423,8 +428,18 @@ export const gaoxiangMethods = {
   gxOpenKnowledge(k) {
     this.gxKShowAnswer = false;      // 每次打开都从「只显示题目」开始，才留着自测手感
     this.api(`/api/gx/knowledge/${k.id}?user_id=${encodeURIComponent(this.user)}`)
-      .then(d => { this.gxKDetail = d || null; })
+      .then(d => {
+        this.gxKDetail = d || null;
+        // 后端在详情接口里已经落了「已读」（幂等），这里就地更新列表那一条，
+        // 关掉弹层立刻能看到标记 —— 不重拉列表，用户当前的分节与滚动位置都不会跳。
+        if (d && d.read) this.gxMarkRead(d.id);
+      })
       .catch(() => this.showToast('读取失败，稍后再试'));
+  },
+  // 把列表里某条标为已读（就地替换，不重新请求）。用 map 造新数组是显式替换，
+  // 免得依赖「数组元素属性被改」这种深层响应式的细节。
+  gxMarkRead(id) {
+    this.gxKList = (this.gxKList || []).map(k => (k.id === id ? { ...k, read: true } : k));
   },
   gxCloseKnowledge() { this.gxKDetail = null; this.gxKShowAnswer = false; },
   gxKToggleAnswer() { this.gxKShowAnswer = !this.gxKShowAnswer; },
