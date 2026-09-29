@@ -110,7 +110,7 @@ def qtype_label(qtype: str) -> str:
 # 避免把课件页原始文本与速记条目混在一个列表里（用户反馈过「知识点页很乱」）。
 KN_LIST = "list"          # 知识点清单
 KN_MINDMAP = "mindmap"    # 思维导图
-KN_RECITE = "recite"      # 填空辅助记忆清单
+KN_RECITE = "recite"      # 速记清单（旧称填空速记；新数据已并入知识点清单，保留常量仅兼容）
 KN_MUST = "must"          # 必背知识点
 KN_FORMULA = "formula"    # 公式汇总
 KN_MNEMONIC = "mnemonic"  # 记忆口诀
@@ -121,7 +121,7 @@ KN_REF = "ref"            # 参考汇总文档
 KN_AI = "ai"              # AI 生成
 
 KN_LABELS = {
-    KN_LIST: "知识点清单", KN_MINDMAP: "思维导图", KN_RECITE: "填空速记",
+    KN_LIST: "知识点清单", KN_MINDMAP: "思维导图", KN_RECITE: "速记清单",
     KN_MUST: "必背考点", KN_FORMULA: "公式汇总", KN_MNEMONIC: "记忆口诀",
     KN_ITTO: "过程与ITTO", KN_SLIDE: "课堂课件", KN_TEXTBOOK: "教材考纲",
     KN_REF: "参考汇总", KN_AI: "AI 生成",
