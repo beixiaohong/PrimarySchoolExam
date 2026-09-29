@@ -119,6 +119,59 @@ def test_span_for_grows_when_few_cards():
     assert rb.span_for(0, 0) == rb.MAX_SPAN
 
 
+# ── 指纹去重与碰撞消解 ──────────────────────────────────────────────────
+
+def _entry(old, new, src="a.pdf", title="章节", content="正文"):
+    return {"old_fingerprint": old, "new_fingerprint": new, "source_file": src,
+            "title": title, "content": content, "pages": [1, 2]}
+
+
+def test_resolve_drops_entries_pointing_at_same_row():
+    """分课 PDF 与汇总 PDF 会产出同一张卡片（old 相同）：补丁里只留一条"""
+    ents = [_entry("OLD1", "NEW1", src="a.pdf"), _entry("OLD1", "NEW1", src="b.pdf")]
+    out, stats = rb.resolve_fingerprints(ents)
+    assert len(out) == 1
+    assert stats["dup_old"] == 1
+    assert stats["salted"] == 0
+
+
+def test_resolve_salts_fingerprints_that_would_collide():
+    """⚠️ 回归：old 不同但 new 相同的两条会撞唯一索引 1062，且干跑逐条查不出来"""
+    ents = [_entry("OLD1", "NEW", src="a.pdf"), _entry("OLD2", "NEW", src="b.pdf")]
+    out, stats = rb.resolve_fingerprints(ents)
+    fps = [e["new_fingerprint"] for e in out]
+    assert len(set(fps)) == 2, "两条必须拿到不同的新指纹，否则写库撞唯一索引"
+    assert stats["salted"] == 2
+    assert all(e.get("fp_salted") for e in out)
+
+
+def test_resolve_leaves_unique_fingerprints_alone():
+    ents = [_entry("OLD1", "NEW1"), _entry("OLD2", "NEW2")]
+    out, stats = rb.resolve_fingerprints(ents)
+    assert [e["new_fingerprint"] for e in out] == ["NEW1", "NEW2"]
+    assert stats["salted"] == 0
+    assert not any(e.get("fp_salted") for e in out)
+
+
+def test_resolve_is_deterministic_regardless_of_order():
+    """加盐不能依赖遍历顺序：换个顺序结果要完全一致"""
+    a = rb.resolve_fingerprints([_entry("OLD1", "NEW", src="a.pdf"),
+                                 _entry("OLD2", "NEW", src="b.pdf")])[0]
+    b = rb.resolve_fingerprints([_entry("OLD2", "NEW", src="b.pdf"),
+                                 _entry("OLD1", "NEW", src="a.pdf")])[0]
+    key = lambda es: sorted((e["old_fingerprint"], e["new_fingerprint"]) for e in es)
+    assert key(a) == key(b)
+
+
+def test_resolve_output_has_no_duplicate_new_fingerprint():
+    """最终产物的新指纹必须两两不同 —— 这是不撞唯一索引的充分条件"""
+    ents = ([_entry("OLD%d" % i, "NEW%d" % (i // 2)) for i in range(6)]
+            + [_entry("OLDX", "NEW0", src="x.pdf")])
+    out, _ = rb.resolve_fingerprints(ents)
+    fps = [e["new_fingerprint"] for e in out]
+    assert len(fps) == len(set(fps))
+
+
 # ── 端到端（需要本地资料 PDF） ───────────────────────────────────────────
 
 _SAMPLE = (ROOT / "temp" / "软考【高项】2026年5月班备考资料"

@@ -39,6 +39,8 @@
 - 对齐分数过低或新正文明显变短的卡片一律**跳过不写补丁**（宁可留旧内容，也不能把
   正文改没）。
 - 本工具只读 PDF、只写 JSON，全程不连数据库 —— 与 `gx_pack.py` 同一套分工。
+- 产出前做 `resolve_fingerprints`：**去重 + 消除新指纹碰撞**。不做这一步，线上回填
+  会撞 `ux_gx_knowledge_fingerprint` 唯一索引（1062），而且**干跑查不出来**。
 """
 import argparse
 import importlib.util
@@ -46,7 +48,7 @@ import json
 import os
 import re
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -257,6 +259,70 @@ def _summary_of(text):
     return re.sub(r"\s+", " ", text)[:180]
 
 
+def resolve_fingerprints(entries):
+    """去掉同卡重复条目，并消除新指纹碰撞。返回 (条目, 统计)
+
+    备考资料里「分课 PDF」和「汇总 PDF」内容高度重叠（例如「第3章 信息系统治理」
+    同时出现在第41课清单和「技术管理（第1~5章）汇总」里），会造出两类重复：
+
+    1. **old_fingerprint 相同** —— 导入时按指纹去重过，库里其实只有一行，补丁却
+       有两条。留一条即可；否则回填时第二条查不到 old 行，白白报「已回填」。
+
+    2. **old_fingerprint 不同、new_fingerprint 相同** —— 库里是两行，但重解析后正文
+       完全一致（旧正文有差异只是抽取顺序不同）。两条都写成同一新指纹会撞唯一索引
+       `ux_gx_knowledge_fingerprint`，报 1062 Duplicate entry。
+       ⚠️ 这一类是**干跑查不出来**的：逐条检查时另一条的指纹还是旧值，只有真正
+       flush 到库里才会撞上。所以必须在生成补丁时就消掉。
+
+    对第 2 类把 `source_file` 一起纳入指纹，让两行各自保持唯一 —— 不删行、不改主键，
+    已读记录（`gx_knowledge_reads`）不断链。全组统一加盐（而不是「第二条起」），
+    避免结果依赖遍历顺序，保证补丁可重现。
+    """
+    # 1) 同一张卡片只留一条（old_fingerprint 即线上行的身份）
+    seen, uniq = set(), []
+    dup_old = 0
+    for e in entries:
+        key = e.get("old_fingerprint") or ""
+        if key and key in seen:
+            dup_old += 1
+            continue
+        seen.add(key)
+        uniq.append(e)
+
+    # 2) 新指纹碰撞：把来源纳入指纹
+    groups = defaultdict(list)
+    for e in uniq:
+        groups[e.get("new_fingerprint") or ""].append(e)
+    salted = 0
+    for fp, items in groups.items():
+        if len(items) < 2:
+            continue
+        if len({i.get("old_fingerprint") for i in items}) < 2:
+            continue        # 理论上到不了这里：第 1 步已按 old 去重
+        for e in items:
+            e["new_fingerprint"] = gx.fingerprint(
+                e.get("title") or "", (e.get("content") or "")[:400],
+                e.get("source_file") or "")
+            e["fp_salted"] = True
+            salted += 1
+
+    # 3) 兜底：加盐后仍撞（同一份资料里两张卡片正文完全一样）。
+    #    纳入 old_fingerprint —— 第 1 步已按它去重，组内必然两两不同，所以这一层
+    #    一定能让指纹唯一（用递增序号会让结果依赖遍历顺序，补丁就不可重现了）。
+    final = {}
+    for e in uniq:
+        if e["new_fingerprint"] in final:
+            if not e.get("fp_salted"):
+                salted += 1
+            e["fp_salted"] = True
+            e["new_fingerprint"] = gx.fingerprint(
+                e.get("title") or "", (e.get("content") or "")[:400],
+                e.get("source_file") or "", e.get("old_fingerprint") or "")
+        final[e["new_fingerprint"]] = e
+
+    return uniq, {"dup_old": dup_old, "salted": salted}
+
+
 # ── 主流程 ──────────────────────────────────────────────────────────────
 
 def iter_list_pdfs(root, name_filter="知识点清单"):
@@ -313,12 +379,14 @@ def main():
             for s in skipped:
                 print("     跳过：%-28s %s" % (str(s.get("title"))[:28], s.get("reason")))
 
+    all_entries, fp_stats = resolve_fingerprints(all_entries)
     payload = {
         "generated_by": "tools/gx_rebuild_list.py",
         "rules": {"max_span": MAX_SPAN, "min_score": MIN_SCORE, "min_keep": MIN_KEEP},
         "files": files,
         "entries": all_entries,
         "skipped": all_skipped,
+        "fingerprint_stats": fp_stats,
     }
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -327,6 +395,11 @@ def main():
     print("-" * 70)
     print("资料 %d 份，卡片 %d 条 → 可回填 %d 条，跳过 %d 条"
           % (len(files), sum(f["cards"] for f in files), len(all_entries), len(all_skipped)))
+    if fp_stats.get("dup_old"):
+        print("其中同卡重复条目已去重 %d 条（分课 PDF 与汇总 PDF 指向同一行）"
+              % fp_stats["dup_old"])
+    if fp_stats.get("salted"):
+        print("其中 %d 条新指纹发生碰撞，已把来源纳入指纹以避开唯一索引" % fp_stats["salted"])
     if all_entries:
         worst = min(e["score"] for e in all_entries)
         print("最低对齐分数 %.3f（≥ %.2f 才写补丁）" % (worst, MIN_SCORE))
