@@ -98,6 +98,17 @@ export default {
       if (st && (st.total_todo || 0) > 0) {
         out.push({ k: 'study', label: '今日任务', value: st.total_todo + ' 项', cls: '' })
       }
+      // /api/im/messages/unread-count → {total}
+      const im = this.appCtx.wsSummary.im
+      if (im && (im.total || 0) > 0) {
+        out.push({ k: 'im', label: '未读消息', value: im.total + ' 条', cls: 'im' })
+      }
+      // /api/gx/progress → summary.accuracy（百分比）
+      const gx = this.appCtx.wsSummary.gx
+      const acc = gx && gx.summary ? gx.summary.accuracy : null
+      if (acc !== null && acc !== undefined && (gx.summary.quiz_total || 0) > 0) {
+        out.push({ k: 'gx', label: '高项正确率', value: acc + '%', cls: '' })
+      }
       if (this.appCtx.wsLatest.length) {
         out.push({ k: 'blog', label: '内容', value: this.appCtx.wsLatest.length + ' 篇最新', cls: '' })
       }
@@ -119,6 +130,7 @@ export default {
 .ws-card-label { display: block; font-size: 12px; color: #8a8fa3; margin-bottom: 6px; }
 .ws-card-val { font-size: 17px; font-weight: 800; color: #5a5470; }
 .ws-card-val.expense { color: #c0392b; }
+.ws-card-val.im { color: #5b4bc4; }
 /* 区块 */
 .ws-block { margin-bottom: 18px; padding: 12px 14px; border: 1px solid #efedf7; border-radius: 12px; }
 .ws-block-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }

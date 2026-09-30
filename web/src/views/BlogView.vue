@@ -8,6 +8,8 @@
       <!-- ─────────── 列表视图 ─────────── -->
       <template v-if="appCtx.blogView === 'list'">
         <div class="card-head">
+          <!-- blog.md §36：进入任意模块后都能方便地回到工作台 -->
+          <button class="btn btn-ghost btn-sm" @click="appCtx.goTab('workspace')">← 工作台</button>
           <b><app-icon name="blog" :size="18"></app-icon> 内容</b>
           <span class="more">{{ appCtx.blogTotal }} 篇</span>
           <button class="btn btn-primary btn-sm" @click="appCtx.blogNewArticle()">✍️ 写文章</button>
@@ -35,6 +37,26 @@
           <button v-for="t in appCtx.blogTags" :key="'bt' + t.id" class="blg-chip"
                   :class="{ 'blg-chip-on': String(appCtx.blogFilter.tag_id) === String(t.id) }"
                   @click="appCtx.blogSetFilter({ tag_id: String(t.id) })">{{ t.name }}</button>
+        </div>
+
+        <!-- 推荐 / 热门（blog.md §14.2；仅在无筛选时展示，避免与筛选结果混淆） -->
+        <div v-if="!appCtx.blogHasFilter" class="blg-featured">
+          <div v-if="appCtx.blogRecommended.length" class="blg-feat">
+            <div class="blg-feat-title">⭐ 推荐内容</div>
+            <div v-for="a in appCtx.blogRecommended" :key="'br' + a.id" class="blg-feat-item"
+                 @click="appCtx.blogOpenDetail(a)">
+              <b>{{ a.title }}</b>
+              <span v-if="a.category_name" class="blg-cat">{{ a.category_name }}</span>
+            </div>
+          </div>
+          <div v-if="appCtx.blogHot.length" class="blg-feat">
+            <div class="blg-feat-title">🔥 热门内容</div>
+            <div v-for="a in appCtx.blogHot" :key="'bh' + a.id" class="blg-feat-item"
+                 @click="appCtx.blogOpenDetail(a)">
+              <b>{{ a.title }}</b>
+              <span class="blg-views">👁 {{ a.view_count }}</span>
+            </div>
+          </div>
         </div>
 
         <div v-if="appCtx.blogLoading" class="blg-empty">🔄 加载中…</div>
@@ -189,6 +211,14 @@ export default {
 .blg-chip { border: 1px solid #e5e1f5; background: #fff; color: #5a5470; border-radius: 999px; padding: 3px 11px; font-size: 12px; cursor: pointer; }
 .blg-chip-on { background: #8b7cf6; border-color: #8b7cf6; color: #fff; }
 .blg-hint { font-size: 12px; color: #a8a3b8; }
+/* 推荐 / 热门 */
+.blg-featured { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.blg-feat { border: 1px solid #efedf7; border-radius: 12px; padding: 10px 12px; }
+.blg-feat-title { font-size: 13px; color: #5a5470; margin-bottom: 6px; }
+.blg-feat-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px dashed #f4f2fa; cursor: pointer; }
+.blg-feat-item:first-of-type { border-top: none; }
+.blg-feat-item:hover { background: #f9f8fd; border-radius: 6px; }
+.blg-feat-item b { flex: 1; font-size: 13px; color: #3b3555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 /* 列表 */
 .blg-empty { text-align: center; color: #999; padding: 36px 0; font-size: 14px; }
 .blg-empty p { margin: 0 0 12px; }

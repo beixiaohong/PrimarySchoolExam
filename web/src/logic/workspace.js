@@ -18,6 +18,8 @@ export function workspaceData() {
     wsSummary: {        // 各模块摘要（只放能拿到的，拿不到保持 null，前端不渲染）
       ledger: null,
       study: null,
+      im: null,
+      gx: null,
     },
     wsPinned: [],       // 用户手动固定的 app_key（blog.md §7.3，存 localStorage）
   }
@@ -88,7 +90,13 @@ export const workspaceMethods = {
       .then(d => { this.wsSummary.ledger = d || null }).catch(() => { this.wsSummary.ledger = null })
     const study = this.api(`/api/study/dashboard/today?${this._wsQs({ grade: this.grade })}`)
       .then(d => { this.wsSummary.study = d || null }).catch(() => { this.wsSummary.study = null })
-    await Promise.all([ledger, study])
+    // 聊天未读：/api/im/messages/unread-count → {unread_counts, total}
+    const im = this.api(`/api/im/messages/unread-count?${this._wsQs()}`)
+      .then(d => { this.wsSummary.im = d || null }).catch(() => { this.wsSummary.im = null })
+    // 高项进度：/api/gx/progress → {domains, summary:{quiz_total, quiz_correct, accuracy, ...}}
+    const gx = this.api(`/api/gx/progress?${this._wsQs()}`)
+      .then(d => { this.wsSummary.gx = d || null }).catch(() => { this.wsSummary.gx = null })
+    await Promise.all([ledger, study, im, gx])
   },
   // 打开模块：先上报一次访问（驱动「我的应用/最近使用」排序），再跳 tab
   async wsOpenApp(app) {

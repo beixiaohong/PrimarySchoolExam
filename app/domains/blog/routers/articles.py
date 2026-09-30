@@ -35,20 +35,21 @@ def list_articles(
     tag_id: Optional[int] = Query(None, description="按标签筛选"),
     keyword: Optional[str] = Query(None, description="关键词（标题/摘要/正文模糊匹配）"),
     mine: bool = Query(False, description="只看我的（含草稿）"),
+    recommend: bool = Query(False, description="只看推荐文章（blog.md §14.2「推荐内容」）"),
+    sort: str = Query("latest", description="排序：latest=最新发布，hot=浏览量倒序"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    """文章分页列表。默认只返回已发布；mine=true 时返回当前用户的全部文章（含草稿）。"""
+    """文章分页列表。默认只返回已发布；mine=true 时返回当前用户的全部文章（含草稿）。
+
+    recommend / sort 供前台「推荐内容」「热门内容」两块使用（纯字段筛排，不做推荐算法）。
+    """
+    common = dict(page=page, page_size=page_size, category_id=category_id,
+                  tag_id=tag_id, keyword=keyword, recommend=recommend, sort=sort)
     if mine:
-        rows, total = articles_svc.list_articles(
-            db, page=page, page_size=page_size, category_id=category_id,
-            tag_id=tag_id, keyword=keyword, author_id=current_user.user_id,
-        )
+        rows, total = articles_svc.list_articles(db, author_id=current_user.user_id, **common)
     else:
-        rows, total = articles_svc.list_articles(
-            db, page=page, page_size=page_size, status="published",
-            category_id=category_id, tag_id=tag_id, keyword=keyword,
-        )
+        rows, total = articles_svc.list_articles(db, status="published", **common)
     return ArticleListResponse(items=rows, total=total, page=page, page_size=page_size)
 
 

@@ -23,6 +23,10 @@ export function blogData() {
     blogPage: 1,
     blogPageSize: 10,
     blogFilter: { keyword: '', category_id: '', tag_id: '', mine: false },
+    // 推荐 / 热门（blog.md §14.2：内容首页应有「推荐内容」「热门内容」两块，
+    // 纯字段筛排——recommend=true 与 sort=hot，不做推荐算法，§39 明确排除复杂推荐）
+    blogRecommended: [],
+    blogHot: [],
     // 分类 / 标签（只读，管理在后台）
     blogCats: [],
     blogTags: [],
@@ -56,6 +60,11 @@ export const blogComputed = {
   blogTotalPages() {
     return Math.max(1, Math.ceil((this.blogTotal || 0) / (this.blogPageSize || 10)))
   },
+  // 有筛选条件时不展示「推荐/热门」两块，避免与筛选结果混淆
+  blogHasFilter() {
+    const f = this.blogFilter || {}
+    return !!(f.keyword || f.category_id || f.tag_id || f.mine)
+  },
 }
 
 // ─────────── Blog methods ───────────
@@ -83,11 +92,23 @@ export const blogMethods = {
   async initBlog() {
     this.blogLoading = true
     try {
-      await Promise.all([this.blogLoadCats(), this.blogLoadTags()])
+      await Promise.all([this.blogLoadCats(), this.blogLoadTags(), this.blogLoadFeatured()])
       if (this.blogView === 'list') await this.blogLoadList()
     } finally {
       this.blogLoading = false
     }
+  },
+  // 推荐 / 热门两块：拿不到就置空（不打扰用户，也不因此改动业务模块）
+  async blogLoadFeatured() {
+    const rec = this.api(`/api/blog/articles?${this.blogQs({
+      recommend: 'true', sort: 'latest', page: 1, page_size: 5,
+    })}`).catch(() => null)
+    const hot = this.api(`/api/blog/articles?${this.blogQs({
+      sort: 'hot', page: 1, page_size: 5,
+    })}`).catch(() => null)
+    const [r, h] = await Promise.all([rec, hot])
+    this.blogRecommended = (r && r.items) || []
+    this.blogHot = (h && h.items) || []
   },
   async blogLoadCats() {
     const d = await this.api(`/api/blog/categories?${this.blogQs()}`).catch(() => [])
@@ -149,6 +170,7 @@ export const blogMethods = {
     this.blogDetailHtml = ''
     this.blogView = 'list'
     this.blogLoadList()
+    this.blogLoadFeatured()   // 发布/删除后推荐与热门会变，回列表顺手刷新
   },
 
   /* ─────────── 编辑 / 新建 ─────────── */

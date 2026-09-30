@@ -164,3 +164,12 @@ GET  /api/blog/latest          轻量聚合（供 Workspace「最新内容」）
 | 3+ | 后台 `admin/src/views/BlogAdmin.vue`（文章/分类/标签 + `/blog` 路由与菜单） | `2907d1a` |
 
 落地页默认为 `/workspace`（D1 决策）；分类与标签的写操作只在后台，前台 `/api/blog` 下只读。
+
+### 补齐项（§14.2 / §10 / §36）
+
+- **推荐内容 / 热门内容**：公开列表接口新增两个可选参数 `recommend=true`（只看 `is_recommend`）
+  与 `sort=hot`（按 `view_count` 倒序），纯字段筛排——§39 明确排除「复杂推荐算法」，不引入算法。
+  前台内容首页顶部展示两块，有筛选条件时隐藏以免与筛选结果混淆。
+- **数据概览**：再接两个已有接口——`/api/im/messages/unread-count`（未读消息）
+  与 `/api/gx/progress`（高项正确率）；拿不到就置 null，前端不渲染。
+- **返回工作台**：侧边栏 Logo 可点击回 `/workspace`；内容页头部加「← 工作台」（§36）。

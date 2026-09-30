@@ -228,6 +228,41 @@ def test_ac_b5_workspace_usage_and_latest(client):
     client.delete(f"/api/blog/articles/{art['id']}{_q(uid)}")
 
 
+def test_ac_b6_recommend_and_hot(client):
+    """AC-B6：recommend=true 只返回推荐文章；sort=hot 按浏览量倒序（blog.md §14.2）。"""
+    uid = "blog_b6_uid"
+    plain = _mk_article(client, uid, "B6 普通文章", status="published")
+    rec = _mk_article(client, uid, "B6 推荐文章", status="published", is_recommend=True)
+    hot = _mk_article(client, uid, "B6 热门文章", status="published")
+
+    # 普通列表：三篇都在
+    r = client.get(f"/api/blog/articles{_q(uid, 'page_size=50')}")
+    ids = [a["id"] for a in r.json()["items"]]
+    assert {plain["id"], rec["id"], hot["id"]} <= set(ids)
+
+    # 只看推荐：只剩推荐那篇（纯字段筛选，不是推荐算法）
+    r = client.get(f"/api/blog/articles{_q(uid, 'recommend=true&page_size=50')}")
+    ids = [a["id"] for a in r.json()["items"]]
+    assert rec["id"] in ids
+    assert plain["id"] not in ids and hot["id"] not in ids
+
+    # 制造浏览量差：热门那篇多访问几次（详情接口对已发布文章自增 view_count）
+    for _ in range(3):
+        client.get(f"/api/blog/articles/{hot['id']}{_q(uid)}")
+    client.get(f"/api/blog/articles/{plain['id']}{_q(uid)}")
+
+    r = client.get(f"/api/blog/articles{_q(uid, 'sort=hot&page_size=50')}")
+    items = r.json()["items"]
+    vc = {a["id"]: a["view_count"] for a in items}
+    assert vc[hot["id"]] > vc[plain["id"]]
+    # 倒序：热门这篇应排在普通那篇之前
+    pos = {a["id"]: i for i, a in enumerate(items)}
+    assert pos[hot["id"]] < pos[plain["id"]]
+
+    for aid in (plain["id"], rec["id"], hot["id"]):
+        client.delete(f"/api/blog/articles/{aid}{_q(uid)}")
+
+
 def test_blog_tables_created():
     """迁移 089 建表校验：五张新表均存在（防止只建部分表就上线）。"""
     from sqlalchemy import text

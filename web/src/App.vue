@@ -99,7 +99,8 @@
 <!-- ═══════════════════ App Shell ═══════════════════ -->
 <div class="app" v-if="user && !showGradeModal">
   <aside class="sidebar">
-    <div class="logo">
+    <!-- blog.md §36：点击平台 Logo 随时回到工作台（落地页），无需重新登录 -->
+    <div class="logo" @click="goTab('workspace')" title="返回工作台" style="cursor:pointer">
       <div class="logo-badge">📘</div>
       <div><b>智学学堂</b><span>全学科学习中心</span></div>
     </div>

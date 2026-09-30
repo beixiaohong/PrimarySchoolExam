@@ -73,15 +73,21 @@ def list_articles(
     tag_id: Optional[int] = None,
     keyword: Optional[str] = None,
     author_id: Optional[str] = None,
+    recommend: bool = False,
+    sort: str = "latest",
 ) -> Tuple[List[ArticleResponse], int]:
     """文章分页列表。
 
     status 为空表示不限状态；前台公开列表应显式传 status='published'。
     keyword 命中标题 / 摘要 / 正文（blog.md §18：优先用数据库能力，不上 ES）。
+    recommend=True 只取推荐文章；sort='hot' 按浏览量倒序（blog.md §14.2 的
+    「推荐内容 / 热门内容」两块，只按字段筛排，不做推荐算法——§39 明确排除复杂推荐）。
     """
     q = db.query(BlogArticle)
     if status:
         q = q.filter(BlogArticle.status == status)
+    if recommend:
+        q = q.filter(BlogArticle.is_recommend == 1)
     if category_id:
         q = q.filter(BlogArticle.category_id == category_id)
     if tag_id:
@@ -97,7 +103,10 @@ def list_articles(
             BlogArticle.summary.like(like),
             BlogArticle.content_md.like(like),
         ))
-    q = q.order_by(BlogArticle.is_top.desc(), BlogArticle.published_at.desc(), BlogArticle.id.desc())
+    if sort == "hot":
+        q = q.order_by(BlogArticle.is_top.desc(), BlogArticle.view_count.desc(), BlogArticle.id.desc())
+    else:
+        q = q.order_by(BlogArticle.is_top.desc(), BlogArticle.published_at.desc(), BlogArticle.id.desc())
     rows, total = paginate(q, page, page_size)
     return [serialize(db, r) for r in rows], total
 
