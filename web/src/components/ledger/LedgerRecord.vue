@@ -22,14 +22,32 @@
               @click="appCtx.ledgerUseRecentCat(c)">{{ appCtx.ledgerCatLabel(c) }}</button>
     </div>
 
-    <!-- 金额（元，两位小数；AntiCheatInput text 模式） -->
+    <!-- M4 模板速记：按当前收/支类型过滤，点一下即把模板要素灌进表单（可改后再提交） -->
+    <div v-if="appCtx.ledgerTemplatesForType.length" class="ldg-recent">
+      <span class="ldg-recent-label">模板速记：</span>
+      <button v-for="t in appCtx.ledgerTemplatesForType" :key="'tp' + t.id" class="ldg-chip ldg-chip-tpl"
+              :title="appCtx.ledgerTemplateDesc(t)" @click="appCtx.ledgerUseTemplate(t)">{{ t.name }}</button>
+    </div>
+
+    <!-- 金额：本位币直接填金额；外币改为填「原币金额 × 折算汇率」，本位币金额实时折算展示 -->
     <div class="ldg-amount-row">
       <span class="ldg-amount-sign" :class="appCtx.ledgerForm.transaction_type">
         {{ appCtx.ledgerForm.transaction_type === 'income' ? '+' : (appCtx.ledgerForm.transaction_type === 'expense' ? '−' : '⇄') }}
       </span>
-      <anti-cheat-input mode="text" v-model="appCtx.ledgerForm.amount" placeholder="金额（元，如 12.50）"></anti-cheat-input>
-      <span class="ldg-amount-unit">元</span>
+      <template v-if="!appCtx.ledgerIsForeign">
+        <anti-cheat-input mode="text" v-model="appCtx.ledgerForm.amount" placeholder="金额（元，如 12.50）"></anti-cheat-input>
+        <span class="ldg-amount-unit">元</span>
+      </template>
+      <template v-else>
+        <anti-cheat-input mode="text" v-model="appCtx.ledgerForm.amount_orig" placeholder="原币金额"></anti-cheat-input>
+        <span class="ldg-amount-unit">{{ appCtx.ledgerCurrencySymbol(appCtx.ledgerForm.currency) }}</span>
+        <span class="ldg-amount-x">×</span>
+        <input v-model="appCtx.ledgerForm.rate_to_base" type="number" step="0.0001" min="0"
+               class="fill-input ldg-rate" placeholder="汇率">
+        <span class="ldg-amount-unit">= {{ appCtx.ledgerFmt(appCtx.ledgerFxBase) }} 元</span>
+      </template>
     </div>
+    <p v-if="appCtx.ledgerFxHint" class="ldg-hint">💱 {{ appCtx.ledgerFxHint }}</p>
 
     <div class="ldg-grid">
       <!-- 分类三级级联（按类型过滤 category_type） -->
@@ -122,6 +140,14 @@
         <p v-if="appCtx.ledgerProjectBudgetHint" class="ldg-hint">💡 {{ appCtx.ledgerProjectBudgetHint }}</p>
       </div>
 
+      <!-- M4 币种：本位币 CNY；选外币后上方金额区切换为「原币金额 × 折算汇率」 -->
+      <div class="ldg-field">
+        <label class="ldg-field-label">币种</label>
+        <select v-model="appCtx.ledgerForm.currency" class="fill-input">
+          <option v-for="c in currencies" :key="c.v" :value="c.v">{{ c.t }}</option>
+        </select>
+      </div>
+
       <!-- 备注 + 交易时间 -->
       <div class="ldg-field ldg-span2">
         <label class="ldg-field-label">备注</label>
@@ -138,24 +164,36 @@
       <button class="btn btn-primary" @click="appCtx.ledgerSubmitTx()">
         {{ appCtx.ledgerForm.editId ? '保存修改' : '记一笔 ✅' }}
       </button>
+      <!-- M4：把当前表单存成模板，下次「模板速记」一键预填 -->
+      <button v-if="!appCtx.ledgerForm.editId" class="btn btn-ghost btn-sm" @click="saveAsTemplate">⭐ 存为模板</button>
     </div>
   </div>
 </template>
 
 <script>
-// 账本·记一笔（LedgerView Tab1）。纯模板组件：仅 inject appCtx，无自身业务 data/methods。
+// 账本·记一笔（LedgerView Tab1）。纯模板组件：仅 inject appCtx，无自身业务 data/methods
+// （saveAsTemplate 仅做「弹名称输入框」的 UI 交互，写库仍走 appCtx.ledgerSaveAsTemplate）。
+import { LEDGER_CURRENCY_OPTIONS } from '../../logic/ledger.js'
+
 export default {
   name: 'LedgerRecord',
   inject: ['appCtx'],
   data() {
     return {
-      // 纯 UI 常量：交易类型三选一
+      // 纯 UI 常量：交易类型三选一 + 币种下拉
       types: [
         { k: 'expense', label: '支出' },
         { k: 'income', label: '收入' },
         { k: 'transfer', label: '转账' },
       ],
+      currencies: LEDGER_CURRENCY_OPTIONS,
     }
+  },
+  methods: {
+    saveAsTemplate() {
+      const name = window.prompt('给这个模板起个名字（如：早餐豆浆）', '');
+      if (name) this.appCtx.ledgerSaveAsTemplate(name);
+    },
   },
 }
 </script>
@@ -182,6 +220,9 @@ export default {
   padding: 4px 12px; font-size: 12px; cursor: pointer;
 }
 .ldg-chip:hover { background: #ece7fb; }
+.ldg-chip-tpl { border-color: #d9d0fb; background: #f3f0fe; }
+.ldg-rate { max-width: 96px; }
+.ldg-amount-x { color: #8a8fa3; font-size: 15px; }
 .ldg-amount-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .ldg-amount-sign { font-size: 26px; font-weight: 700; width: 30px; text-align: center; }
 .ldg-amount-sign.expense { color: #c0392b; }

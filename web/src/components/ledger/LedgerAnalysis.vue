@@ -29,7 +29,39 @@
       </div>
     </div>
 
-    <!-- 卡片 2：分类占比（环形图，扇区可点 → 跳账单） -->
+    <!-- 卡片 2：净资产（M3）资产 − 负债；信用卡余额 > 0 视为待还欠款，不计入资产 -->
+    <div v-if="netWorth" class="ldg-block">
+      <div class="ldg-block-head"><b>💎 净资产</b><span class="more">资产 − 负债</span></div>
+      <div class="ldg-nw">
+        <div class="ldg-nw-main">
+          <span class="ldg-nw-label">净资产</span>
+          <b class="ldg-nw-val" :class="netWorth.net_worth < 0 ? 'expense' : 'income'">{{ appCtx.ledgerFmt(netWorth.net_worth) }}</b>
+        </div>
+        <div class="ldg-nw-grid">
+          <span>账户余额 {{ appCtx.ledgerFmt(netWorth.account_balance) }}</span>
+          <span>借出未收 {{ appCtx.ledgerFmt(netWorth.lent_outstanding) }}</span>
+          <span>借入未还 {{ appCtx.ledgerFmt(netWorth.borrowed_outstanding) }}</span>
+          <span>信用卡待还 {{ appCtx.ledgerFmt(netWorth.credit_payable) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片 3：借贷概览（M3）仅统计未结清余额 -->
+    <div class="ldg-block">
+      <div class="ldg-block-head"><b>🤝 借贷概览</b><span class="more">登记与还款在「设置」</span></div>
+      <div class="ldg-debt">
+        <div class="ldg-debt-item">
+          <span class="ldg-debt-label">借出未收（别人欠我）</span>
+          <b class="ldg-debt-val income">{{ appCtx.ledgerFmt(debtSum.lend) }}</b>
+        </div>
+        <div class="ldg-debt-item">
+          <span class="ldg-debt-label">借入未还（我欠别人）</span>
+          <b class="ldg-debt-val expense">{{ appCtx.ledgerFmt(debtSum.borrow) }}</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片 4：分类占比（环形图，扇区可点 → 跳账单） -->
     <div class="ldg-block">
       <div class="ldg-block-head"><b>📊 分类占比</b><span class="more">点击扇区查看该分类账单</span></div>
       <div v-if="!donut.segments.length" class="ldg-empty-sm">这段时间还没有支出记录</div>
@@ -81,7 +113,27 @@
       <div class="ldg-bar-tip"><i class="ldg-dot income"></i>收入　<i class="ldg-dot expense"></i>支出</div>
     </div>
 
-    <!-- 卡片 4：项目预算执行 -->
+    <!-- 卡片 6：预算执行（M2，按 LedgerBudget 计算：月/分类/项目三种口径） -->
+    <div class="ldg-block">
+      <div class="ldg-block-head"><b>🎯 预算执行</b><span class="more">到「设置」维护预算</span></div>
+      <div v-if="!budgetExec.length" class="ldg-empty-sm">还没有设置预算，可到「设置 → 预算」新建</div>
+      <div v-for="b in budgetExec" :key="'be' + b.budget_id" class="ldg-budget">
+        <div class="ldg-budget-top">
+          <span class="ldg-budget-name">{{ appCtx.ledgerBudgetScopeName(b) }}</span>
+          <span class="ldg-budget-amt" :class="{ over: b.status === 'over', warn: b.status === 'warning' }">
+            {{ appCtx.ledgerFmt(b.spent) }} / {{ appCtx.ledgerFmt(b.amount) }}
+            <i v-if="b.status === 'over'">超支</i>
+            <i v-else-if="b.status === 'warning'">预警</i>
+          </span>
+        </div>
+        <div class="ldg-bar-track">
+          <div class="ldg-bar-fill" :class="{ over: b.status === 'over', warn: b.status === 'warning' }"
+               :style="{ width: Math.min(100, Math.round((b.ratio || 0) * 100)) + '%' }"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片 7：项目预算（项目自带的 budget 字段，与上面的预算体系相互独立，一并展示） -->
     <div class="ldg-block">
       <div class="ldg-block-head"><b>🎯 项目预算</b><span class="more">超支标红</span></div>
       <div v-if="!budgets.length" class="ldg-empty-sm">还没有设置项目预算，可到「设置」新建项目</div>
@@ -123,6 +175,10 @@ export default {
     },
     donut() { return this.appCtx.ledgerDonut || { total: 0, segments: [], legend: [] }; },
     monthly() { return this.appCtx.ledgerMonthlyChart || []; },
+    // M3 净资产 / 借贷汇总；M2 预算执行行
+    netWorth() { return this.appCtx.ledgerNetWorth || null; },
+    debtSum() { return this.appCtx.ledgerDebtSummary || { lend: 0, borrow: 0 }; },
+    budgetExec() { return this.appCtx.ledgerBudgetExecRows || []; },
     budgets() {
       return (this.appCtx.ledgerBudget || []).filter(b => b && b.budget > 0);
     },
@@ -191,6 +247,22 @@ export default {
 .ldg-bar-track { height: 8px; background: #f1eff8; border-radius: 999px; overflow: hidden; }
 .ldg-bar-fill { height: 100%; background: #8b7cf6; border-radius: 999px; transition: width .25s; }
 .ldg-bar-fill.over { background: #c0392b; }
+.ldg-bar-fill.warn { background: #f0a13c; }
+/* 净资产 */
+.ldg-nw { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ldg-nw-main { flex: none; text-align: center; }
+.ldg-nw-label { display: block; font-size: 12px; color: #8a8fa3; margin-bottom: 4px; }
+.ldg-nw-val { font-size: 22px; font-weight: 800; }
+.ldg-nw-val.income { color: #2e7d32; }
+.ldg-nw-val.expense { color: #c0392b; }
+.ldg-nw-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 12px; font-size: 12px; color: #8a8fa3; min-width: 200px; }
+/* 借贷概览 */
+.ldg-debt { display: flex; gap: 12px; flex-wrap: wrap; }
+.ldg-debt-item { flex: 1; min-width: 150px; background: #f9f8fd; border-radius: 10px; padding: 10px 12px; text-align: center; }
+.ldg-debt-label { display: block; font-size: 12px; color: #8a8fa3; margin-bottom: 4px; }
+.ldg-debt-val { font-size: 17px; font-weight: 800; }
+.ldg-debt-val.income { color: #2e7d32; }
+.ldg-debt-val.expense { color: #c0392b; }
 @media (max-width: 640px) {
   .ldg-cards { grid-template-columns: repeat(2, 1fr); }
   .ldg-donut-wrap { justify-content: center; }

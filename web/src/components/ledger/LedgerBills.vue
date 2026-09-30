@@ -69,12 +69,20 @@
             → {{ appCtx.ledgerNameMaps.account[b.to_account_id] || '' }}
           </template>
           <span v-if="b.note" class="ldg-bill-note">{{ b.note }}</span>
+          <!-- M3 退款标记：refund_of_id 非空说明这笔是某笔账单的退款 -->
+          <span v-if="b.refund_of_id" class="ldg-bill-tag ldg-tag-refund">退款</span>
+          <!-- M4 多币种：外币账单额外展示原币金额 -->
+          <span v-if="b.currency && b.currency !== 'CNY'" class="ldg-bill-tag ldg-tag-fx">
+            {{ b.currency }} {{ appCtx.ledgerFmt(b.amount_orig) }}
+          </span>
           <span class="ldg-bill-time">{{ (b.transaction_time || '').slice(11, 16) }}</span>
         </span>
         <span class="ldg-bill-amount" :class="b.transaction_type">
           {{ b.transaction_type === 'income' ? '+' : (b.transaction_type === 'expense' ? '−' : '') }}{{ appCtx.ledgerFmt(b.amount) }}
         </span>
         <span class="ldg-bill-ops">
+          <button v-if="b.transaction_type !== 'transfer'" class="ldg-op" title="登记退款（生成反向账单并关联原笔）"
+                  @click="appCtx.ledgerOpenRefundDialog(b)">↩</button>
           <button class="ldg-op" title="编辑" @click="appCtx.ledgerEditBill(b)">✎</button>
           <button class="ldg-op ldg-op-del" title="删除（余额自动回滚）" @click="appCtx.ledgerDeleteBill(b)">🗑</button>
         </span>
@@ -83,6 +91,48 @@
 
     <div v-if="appCtx.ledgerBillsMore" class="ldg-more-row">
       <button class="btn btn-ghost btn-sm" @click="appCtx.ledgerLoadMoreBills()">加载更多（每页 20）</button>
+    </div>
+
+    <!-- M3 退款弹窗：生成一笔反向账单（支出→收入收款 / 收入→支出退款），并用 refund_of_id 关联原笔 -->
+    <div v-if="appCtx.ledgerRefundDialog.show" class="modal-mask on" @click.self="appCtx.ledgerCloseRefundDialog()">
+      <div class="modal-card ldg-dialog">
+        <div class="modal-head">
+          <b>登记退款</b>
+          <button class="icon-btn" @click="appCtx.ledgerCloseRefundDialog()">✕</button>
+        </div>
+        <div class="ldg-dialog-body" v-if="appCtx.ledgerRefundDialog.bill">
+          <p class="ldg-refund-src">
+            原笔：{{ appCtx.ledgerTypeLabel(appCtx.ledgerRefundDialog.bill.transaction_type) }}
+            {{ appCtx.ledgerFmt(appCtx.ledgerRefundDialog.bill.amount) }} 元
+            · {{ appCtx.ledgerNameMaps.category[appCtx.ledgerRefundDialog.bill.category_id] || '未分类' }}
+          </p>
+          <div class="ldg-field">
+            <label class="ldg-field-label">退款金额(元)</label>
+            <input v-model="appCtx.ledgerRefundDialog.form.amount" type="number" step="0.01" min="0" class="fill-input">
+          </div>
+          <div class="ldg-field">
+            <label class="ldg-field-label">
+              {{ appCtx.ledgerRefundDialog.bill.transaction_type === 'income' ? '退款付出账户' : '退款入账账户' }}
+            </label>
+            <select v-model="appCtx.ledgerRefundDialog.form.from_account_id" class="fill-input">
+              <option value="">选择账户</option>
+              <option v-for="a in appCtx.ledgerAccounts" :key="'rf' + a.id" :value="String(a.id)">{{ a.account_name }}</option>
+            </select>
+          </div>
+          <div class="ldg-field">
+            <label class="ldg-field-label">备注</label>
+            <input v-model="appCtx.ledgerRefundDialog.form.note" class="fill-input" maxlength="200">
+          </div>
+          <div class="ldg-field">
+            <label class="ldg-field-label">交易时间</label>
+            <input v-model="appCtx.ledgerRefundDialog.form.transaction_time" type="datetime-local" class="fill-input">
+          </div>
+        </div>
+        <div class="ldg-dialog-foot">
+          <button class="btn btn-ghost btn-sm" @click="appCtx.ledgerCloseRefundDialog()">取消</button>
+          <button class="btn btn-primary btn-sm" @click="appCtx.ledgerSubmitRefund()">确认退款</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -139,6 +189,17 @@ export default {
 .ldg-bill-type.transfer { background: #eef0fd; color: #5b4bc4; }
 .ldg-bill-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ldg-bill-time { flex: none; margin-left: auto; }
+/* 退款 / 外币 角标 */
+.ldg-bill-tag { flex: none; border-radius: 6px; padding: 1px 6px; font-size: 11px; }
+.ldg-tag-refund { background: #eef0fd; color: #5b4bc4; }
+.ldg-tag-fx { background: #f3f0fe; color: #8a7ad6; }
+/* 退款弹窗 */
+.ldg-dialog { width: min(420px, 92vw); }
+.ldg-dialog-body { max-height: 60vh; overflow-y: auto; padding: 4px 0; }
+.ldg-field { margin-bottom: 10px; }
+.ldg-field-label { display: block; font-size: 12px; color: #8a8fa3; margin-bottom: 4px; }
+.ldg-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.ldg-refund-src { font-size: 12.5px; color: #8a8fa3; background: #f9f8fd; border-radius: 8px; padding: 8px 10px; margin: 0 0 12px; }
 .ldg-bill-amount { flex: none; font-size: 15px; font-weight: 700; min-width: 84px; text-align: right; }
 .ldg-bill-amount.expense { color: #c0392b; }
 .ldg-bill-amount.income { color: #2e7d32; }
