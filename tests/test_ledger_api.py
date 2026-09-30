@@ -462,3 +462,140 @@ def test_budget_category_scope(client):
     assert bd["spent"] == pytest.approx(150.0)
     assert bd["ratio"] == pytest.approx(0.75)
     assert bd["status"] == "ok"
+
+
+# ──────────────── M3 借贷 + 退款 + 净资产 ────────────────
+
+def _make_person(client, uid, name="张三"):
+    r = client.post(f"/api/ledger/users/{uid}/persons/" + _q(uid), json={"name": name})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _make_book(client, uid, name, is_default=False):
+    r = client.post(f"/api/ledger/users/{uid}/books/" + _q(uid),
+                    json={"name": name, "is_default": is_default})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _make_debt(client, uid, direction, total, person_id=None, book_id=None, repaid=0):
+    body = {"direction": direction, "total": total, "repaid": repaid}
+    if person_id is not None:
+        body["person_id"] = person_id
+    if book_id is not None:
+        body["book_id"] = book_id
+    r = client.post(f"/api/ledger/users/{uid}/debts/" + _q(uid), json=body)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_debt_crud_and_validation(client):
+    uid = "ledger_debt_m3"
+    # direction 非法 → 400
+    r = client.post(f"/api/ledger/users/{uid}/debts/" + _q(uid),
+                    json={"direction": "gift", "total": 100})
+    assert r.status_code == 400, r.text
+    # 金额 <= 0 → 400
+    r = client.post(f"/api/ledger/users/{uid}/debts/" + _q(uid),
+                    json={"direction": "lend", "total": 0})
+    assert r.status_code == 400, r.text
+
+    person = _make_person(client, uid)
+    d = _make_debt(client, uid, "lend", 1000, person_id=person["id"], repaid=200)
+    assert d["direction"] == "lend"
+    assert d["total"] == 1000.0
+    assert d["repaid"] == 200.0
+    assert d["balance"] == 800.0
+    assert d["status"] == "active"
+
+    # 列表 + 筛选
+    r = client.get(f"/api/ledger/users/{uid}/debts/" + _q(uid) + "&direction=lend")
+    assert r.status_code == 200, r.text
+    assert len(r.json()) == 1
+
+    # 更新 total → 重算 balance
+    r = client.put(f"/api/ledger/users/{uid}/debts/{d['id']}" + _q(uid), json={"total": 1200})
+    assert r.status_code == 200, r.text
+    assert r.json()["balance"] == pytest.approx(1000.0)
+
+    # 删除
+    r = client.delete(f"/api/ledger/users/{uid}/debts/{d['id']}" + _q(uid))
+    assert r.status_code == 200, r.text
+
+
+def test_debt_repay_links_balance_and_account(client):
+    uid = "ledger_debt_repay_m3"
+    acc = _make_account(client, uid, balance=0)
+    d = _make_debt(client, uid, "lend", 1000)
+
+    # 收款 400（income）：账户 +400，债务 repaid=400/balance=600
+    r = client.post(f"/api/ledger/users/{uid}/debts/{d['id']}/repay" + _q(uid),
+                    json={"amount": 400, "from_account_id": acc["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["repaid"] == pytest.approx(400.0)
+    assert r.json()["balance"] == pytest.approx(600.0)
+    assert r.json()["status"] == "active"
+    assert _balance_of(client, uid, acc["id"]) == pytest.approx(400.0)
+
+    # 收款 600 → 结清
+    r = client.post(f"/api/ledger/users/{uid}/debts/{d['id']}/repay" + _q(uid),
+                    json={"amount": 600, "from_account_id": acc["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["balance"] == 0.0
+    assert r.json()["status"] == "cleared"
+    assert _balance_of(client, uid, acc["id"]) == pytest.approx(1000.0)
+
+    # 已结清再还款 → 400
+    r = client.post(f"/api/ledger/users/{uid}/debts/{d['id']}/repay" + _q(uid),
+                    json={"amount": 100, "from_account_id": acc["id"]})
+    assert r.status_code == 400, r.text
+
+
+def test_borrow_repay_is_expense(client):
+    uid = "ledger_borrow_m3"
+    acc = _make_account(client, uid, balance=1000)
+    d = _make_debt(client, uid, "borrow", 500)
+    # 还款 300（expense）：账户 -300，债务 balance=200
+    r = client.post(f"/api/ledger/users/{uid}/debts/{d['id']}/repay" + _q(uid),
+                    json={"amount": 300, "from_account_id": acc["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["balance"] == pytest.approx(200.0)
+    assert _balance_of(client, uid, acc["id"]) == pytest.approx(700.0)
+
+
+def test_networth_calculation(client):
+    uid = "ledger_nw_m3"
+    sav = _make_account(client, uid, balance=1000, name="储蓄卡")
+    cc = client.post(f"/api/ledger/users/{uid}/accounts/" + _q(uid),
+                     json={"account_name": "信用卡", "account_type": "credit_card", "balance": 500})
+    assert cc.status_code == 200, cc.text
+    _make_debt(client, uid, "lend", 300)      # 借出未收（资产）
+    _make_debt(client, uid, "borrow", 200)    # 借入未还（负债）
+
+    r = client.get(f"/api/ledger/users/{uid}/statistics/networth" + _q(uid))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # 资产 = 储蓄1000 + 借出300 = 1300；负债 = 借入200 + 信用卡500 = 700；净资产 = 600
+    assert body["account_balance"] == pytest.approx(1000.0)
+    assert body["lent_outstanding"] == pytest.approx(300.0)
+    assert body["borrowed_outstanding"] == pytest.approx(200.0)
+    assert body["credit_payable"] == pytest.approx(500.0)
+    assert body["assets"] == pytest.approx(1300.0)
+    assert body["liabilities"] == pytest.approx(700.0)
+    assert body["net_worth"] == pytest.approx(600.0)
+
+
+def test_refund_links_to_original_expense(client):
+    uid = "ledger_refund_m3"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE")
+    orig = _make_transaction(client, uid, "expense", 200, acc["id"], cat["id"])
+    # 退款（income）关联原支出
+    r = client.post(f"/api/ledger/users/{uid}/transactions/" + _q(uid), json={
+        "transaction_type": "income", "amount": 200,
+        "from_account_id": acc["id"], "category_id": cat["id"],
+        "refund_of_id": orig["id"],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["refund_of_id"] == orig["id"]

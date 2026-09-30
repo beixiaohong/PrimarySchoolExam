@@ -191,6 +191,8 @@ class TransactionCreate(BaseModel):
     merchant_id: Optional[int] = None
     person_id: Optional[int] = None
     project_id: Optional[int] = None
+    refund_of_id: Optional[int] = None
+    attachment_url: Optional[str] = None
     note: Optional[str] = None
     transaction_time: Optional[datetime] = None
 
@@ -207,6 +209,8 @@ class TransactionUpdate(BaseModel):
     merchant_id: Optional[int] = None
     person_id: Optional[int] = None
     project_id: Optional[int] = None
+    refund_of_id: Optional[int] = None
+    attachment_url: Optional[str] = None
     note: Optional[str] = None
     transaction_time: Optional[datetime] = None
 
@@ -226,6 +230,8 @@ class TransactionResponse(BaseModel):
     merchant_id: Optional[int] = None
     person_id: Optional[int] = None
     project_id: Optional[int] = None
+    refund_of_id: Optional[int] = None
+    attachment_url: Optional[str] = None
     note: Optional[str] = None
     transaction_time: Optional[datetime] = None
     created_at: Optional[datetime] = None
@@ -350,3 +356,50 @@ class BudgetResponse(BaseModel):
     notify_threshold: float = 0.8
     period: str = "monthly"
     created_at: Optional[datetime] = None
+
+
+# ================================ 借贷 ================================
+class DebtCreate(BaseModel):
+    """创建借贷请求模型。direction 限定 lend(借出)|borrow(借入)。"""
+    book_id: Optional[int] = None
+    person_id: Optional[int] = None
+    direction: str
+    total: float
+    repaid: float = 0
+    due_date: Optional[datetime] = None
+    note: Optional[str] = None
+
+
+class DebtUpdate(BaseModel):
+    """更新借贷请求模型（字段均可选）。"""
+    person_id: Optional[int] = None
+    direction: Optional[str] = None
+    total: Optional[float] = None
+    repaid: Optional[float] = None
+    due_date: Optional[datetime] = None
+    note: Optional[str] = None
+
+
+class DebtResponse(BaseModel):
+    """借贷响应模型（从 ORM 对象序列化）。"""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: str
+    book_id: Optional[int] = None
+    person_id: Optional[int] = None
+    direction: str
+    total: float
+    repaid: float = 0
+    balance: float = 0
+    due_date: Optional[datetime] = None
+    status: str = "active"
+    note: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class DebtRepayRequest(BaseModel):
+    """还款/收款请求模型：金额 + 关联账户（资金实际进出账户）。"""
+    amount: float
+    from_account_id: int
+    note: Optional[str] = None
+    transaction_time: Optional[datetime] = None

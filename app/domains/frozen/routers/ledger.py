@@ -1043,6 +1043,214 @@ def get_notifications(user_id: str, status: Optional[str] = Query(None, descript
         })
     return out
 
+# ================================ 借贷管理API ================================
+
+@router.post("/users/{user_id}/debts/", response_model=ledger_schemas.DebtResponse, summary="记一笔借出/借入", tags=["借贷管理"])
+def create_debt(user_id: str, debt: ledger_schemas.DebtCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """记录一笔借贷（lend=借出/债权，borrow=借入/债务）。person_id 可关联到人员。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    if debt.direction not in ("lend", "borrow"):
+        raise HTTPException(status_code=400, detail="direction 仅支持 lend|borrow")
+    if debt.total <= 0:
+        raise HTTPException(status_code=400, detail="借贷金额必须大于 0")
+    if debt.person_id:
+        person = db.query(model_ledger.Person).filter(
+            model_ledger.Person.id == debt.person_id,
+            model_ledger.Person.user_id == current_user.user_id,
+        ).first()
+        if not person:
+            raise HTTPException(status_code=404, detail="关联人员不存在或不属于该用户")
+    bid = _resolve_book_id(db, current_user.user_id, debt.book_id, create=True)
+    repaid = float(debt.repaid or 0)
+    balance = float(debt.total) - repaid
+    status = "cleared" if balance <= 0 else "active"
+    db_debt = model_ledger.LedgerDebt(
+        user_id=current_user.user_id, book_id=bid,
+        person_id=debt.person_id, direction=debt.direction,
+        total=debt.total, repaid=repaid, balance=balance,
+        due_date=debt.due_date, status=status, note=debt.note,
+    )
+    db.add(db_debt)
+    db.commit()
+    db.refresh(db_debt)
+    return db_debt
+
+@router.get("/users/{user_id}/debts/", response_model=List[ledger_schemas.DebtResponse], summary="借贷清单", tags=["借贷管理"])
+def get_debts(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    direction: Optional[str] = Query(None, description="lend|borrow"),
+    status: Optional[str] = Query(None, description="active|cleared"),
+    db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """获取借贷清单（可按账本/方向/状态筛选）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    q = db.query(model_ledger.LedgerDebt).filter(model_ledger.LedgerDebt.user_id == current_user.user_id)
+    if bid is not None:
+        q = q.filter(model_ledger.LedgerDebt.book_id == bid)
+    if direction:
+        q = q.filter(model_ledger.LedgerDebt.direction == direction)
+    if status:
+        q = q.filter(model_ledger.LedgerDebt.status == status)
+    return q.order_by(model_ledger.LedgerDebt.created_at.desc()).all()
+
+@router.put("/users/{user_id}/debts/{debt_id}", response_model=ledger_schemas.DebtResponse, summary="更新借贷", tags=["借贷管理"])
+def update_debt(user_id: str, debt_id: int, debt: ledger_schemas.DebtUpdate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """更新借贷（仅提交的非空字段生效，需本人权限）。total/repaid 变动自动重算 balance 与 status。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_debt = db.query(model_ledger.LedgerDebt).filter(
+        model_ledger.LedgerDebt.id == debt_id,
+        model_ledger.LedgerDebt.user_id == current_user.user_id,
+    ).first()
+    if not db_debt:
+        raise HTTPException(status_code=404, detail="借贷不存在或不属于该用户")
+    data = debt.model_dump(exclude_unset=True)
+    if data.get("direction") is not None and data["direction"] not in ("lend", "borrow"):
+        raise HTTPException(status_code=400, detail="direction 仅支持 lend|borrow")
+    if data.get("person_id"):
+        person = db.query(model_ledger.Person).filter(
+            model_ledger.Person.id == data["person_id"],
+            model_ledger.Person.user_id == current_user.user_id,
+        ).first()
+        if not person:
+            raise HTTPException(status_code=404, detail="关联人员不存在或不属于该用户")
+    for key, value in data.items():
+        setattr(db_debt, key, value)
+    # 重算未结清余额与状态（total/repaid 任一变动都需要）
+    db_debt.balance = float(db_debt.total) - float(db_debt.repaid or 0)
+    db_debt.status = "cleared" if db_debt.balance <= 0 else "active"
+    db.commit()
+    db.refresh(db_debt)
+    return db_debt
+
+@router.delete("/users/{user_id}/debts/{debt_id}", summary="删除借贷", tags=["借贷管理"])
+def delete_debt(user_id: str, debt_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """删除借贷（仅本人权限，需借贷存在）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_debt = db.query(model_ledger.LedgerDebt).filter(
+        model_ledger.LedgerDebt.id == debt_id,
+        model_ledger.LedgerDebt.user_id == current_user.user_id,
+    ).first()
+    if not db_debt:
+        raise HTTPException(status_code=404, detail="借贷不存在或不属于该用户")
+    db.delete(db_debt)
+    db.commit()
+    return {"message": "借贷已删除"}
+
+@router.post("/users/{user_id}/debts/{debt_id}/repay", response_model=ledger_schemas.DebtResponse, summary="还款/收款", tags=["借贷管理"])
+def repay_debt(user_id: str, debt_id: int, repay: ledger_schemas.DebtRepayRequest, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """偿还/收回一笔借贷：生成一条 Bill（借出→收入收款，借入→支出还款）联动账户余额，并联动债务余额。
+
+    遵循 D9 铁律：余额变更前对涉及的账户加 with_for_update()（经 _adjust_balance）。
+    """
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_debt = db.query(model_ledger.LedgerDebt).filter(
+        model_ledger.LedgerDebt.id == debt_id,
+        model_ledger.LedgerDebt.user_id == current_user.user_id,
+    ).first()
+    if not db_debt:
+        raise HTTPException(status_code=404, detail="借贷不存在或不属于该用户")
+    if repay.amount <= 0:
+        raise HTTPException(status_code=400, detail="还款金额必须大于 0")
+    if db_debt.status == "cleared":
+        raise HTTPException(status_code=400, detail="该借贷已结清")
+    from_account = db.query(model_ledger.Account).filter(
+        model_ledger.Account.id == repay.from_account_id,
+        model_ledger.Account.user_id == current_user.user_id,
+    ).first()
+    if not from_account:
+        raise HTTPException(status_code=404, detail="关联账户不存在或不属于该用户")
+
+    # 借出→收款(income)，借入→还款(expense)
+    ttype = model_ledger.TransactionType.INCOME if db_debt.direction == "lend" else model_ledger.TransactionType.EXPENSE
+    now = repay.transaction_time or datetime.now()
+    bill = model_ledger.Bill(
+        user_id=current_user.user_id,
+        book_id=db_debt.book_id,
+        transaction_type=ttype,
+        amount=repay.amount,
+        from_account_id=repay.from_account_id,
+        person_id=db_debt.person_id,
+        note=repay.note or ("收回借款" if db_debt.direction == "lend" else "偿还借款"),
+        transaction_time=now,
+    )
+    db.add(bill)
+    db.flush()  # 取得 bill.id
+
+    # 联动账户余额（带行锁）
+    _adjust_balance(db, ttype, repay.amount, repay.from_account_id, None, 1)
+
+    # 联动债务余额（已还累加，未结清余额递减，归零即结清）
+    db_debt.repaid = float(db_debt.repaid or 0) + repay.amount
+    db_debt.balance = float(db_debt.total) - db_debt.repaid
+    if db_debt.balance <= 0:
+        db_debt.balance = 0
+        db_debt.status = "cleared"
+    db.commit()
+    db.refresh(db_debt)
+    return db_debt
+
+@router.get("/users/{user_id}/statistics/networth", summary="净资产（资产−负债）", tags=["统计分析"])
+def get_networth(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """计算净资产：资产 = 非信用卡账户余额合计 + 借出未收；负债 = 借入未还 + 信用卡应还(近似)。
+
+    约定：信用卡账户余额视为「已消费待还欠款」（负债），不计入资产；净资产 = 资产 − 负债。
+    可按账本筛选（仅统计该账本下的账户与借贷）。
+    """
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    acc_filter = [model_ledger.Account.user_id == current_user.user_id]
+    debt_filter = [model_ledger.LedgerDebt.user_id == current_user.user_id]
+    if bid is not None:
+        acc_filter.append(model_ledger.Account.book_id == bid)
+        debt_filter.append(model_ledger.LedgerDebt.book_id == bid)
+
+    # 全部账户余额原始合计（含信用卡）
+    account_total = db.query(func.sum(model_ledger.Account.balance)).filter(*acc_filter).scalar() or 0
+    # 信用卡应还（近似）：信用卡账户中余额 > 0 的部分视为欠款
+    credit_payable = db.query(func.sum(model_ledger.Account.balance)).filter(
+        *acc_filter,
+        model_ledger.Account.account_type == model_ledger.AccountType.CREDIT_CARD,
+        model_ledger.Account.balance > 0,
+    ).scalar() or 0
+    # 非信用卡账户余额合计
+    non_credit_balance = float(account_total) - float(credit_payable)
+
+    # 借出未收（资产，进行中）
+    lent_outstanding = db.query(func.sum(model_ledger.LedgerDebt.balance)).filter(
+        *debt_filter,
+        model_ledger.LedgerDebt.direction == "lend",
+        model_ledger.LedgerDebt.status == "active",
+    ).scalar() or 0
+    # 借入未还（负债，进行中）
+    borrowed_outstanding = db.query(func.sum(model_ledger.LedgerDebt.balance)).filter(
+        *debt_filter,
+        model_ledger.LedgerDebt.direction == "borrow",
+        model_ledger.LedgerDebt.status == "active",
+    ).scalar() or 0
+
+    assets = float(non_credit_balance) + float(lent_outstanding)
+    liabilities = float(borrowed_outstanding) + float(credit_payable)
+    net_worth = assets - liabilities
+    return {
+        "assets": round(assets, 2),
+        "liabilities": round(liabilities, 2),
+        "net_worth": round(net_worth, 2),
+        "account_balance": round(float(non_credit_balance), 2),
+        "lent_outstanding": round(float(lent_outstanding), 2),
+        "borrowed_outstanding": round(float(borrowed_outstanding), 2),
+        "credit_payable": round(float(credit_payable), 2),
+    }
+
 # ================================ 周期性交易 ================================
 
 @router.post("/users/{user_id}/recurring/", response_model=ledger_schemas.RecurringTransactionResponse, summary="创建周期性交易", tags=["周期性交易"])

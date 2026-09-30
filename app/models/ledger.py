@@ -3,9 +3,10 @@
 定义个人账本系统的数据库表结构：账本(LedgerBook)、交易账单(Bill)、支付账户(Account)、
 地点(Location)、商户(Merchant)、人员(Person)、项目(Project)、三级分类(Category)、
 通知记录(NotificationLog)、报告设置(UserReportSettings)、周期性交易(RecurringTransaction)、
-预算(Budget)，以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离；Bill/Account/
-RecurringTransaction/Budget 额外按 book_id 归属到某一本账本（随手记式多账本），book_id 为
-NULL 时回落用户默认账本。
+预算(Budget)、借贷(Debt)，以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离；
+Bill/Account/RecurringTransaction/Budget/Debt 额外按 book_id 归属到某一本账本（随手记式
+多账本），book_id 为 NULL 时回落用户默认账本。Bill 另含 refund_of_id（退款关联）与
+attachment_url（票据附件）。
 """
 from sqlalchemy import Column, Boolean, Integer, String, Text, Enum, Float, ForeignKey, DateTime, Numeric
 from sqlalchemy.orm import relationship
@@ -82,6 +83,8 @@ class Bill(Base):
     merchant_id = Column(Integer, ForeignKey("db_ledger_merchants.id"), nullable=True, comment="支付商户ID")
     person_id = Column(Integer, ForeignKey("db_ledger_persons.id"), nullable=True, comment="相关人员ID")
     project_id = Column(Integer, ForeignKey("db_ledger_projects.id"), nullable=True, comment="关联项目ID")
+    refund_of_id = Column(Integer, ForeignKey("db_ledger_bills.id"), nullable=True, comment="退款关联的原支出账单ID（退款追回时填写）")
+    attachment_url = Column(String(500), nullable=True, comment="票据/凭证附件URL（可选）")
     note = Column(Text, nullable=True, comment="备注信息")
     transaction_time = Column(DateTime, default=datetime.now, comment="交易发生时间")
     created_at = Column(DateTime, default=datetime.now, comment="记录创建时间")
@@ -267,3 +270,31 @@ class RecurringTransaction(Base):
     book = relationship("LedgerBook")
     from_account = relationship("Account", foreign_keys=[from_account_id])
     category = relationship("Category")
+
+
+class LedgerDebt(Base):
+    """借贷表 - 债权(借出)/债务(借入)追踪（随手记式借贷中心）。
+
+    direction=lend  ：用户借出（资产，他人欠用户），balance 为待收回金额；
+    direction=borrow：用户借入（负债，用户欠他人），balance 为待偿还金额。
+    repaid 累计已还/已收金额，balance = total - repaid；balance<=0 时 status 自动置 cleared。
+    还款/收款通过 POST /debts/{id}/repay 生成一条 Bill 并联动账户余额与余额字段。
+    """
+    __tablename__ = "db_ledger_debts"
+
+    id = Column(Integer, primary_key=True, index=True, comment="借贷唯一标识")
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, comment="所属用户ID")
+    book_id = Column(Integer, ForeignKey("db_ledger_books.id"), nullable=True, comment="所属账本ID（NULL 回落用户默认账本）")
+    person_id = Column(Integer, ForeignKey("db_ledger_persons.id"), nullable=True, comment="关联人员ID（借钱对象）")
+    direction = Column(String(20), nullable=False, comment="lend(借出/债权)|borrow(借入/债务)")
+    total = Column(Numeric(15, 2), nullable=False, comment="借贷总额")
+    repaid = Column(Numeric(15, 2), default=0, comment="已还/已收金额")
+    balance = Column(Numeric(15, 2), default=0, comment="未结清余额 = total - repaid")
+    due_date = Column(DateTime, nullable=True, comment="约定还款日")
+    status = Column(String(20), default="active", comment="active(进行中)|cleared(已清)")
+    note = Column(Text, nullable=True, comment="备注")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    user = relationship("User")
+    book = relationship("LedgerBook")
+    person = relationship("Person")
