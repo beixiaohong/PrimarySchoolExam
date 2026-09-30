@@ -41,6 +41,9 @@ PACK_KNOWLEDGE = "pack_knowledge.json"
 PACK_CHOICE = "pack_choice.json"
 PACK_CASE = "pack_case.json"
 PACK_ESSAY = "pack_essay.json"
+# 参数化生成的计算题（tools/gx_calc_gen.py 产出）：结构与 pack_choice 完全一致，
+# 单独成文件是为了不被 gx_pack.py 重跑时冲掉 —— 重导资料后这个文件仍在。
+PACK_CALC_GEN = "pack_calc_gen.json"
 MANIFEST = "manifest.json"
 
 BATCH = 300
@@ -62,7 +65,8 @@ def check_pack(pack_dir):
         raise SystemExit("数据包目录不存在：%s" % pack_dir)
     has_manifest = os.path.exists(os.path.join(pack_dir, MANIFEST))
     packs = {n: load_pack(pack_dir, n)
-             for n in (PACK_KNOWLEDGE, PACK_CHOICE, PACK_CASE, PACK_ESSAY)}
+             for n in (PACK_KNOWLEDGE, PACK_CHOICE, PACK_CASE, PACK_ESSAY,
+                       PACK_CALC_GEN)}
     present = {k: v for k, v in packs.items() if v}
     if not has_manifest and not present:
         raise SystemExit(
@@ -260,6 +264,8 @@ def cmd_load(args):
 
     kn = (packs.get(PACK_KNOWLEDGE) or {}).get("items") or []
     ch = (packs.get(PACK_CHOICE) or {}).get("items") or []
+    # 参数化生成的计算题并入选择题一起导入（同样按 fingerprint 幂等）
+    ch = ch + ((packs.get(PACK_CALC_GEN) or {}).get("items") or [])
     cs = (packs.get(PACK_CASE) or {}).get("items") or []
     es = (packs.get(PACK_ESSAY) or {}).get("items") or []
     if args.limit:
