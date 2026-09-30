@@ -53,6 +53,7 @@ def run_due_recurring_all(db: Session) -> dict:
 
             bill = model_ledger.Bill(
                 user_id=rt.user_id,
+                book_id=rt.book_id,
                 transaction_type=rt.transaction_type,
                 amount=rt.amount,
                 from_account_id=rt.from_account_id,

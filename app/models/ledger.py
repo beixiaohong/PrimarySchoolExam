@@ -1,9 +1,10 @@
 """账本模块 SQLAlchemy 模型
 
-定义个人账本系统的数据库表结构：交易账单(Bill)、支付账户(Account)、
+定义个人账本系统的数据库表结构：账本(LedgerBook)、交易账单(Bill)、支付账户(Account)、
 地点(Location)、商户(Merchant)、人员(Person)、项目(Project)、三级分类(Category)、
 通知记录(NotificationLog)、报告设置(UserReportSettings)、周期性交易(RecurringTransaction)，
-以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离。
+以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离；Bill/Account/RecurringTransaction
+额外按 book_id 归属到某一本账本（随手记式多账本），book_id 为 NULL 时回落用户默认账本。
 """
 from sqlalchemy import Column, Boolean, Integer, String, Text, Enum, Float, ForeignKey, DateTime, Numeric
 from sqlalchemy.orm import relationship
@@ -44,12 +45,33 @@ class NotificationStatus(str, enum.Enum):
 
 # ================================ 数据库模型定义 ================================
 
+class LedgerBook(Base):
+    """账本（多账本隔离）——随手记式场景账本，如日常/旅行/装修/生意。
+
+    每用户可拥有多本账本，每本账本独立记账、独立统计。首次建档时系统为该用户
+    自动生成一本 is_default=1 的「日常账本」作为回落账本。
+    """
+    __tablename__ = "db_ledger_books"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, comment="所属用户ID")
+    name = Column(String(100), comment="账本名称，如'日常账本'、'旅行账本'")
+    book_type = Column(String(50), comment="账本类型标识：daily/travel/business/...（可选）")
+    icon = Column(String(50), comment="图标标识")
+    color = Column(String(20), comment="主题色（十六进制，如 #4CAF50）")
+    is_default = Column(Boolean, default=False, comment="是否默认账本")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    user = relationship("User")
+
+
 class Bill(Base):
     """交易账单表 - 记录每一笔收支/转账明细，并关联账户、分类、地点等维度。"""
     __tablename__ = "db_ledger_bills"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False)
+    book_id = Column(Integer, ForeignKey("db_ledger_books.id"), nullable=True, comment="所属账本ID（NULL 回落用户默认账本）")
     transaction_type = Column(Enum(TransactionType), comment="交易类型：收入/支出/转账")
     amount = Column(Numeric(15, 2), comment="交易金额，精确到分")
     category_id = Column(Integer, ForeignKey("db_ledger_categories.id"), comment="收支分类ID") 
@@ -66,6 +88,7 @@ class Bill(Base):
 
     # 关联关系
     user = relationship("User")
+    book = relationship("LedgerBook")
     category = relationship("Category")
     from_account = relationship("Account", foreign_keys=[from_account_id])
     to_account = relationship("Account", foreign_keys=[to_account_id])
@@ -81,6 +104,7 @@ class Account(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, comment="所属用户ID")
+    book_id = Column(Integer, ForeignKey("db_ledger_books.id"), nullable=True, comment="所属账本ID（NULL 回落用户默认账本）")
     account_name = Column(String(100), comment="账户名称，如'工资卡'、'零钱包'等")
     account_type = Column(Enum(AccountType), comment="账户类型：储蓄卡/信用卡/虚拟账户")
     account_subtype = Column(String(50), comment="账户子类型，如'招商银行'、'支付宝'等")
@@ -89,6 +113,7 @@ class Account(Base):
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
     user = relationship("User")
+    book = relationship("LedgerBook")
 
 
 class Location(Base):
@@ -131,6 +156,7 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True, comment="项目唯一标识")
     user_id = Column(String(36), ForeignKey("users.user_id"), comment="所属用户ID")
+    book_id = Column(Integer, ForeignKey("db_ledger_books.id"), nullable=True, comment="所属账本ID（NULL 回落用户默认账本）")
     name = Column(String(100), comment="项目名称，如'装修'、'旅游'、'学习'")
     description = Column(String(200), comment="项目描述")
     budget = Column(Numeric(15, 2), nullable=True, comment="项目预算金额")
@@ -193,6 +219,7 @@ class RecurringTransaction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False)
+    book_id = Column(Integer, ForeignKey("db_ledger_books.id"), nullable=True, comment="所属账本ID（NULL 回落用户默认账本）")
     name = Column(String(100), comment="周期性交易名称，如'房租'、'Netflix订阅'")
     transaction_type = Column(Enum(TransactionType), default=TransactionType.EXPENSE, comment="交易类型")
     amount = Column(Numeric(15, 2), comment="交易金额")
@@ -208,5 +235,6 @@ class RecurringTransaction(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     user = relationship("User")
+    book = relationship("LedgerBook")
     from_account = relationship("Account", foreign_keys=[from_account_id])
     category = relationship("Category")

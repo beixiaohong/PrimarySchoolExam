@@ -42,6 +42,41 @@ from app.domains.frozen.services.ledger_calc import (
     generate_financial_report,
 )
 
+# ================================ 多账本辅助 ================================
+
+def _resolve_book_id(db: Session, user_id: str, book_id: Optional[int], create: bool = True) -> Optional[int]:
+    """解析目标账本 id（随手记式多账本回落策略）。
+
+    - 显式传入 book_id：校验归属后返回；
+    - 未传：取该用户默认账本（is_default=1）；不存在时：
+        create=True  → 即时创建「日常账本」并 flush 返回（写操作使用）；
+        create=False → 返回 None（只读操作使用，避免无谓写入）。
+    返回的 id 用于账单/账户/周期交易的 book_id 归属。
+    """
+    if book_id is not None:
+        book = db.query(model_ledger.LedgerBook).filter(
+            model_ledger.LedgerBook.id == book_id,
+            model_ledger.LedgerBook.user_id == user_id,
+        ).first()
+        if not book:
+            raise HTTPException(status_code=404, detail="账本不存在或不属于该用户")
+        return book.id
+    default_book = db.query(model_ledger.LedgerBook).filter(
+        model_ledger.LedgerBook.user_id == user_id,
+        model_ledger.LedgerBook.is_default == True,  # noqa: E712
+    ).first()
+    if default_book is not None:
+        return default_book.id
+    if not create:
+        return None
+    default_book = model_ledger.LedgerBook(
+        user_id=user_id, name="日常账本", book_type="daily", is_default=True
+    )
+    db.add(default_book)
+    db.flush()
+    return default_book.id
+
+
 # ================================ 账户管理API ================================
 
 @router.post("/users/{user_id}/accounts/", response_model=ledger_schemas.AccountResponse, summary="创建支付账户", tags=["账户管理"])
@@ -50,20 +85,27 @@ def create_account(user_id: str, account: ledger_schemas.AccountCreate, db: Sess
     """为指定用户创建支付账户"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
-    db_account = model_ledger.Account(**account.model_dump(), user_id=current_user.user_id)
+    bid = _resolve_book_id(db, current_user.user_id, account.book_id, create=True)
+    db_account = model_ledger.Account(
+        **account.model_dump(exclude={"book_id"}), user_id=current_user.user_id, book_id=bid
+    )
     db.add(db_account)
     db.commit()
     db.refresh(db_account)
     return db_account
 
 @router.get("/users/{user_id}/accounts/", response_model=List[ledger_schemas.AccountResponse], summary="获取用户账户列表", tags=["账户管理"])
-def get_accounts(user_id: str, db: Session = Depends(get_db),
+def get_accounts(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
-    """获取指定用户的所有支付账户"""
+    """获取指定用户的支付账户（默认按默认账本筛选）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
-    accounts = db.query(model_ledger.Account).filter(model_ledger.Account.user_id == current_user.user_id).all()
-    return accounts
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    q = db.query(model_ledger.Account).filter(model_ledger.Account.user_id == current_user.user_id)
+    if bid is not None:
+        q = q.filter(model_ledger.Account.book_id == bid)
+    return q.all()
 
 @router.put("/users/{user_id}/accounts/{account_id}", response_model=ledger_schemas.AccountResponse, summary="更新账户", tags=["账户管理"])
 def update_account(user_id: str, account_id: int, account: ledger_schemas.AccountUpdate, db: Session = Depends(get_db),
@@ -384,11 +426,12 @@ def create_transaction(user_id: str, transaction: ledger_schemas.TransactionCrea
     if not category:
         raise HTTPException(status_code=404, detail="分类不存在或不属于该用户")
 
-    transaction_data = transaction.model_dump()
+    bid = _resolve_book_id(db, current_user.user_id, transaction.book_id, create=True)
+    transaction_data = transaction.model_dump(exclude={"book_id"})
     if transaction_data['transaction_time'] is None:
         transaction_data['transaction_time'] = datetime.now()
 
-    db_transaction = model_ledger.Bill(**transaction_data, user_id=current_user.user_id)
+    db_transaction = model_ledger.Bill(**transaction_data, user_id=current_user.user_id, book_id=bid)
 
     # 更新账户余额
     _adjust_balance(db, transaction.transaction_type, transaction.amount,
@@ -416,13 +459,17 @@ def get_transactions(
     min_amount: Optional[float] = Query(None, ge=0, description="最小金额"),
     max_amount: Optional[float] = Query(None, ge=0, description="最大金额"),
     keyword: Optional[str] = Query(None, description="关键词搜索（备注模糊匹配）"),
+    book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user)
 ):
     """获取用户的交易记录列表（支持高级筛选）"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
     query = db.query(model_ledger.Bill).filter(model_ledger.Bill.user_id == current_user.user_id)
+    if bid is not None:
+        query = query.filter(model_ledger.Bill.book_id == bid)
 
     if transaction_type:
         query = query.filter(model_ledger.Bill.transaction_type == transaction_type)
@@ -544,23 +591,31 @@ def delete_transaction(user_id: str, transaction_id: int, db: Session = Depends(
 # ================================ 统计分析API ================================
 
 @router.get("/users/{user_id}/statistics/summary", summary="获取财务概览", tags=["统计分析"])
-def get_summary(user_id: str, db: Session = Depends(get_db),
+def get_summary(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
     """获取用户财务概览统计（总资产 / 本月收入 / 本月支出 / 本月结余）"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
-    total_assets = db.query(func.sum(model_ledger.Account.balance)).filter(model_ledger.Account.user_id == current_user.user_id).scalar() or 0
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    acc_filter = [model_ledger.Account.user_id == current_user.user_id]
+    bill_filter = [model_ledger.Bill.user_id == current_user.user_id]
+    if bid is not None:
+        acc_filter.append(model_ledger.Account.book_id == bid)
+        bill_filter.append(model_ledger.Bill.book_id == bid)
+
+    total_assets = db.query(func.sum(model_ledger.Account.balance)).filter(*acc_filter).scalar() or 0
 
     current_month = date.today().replace(day=1)
 
     monthly_income = db.query(func.sum(model_ledger.Bill.amount)).filter(
-        model_ledger.Bill.user_id == current_user.user_id,
+        *bill_filter,
         model_ledger.Bill.transaction_type == model_ledger.TransactionType.INCOME,
         model_ledger.Bill.transaction_time >= current_month
     ).scalar() or 0
 
     monthly_expense = db.query(func.sum(model_ledger.Bill.amount)).filter(
-        model_ledger.Bill.user_id == current_user.user_id,
+        *bill_filter,
         model_ledger.Bill.transaction_type == model_ledger.TransactionType.EXPENSE,
         model_ledger.Bill.transaction_time >= current_month
     ).scalar() or 0
@@ -577,12 +632,14 @@ def get_category_statistics(
     user_id: str,
     start_date: Optional[datetime] = Query(None, description="开始日期"),
     end_date: Optional[datetime] = Query(None, description="结束日期"),
+    book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user)
 ):
     """按分类统计用户支出情况"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
     query = db.query(
         model_ledger.Category.level1,
         model_ledger.Category.level2,
@@ -595,6 +652,8 @@ def get_category_statistics(
         model_ledger.Bill.user_id == current_user.user_id,
         model_ledger.Bill.transaction_type == model_ledger.TransactionType.EXPENSE
     )
+    if bid is not None:
+        query = query.filter(model_ledger.Bill.book_id == bid)
 
     if start_date:
         query = query.filter(model_ledger.Bill.transaction_time >= start_date)
@@ -630,12 +689,14 @@ def get_category_statistics(
 def get_monthly_statistics(
     user_id: str,
     year: int = Query(..., description="年份"),
+    book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user)
 ):
     """按月统计指定年份的收支情况"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
     monthly_income = db.query(
         extract('month', model_ledger.Bill.transaction_time).label('month'),
         func.sum(model_ledger.Bill.amount).label('amount')
@@ -643,7 +704,10 @@ def get_monthly_statistics(
         model_ledger.Bill.user_id == current_user.user_id,
         model_ledger.Bill.transaction_type == model_ledger.TransactionType.INCOME,
         extract('year', model_ledger.Bill.transaction_time) == year
-    ).group_by(extract('month', model_ledger.Bill.transaction_time)).all()
+    )
+    if bid is not None:
+        monthly_income = monthly_income.filter(model_ledger.Bill.book_id == bid)
+    monthly_income = monthly_income.group_by(extract('month', model_ledger.Bill.transaction_time)).all()
 
     monthly_expense = db.query(
         extract('month', model_ledger.Bill.transaction_time).label('month'),
@@ -652,7 +716,10 @@ def get_monthly_statistics(
         model_ledger.Bill.user_id == current_user.user_id,
         model_ledger.Bill.transaction_type == model_ledger.TransactionType.EXPENSE,
         extract('year', model_ledger.Bill.transaction_time) == year
-    ).group_by(extract('month', model_ledger.Bill.transaction_time)).all()
+    )
+    if bid is not None:
+        monthly_expense = monthly_expense.filter(model_ledger.Bill.book_id == bid)
+    monthly_expense = monthly_expense.group_by(extract('month', model_ledger.Bill.transaction_time)).all()
 
     income_dict = {int(row.month): float(row.amount) for row in monthly_income}
     expense_dict = {int(row.month): float(row.amount) for row in monthly_expense}
@@ -674,18 +741,26 @@ def get_monthly_statistics(
     }
 
 @router.get("/users/{user_id}/statistics/budget", summary="获取项目预算统计", tags=["统计分析"])
-def get_budget_stats(user_id: str, db: Session = Depends(get_db),
+def get_budget_stats(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
     """获取各项目的预算与实际支出对比"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
-    projects = db.query(model_ledger.Project).filter(model_ledger.Project.user_id == current_user.user_id).all()
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    proj_q = db.query(model_ledger.Project).filter(model_ledger.Project.user_id == current_user.user_id)
+    if bid is not None:
+        proj_q = proj_q.filter(model_ledger.Project.book_id == bid)
+    projects = proj_q.all()
     result = []
     for proj in projects:
-        total_spent = db.query(func.sum(model_ledger.Bill.amount)).filter(
+        spent_q = db.query(func.sum(model_ledger.Bill.amount)).filter(
             model_ledger.Bill.project_id == proj.id,
             model_ledger.Bill.transaction_type == model_ledger.TransactionType.EXPENSE
-        ).scalar() or 0
+        )
+        if bid is not None:
+            spent_q = spent_q.filter(model_ledger.Bill.book_id == bid)
+        total_spent = spent_q.scalar() or 0
         result.append({
             "project_id": proj.id,
             "project_name": proj.name,
@@ -704,10 +779,10 @@ def create_recurring(user_id: str, rt: ledger_schemas.RecurringTransactionCreate
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
     next_run = rt.next_run or datetime.now()
-    rt_data = rt.model_dump()
-    rt_data.pop("next_run", None)  # 避免与下方显式 next_run 重复赋值（TypeError）
+    bid = _resolve_book_id(db, current_user.user_id, rt.book_id, create=True)
+    rt_data = rt.model_dump(exclude={"book_id", "next_run"})
     db_rt = model_ledger.RecurringTransaction(
-        **rt_data, user_id=current_user.user_id, next_run=next_run, is_active=True
+        **rt_data, user_id=current_user.user_id, book_id=bid, next_run=next_run, is_active=True
     )
     db.add(db_rt)
     db.commit()
@@ -802,6 +877,7 @@ def run_due_recurring(db: Session = Depends(get_db),
 
         bill = model_ledger.Bill(
             user_id=current_user.user_id,
+            book_id=rt.book_id,
             transaction_type=rt.transaction_type,
             amount=rt.amount,
             from_account_id=rt.from_account_id,
@@ -862,14 +938,17 @@ def report_summary(period: str = Query("monthly", description="周期: weekly|mo
 # ================================ 导入导出 ================================
 
 @router.get("/users/{user_id}/export/csv", summary="导出交易记录为CSV", tags=["导入导出"])
-def export_csv(user_id: str, db: Session = Depends(get_db),
+def export_csv(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
     """导出用户所有交易记录为 CSV 文件"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
-    transactions = db.query(model_ledger.Bill).filter(
-        model_ledger.Bill.user_id == current_user.user_id
-    ).order_by(model_ledger.Bill.transaction_time.desc()).all()
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    q = db.query(model_ledger.Bill).filter(model_ledger.Bill.user_id == current_user.user_id)
+    if bid is not None:
+        q = q.filter(model_ledger.Bill.book_id == bid)
+    transactions = q.order_by(model_ledger.Bill.transaction_time.desc()).all()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -906,6 +985,7 @@ async def import_csv(user_id: str, file: UploadFile, db: Session = Depends(get_d
     content = await file.read()
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
+    bid = _resolve_book_id(db, current_user.user_id, None, create=True)
     count = 0
     for row in reader:
         try:
@@ -930,6 +1010,7 @@ async def import_csv(user_id: str, file: UploadFile, db: Session = Depends(get_d
 
             db_tx = model_ledger.Bill(
                 user_id=current_user.user_id,
+                book_id=bid,
                 transaction_type=tx_type,
                 amount=amount,
                 note=row.get("备注", ""),
@@ -941,3 +1022,96 @@ async def import_csv(user_id: str, file: UploadFile, db: Session = Depends(get_d
             continue
     db.commit()
     return {"imported": count}
+
+
+# ================================ 账本管理API ================================
+
+@router.post("/users/{user_id}/books/", response_model=ledger_schemas.BookResponse, summary="创建账本", tags=["账本管理"])
+def create_book(user_id: str, book: ledger_schemas.BookCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """创建一本新的账本（如旅行账本、装修账本）。设为默认时自动取消其它默认账本。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    if book.is_default:
+        db.query(model_ledger.LedgerBook).filter(
+            model_ledger.LedgerBook.user_id == current_user.user_id,
+            model_ledger.LedgerBook.is_default == True,  # noqa: E712
+        ).update({model_ledger.LedgerBook.is_default: False})
+    db_book = model_ledger.LedgerBook(**book.model_dump(), user_id=current_user.user_id)
+    db.add(db_book)
+    db.commit()
+    db.refresh(db_book)
+    return db_book
+
+
+@router.get("/users/{user_id}/books/", response_model=List[ledger_schemas.BookResponse], summary="获取账本列表", tags=["账本管理"])
+def get_books(user_id: str, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """获取用户的全部账本，并按账本聚合实时资产（账户余额合计）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    # 确保至少有一个默认账本（首次使用时懒创建）
+    _resolve_book_id(db, current_user.user_id, None, create=True)
+    books = db.query(model_ledger.LedgerBook).filter(
+        model_ledger.LedgerBook.user_id == current_user.user_id
+    ).order_by(model_ledger.LedgerBook.is_default.desc(), model_ledger.LedgerBook.id.asc()).all()
+    for b in books:
+        bal = db.query(func.sum(model_ledger.Account.balance)).filter(
+            model_ledger.Account.user_id == current_user.user_id,
+            model_ledger.Account.book_id == b.id
+        ).scalar() or 0
+        b.balance = float(bal)
+    db.commit()  # 持久化首次懒创建的默认账本，避免每次 GET 重建
+    return books
+
+
+@router.put("/users/{user_id}/books/{book_id}", response_model=ledger_schemas.BookResponse, summary="更新账本", tags=["账本管理"])
+def update_book(user_id: str, book_id: int, book: ledger_schemas.BookUpdate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """更新账本信息（改名/换色/设默认）。设为默认时自动取消其它默认账本。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_book = db.query(model_ledger.LedgerBook).filter(
+        model_ledger.LedgerBook.id == book_id,
+        model_ledger.LedgerBook.user_id == current_user.user_id
+    ).first()
+    if not db_book:
+        raise HTTPException(status_code=404, detail="账本不存在或不属于该用户")
+    if book.is_default:
+        db.query(model_ledger.LedgerBook).filter(
+            model_ledger.LedgerBook.user_id == current_user.user_id,
+            model_ledger.LedgerBook.is_default == True,  # noqa: E712
+            model_ledger.LedgerBook.id != book_id
+        ).update({model_ledger.LedgerBook.is_default: False})
+    update_data = book.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_book, key, value)
+    db.commit()
+    db.refresh(db_book)
+    return db_book
+
+
+@router.delete("/users/{user_id}/books/{book_id}", summary="删除账本", tags=["账本管理"])
+def delete_book(user_id: str, book_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """删除账本。默认账本不可删；非空账本（含账户/账单/周期交易）须先清空或迁移。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_book = db.query(model_ledger.LedgerBook).filter(
+        model_ledger.LedgerBook.id == book_id,
+        model_ledger.LedgerBook.user_id == current_user.user_id
+    ).first()
+    if not db_book:
+        raise HTTPException(status_code=404, detail="账本不存在或不属于该用户")
+    if db_book.is_default:
+        raise HTTPException(status_code=400, detail="默认账本不可删除")
+    has_data = (
+        db.query(model_ledger.Bill).filter(model_ledger.Bill.book_id == book_id).first()
+        or db.query(model_ledger.Account).filter(model_ledger.Account.book_id == book_id).first()
+        or db.query(model_ledger.RecurringTransaction).filter(model_ledger.RecurringTransaction.book_id == book_id).first()
+    )
+    if has_data:
+        raise HTTPException(status_code=400, detail="账本仍含账户/账单/周期交易，请先清空或迁移后再删除")
+    db.delete(db_book)
+    db.commit()
+    return {"message": "账本已删除"}

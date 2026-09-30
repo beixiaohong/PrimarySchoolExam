@@ -21,6 +21,7 @@ class AccountCreate(BaseModel):
     account_subtype: Optional[str] = None
     account_number: Optional[str] = None
     balance: float = 0
+    book_id: Optional[int] = None
 
 
 class AccountUpdate(BaseModel):
@@ -30,6 +31,7 @@ class AccountUpdate(BaseModel):
     account_subtype: Optional[str] = None
     account_number: Optional[str] = None
     balance: Optional[float] = None
+    book_id: Optional[int] = None
 
 
 class AccountResponse(BaseModel):
@@ -37,6 +39,7 @@ class AccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: str
+    book_id: Optional[int] = None
     account_name: str
     account_type: AccountType
     account_subtype: Optional[str] = None
@@ -152,6 +155,7 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
     budget: Optional[float] = None
+    book_id: Optional[int] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -159,6 +163,7 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     budget: Optional[float] = None
+    book_id: Optional[int] = None
 
 
 class ProjectResponse(BaseModel):
@@ -166,6 +171,7 @@ class ProjectResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: str
+    book_id: Optional[int] = None
     name: Optional[str] = None
     description: Optional[str] = None
     budget: Optional[float] = None
@@ -177,6 +183,7 @@ class TransactionCreate(BaseModel):
     """创建交易（记账）请求模型：含交易类型、金额与相关维度ID。"""
     transaction_type: TransactionType
     amount: float
+    book_id: Optional[int] = None
     category_id: Optional[int] = None
     from_account_id: Optional[int] = None
     to_account_id: Optional[int] = None
@@ -192,6 +199,7 @@ class TransactionUpdate(BaseModel):
     """更新交易请求模型（字段均可选，仅传需修改项）。"""
     transaction_type: Optional[TransactionType] = None
     amount: Optional[float] = None
+    book_id: Optional[int] = None
     category_id: Optional[int] = None
     from_account_id: Optional[int] = None
     to_account_id: Optional[int] = None
@@ -208,6 +216,7 @@ class TransactionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: str
+    book_id: Optional[int] = None
     transaction_type: Optional[TransactionType] = None
     amount: Optional[float] = None
     category_id: Optional[int] = None
@@ -235,6 +244,7 @@ class RecurringTransactionCreate(BaseModel):
     note: Optional[str] = None
     frequency: Optional[str] = None
     next_run: Optional[datetime] = None
+    book_id: Optional[int] = None
 
 
 class RecurringTransactionUpdate(BaseModel):
@@ -250,6 +260,7 @@ class RecurringTransactionUpdate(BaseModel):
     frequency: Optional[str] = None
     next_run: Optional[datetime] = None
     is_active: Optional[bool] = None
+    book_id: Optional[int] = None
 
 
 class RecurringTransactionResponse(BaseModel):
@@ -257,6 +268,7 @@ class RecurringTransactionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     user_id: str
+    book_id: Optional[int] = None
     name: Optional[str] = None
     transaction_type: Optional[TransactionType] = None
     amount: Optional[float] = None
@@ -270,3 +282,36 @@ class RecurringTransactionResponse(BaseModel):
     is_active: Optional[bool] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+# ================================ 账本（多账本） ================================
+class BookCreate(BaseModel):
+    """创建账本请求模型。"""
+    name: str
+    book_type: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    is_default: bool = False
+
+
+class BookUpdate(BaseModel):
+    """更新账本请求模型（字段均可选）。"""
+    name: Optional[str] = None
+    book_type: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class BookResponse(BaseModel):
+    """账本响应模型（从 ORM 对象序列化），附带实时资产（该账本下账户余额合计）。"""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: str
+    name: str
+    book_type: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    is_default: bool = False
+    created_at: Optional[datetime] = None
+    balance: Optional[float] = None

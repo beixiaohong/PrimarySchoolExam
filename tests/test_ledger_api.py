@@ -253,3 +253,81 @@ def test_transfer_conserves_total_assets(client):
     r = client.get(f"/api/ledger/users/{uid}/statistics/summary" + _q(uid))
     assert r.status_code == 200, r.text
     assert r.json()["total_assets"] == pytest.approx(1200.0)
+
+
+# ──────────────── M1 多账本 ────────────────
+
+def test_book_crud_and_default(client):
+    uid = "ledger_book_m1"
+    # 首次获取账本列表应自动含默认「日常账本」
+    r = client.get(f"/api/ledger/users/{uid}/books/" + _q(uid))
+    assert r.status_code == 200, r.text
+    assert any(b["is_default"] for b in r.json())
+
+    # 新建旅行账本
+    r = client.post(f"/api/ledger/users/{uid}/books/" + _q(uid),
+                    json={"name": "旅行账本", "book_type": "travel", "color": "#FF5722"})
+    assert r.status_code == 200, r.text
+    travel_id = r.json()["id"]
+
+    r = client.get(f"/api/ledger/users/{uid}/books/" + _q(uid))
+    assert len(r.json()) == 2
+
+    # 设为默认：原默认应被取消，全局仅一个默认
+    r = client.put(f"/api/ledger/users/{uid}/books/{travel_id}" + _q(uid),
+                   json={"is_default": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["is_default"] is True
+    r = client.get(f"/api/ledger/users/{uid}/books/" + _q(uid))
+    defaults = [b for b in r.json() if b["is_default"]]
+    assert len(defaults) == 1 and defaults[0]["id"] == travel_id
+
+    # 默认账本不可删
+    r = client.delete(f"/api/ledger/users/{uid}/books/{travel_id}" + _q(uid))
+    assert r.status_code == 400, r.text
+
+
+def test_book_isolation(client):
+    uid = "ledger_iso_m1"
+    r = client.post(f"/api/ledger/users/{uid}/books/" + _q(uid),
+                    json={"name": "日常账本", "is_default": True})
+    assert r.status_code == 200, r.text
+    daily_id = r.json()["id"]
+    r = client.post(f"/api/ledger/users/{uid}/books/" + _q(uid), json={"name": "旅行账本"})
+    assert r.status_code == 200, r.text
+    travel_id = r.json()["id"]
+
+    acc_d = client.post(f"/api/ledger/users/{uid}/accounts/" + _q(uid),
+                        json={"account_name": "工资卡", "account_type": "savings_card",
+                              "book_id": daily_id})
+    assert acc_d.status_code == 200, acc_d.text
+    acc_t = client.post(f"/api/ledger/users/{uid}/accounts/" + _q(uid),
+                        json={"account_name": "旅行钱包", "account_type": "virtual_account",
+                              "book_id": travel_id})
+    assert acc_t.status_code == 200, acc_t.text
+    cat = _make_category(client, uid, "EXPENSE")
+
+    client.post(f"/api/ledger/users/{uid}/transactions/" + _q(uid),
+                json={"transaction_type": "expense", "amount": 100,
+                      "from_account_id": acc_d.json()["id"], "category_id": cat["id"],
+                      "book_id": daily_id})
+    client.post(f"/api/ledger/users/{uid}/transactions/" + _q(uid),
+                json={"transaction_type": "expense", "amount": 50,
+                      "from_account_id": acc_t.json()["id"], "category_id": cat["id"],
+                      "book_id": travel_id})
+
+    # 日常账本概览：月支出 100，总资产 -100
+    r = client.get(f"/api/ledger/users/{uid}/statistics/summary" + _q(uid) + f"&book_id={daily_id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["monthly_expense"] == pytest.approx(100.0)
+    assert r.json()["total_assets"] == pytest.approx(-100.0)
+
+    # 旅行账本概览：月支出 50，总资产 -50（两本账本互不串扰）
+    r = client.get(f"/api/ledger/users/{uid}/statistics/summary" + _q(uid) + f"&book_id={travel_id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["monthly_expense"] == pytest.approx(50.0)
+    assert r.json()["total_assets"] == pytest.approx(-50.0)
+
+    # 不传 book_id 取默认账本（日常）→ 月支出 100
+    r = client.get(f"/api/ledger/users/{uid}/statistics/summary" + _q(uid))
+    assert r.json()["monthly_expense"] == pytest.approx(100.0)
