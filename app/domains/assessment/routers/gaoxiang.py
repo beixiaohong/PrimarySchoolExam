@@ -6,8 +6,8 @@
 题目来源两条腿：
 1. **AI 动态生成**（`source=ai`）：题库没有的题型/域现场出题并落库，复用不重复扣费；
 2. **备考资料导入**（`source=import`）：本地 `tools/gx_pack.py` 解析 602 个文件得到
-   4500+ 条题目/知识点，线上 `tools/import_gx_materials.py` 按指纹幂等入库。
-   出题默认「资料导入优先」，资料不够才 AI 补。
+   约 3980 条题目/知识点（去重后，见 docs/高项备考模块说明.md §2.4），
+   线上 `tools/import_gx_materials.py` 按指纹幂等入库。出题默认「资料导入优先」，资料不够才 AI 补。
 
 端点一览：
 - GET  /domains                知识域清单（24 章）+ 题型
