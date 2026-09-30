@@ -35,6 +35,11 @@ from .domains.family.routers import appeal, parent, sync
 from .domains.identity.routers.auth import require_self
 from .domains.platform.routers.quiet_hours import check_quiet_hours
 from .domains.content.services.init_data import ensure_initial_data
+# D10 内容 / Blog 域（blog）：文章 + 分类/标签 + 工作台聚合。
+# 域内路由已自行 Depends(require_user)，此处再挂 user_auth_deps 做严格账号绑定（require_self）。
+from .domains.blog.routers import articles as blog_articles
+from .domains.blog.routers import taxonomy as blog_taxonomy
+from .domains.blog.routers import workspace as blog_workspace
 from .logging_setup import apply_logging
 # S1 可观测性：request-id / 结构化日志 / 统一异常信封
 from .core.logging import install_structured_logging
@@ -173,6 +178,10 @@ app.include_router(mastery.router, prefix="/api/mastery", tags=["掌握度"], de
 app.include_router(metrics.router, prefix="/api", tags=["运营指标"])
 # CMP 合规底座（监护人同意 / 数据导出删除）
 app.include_router(compliance.router, prefix="/api/compliance", tags=["合规"], dependencies=user_auth_deps)
+# D10 内容 / Blog + 工作台（blog.md 增量需求：独立业务模块 + 平台聚合层，均不含其它域业务逻辑）
+app.include_router(blog_articles.router, prefix="/api/blog", tags=["内容/Blog"], dependencies=user_auth_deps)
+app.include_router(blog_taxonomy.router, prefix="/api/blog", tags=["内容/Blog"], dependencies=user_auth_deps)
+app.include_router(blog_workspace.router, prefix="/api/workspace", tags=["工作台"], dependencies=user_auth_deps)
 
 # 前端静态资源：仅托管 P5 构建产物 web/dist（含 hash 资源）。
 # 注意：web/dist 需先 `cd web && npm run build` 生成；缺失则前端不可用（接口仍正常）。
