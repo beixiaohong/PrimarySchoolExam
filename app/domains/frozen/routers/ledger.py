@@ -503,16 +503,38 @@ def delete_project(user_id: str, project_id: int, db: Session = Depends(get_db),
 @router.post("/users/{user_id}/transactions/", response_model=ledger_schemas.TransactionResponse, summary="创建交易记录", tags=["记账管理"])
 def create_transaction(user_id: str, transaction: ledger_schemas.TransactionCreate, db: Session = Depends(get_db),
     current_user: User = Depends(require_user)):
-    """创建交易记录（记账功能），自动更新相关账户余额。"""
+    """创建交易记录（记账功能），自动更新相关账户余额。支持多币种（折算到本位币 CNY 存储）。"""
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
+    return _create_tx(db, current_user.user_id, transaction)
 
-    if transaction.amount <= 0:
+
+def _create_tx(db: Session, user_id: str, transaction: ledger_schemas.TransactionCreate):
+    """核心记账：币种折算 → 校验账户/分类 → 联动余额 → 落 Bill。
+
+    多币种：本位币为 CNY；当 currency != CNY 时，amount 按 amount_orig * rate_to_base
+    折算为本位币后存入 Bill.amount（所有余额/统计均按本位币口径），并在 Bill 上保留
+    原币金额 amount_orig 与汇率 rate_to_base。模板应用与常规记账共用本函数。
+    """
+    currency = (transaction.currency or "CNY").upper()
+    if currency != "CNY":
+        if transaction.amount_orig is None or transaction.rate_to_base is None:
+            raise HTTPException(status_code=400, detail="非本位币交易需提供 amount_orig 与 rate_to_base")
+        if transaction.amount_orig <= 0 or transaction.rate_to_base <= 0:
+            raise HTTPException(status_code=400, detail="原币金额与汇率必须大于 0")
+        base_amount = round(float(transaction.amount_orig) * float(transaction.rate_to_base), 2)
+        amount_orig = float(transaction.amount_orig)
+        rate = float(transaction.rate_to_base)
+    else:
+        base_amount = float(transaction.amount)
+        amount_orig = float(transaction.amount)
+        rate = 1.0
+    if base_amount <= 0:
         raise HTTPException(status_code=400, detail="交易金额必须大于 0")
 
     from_account = db.query(model_ledger.Account).filter(
         model_ledger.Account.id == transaction.from_account_id,
-        model_ledger.Account.user_id == current_user.user_id
+        model_ledger.Account.user_id == user_id
     ).first()
     if not from_account:
         raise HTTPException(status_code=404, detail="支出账户不存在或不属于该用户")
@@ -525,27 +547,30 @@ def create_transaction(user_id: str, transaction: ledger_schemas.TransactionCrea
             raise HTTPException(status_code=400, detail="转账的源账户与目标账户不能相同")
         to_account = db.query(model_ledger.Account).filter(
             model_ledger.Account.id == transaction.to_account_id,
-            model_ledger.Account.user_id == current_user.user_id
+            model_ledger.Account.user_id == user_id
         ).first()
         if not to_account:
             raise HTTPException(status_code=404, detail="收入账户不存在或不属于该用户")
 
     category = db.query(model_ledger.Category).filter(
         model_ledger.Category.id == transaction.category_id,
-        model_ledger.Category.user_id == current_user.user_id
+        model_ledger.Category.user_id == user_id
     ).first()
     if not category:
         raise HTTPException(status_code=404, detail="分类不存在或不属于该用户")
 
-    bid = _resolve_book_id(db, current_user.user_id, transaction.book_id, create=True)
-    transaction_data = transaction.model_dump(exclude={"book_id"})
+    bid = _resolve_book_id(db, user_id, transaction.book_id, create=True)
+    transaction_data = transaction.model_dump(exclude={"book_id", "currency", "amount_orig", "rate_to_base", "amount"})
     if transaction_data['transaction_time'] is None:
         transaction_data['transaction_time'] = datetime.now()
 
-    db_transaction = model_ledger.Bill(**transaction_data, user_id=current_user.user_id, book_id=bid)
+    db_transaction = model_ledger.Bill(
+        **transaction_data, user_id=user_id, book_id=bid,
+        currency=currency, amount_orig=amount_orig, rate_to_base=rate, amount=base_amount,
+    )
 
-    # 更新账户余额
-    _adjust_balance(db, transaction.transaction_type, transaction.amount,
+    # 更新账户余额（按本位币金额，带行锁）
+    _adjust_balance(db, transaction.transaction_type, base_amount,
                     transaction.from_account_id, transaction.to_account_id, 1)
 
     db.add(db_transaction)
@@ -1250,6 +1275,96 @@ def get_networth(user_id: str, book_id: Optional[int] = Query(None, description=
         "borrowed_outstanding": round(float(borrowed_outstanding), 2),
         "credit_payable": round(float(credit_payable), 2),
     }
+
+# ================================ 记账模板API ================================
+
+@router.post("/users/{user_id}/templates/", response_model=ledger_schemas.TxTemplateResponse, summary="创建记账模板", tags=["记账模板"])
+def create_template(user_id: str, tpl: ledger_schemas.TxTemplateCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """创建记账模板（预设常用收支组合，一键复用）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, tpl.book_id, create=True)
+    db_tpl = model_ledger.LedgerTxTemplate(
+        **tpl.model_dump(exclude={"book_id"}), user_id=current_user.user_id, book_id=bid
+    )
+    db.add(db_tpl)
+    db.commit()
+    db.refresh(db_tpl)
+    return db_tpl
+
+@router.get("/users/{user_id}/templates/", response_model=List[ledger_schemas.TxTemplateResponse], summary="模板列表", tags=["记账模板"])
+def get_templates(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """获取记账模板列表（可按账本筛选）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    q = db.query(model_ledger.LedgerTxTemplate).filter(model_ledger.LedgerTxTemplate.user_id == current_user.user_id)
+    if bid is not None:
+        q = q.filter(model_ledger.LedgerTxTemplate.book_id == bid)
+    return q.order_by(model_ledger.LedgerTxTemplate.created_at.desc()).all()
+
+@router.put("/users/{user_id}/templates/{template_id}", response_model=ledger_schemas.TxTemplateResponse, summary="更新模板", tags=["记账模板"])
+def update_template(user_id: str, template_id: int, tpl: ledger_schemas.TxTemplateUpdate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """更新记账模板（仅提交的非空字段生效，需本人权限）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_tpl = db.query(model_ledger.LedgerTxTemplate).filter(
+        model_ledger.LedgerTxTemplate.id == template_id,
+        model_ledger.LedgerTxTemplate.user_id == current_user.user_id
+    ).first()
+    if not db_tpl:
+        raise HTTPException(status_code=404, detail="模板不存在或不属于该用户")
+    for key, value in tpl.model_dump(exclude_unset=True).items():
+        setattr(db_tpl, key, value)
+    db.commit()
+    db.refresh(db_tpl)
+    return db_tpl
+
+@router.delete("/users/{user_id}/templates/{template_id}", summary="删除模板", tags=["记账模板"])
+def delete_template(user_id: str, template_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """删除记账模板（仅本人权限，需模板存在）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_tpl = db.query(model_ledger.LedgerTxTemplate).filter(
+        model_ledger.LedgerTxTemplate.id == template_id,
+        model_ledger.LedgerTxTemplate.user_id == current_user.user_id
+    ).first()
+    if not db_tpl:
+        raise HTTPException(status_code=404, detail="模板不存在或不属于该用户")
+    db.delete(db_tpl)
+    db.commit()
+    return {"message": "模板已删除"}
+
+@router.post("/users/{user_id}/transactions/from-template/{template_id}", response_model=ledger_schemas.TransactionResponse, summary="应用模板记账", tags=["记账模板"])
+def apply_template(user_id: str, template_id: int, apply: ledger_schemas.TxTemplateApplyRequest, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """用模板一键记账：沿用模板的要素，可被请求中的覆盖项（金额/账户/分类/备注/时间）覆盖后落账。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_tpl = db.query(model_ledger.LedgerTxTemplate).filter(
+        model_ledger.LedgerTxTemplate.id == template_id,
+        model_ledger.LedgerTxTemplate.user_id == current_user.user_id
+    ).first()
+    if not db_tpl:
+        raise HTTPException(status_code=404, detail="模板不存在或不属于该用户")
+    amount = apply.amount if apply.amount is not None else db_tpl.amount
+    if amount is None or amount <= 0:
+        raise HTTPException(status_code=400, detail="模板未设置金额且未提供覆盖金额")
+    tx = ledger_schemas.TransactionCreate(
+        transaction_type=db_tpl.transaction_type,
+        amount=amount,
+        book_id=db_tpl.book_id,
+        category_id=apply.category_id if apply.category_id is not None else db_tpl.category_id,
+        from_account_id=apply.from_account_id if apply.from_account_id is not None else db_tpl.from_account_id,
+        to_account_id=apply.to_account_id if apply.to_account_id is not None else db_tpl.to_account_id,
+        note=apply.note if apply.note is not None else db_tpl.note,
+        transaction_time=apply.transaction_time,
+    )
+    return _create_tx(db, current_user.user_id, tx)
 
 # ================================ 周期性交易 ================================
 

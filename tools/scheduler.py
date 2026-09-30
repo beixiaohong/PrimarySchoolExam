@@ -132,6 +132,19 @@ JOBS = [
         "timeout": 300,
     },
     {
+        # 账本提醒生产者（M4）：每日生成记账提醒、周期交易到期前提醒、信用卡还款日提醒，
+        # 仅落 NotificationLog（前端轮询展示），不接短信/邮件。幂等：按「用户+当天+内容」去重。
+        "name": "ledger_reminders_daily",
+        "kind": "daily",
+        "at": "08:00",
+        "valid_from": "2026-01-01",
+        "valid_until": None,
+        "max_runs": None,
+        "weekday": None,
+        "command": ["tools/ledger_reminders.py"],
+        "timeout": 600,
+    },
+    {
         # 每日学习提醒推送（OneSignal Web Push）。
         # 🚨 刻意**不排凌晨 01:00**（与其它采集/汇总任务不同）：推送必须在用户活跃时段
         # 才有意义（凌晨推等于不推，还会被系统通知折叠掉）。19:00 是学生做作业的高峰，

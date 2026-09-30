@@ -599,3 +599,108 @@ def test_refund_links_to_original_expense(client):
     })
     assert r.status_code == 200, r.text
     assert r.json()["refund_of_id"] == orig["id"]
+
+
+# ──────────────── M4 模板 + 多币种 + 提醒 ────────────────
+
+def _make_template(client, uid, name, ttype, amount=None, category_id=None,
+                   from_account_id=None, book_id=None):
+    body = {"name": name, "transaction_type": ttype}
+    if amount is not None:
+        body["amount"] = amount
+    if category_id is not None:
+        body["category_id"] = category_id
+    if from_account_id is not None:
+        body["from_account_id"] = from_account_id
+    if book_id is not None:
+        body["book_id"] = book_id
+    r = client.post(f"/api/ledger/users/{uid}/templates/" + _q(uid), json=body)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_template_crud_and_apply(client):
+    uid = "ledger_tpl_m4"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE")
+    # 建模板（无金额）
+    t = _make_template(client, uid, "午饭", "expense", category_id=cat["id"],
+                      from_account_id=acc["id"])
+    assert t["name"] == "午饭"
+    # 列表
+    r = client.get(f"/api/ledger/users/{uid}/templates/" + _q(uid))
+    assert r.status_code == 200, r.text
+    assert len(r.json()) == 1
+    # 应用模板（提供金额）→ 生成一笔交易，账户余额 -30
+    r = client.post(f"/api/ledger/users/{uid}/transactions/from-template/{t['id']}" + _q(uid),
+                    json={"amount": 30})
+    assert r.status_code == 200, r.text
+    assert r.json()["amount"] == pytest.approx(30.0)  # 交易金额为正（支出）
+    assert _balance_of(client, uid, acc["id"]) == pytest.approx(-30.0)  # 支出，账户 -30
+    # 模板未设金额且未覆盖 → 400
+    r = client.post(f"/api/ledger/users/{uid}/transactions/from-template/{t['id']}" + _q(uid), json={})
+    assert r.status_code == 400, r.text
+    # 删除模板
+    r = client.delete(f"/api/ledger/users/{uid}/templates/{t['id']}" + _q(uid))
+    assert r.status_code == 200, r.text
+
+
+def test_multicurrency_transaction(client):
+    uid = "ledger_fx_m4"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE")
+    # 以 USD 记账：amount_orig=10, rate=7.2 → 本位币 72
+    r = client.post(f"/api/ledger/users/{uid}/transactions/" + _q(uid), json={
+        "transaction_type": "expense", "amount": 0, "from_account_id": acc["id"],
+        "category_id": cat["id"], "currency": "USD",
+        "amount_orig": 10, "rate_to_base": 7.2,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["currency"] == "USD"
+    assert r.json()["amount_orig"] == pytest.approx(10.0)
+    assert r.json()["rate_to_base"] == pytest.approx(7.2)
+    # amount 已折算为本位币 72，账户 -72
+    assert r.json()["amount"] == pytest.approx(72.0)
+    assert _balance_of(client, uid, acc["id"]) == pytest.approx(-72.0)
+    # 非本位币缺 rate_to_base → 400
+    r = client.post(f"/api/ledger/users/{uid}/transactions/" + _q(uid), json={
+        "transaction_type": "expense", "amount": 0, "from_account_id": acc["id"],
+        "category_id": cat["id"], "currency": "USD", "amount_orig": 10,
+    })
+    assert r.status_code == 400, r.text
+
+
+def test_account_currency_and_due_day(client):
+    uid = "ledger_acc_fx_m4"
+    r = client.post(f"/api/ledger/users/{uid}/accounts/" + _q(uid), json={
+        "account_name": "美元卡", "account_type": "credit_card",
+        "currency": "USD", "rate_to_base": 7.2, "due_day": 15,
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["currency"] == "USD"
+    assert r.json()["due_day"] == 15
+    assert r.json()["rate_to_base"] == pytest.approx(7.2)
+
+
+def test_reminder_producer_daily_record(client):
+    uid = "ledger_remind_m4"
+    # 建一个账户确保 User 行存在（NotificationLog 外键需要），且当天无记账 → 触发每日记账提醒
+    _make_account(client, uid, balance=0)
+    from tools.ledger_reminders import generate_user_reminders
+    from datetime import datetime as _d
+    from app.database import SessionLocal
+    from app.models.ledger import NotificationLog
+
+    db = SessionLocal()
+    try:
+        created = generate_user_reminders(db, uid, _d.now())
+        db.commit()
+        again = generate_user_reminders(db, uid, _d.now())  # 去重：应不再新增
+        db.commit()
+        # 清理本测试产生的通知，保证可重复运行
+        db.query(NotificationLog).filter(NotificationLog.user_id == uid).delete()
+        db.commit()
+    finally:
+        db.close()
+    assert created >= 1  # 至少含每日记账提醒
+    assert again == 0

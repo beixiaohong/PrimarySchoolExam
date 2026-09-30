@@ -21,6 +21,9 @@ class AccountCreate(BaseModel):
     account_subtype: Optional[str] = None
     account_number: Optional[str] = None
     balance: float = 0
+    currency: str = "CNY"
+    rate_to_base: float = 1.0
+    due_day: Optional[int] = None
     book_id: Optional[int] = None
 
 
@@ -31,6 +34,9 @@ class AccountUpdate(BaseModel):
     account_subtype: Optional[str] = None
     account_number: Optional[str] = None
     balance: Optional[float] = None
+    currency: Optional[str] = None
+    rate_to_base: Optional[float] = None
+    due_day: Optional[int] = None
     book_id: Optional[int] = None
 
 
@@ -44,6 +50,9 @@ class AccountResponse(BaseModel):
     account_type: AccountType
     account_subtype: Optional[str] = None
     account_number: Optional[str] = None
+    currency: str = "CNY"
+    rate_to_base: float = 1.0
+    due_day: Optional[int] = None
     balance: float = 0
     created_at: Optional[datetime] = None
 
@@ -193,6 +202,9 @@ class TransactionCreate(BaseModel):
     project_id: Optional[int] = None
     refund_of_id: Optional[int] = None
     attachment_url: Optional[str] = None
+    currency: str = "CNY"
+    amount_orig: Optional[float] = None
+    rate_to_base: Optional[float] = None
     note: Optional[str] = None
     transaction_time: Optional[datetime] = None
 
@@ -211,6 +223,9 @@ class TransactionUpdate(BaseModel):
     project_id: Optional[int] = None
     refund_of_id: Optional[int] = None
     attachment_url: Optional[str] = None
+    currency: Optional[str] = None
+    amount_orig: Optional[float] = None
+    rate_to_base: Optional[float] = None
     note: Optional[str] = None
     transaction_time: Optional[datetime] = None
 
@@ -232,6 +247,9 @@ class TransactionResponse(BaseModel):
     project_id: Optional[int] = None
     refund_of_id: Optional[int] = None
     attachment_url: Optional[str] = None
+    currency: str = "CNY"
+    amount_orig: Optional[float] = None
+    rate_to_base: Optional[float] = 1.0
     note: Optional[str] = None
     transaction_time: Optional[datetime] = None
     created_at: Optional[datetime] = None
@@ -401,5 +419,55 @@ class DebtRepayRequest(BaseModel):
     """还款/收款请求模型：金额 + 关联账户（资金实际进出账户）。"""
     amount: float
     from_account_id: int
+    note: Optional[str] = None
+    transaction_time: Optional[datetime] = None
+
+
+# ================================ 记账模板 ================================
+class TxTemplateCreate(BaseModel):
+    """创建记账模板请求模型。amount 可空（应用时再填）。"""
+    book_id: Optional[int] = None
+    name: str
+    transaction_type: TransactionType
+    amount: Optional[float] = None
+    category_id: Optional[int] = None
+    from_account_id: Optional[int] = None
+    to_account_id: Optional[int] = None
+    note: Optional[str] = None
+
+
+class TxTemplateUpdate(BaseModel):
+    """更新记账模板请求模型（字段均可选）。"""
+    name: Optional[str] = None
+    transaction_type: Optional[TransactionType] = None
+    amount: Optional[float] = None
+    category_id: Optional[int] = None
+    from_account_id: Optional[int] = None
+    to_account_id: Optional[int] = None
+    note: Optional[str] = None
+
+
+class TxTemplateResponse(BaseModel):
+    """记账模板响应模型（从 ORM 对象序列化）。"""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: str
+    book_id: Optional[int] = None
+    name: str
+    transaction_type: Optional[TransactionType] = None
+    amount: Optional[float] = None
+    category_id: Optional[int] = None
+    from_account_id: Optional[int] = None
+    to_account_id: Optional[int] = None
+    note: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class TxTemplateApplyRequest(BaseModel):
+    """应用模板时的一次性覆盖项（均可选，缺省沿用模板值）。"""
+    amount: Optional[float] = None
+    from_account_id: Optional[int] = None
+    to_account_id: Optional[int] = None
+    category_id: Optional[int] = None
     note: Optional[str] = None
     transaction_time: Optional[datetime] = None

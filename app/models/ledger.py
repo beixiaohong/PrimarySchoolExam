@@ -3,10 +3,11 @@
 定义个人账本系统的数据库表结构：账本(LedgerBook)、交易账单(Bill)、支付账户(Account)、
 地点(Location)、商户(Merchant)、人员(Person)、项目(Project)、三级分类(Category)、
 通知记录(NotificationLog)、报告设置(UserReportSettings)、周期性交易(RecurringTransaction)、
-预算(Budget)、借贷(Debt)，以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离；
-Bill/Account/RecurringTransaction/Budget/Debt 额外按 book_id 归属到某一本账本（随手记式
-多账本），book_id 为 NULL 时回落用户默认账本。Bill 另含 refund_of_id（退款关联）与
-attachment_url（票据附件）。
+预算(Budget)、借贷(Debt)、记账模板(TxTemplate)，以及交易类型/账户类型等枚举。所有账户级
+数据均按 user_id 隔离；Bill/Account/RecurringTransaction/Budget/Debt/TxTemplate 额外按
+book_id 归属到某一本账本（随手记式多账本），book_id 为 NULL 时回落用户默认账本。Bill 另含
+refund_of_id（退款关联）、attachment_url（票据附件）与多币种字段（currency/rate_to_base/
+amount_orig）；Account 含 currency/rate_to_base/due_day。
 """
 from sqlalchemy import Column, Boolean, Integer, String, Text, Enum, Float, ForeignKey, DateTime, Numeric
 from sqlalchemy.orm import relationship
@@ -85,6 +86,9 @@ class Bill(Base):
     project_id = Column(Integer, ForeignKey("db_ledger_projects.id"), nullable=True, comment="关联项目ID")
     refund_of_id = Column(Integer, ForeignKey("db_ledger_bills.id"), nullable=True, comment="退款关联的原支出账单ID（退款追回时填写）")
     attachment_url = Column(String(500), nullable=True, comment="票据/凭证附件URL（可选）")
+    currency = Column(String(10), default="CNY", comment="交易币种（本位币 CNY；非本位币时 amount 已折算成本位币）")
+    rate_to_base = Column(Numeric(15, 6), default=1.0, comment="1 单位该币种折算本位币(CNY)的汇率")
+    amount_orig = Column(Numeric(15, 2), nullable=True, comment="原币金额（本位币交易时等于 amount）")
     note = Column(Text, nullable=True, comment="备注信息")
     transaction_time = Column(DateTime, default=datetime.now, comment="交易发生时间")
     created_at = Column(DateTime, default=datetime.now, comment="记录创建时间")
@@ -113,7 +117,10 @@ class Account(Base):
     account_type = Column(Enum(AccountType), comment="账户类型：储蓄卡/信用卡/虚拟账户")
     account_subtype = Column(String(50), comment="账户子类型，如'招商银行'、'支付宝'等")
     account_number = Column(String(50), comment="账户号码，如银行卡号、支付宝账号等")
-    balance = Column(Numeric(15, 2), default=0, comment="账户余额，精确到分")
+    currency = Column(String(10), default="CNY", comment="账户币种（本位币 CNY；多币种账户填写，如 USD）")
+    rate_to_base = Column(Numeric(15, 6), default=1.0, comment="1 单位该币种折算本位币(CNY)的汇率")
+    due_day = Column(Integer, nullable=True, comment="信用卡还款日（每月几号，1-28）；非信用卡账户为 NULL")
+    balance = Column(Numeric(15, 2), default=0, comment="账户余额（按本位币 CNY 计，精确到分）")
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
     user = relationship("User")
@@ -298,3 +305,30 @@ class LedgerDebt(Base):
     user = relationship("User")
     book = relationship("LedgerBook")
     person = relationship("Person")
+
+
+class LedgerTxTemplate(Base):
+    """记账模板表 - 预设常用收支组合，一键复用（随手记式模板记账）。
+
+    保存一笔交易的常用要素（类型/金额/分类/账户/备注），应用时可覆盖金额与时间。
+    金额可为空：空表示每次应用需重新填写金额。
+    """
+    __tablename__ = "db_ledger_tx_templates"
+
+    id = Column(Integer, primary_key=True, index=True, comment="模板唯一标识")
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, comment="所属用户ID")
+    book_id = Column(Integer, ForeignKey("db_ledger_books.id"), nullable=True, comment="所属账本ID（NULL 回落默认账本）")
+    name = Column(String(100), comment="模板名称，如'地铁通勤'、'午饭'")
+    transaction_type = Column(Enum(TransactionType), comment="交易类型：收入/支出/转账")
+    amount = Column(Numeric(15, 2), nullable=True, comment="模板默认金额（可空，应用时可覆盖）")
+    category_id = Column(Integer, ForeignKey("db_ledger_categories.id"), nullable=True, comment="分类ID")
+    from_account_id = Column(Integer, ForeignKey("db_ledger_accounts.id"), nullable=True, comment="付款/收款账户ID")
+    to_account_id = Column(Integer, ForeignKey("db_ledger_accounts.id"), nullable=True, comment="转账目标账户ID")
+    note = Column(Text, nullable=True, comment="备注")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    user = relationship("User")
+    book = relationship("LedgerBook")
+    category = relationship("Category")
+    from_account = relationship("Account", foreign_keys=[from_account_id])
+    to_account = relationship("Account", foreign_keys=[to_account_id])
