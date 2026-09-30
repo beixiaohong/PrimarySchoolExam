@@ -15,6 +15,8 @@ const routes = [
   { path: '/push', name: 'push', component: () => import('../views/Push.vue') },
   { path: '/textbooks', name: 'textbooks', component: () => import('../views/Textbooks.vue') },
   { path: '/content', name: 'content', component: () => import('../views/Content.vue') },
+  // Blog 内容管理（分类/标签只有后台能增删改；前台 /api/blog 下均为只读）
+  { path: '/blog', name: 'blog', component: () => import('../views/BlogAdmin.vue') },
   { path: '/novel', name: 'novel', component: () => import('../views/Novel.vue') },
   { path: '/commerce', name: 'commerce', component: () => import('../views/Commerce.vue') },
   { path: '/rbac', name: 'rbac', component: () => import('../views/Rbac.vue') },

@@ -16,6 +16,7 @@
           <el-menu-item index="/push">消息推送</el-menu-item>
           <el-menu-item index="/textbooks">教材版本</el-menu-item>
           <el-menu-item index="/content">内容管理</el-menu-item>
+          <el-menu-item index="/blog">Blog 内容</el-menu-item>
           <el-menu-item index="/novel">小说站</el-menu-item>
           <el-menu-item index="/commerce">充值订单</el-menu-item>
           <el-menu-item index="/annotation">标注工作台</el-menu-item>
