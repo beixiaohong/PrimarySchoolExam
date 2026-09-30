@@ -149,6 +149,13 @@
     </header>
 
     <main class="content">
+      <!-- ═══════════ 工作台（blog.md §27.1 落地页，默认 tab） ═══════════ -->
+      <workspace-view v-if="tab==='workspace'"></workspace-view>
+      <!-- ═══════════ 应用中心（全部应用总览 + 置顶） ═══════════ -->
+      <apps-view v-if="tab==='apps'"></apps-view>
+      <!-- ═══════════ 内容（Blog 文章列表/详情/编辑） ═══════════ -->
+      <blog-view v-if="tab==='blog'"></blog-view>
+
       <!-- ═══════════ 今日学习首页 ═══════════ -->
 <home-view v-if="tab==='home'"></home-view>
 

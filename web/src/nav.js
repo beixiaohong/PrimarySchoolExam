@@ -5,6 +5,16 @@
 // NAV_GROUPS 驱动 App.vue 侧边栏渲染，ALL_TABS 仅汇总叶子 tab（见文件底部）。
 export const NAV_GROUPS = [
   {
+    // 平台层（temp/blog.md §50）：工作台是登录后的统一落地页，应用中心展示全部模块，
+    // 内容是独立一级业务模块（与学习/账本/聊天同级，只是入口放在这里便于发现）。
+    title: '平台',
+    items: [
+      { tab: 'workspace', label: '工作台', icon: 'workspace' },
+      { tab: 'apps', label: '应用中心', icon: 'apps' },
+      { tab: 'blog', label: '内容', icon: 'blog' },
+    ],
+  },
+  {
     title: '学习',
     items: [
       { tab: 'home', label: '今日学习', icon: 'home' },
@@ -77,10 +87,10 @@ export const NAV_GROUPS = [
   },
 ]
 
-// 移动端底部 TabBar（6 项；含「背诵」入口，与桌面端侧边栏一致）
+// 移动端底部 TabBar（6 项；第 1 项改为工作台，与桌面端落地页一致）
 // icon 同样引用 AppIcon 的 SVG 名称（B3 统一）
 export const TABBAR = [
-  { tab: 'home', label: '首页', icon: 'home' },
+  { tab: 'workspace', label: '工作台', icon: 'workspace' },
   { tab: 'practice', label: '刷题', icon: 'practice' },
   { tab: 'recite', label: '背诵', icon: 'recite' },
   { tab: 'assistant', label: 'AI', icon: 'assistant' },

@@ -1,6 +1,6 @@
 # 项目长期记忆 (PrimarySchoolExam / 智学学堂)
 
-> 主文件只留**跨模块通用**的规范与铁律；模块细节按需读 `topics/`（目前尚缺，行内保留关键 gotcha）。
+> 主文件只留**跨模块通用**的规范与铁律；模块细节读 `topics/`：`模块明细-IM小说采集.md` · `成长体系与高项备考.md` · `消息推送.md` · `工程规范-前端与定时任务.md`。
 
 ## 一、项目与工作流
 - **技术栈**：FastAPI + SQLAlchemy，**MySQL-only**（`DB_DRIVER` 强制回退 mysql，连接串带 `?charset=utf8mb4`）；Python 3.12+；前端 `web/`(学生端) + `admin/`(后台) 均 Vue3；文档总览 `docs/INDEX.md`。
@@ -14,9 +14,9 @@
 - 同步：本地 `.env.prod`（`PROD_DB_*`，**勿提交/外泄**）+ `tools/sync_prod_to_local.py`。上线 = 本地 commit+push → 线上 `git pull` + `sudo bash deploy.sh`（重启触发 `run_migrations()`）。
 
 ## 三、三条硬性铁律
-1. **严禁「持 DB 连接等外部阻塞调用」**（曾致全站卡死）：AI/HTTP/SMTP/SMS 前必须 `db.close()` 或用 `with SessionLocal() as s:` 包住 DB 段。池参数 pool_size=10, max_overflow=30, pool_timeout=15, pre_ping=True, recycle=3600。
-2. **新增第三方依赖必须同步 `requirements.txt`**（`deploy.sh:68` 只跑 `pip install -r`）：漏写 → 启动期 ImportError → 全站 502。三处拦截：`tools/dep_audit.py`、`regression_check.py` 第[3]项、`tests/test_requirements_complete.py`。可选依赖写函数内 try/except，别写模块级 import。
-3. **部署检查必须在 `systemctl restart` 之前**：`deploy.sh` 两道闸门（`tools/preflight.py`）`3.55 early` / `3.8 full`。只让「真会致挂」的项 BLOCK，外部命令只 WARN。
+1. **严禁「持 DB 连接等外部阻塞调用」**（曾致全站卡死）：AI/HTTP/SMTP/SMS 前必须 `db.close()` 或用 `with SessionLocal() as s:` 包住 DB 段（池参数只缓解，不长持连才是根因）。
+2. **新增第三方依赖必须同步 `requirements.txt`**（`deploy.sh:68` 只跑 `pip install -r`）：漏写 → 启动期 ImportError → 全站 502；**本地能 import ≠ 线上正常**。三处拦截：`tools/dep_audit.py`、`regression_check.py`[3]、`tests/test_requirements_complete.py`。可选依赖写函数内 try/except。
+3. **部署检查必须在 `systemctl restart` 之前**：`deploy.sh` 两道闸门（`tools/preflight.py`，纯标准库）`3.55 early` / `3.8 full`；只让「真会致挂」的项 BLOCK，外部命令（ffmpeg/soffice/npm）只 WARN——误报会卡住部署导致运维绕过。最有效的检查＝用服务解释器真实 `import app.main`。回滚：`git log --oneline -5` → `git reset --hard <好版本>` → `sudo bash deploy.sh`。线上导入崩溃排查：`journalctl -u exam-app -n 200 --no-pager | grep -iE "ModuleNotFoundError|ImportError"`。
 
 ## 四、关键坑（多「不报错但静默失效」）
 - **🚨 并行 Edit 同一文件互相覆盖**：同一文件多次 Edit 必须串行，改完 grep/读文件核对落盘。

@@ -40,6 +40,10 @@ import FavoritesView from './views/FavoritesView.vue'
 import LevelView from './views/LevelView.vue'
 // 高项备考（tab='gaoxiang'，软考高级·信息系统项目管理师，面向非学生成人用户）：业务在 logic/gaoxiang.js
 import GaoxiangView from './views/GaoxiangView.vue'
+// 平台层（blog.md §5/§27）：工作台（落地页）、应用中心、内容（Blog）
+import WorkspaceView from './views/WorkspaceView.vue'
+import AppsView from './views/AppsView.vue'
+import BlogView from './views/BlogView.vue'
 import AntiCheatInput from './components/AntiCheatInput.vue'
 // B3 全站图标统一：内联 SVG 图标集（nav.js / App.vue 侧边栏 & TabBar 统一引用）
 import AppIcon from './components/AppIcon.vue'
@@ -101,6 +105,9 @@ app.component('CoursesView', CoursesView)
 app.component('FavoritesView', FavoritesView)
 app.component('LevelView', LevelView)
 app.component('GaoxiangView', GaoxiangView)
+app.component('WorkspaceView', WorkspaceView)
+app.component('AppsView', AppsView)
+app.component('BlogView', BlogView)
 app.component('AntiCheatInput', AntiCheatInput)
 app.component('AppIcon', AppIcon)
 app.component('StateSwitch', StateSwitch)

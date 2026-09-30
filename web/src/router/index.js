@@ -8,8 +8,9 @@ const Blank = { render: () => null }
 export default createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', redirect: '/home' },
+    // blog.md §27.1 / D1 决策：工作台为落地页（原 /home 保留，可从应用中心直达）
+    { path: '/', redirect: '/workspace' },
     { path: '/:tab', component: Blank }, // 任意 /xxx 解析为对应 tab，内容仍由 App.vue 渲染
-    { path: '/:pathMatch(.*)*', redirect: '/home' }, // 未匹配路径兜底回首页
+    { path: '/:pathMatch(.*)*', redirect: '/workspace' }, // 未匹配路径兜底回工作台
   ],
 })

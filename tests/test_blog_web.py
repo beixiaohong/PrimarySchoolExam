@@ -18,6 +18,24 @@ import pytest
 
 from app.database import SessionLocal
 
+ADMIN_USER = "admin"
+ADMIN_PWD = "Admin@123"
+
+
+@pytest.fixture(scope="module")
+def admin_headers(client):
+    """后台管理员鉴权头 —— **本模块自备，不复用 conftest 的 session 级夹具**。
+
+    原因（本项目铁律）：admin token 是「单槽」的，任何一次新登录都会让旧 token 失效。
+    conftest 的 admin_headers 是 session 级（首次被请求时才登录），而本文件按字母序排在
+    test_observability_compliance / test_push 之前——若这里先触发它，后面 test_novel 等文件的
+    管理员登录会把它的 token 顶掉，导致那两个文件拿到 401（全量跑才暴露的假失败）。
+    因此本文件自己登录一次，把 session 夹具的首次使用留给更靠后的文件。
+    """
+    r = client.post("/api/admin/login", json={"username": ADMIN_USER, "password": ADMIN_PWD})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
 
 def _q(uid, extra=""):
     """拼接 user_id 查询参数（AuthClient 从中提取 uid 签发 token）。"""
