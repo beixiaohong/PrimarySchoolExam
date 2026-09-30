@@ -7,9 +7,12 @@
 - 鉴权：原 verify_user_points(N) → require_user（Bearer token），并使用 current_user.user_id
   （字符串）做所有写入/查询；路由开头校验 user_id == current_user.user_id。
 - 序列化：pydantic v1 的 .dict() → v2 的 .model_dump()。
-- 调度/邮件：移除 apscheduler / smtplib 后台调度器与邮件推送；
-  周期交易改由手动端点 POST /recurring/run-due 触发；报表改为返回 JSON 的
-  GET /reports/summary。其余统计/看板端点全部保留。
+- 调度：周期交易由 tools/scheduler.py 每日 01:00 调用 tools/run_due_recurring.py
+  （→ ledger_recurring.run_due_recurring_all，遍历全量用户）自动记账；另保留手动端点
+  POST /recurring/run-due（仅当前用户）用于按需补记，两端共用 ledger_calc 的
+  _adjust_balance / _advance_next_run，口径一致。
+- 邮件：已移除 smtplib 推送，报表改为返回 JSON 的 GET /reports/summary。
+  其余统计/看板端点全部保留。
 """
 from sqlalchemy import func, extract
 from decimal import Decimal
@@ -351,6 +354,9 @@ def create_transaction(user_id: str, transaction: ledger_schemas.TransactionCrea
     if user_id != current_user.user_id:
         raise HTTPException(403, "无权访问该账号数据")
 
+    if transaction.amount <= 0:
+        raise HTTPException(status_code=400, detail="交易金额必须大于 0")
+
     from_account = db.query(model_ledger.Account).filter(
         model_ledger.Account.id == transaction.from_account_id,
         model_ledger.Account.user_id == current_user.user_id
@@ -362,6 +368,8 @@ def create_transaction(user_id: str, transaction: ledger_schemas.TransactionCrea
     if transaction.transaction_type == model_ledger.TransactionType.TRANSFER:
         if not transaction.to_account_id:
             raise HTTPException(status_code=400, detail="转账必须指定收入账户")
+        if transaction.from_account_id == transaction.to_account_id:
+            raise HTTPException(status_code=400, detail="转账的源账户与目标账户不能相同")
         to_account = db.query(model_ledger.Account).filter(
             model_ledger.Account.id == transaction.to_account_id,
             model_ledger.Account.user_id == current_user.user_id
@@ -486,6 +494,22 @@ def update_transaction(
     update_data = transaction_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_transaction, field, value)
+
+    # 第三步前置校验：若改为转账，目标账户必须存在、有效且不等于源账户
+    if db_transaction.transaction_type == model_ledger.TransactionType.TRANSFER:
+        if not db_transaction.to_account_id:
+            raise HTTPException(status_code=400, detail="转账必须指定收入账户")
+        if db_transaction.from_account_id == db_transaction.to_account_id:
+            raise HTTPException(status_code=400, detail="转账的源账户与目标账户不能相同")
+        to_account = db.query(model_ledger.Account).filter(
+            model_ledger.Account.id == db_transaction.to_account_id,
+            model_ledger.Account.user_id == current_user.user_id
+        ).first()
+        if not to_account:
+            raise HTTPException(status_code=404, detail="收入账户不存在或不属于该用户")
+
+    if db_transaction.amount is not None and db_transaction.amount <= 0:
+        raise HTTPException(status_code=400, detail="交易金额必须大于 0")
 
     # 第三步：重新计算账户余额
     _adjust_balance(db, db_transaction.transaction_type, db_transaction.amount,
@@ -758,7 +782,8 @@ def toggle_recurring(user_id: str, rt_id: int, db: Session = Depends(get_db),
 def run_due_recurring(db: Session = Depends(get_db),
                       current_user: User = Depends(require_user)):
     """找出当前用户所有到期（next_run <= now 且启用）的周期交易，为其生成账单并更新余额，
-    然后按频率推进 next_run。无后台调度器，由调用方手动触发。"""
+    然后按频率推进 next_run。通常由 tools/scheduler.py 每日 01:00 自动触发
+    （run_due_recurring_all 遍历全量用户），此端点作为当前用户的按需补记入口。"""
     now = datetime.now()
     due = db.query(model_ledger.RecurringTransaction).filter(
         model_ledger.RecurringTransaction.user_id == current_user.user_id,

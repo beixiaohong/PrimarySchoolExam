@@ -12,7 +12,10 @@ app/domains/frozen/services/ledger_calc.py）。拆分前后行为必须完全�
 """
 import pytest
 
+from datetime import datetime as _dt
+
 from app.models.ledger import Account, Bill, Category
+from app.domains.frozen.services.ledger_calc import _advance_next_run
 
 
 def _q(uid, extra=""):
@@ -177,3 +180,76 @@ def test_cross_user_forbidden(client):
         headers={"Authorization": f"Bearer {token_b}"},
     )
     assert r.status_code == 403, r.text
+
+
+# ──────────────── M0 健壮性：周期推进 / 边界校验 / 余额守恒 ────────────────
+
+def test_advance_next_run_month_end_clamp():
+    # 1/31 按月推进必须夹紧到 2/28（旧实现 +30 天会给 3/2，造成月末漂移）
+    nr = _dt(2026, 1, 31, 9, 0, 0)
+    out = _advance_next_run(nr, "monthly", _dt(2026, 2, 1, 0, 0, 0))
+    assert out == _dt(2026, 2, 28, 9, 0, 0)
+
+
+def test_advance_next_run_leap_year_clamp():
+    # 闰年 2/29 按年推进到次年 2/28（旧实现 +365 天会跨到 3/1 附近）
+    nr = _dt(2024, 2, 29, 8, 0, 0)
+    out = _advance_next_run(nr, "yearly", _dt(2025, 1, 1, 0, 0, 0))
+    assert out == _dt(2025, 2, 28, 8, 0, 0)
+
+
+def test_advance_next_run_weekly_no_drift():
+    # 每周 +7 天，时间分量保留，不应有日漂移
+    nr = _dt(2026, 1, 1, 12, 0, 0)
+    out = _advance_next_run(nr, "weekly", _dt(2026, 1, 21, 0, 0, 0))
+    assert out == _dt(2026, 1, 22, 12, 0, 0)
+
+
+def test_amount_must_be_positive(client):
+    uid = "ledger_amt_m0"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE")
+    r = client.post(
+        f"/api/ledger/users/{uid}/transactions/" + _q(uid),
+        json={"transaction_type": "expense", "amount": 0,
+              "from_account_id": acc["id"], "category_id": cat["id"]},
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_transfer_self_account_rejected(client):
+    uid = "ledger_xfer_self_m0"
+    acc = _make_account(client, uid, balance=1000)
+    cat = _make_category(client, uid, "EXPENSE")
+    r = client.post(
+        f"/api/ledger/users/{uid}/transactions/" + _q(uid),
+        json={"transaction_type": "transfer", "amount": 100,
+              "from_account_id": acc["id"], "to_account_id": acc["id"],
+              "category_id": cat["id"]},
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_update_to_transfer_without_to_account_rejected(client):
+    uid = "ledger_upd_xfer_m0"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE")
+    tx = _make_transaction(client, uid, "expense", 100, acc["id"], cat["id"])
+    r = client.put(
+        f"/api/ledger/users/{uid}/transactions/{tx['id']}" + _q(uid),
+        json={"transaction_type": "transfer"},
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_transfer_conserves_total_assets(client):
+    uid = "ledger_cons_m0"
+    src = _make_account(client, uid, balance=1000, name="源账户")
+    dst = _make_account(client, uid, balance=200, name="目标账户")
+    cat = _make_category(client, uid, "EXPENSE")
+    _make_transaction(client, uid, "transfer", 300, src["id"], cat["id"],
+                      to_account_id=dst["id"])
+    # 转账不改变总资产：1000+200 = 700+500 = 1200
+    r = client.get(f"/api/ledger/users/{uid}/statistics/summary" + _q(uid))
+    assert r.status_code == 200, r.text
+    assert r.json()["total_assets"] == pytest.approx(1200.0)
