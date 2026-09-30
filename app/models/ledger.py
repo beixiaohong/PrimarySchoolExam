@@ -2,9 +2,10 @@
 
 定义个人账本系统的数据库表结构：账本(LedgerBook)、交易账单(Bill)、支付账户(Account)、
 地点(Location)、商户(Merchant)、人员(Person)、项目(Project)、三级分类(Category)、
-通知记录(NotificationLog)、报告设置(UserReportSettings)、周期性交易(RecurringTransaction)，
-以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离；Bill/Account/RecurringTransaction
-额外按 book_id 归属到某一本账本（随手记式多账本），book_id 为 NULL 时回落用户默认账本。
+通知记录(NotificationLog)、报告设置(UserReportSettings)、周期性交易(RecurringTransaction)、
+预算(Budget)，以及交易类型/账户类型等枚举。所有账户级数据均按 user_id 隔离；Bill/Account/
+RecurringTransaction/Budget 额外按 book_id 归属到某一本账本（随手记式多账本），book_id 为
+NULL 时回落用户默认账本。
 """
 from sqlalchemy import Column, Boolean, Integer, String, Text, Enum, Float, ForeignKey, DateTime, Numeric
 from sqlalchemy.orm import relationship
@@ -177,11 +178,12 @@ class Category(Base):
 
 
 class NotificationLog(Base):
-    """通知记录表 - 记录推送消息历史"""
+    """通知记录表 - 记录推送消息历史（含预算超支提醒等，仅落库，不接短信/邮件）"""
     __tablename__ = "db_ledger_notification_logs"
     
     id = Column(Integer, primary_key=True, index=True, comment="通知记录唯一标识")
     user_id = Column(String(36), ForeignKey("users.user_id"), comment="用户ID")
+    budget_id = Column(Integer, ForeignKey("db_ledger_budgets.id"), nullable=True, comment="关联预算ID（预算超支提醒时填写）")
     report_period = Column(Enum(ReportPeriod), comment="报告周期：周报/月报/年报")
     period_start = Column(DateTime, comment="统计周期开始时间")
     period_end = Column(DateTime, comment="统计周期结束时间")
@@ -192,6 +194,33 @@ class NotificationLog(Base):
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
     user = relationship("User")
+    budget = relationship("LedgerBudget")
+
+
+class LedgerBudget(Base):
+    """预算表 - 支持月预算 / 分类预算 / 项目预算（随手记式预算控超支）。
+
+    scope_type 决定预算维度：
+    - month   ：该账本当月总支出预算（scope_id 为 NULL）；
+    - category：该账本某分类当月支出预算（scope_id = category_id）；
+    - project ：该账本某项目支出预算（scope_id = project_id）。
+    每类预算按月滚动统计：已花 / 预算金额 = 执行率；超过 notify_threshold 即预警，
+    超过 100% 即超支，并写入 NotificationLog（仅落库，前端轮询展示，不接短信/邮件）。
+    """
+    __tablename__ = "db_ledger_budgets"
+
+    id = Column(Integer, primary_key=True, index=True, comment="预算唯一标识")
+    user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False, comment="所属用户ID")
+    book_id = Column(Integer, ForeignKey("db_ledger_books.id"), nullable=True, comment="所属账本ID（NULL 回落用户默认账本）")
+    scope_type = Column(String(20), nullable=False, comment="预算维度：month(月度总)|category(分类)|project(项目)")
+    scope_id = Column(Integer, nullable=True, comment="分类预算=category_id；项目预算=project_id；月度预算为 NULL")
+    amount = Column(Numeric(15, 2), nullable=False, comment="预算金额（周期=period 内）")
+    notify_threshold = Column(Numeric(5, 2), default=0.8, comment="预警阈值比例，如 0.8=已花 80% 触发提醒")
+    period = Column(String(20), default="monthly", comment="预算周期，目前仅 monthly")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    user = relationship("User")
+    book = relationship("LedgerBook")
 
 
 class UserReportSettings(Base):

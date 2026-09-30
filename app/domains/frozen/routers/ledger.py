@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
+from calendar import monthrange
 from typing import Optional, List, Dict, Any
 
 from app.database import get_db
@@ -75,6 +76,116 @@ def _resolve_book_id(db: Session, user_id: str, book_id: Optional[int], create: 
     db.add(default_book)
     db.flush()
     return default_book.id
+
+
+# ================================ 预算辅助 ================================
+
+def _current_month_window() -> tuple:
+    """返回本月起止时间（naive datetime）：[month_start, month_end]。
+
+    month_end 取到当月最后一天 23:59:59，便于用 <= / >= 直接框定本月区间。
+    """
+    m_start = date.today().replace(day=1)
+    last_day = monthrange(m_start.year, m_start.month)[1]
+    month_start = datetime.combine(m_start, datetime.min.time())
+    month_end = datetime(m_start.year, m_start.month, last_day, 23, 59, 59)
+    return month_start, month_end
+
+
+def _compute_budget_status(db: Session, user_id: str, budgets: List) -> List[Dict[str, Any]]:
+    """计算一组预算的当月执行率，并对跨过预警阈值的预算写 NotificationLog（同预算同月仅一条 pending）。
+
+    返回每项预算的执行情况字典（含 scope_name / amount / spent / remaining / ratio /
+    threshold / status）。spent 仅统计支出（EXPENSE），区间为本自然月，并按预算所属账本过滤；
+    category/project 预算额外按 scope_id 过滤。status：ok(未到阈值) / warning(达阈值未超) /
+    over(已超 100%)。超阈值时落 NotificationLog(status=pending)，前端轮询展示，不接短信/邮件
+    （符合 D9 冻结域约束）。
+    """
+    month_start, month_end = _current_month_window()
+    results: List[Dict[str, Any]] = []
+    for b in budgets:
+        spent_q = db.query(func.sum(model_ledger.Bill.amount)).filter(
+            model_ledger.Bill.user_id == user_id,
+            model_ledger.Bill.transaction_type == model_ledger.TransactionType.EXPENSE,
+            model_ledger.Bill.transaction_time >= month_start,
+            model_ledger.Bill.transaction_time <= month_end,
+        )
+        if b.book_id is not None:
+            spent_q = spent_q.filter(model_ledger.Bill.book_id == b.book_id)
+        if b.scope_type == "category" and b.scope_id:
+            spent_q = spent_q.filter(model_ledger.Bill.category_id == b.scope_id)
+        elif b.scope_type == "project" and b.scope_id:
+            spent_q = spent_q.filter(model_ledger.Bill.project_id == b.scope_id)
+        spent = float(spent_q.scalar() or 0)
+
+        amount = float(b.amount)
+        threshold = float(b.notify_threshold or 0.8)
+        ratio = (spent / amount) if amount > 0 else 0.0
+        if ratio >= 1.0:
+            status = "over"
+        elif ratio >= threshold:
+            status = "warning"
+        else:
+            status = "ok"
+
+        if b.scope_type == "month":
+            scope_name = "月度总预算"
+        elif b.scope_type == "category" and b.scope_id:
+            cat = db.query(model_ledger.Category).filter(
+                model_ledger.Category.id == b.scope_id,
+                model_ledger.Category.user_id == user_id,
+            ).first()
+            scope_name = " / ".join(filter(None, [cat.level1, cat.level2, cat.level3])) if cat else f"分类#{b.scope_id}"
+        elif b.scope_type == "project" and b.scope_id:
+            proj = db.query(model_ledger.Project).filter(
+                model_ledger.Project.id == b.scope_id,
+                model_ledger.Project.user_id == user_id,
+            ).first()
+            scope_name = proj.name if proj else f"项目#{b.scope_id}"
+        else:
+            scope_name = b.scope_type
+
+        results.append({
+            "budget_id": b.id,
+            "scope_type": b.scope_type,
+            "scope_id": b.scope_id,
+            "scope_name": scope_name,
+            "book_id": b.book_id,
+            "amount": amount,
+            "spent": spent,
+            "remaining": round(amount - spent, 2),
+            "ratio": round(ratio, 4),
+            "threshold": threshold,
+            "status": status,
+        })
+
+        # 超阈值提醒：同预算同月仅落一条 pending，避免重复推送
+        if ratio >= threshold:
+            exists = db.query(model_ledger.NotificationLog).filter(
+                model_ledger.NotificationLog.budget_id == b.id,
+                model_ledger.NotificationLog.period_start == month_start,
+                model_ledger.NotificationLog.status == model_ledger.NotificationStatus.PENDING,
+            ).first()
+            if not exists:
+                content = {
+                    "scope_type": b.scope_type,
+                    "scope_name": scope_name,
+                    "amount": amount,
+                    "spent": spent,
+                    "ratio": round(ratio, 4),
+                    "status": status,
+                }
+                db.add(model_ledger.NotificationLog(
+                    user_id=user_id,
+                    budget_id=b.id,
+                    report_period=model_ledger.ReportPeriod.MONTHLY,
+                    period_start=month_start,
+                    period_end=month_end,
+                    report_content=json.dumps(content, ensure_ascii=False),
+                    status=model_ledger.NotificationStatus.PENDING,
+                ))
+    db.commit()
+    return results
 
 
 # ================================ 账户管理API ================================
@@ -620,11 +731,34 @@ def get_summary(user_id: str, book_id: Optional[int] = Query(None, description="
         model_ledger.Bill.transaction_time >= current_month
     ).scalar() or 0
 
+    # 月度预算执行（仅读取，不写通知；通知由 statistics/budgets 端点落库）
+    month_budget = None
+    mb_q = db.query(model_ledger.LedgerBudget).filter(
+        model_ledger.LedgerBudget.user_id == current_user.user_id,
+        model_ledger.LedgerBudget.scope_type == "month",
+    )
+    if bid is not None:
+        mb_q = mb_q.filter(model_ledger.LedgerBudget.book_id == bid)
+    mb = mb_q.first()
+    if mb:
+        mb_amount = float(mb.amount)
+        mb_threshold = float(mb.notify_threshold or 0.8)
+        mb_ratio = (float(monthly_expense) / mb_amount) if mb_amount > 0 else 0.0
+        month_budget = {
+            "amount": mb_amount,
+            "spent": float(monthly_expense),
+            "remaining": round(mb_amount - float(monthly_expense), 2),
+            "ratio": round(mb_ratio, 4),
+            "threshold": mb_threshold,
+            "status": "over" if mb_ratio >= 1 else ("warning" if mb_ratio >= mb_threshold else "ok"),
+        }
+
     return {
         "total_assets": float(total_assets),
         "monthly_income": float(monthly_income),
         "monthly_expense": float(monthly_expense),
-        "monthly_balance": float(monthly_income - monthly_expense)
+        "monthly_balance": float(monthly_income - monthly_expense),
+        "month_budget": month_budget
     }
 
 @router.get("/users/{user_id}/statistics/category", summary="按分类统计支出", tags=["统计分析"])
@@ -769,6 +903,145 @@ def get_budget_stats(user_id: str, book_id: Optional[int] = Query(None, descript
             "remaining": float(proj.budget) - float(total_spent) if proj.budget else 0
         })
     return result
+
+# ================================ 预算管理API ================================
+
+@router.post("/users/{user_id}/budgets/", response_model=ledger_schemas.BudgetResponse, summary="创建预算", tags=["预算管理"])
+def create_budget(user_id: str, budget: ledger_schemas.BudgetCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """创建预算（月/分类/项目）。category/project 必须提供 scope_id；notify_threshold 默认 0.8。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    if budget.scope_type not in ("month", "category", "project"):
+        raise HTTPException(status_code=400, detail="scope_type 仅支持 month|category|project")
+    if budget.scope_type in ("category", "project") and not budget.scope_id:
+        raise HTTPException(status_code=400, detail="category/project 预算必须指定 scope_id")
+    if budget.amount <= 0:
+        raise HTTPException(status_code=400, detail="预算金额必须大于 0")
+    if budget.notify_threshold is not None and (budget.notify_threshold <= 0 or budget.notify_threshold > 1.5):
+        raise HTTPException(status_code=400, detail="notify_threshold 应在 0~1.5 之间")
+    bid = _resolve_book_id(db, current_user.user_id, budget.book_id, create=True)
+    db_budget = model_ledger.LedgerBudget(
+        **budget.model_dump(exclude={"book_id"}), user_id=current_user.user_id, book_id=bid
+    )
+    db.add(db_budget)
+    db.commit()
+    db.refresh(db_budget)
+    return db_budget
+
+@router.get("/users/{user_id}/budgets/", response_model=List[ledger_schemas.BudgetResponse], summary="获取预算列表", tags=["预算管理"])
+def get_budgets(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """获取用户的预算列表（可按账本筛选）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    q = db.query(model_ledger.LedgerBudget).filter(model_ledger.LedgerBudget.user_id == current_user.user_id)
+    if bid is not None:
+        q = q.filter(model_ledger.LedgerBudget.book_id == bid)
+    return q.order_by(model_ledger.LedgerBudget.scope_type, model_ledger.LedgerBudget.id).all()
+
+@router.put("/users/{user_id}/budgets/{budget_id}", response_model=ledger_schemas.BudgetResponse, summary="更新预算", tags=["预算管理"])
+def update_budget(user_id: str, budget_id: int, budget: ledger_schemas.BudgetUpdate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """更新预算（仅提交的非空字段生效，需本人权限）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_budget = db.query(model_ledger.LedgerBudget).filter(
+        model_ledger.LedgerBudget.id == budget_id,
+        model_ledger.LedgerBudget.user_id == current_user.user_id
+    ).first()
+    if not db_budget:
+        raise HTTPException(status_code=404, detail="预算不存在或不属于该用户")
+    data = budget.model_dump(exclude_unset=True)
+    if data.get("scope_type") is not None and data["scope_type"] not in ("month", "category", "project"):
+        raise HTTPException(status_code=400, detail="scope_type 仅支持 month|category|project")
+    # 合并后的最终取值：用于校验 category/project 必须有 scope_id
+    final_scope_type = data.get("scope_type", db_budget.scope_type)
+    final_scope_id = data.get("scope_id", db_budget.scope_id)
+    if final_scope_type in ("category", "project") and not final_scope_id:
+        raise HTTPException(status_code=400, detail="category/project 预算必须指定 scope_id")
+    if data.get("amount") is not None and data["amount"] <= 0:
+        raise HTTPException(status_code=400, detail="预算金额必须大于 0")
+    if data.get("notify_threshold") is not None and (data["notify_threshold"] <= 0 or data["notify_threshold"] > 1.5):
+        raise HTTPException(status_code=400, detail="notify_threshold 应在 0~1.5 之间")
+    for key, value in data.items():
+        setattr(db_budget, key, value)
+    db.commit()
+    db.refresh(db_budget)
+    return db_budget
+
+@router.delete("/users/{user_id}/budgets/{budget_id}", summary="删除预算", tags=["预算管理"])
+def delete_budget(user_id: str, budget_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_user)):
+    """删除预算（仅本人权限，需预算存在）。"""
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    db_budget = db.query(model_ledger.LedgerBudget).filter(
+        model_ledger.LedgerBudget.id == budget_id,
+        model_ledger.LedgerBudget.user_id == current_user.user_id
+    ).first()
+    if not db_budget:
+        raise HTTPException(status_code=404, detail="预算不存在或不属于该用户")
+    db.delete(db_budget)
+    db.commit()
+    return {"message": "预算已删除"}
+
+@router.get("/users/{user_id}/statistics/budgets", summary="预算执行率与超支提醒", tags=["统计分析"])
+def get_budget_execution(user_id: str, book_id: Optional[int] = Query(None, description="按账本筛选（缺省取默认账本）"),
+    db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """返回各预算的当月执行率（已花/预算），并对跨过预警阈值的预算写 NotificationLog（去重）。
+
+    status：ok(未到阈值) / warning(达阈值未超 100%) / over(已超 100%)；前端可借此渲染
+    进度条与超支红标，并轮询 NotificationLog 展示提醒。
+    """
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    bid = _resolve_book_id(db, current_user.user_id, book_id, create=False)
+    q = db.query(model_ledger.LedgerBudget).filter(model_ledger.LedgerBudget.user_id == current_user.user_id)
+    if bid is not None:
+        q = q.filter(model_ledger.LedgerBudget.book_id == bid)
+    budgets = q.all()
+    month_start, month_end = _current_month_window()
+    status = _compute_budget_status(db, current_user.user_id, budgets)
+    return {
+        "month_start": month_start.isoformat(),
+        "month_end": month_end.isoformat(),
+        "budgets": status
+    }
+
+
+@router.get("/users/{user_id}/notifications/", summary="获取通知（预算超支等提醒）", tags=["预算管理"])
+def get_notifications(user_id: str, status: Optional[str] = Query(None, description="按状态筛选 pending|sent|failed"),
+    db: Session = Depends(get_db), current_user: User = Depends(require_user)):
+    """获取当前用户的通知记录（预算超支提醒等），前端轮询展示角标。
+
+    仅返回本用户记录；可传 status 过滤（默认返回全部）。报告仅落库，不发短信/邮件。
+    """
+    if user_id != current_user.user_id:
+        raise HTTPException(403, "无权访问该账号数据")
+    q = db.query(model_ledger.NotificationLog).filter(model_ledger.NotificationLog.user_id == current_user.user_id)
+    if status:
+        q = q.filter(model_ledger.NotificationLog.status == status)
+    rows = q.order_by(model_ledger.NotificationLog.created_at.desc()).all()
+    out = []
+    for n in rows:
+        content = None
+        if n.report_content:
+            try:
+                content = json.loads(n.report_content)
+            except Exception:
+                content = n.report_content
+        out.append({
+            "id": n.id,
+            "budget_id": n.budget_id,
+            "period_start": n.period_start.isoformat() if n.period_start else None,
+            "period_end": n.period_end.isoformat() if n.period_end else None,
+            "content": content,
+            "status": n.status.value if n.status else None,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        })
+    return out
 
 # ================================ 周期性交易 ================================
 

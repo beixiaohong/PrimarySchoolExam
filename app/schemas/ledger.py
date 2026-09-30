@@ -315,3 +315,38 @@ class BookResponse(BaseModel):
     is_default: bool = False
     created_at: Optional[datetime] = None
     balance: Optional[float] = None
+
+
+# ================================ 预算 ================================
+class BudgetCreate(BaseModel):
+    """创建预算请求模型。scope_type 限定 month|category|project；
+    category/project 必须提供 scope_id；notify_threshold 默认 0.8（80% 预警）。"""
+    book_id: Optional[int] = None
+    scope_type: str
+    scope_id: Optional[int] = None
+    amount: float
+    notify_threshold: float = 0.8
+    period: str = "monthly"
+
+
+class BudgetUpdate(BaseModel):
+    """更新预算请求模型（字段均可选）。"""
+    scope_type: Optional[str] = None
+    scope_id: Optional[int] = None
+    amount: Optional[float] = None
+    notify_threshold: Optional[float] = None
+    period: Optional[str] = None
+
+
+class BudgetResponse(BaseModel):
+    """预算响应模型（从 ORM 对象序列化）。"""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: str
+    book_id: Optional[int] = None
+    scope_type: str
+    scope_id: Optional[int] = None
+    amount: float
+    notify_threshold: float = 0.8
+    period: str = "monthly"
+    created_at: Optional[datetime] = None

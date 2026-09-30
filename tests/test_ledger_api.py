@@ -160,12 +160,14 @@ def test_summary_structure(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert set(body.keys()) == {"total_assets", "monthly_income",
-                                "monthly_expense", "monthly_balance"}
+                                "monthly_expense", "monthly_balance", "month_budget"}
     # 总资产负债 = 账户余额 = -100 + 400 = 300
     assert body["total_assets"] == pytest.approx(300.0)
     assert body["monthly_income"] == pytest.approx(400.0)
     assert body["monthly_expense"] == pytest.approx(100.0)
     assert body["monthly_balance"] == pytest.approx(300.0)
+    # 未设预算时 month_budget 应为 None
+    assert body["month_budget"] is None
 
 
 # ──────────────── 跨用户越权拦截 ────────────────
@@ -331,3 +333,132 @@ def test_book_isolation(client):
     # 不传 book_id 取默认账本（日常）→ 月支出 100
     r = client.get(f"/api/ledger/users/{uid}/statistics/summary" + _q(uid))
     assert r.json()["monthly_expense"] == pytest.approx(100.0)
+
+
+# ──────────────── M2 预算与超支提醒 ────────────────
+
+def _make_budget(client, uid, scope_type, amount, scope_id=None, threshold=0.8, book_id=None):
+    body = {"scope_type": scope_type, "amount": amount, "notify_threshold": threshold}
+    if scope_id is not None:
+        body["scope_id"] = scope_id
+    if book_id is not None:
+        body["book_id"] = book_id
+    r = client.post(f"/api/ledger/users/{uid}/budgets/" + _q(uid), json=body)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_budget_crud_and_validation(client):
+    uid = "ledger_budget_m2"
+    # scope_type 非法 → 400
+    r = client.post(f"/api/ledger/users/{uid}/budgets/" + _q(uid),
+                    json={"scope_type": "weekly", "amount": 100})
+    assert r.status_code == 400, r.text
+    # category 预算缺 scope_id → 400
+    r = client.post(f"/api/ledger/users/{uid}/budgets/" + _q(uid),
+                    json={"scope_type": "category", "amount": 100})
+    assert r.status_code == 400, r.text
+    # 金额 <= 0 → 400
+    r = client.post(f"/api/ledger/users/{uid}/budgets/" + _q(uid),
+                    json={"scope_type": "month", "amount": 0})
+    assert r.status_code == 400, r.text
+
+    b = _make_budget(client, uid, "month", 1000, threshold=0.8)
+    assert b["scope_type"] == "month"
+    assert b["amount"] == 1000.0
+    assert b["notify_threshold"] == 0.8
+
+    # 列表
+    r = client.get(f"/api/ledger/users/{uid}/budgets/" + _q(uid))
+    assert r.status_code == 200, r.text
+    assert len(r.json()) == 1
+
+    # 更新阈值
+    r = client.put(f"/api/ledger/users/{uid}/budgets/{b['id']}" + _q(uid),
+                   json={"amount": 2000, "notify_threshold": 1.0})
+    assert r.status_code == 200, r.text
+    assert r.json()["amount"] == 2000.0
+    assert r.json()["notify_threshold"] == 1.0
+
+    # 删除
+    r = client.delete(f"/api/ledger/users/{uid}/budgets/{b['id']}" + _q(uid))
+    assert r.status_code == 200, r.text
+    r = client.get(f"/api/ledger/users/{uid}/budgets/" + _q(uid))
+    assert r.json() == []
+
+
+def test_budget_execution_rate_and_overage(client):
+    uid = "ledger_budget_exec_m2"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE")
+    # 月度总预算 1000，阈值 0.8 → 花到 800 预警，1000 超支
+    _make_budget(client, uid, "month", 1000, threshold=0.8)
+
+    # 先记一笔 500（ratio=0.5，status=ok，不应写通知）
+    _make_transaction(client, uid, "expense", 500, acc["id"], cat["id"])
+    r = client.get(f"/api/ledger/users/{uid}/statistics/budgets" + _q(uid))
+    assert r.status_code == 200, r.text
+    bd = r.json()["budgets"][0]
+    assert bd["spent"] == pytest.approx(500.0)
+    assert bd["ratio"] == pytest.approx(0.5)
+    assert bd["status"] == "ok"
+
+    # 再记 350（累计 850，ratio=0.85 >= 0.8 → warning，应写 1 条通知）
+    _make_transaction(client, uid, "expense", 350, acc["id"], cat["id"])
+    r = client.get(f"/api/ledger/users/{uid}/statistics/budgets" + _q(uid))
+    bd = r.json()["budgets"][0]
+    assert bd["ratio"] == pytest.approx(0.85)
+    assert bd["status"] == "warning"
+
+    # 通知落库：此时应有 1 条 pending（阈值 0.8 触发）
+    r = client.get(f"/api/ledger/users/{uid}/notifications/" + _q(uid))
+    assert r.status_code == 200, r.text
+    assert len(r.json()) == 1
+    assert r.json()[0]["status"] == "pending"
+
+    # 重复调用 budgets 端点不应重复写通知（去重）
+    client.get(f"/api/ledger/users/{uid}/statistics/budgets" + _q(uid))
+    r = client.get(f"/api/ledger/users/{uid}/notifications/" + _q(uid))
+    assert len(r.json()) == 1
+
+    # 再记 200（累计 1050，ratio=1.05 → over，仍只有 1 条同月通知）
+    _make_transaction(client, uid, "expense", 200, acc["id"], cat["id"])
+    r = client.get(f"/api/ledger/users/{uid}/statistics/budgets" + _q(uid))
+    bd = r.json()["budgets"][0]
+    assert bd["ratio"] == pytest.approx(1.05)
+    assert bd["status"] == "over"
+    r = client.get(f"/api/ledger/users/{uid}/notifications/" + _q(uid))
+    assert len(r.json()) == 1
+
+
+def test_budget_summary_month_budget_field(client):
+    uid = "ledger_budget_sum_m2"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE")
+    _make_budget(client, uid, "month", 1000, threshold=0.8)
+    _make_transaction(client, uid, "expense", 600, acc["id"], cat["id"])
+
+    r = client.get(f"/api/ledger/users/{uid}/statistics/summary" + _q(uid))
+    assert r.status_code == 200, r.text
+    mb = r.json()["month_budget"]
+    assert mb is not None
+    assert mb["amount"] == 1000.0
+    assert mb["spent"] == pytest.approx(600.0)
+    assert mb["ratio"] == pytest.approx(0.6)
+    # 0.6 < 阈值 0.8 → 未预警
+    assert mb["status"] == "ok"
+
+
+def test_budget_category_scope(client):
+    uid = "ledger_budget_cat_m2"
+    acc = _make_account(client, uid, balance=0)
+    cat = _make_category(client, uid, "EXPENSE", level1="餐饮")
+    _make_budget(client, uid, "category", 200, scope_id=cat["id"], threshold=1.0)
+    _make_transaction(client, uid, "expense", 150, acc["id"], cat["id"])
+    r = client.get(f"/api/ledger/users/{uid}/statistics/budgets" + _q(uid))
+    assert r.status_code == 200, r.text
+    bd = r.json()["budgets"][0]
+    assert bd["scope_name"] == "餐饮"
+    assert bd["spent"] == pytest.approx(150.0)
+    assert bd["ratio"] == pytest.approx(0.75)
+    assert bd["status"] == "ok"
