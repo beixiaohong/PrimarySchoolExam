@@ -20,8 +20,10 @@
 - POST /quiz/submit            提交选择题作答（服务端判分 + 错题闭环 + 进度）
 - GET  /case/list              案例题列表（资料导入）
 - GET  /case/{qid}             案例题详情
+- GET  /case/sub/list          案例题**按小问展开**的练习列表（展示层展开，不新增题目行）
 - POST /case/generate          AI 出案例分析大题（落库）
 - POST /case/grade             AI 批改案例作答（低于 60 自动入错题本）
+- POST /case/sub/grade         AI 只批改案例大题的某一个小问（错题本仍归到整道大题）
 - GET  /essay/list             论文题列表
 - GET  /essay/{qid}            论文题详情（题目 + 论述要求）
 - POST /essay/grade            AI 论文四维评分（低于 60 自动入错题本）
@@ -89,6 +91,12 @@ class CaseGenReq(UserIdReq):
 class CaseGradeReq(UserIdReq):
     question_id: int = None            # 现场临时出题（未落库）时为空
     question_text: str = ""
+    user_answer: str = ""
+
+
+class CaseSubGradeReq(UserIdReq):
+    question_id: int                   # 案例大题 id（小问不单独建题目行）
+    sub_index: int = 0                 # 第几个小问（0 起，对应 sub_questions 下标）
     user_answer: str = ""
 
 
@@ -427,7 +435,7 @@ def essay_detail(qid: int, user_id: str, db: Session = Depends(get_db)):
     return _question_detail(db, qid, gx.QTYPE_ESSAY)
 
 
-def _list_questions(db, qtype, domain, source_kind, chapter, limit):
+def _question_rows(db, qtype, domain, source_kind, chapter, limit):
     q = db.query(GxQuestion).filter(GxQuestion.qtype == qtype)
     if domain:
         _check_domain(domain)
@@ -436,8 +444,12 @@ def _list_questions(db, qtype, domain, source_kind, chapter, limit):
         q = q.filter(GxQuestion.source_kind == source_kind)
     if chapter:
         q = q.filter(GxQuestion.chapter == chapter)
-    rows = q.order_by(GxQuestion.domain, GxQuestion.chapter, GxQuestion.seq,
+    return q.order_by(GxQuestion.domain, GxQuestion.chapter, GxQuestion.seq,
                       GxQuestion.id).limit(max(1, min(int(limit or 50), 200))).all()
+
+
+def _list_questions(db, qtype, domain, source_kind, chapter, limit):
+    rows = _question_rows(db, qtype, domain, source_kind, chapter, limit)
     out = []
     for r in rows:
         subs = _load_options(r.sub_questions) or []
@@ -584,6 +596,104 @@ def _case_parse(text):
         score = None
     return {"score": score, "feedback": (data.get("feedback") or "").strip(),
             "rubric": []}
+
+
+# ── 案例「按小问刷」（展示层展开，不新增题目行）──
+
+def _sub_points(sub: dict) -> int:
+    """小问分值（资料里没标就是 0，前端按「未标分」展示）"""
+    try:
+        return max(0, int(sub.get("points") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+@router.get("/case/sub/list", summary="案例题按小问展开的练习列表")
+def case_sub_list(user_id: str, domain: str = "", source_kind: str = "", chapter: str = "",
+                  limit: int = 200, db: Session = Depends(get_db)):
+    """把案例大题的 sub_questions **在展示层**展开成「一问一练」。
+
+    资料里只有 17 道案例大题，但真实考试是「一道大题 3~4 个小问」；按整卷刷
+    一次要写完全部小问才批改，既慢又费 AI（prompt 与作答都很长）。
+    展开后变成 60+ 个可单独练习的小问：题量 ×3.6，每问只针对该问批改 ——
+    prompt 短、反馈聚焦、单次消耗低。
+
+    **不改数据**：不新增 `gx_questions` 行，`key = "{question_id}#{sub_index}"`
+    只是给前端定位用的展示键；批改仍以整道大题的 id 归到错题本。
+    """
+    rows = _question_rows(db, gx.QTYPE_CASE, domain, source_kind, chapter, limit)
+    items = []
+    for r in rows:
+        subs = _load_options(r.sub_questions) or []
+        for idx, s in enumerate(subs):
+            if not isinstance(s, dict):
+                continue
+            q = (s.get("q") or "").strip()
+            if not q:
+                continue
+            items.append({"key": "%d#%d" % (r.id, idx),
+                          "question_id": r.id, "sub_index": idx,
+                          "title": r.title or "", "domain": r.domain,
+                          "chapter": r.chapter, "deck": r.deck,
+                          "source_kind": r.source_kind, "points": _sub_points(s),
+                          "q": q, "has_answer": bool((s.get("answer") or "").strip())})
+    return {"count": len(items), "items": items}
+
+
+CASE_SUB_GRADE_SYSTEM_PROMPT = """你是软考高级「信息系统项目管理师」案例分析题的阅卷老师。
+现在只批改**一道案例大题中的某一个小问**：背景材料已给出，仅用于理解情境，不批改背景本身。
+要求：
+1. 只针对指定小问按参考答案要点给分：命中要点给分，遗漏要点与答错内容要指出；
+2. score 为 0-100（按该小问内要点覆盖比例折算，100 分表示这一小问答满）；
+3. feedback 具体到你给分/扣分的每个要点，并给出改进建议；
+4. 只输出一个 JSON 对象，不要输出任何其他文字：
+{{"score": 0-100整数, "feedback": "逐条反馈文字（可换行）"}}"""
+
+
+@router.post("/case/sub/grade", summary="只批改案例大题的某一个小问")
+def case_sub_grade(req: CaseSubGradeReq):
+    """按小问批改（错题本与进度仍归到整道大题，不新增题目行）
+
+    铁律：先用一个**短会话**把题干/子问读完就关，AI 调用期间不持 DB 连接。
+    """
+    db = SessionLocal()
+    try:
+        q = db.get(GxQuestion, req.question_id)
+        if q is None:
+            raise HTTPException(404, "题目不存在")
+        if q.qtype != gx.QTYPE_CASE:
+            raise HTTPException(400, "该题不是案例题")
+        subs = _load_options(q.sub_questions) or []
+        if not (0 <= req.sub_index < len(subs)) or not isinstance(subs[req.sub_index], dict):
+            raise HTTPException(400, "小问序号不存在")
+        sub = subs[req.sub_index]
+        background, title = q.question or "", q.title or ""
+    finally:
+        db.close()
+
+    user_answer = (req.user_answer or "").strip()
+    if len(user_answer) < 5:
+        raise HTTPException(400, "作答太短了，至少写 5 个字再提交批改")
+    sub_q = (sub.get("q") or "").strip()
+    if not sub_q:
+        raise HTTPException(400, "该小问题干为空，无法批改")
+    points = _sub_points(sub)
+    sub_answer = (sub.get("answer") or "").strip()
+
+    # 背景必须带上（小问依赖情境），但只把「本小问」作为批改对象交给 AI
+    question_text = (("%s\n" % title if title else "") + background
+                     + "\n\n【第 %d 小问%s】\n%s"
+                     % (req.sub_index + 1, ("（%d 分）" % points) if points else "", sub_q))
+    prompt = (f"{question_text}\n\n"
+              + (f"该小问参考答案要点（仅供阅卷）：\n{sub_answer}\n\n" if sub_answer else "")
+              + f"考生作答：\n{user_answer}\n\n请只批改这一小问并输出 JSON。")
+    out = _subjective_grade_common(req.user_id, req.question_id, question_text,
+                                   user_answer, CASE_SUB_GRADE_SYSTEM_PROMPT, prompt,
+                                   lambda t: _case_parse(t), gx.WK_CASE, "gx_case_sub")
+    # earned = 该小问折算实得分（百分制 × 分值），便于前端「得 8.4 / 12 分」
+    out.update({"sub_index": req.sub_index, "points": points,
+                "earned": round((out.get("score") or 0) * points / 100.0, 1)})
+    return out
 
 
 @router.post("/essay/grade", summary="AI 论文四维评分（低于 60 自动入错题本）")

@@ -259,13 +259,25 @@
       </div>
     </div>
 
+    <!-- 两种练法：整卷（一次写完全部小问）/ 按小问刷（一问一练，只批改这一问） -->
+    <div class="gx-tabs gx-tabs-sub">
+      <button v-for="m in appCtx.gxCaseModes" :key="m.k" class="gx-tab"
+              :class="{active: appCtx.gxCaseMode === m.k}" @click="appCtx.gxPickCaseMode(m.k)">
+        {{m.label}}
+        <span class="gx-tab-n">{{m.k === 'sub' ? appCtx.gxSubList.length : appCtx.gxCaseList.length}}</span>
+      </button>
+    </div>
+
     <div class="gx-actions">
       <button class="btn btn-primary" :disabled="appCtx.gxCaseGenning" @click="appCtx.gxCaseGenAI()">
         {{appCtx.gxCaseGenning ? 'AI 出题中…' : 'AI 现场出一道'}}
       </button>
-      <span class="card-desc">题库共 {{appCtx.gxCaseList.length}} 道资料真题</span>
+      <span class="card-desc" v-if="appCtx.gxCaseMode === 'whole'">题库共 {{appCtx.gxCaseList.length}} 道资料真题</span>
+      <span class="card-desc" v-else>大题按小问展开成 {{appCtx.gxSubList.length}} 问，已练 {{appCtx.gxSubDoneCount}} 问</span>
     </div>
 
+    <!-- ── 整卷练习（原逻辑：一次写完全部小问再批改）── -->
+    <template v-if="appCtx.gxCaseMode === 'whole'">
     <div v-if="appCtx.gxCaseListLoading" class="card-desc">加载中…</div>
     <div v-else-if="!appCtx.gxCaseList.length" class="card-desc gx-empty">
       这个知识域下没有资料真题，点「AI 现场出一道」。
@@ -321,6 +333,76 @@
       </div>
       <pre class="gx-case-fb">{{appCtx.gxC_result.feedback}}</pre>
     </div>
+    </template>
+
+    <!-- ── 按小问刷：一道大题的小问逐条练，只批改当前这一问 ── -->
+    <template v-else>
+      <div v-if="appCtx.gxSubLoading" class="card-desc">加载中…</div>
+      <div v-else-if="!appCtx.gxSubList.length" class="card-desc gx-empty">
+        这个知识域下没有可练的小问，切回「整卷练习」或点「AI 现场出一道」。
+      </div>
+      <template v-else-if="appCtx.gxSubCur">
+        <div class="gx-sub-bar">
+          <span class="card-desc">第 {{appCtx.gxSubIdx + 1}} / {{appCtx.gxSubList.length}} 问 · 已练 {{appCtx.gxSubDoneCount}} 问</span>
+          <div class="gx-sub-nav">
+            <button class="btn gx-mini-btn" :disabled="appCtx.gxSubIdx === 0" @click="appCtx.gxSubPrev()">上一问</button>
+            <button class="btn gx-mini-btn" :disabled="appCtx.gxSubIdx >= appCtx.gxSubList.length - 1" @click="appCtx.gxSubNext()">下一问</button>
+          </div>
+        </div>
+
+        <div class="gx-sub-meta">
+          <b>{{appCtx.gxSubCur.title || '案例题'}}</b>
+          <span class="card-desc">{{appCtx.gxSubCur.domain}}<template v-if="appCtx.gxSubCur.chapter"> · {{appCtx.gxSubCur.chapter}}</template><template v-if="appCtx.gxSubCur.source_kind"> · {{appCtx.gxSubCur.source_kind}}</template><template v-if="appCtx.gxSubScores[appCtx.gxSubCur.key] !== undefined"> · 上次 {{appCtx.gxSubScores[appCtx.gxSubCur.key]}} 分</template></span>
+        </div>
+
+        <div class="gx-sub-bg">
+          <div class="gx-sub-bg-head">
+            <span class="gx-case-q-label">案例背景</span>
+            <button class="gx-link-btn" @click="appCtx.gxToggleSubBg()">{{appCtx.gxSubShowBg ? '收起' : '展开'}}</button>
+          </div>
+          <div class="gx-case-bg" v-if="appCtx.gxSubShowBg">{{appCtx.gxSubBgText}}</div>
+        </div>
+
+        <div class="gx-sub-q">
+          <span class="gx-sub-no">第 {{appCtx.gxSubCur.sub_index + 1}} 问</span>
+          <span class="gx-case-pt" v-if="appCtx.gxSubCur.points">（{{appCtx.gxSubCur.points}} 分）</span>
+          <div class="gx-case-q">{{appCtx.gxSubCur.q}}</div>
+        </div>
+
+        <textarea class="gx-textarea" v-model="appCtx.gxS_answer"
+                  placeholder="只针对这一问作答，建议分点写（问题 / 原因 / 对策）…"></textarea>
+        <div class="gx-actions">
+          <button class="btn btn-primary" :disabled="!appCtx.gxSubCanSubmit" @click="appCtx.gxSubGrade()">
+            {{appCtx.gxSubGrading ? 'AI 批改中…' : '提交批改'}}
+          </button>
+          <button class="btn gx-mini-btn" @click="appCtx.gxToggleSubAnswer()">
+            {{appCtx.gxSubShowAnswer ? '收起参考答案要点' : '查看参考答案要点'}}
+          </button>
+          <span class="card-desc">只批改这一问，反馈更聚焦、也更省</span>
+        </div>
+
+        <div class="gx-ref" v-if="appCtx.gxSubShowAnswer">
+          <div class="gx-ref-item">
+            <b>第 {{appCtx.gxSubCur.sub_index + 1}} 问 · 参考答案要点</b>
+            <div class="gx-ref-a" v-if="appCtx.gxSubRefAnswer">{{appCtx.gxSubRefAnswer}}</div>
+            <div class="card-desc" v-else>资料里这一问没给参考答案，AI 会按通识要点批改</div>
+          </div>
+        </div>
+
+        <div v-if="appCtx.gxSubResult" class="gx-case-result">
+          <div class="gx-case-score">
+            得分：<b>{{appCtx.gxSubResult.score}}</b> / 100
+            <template v-if="appCtx.gxSubResult.points">（折合 {{appCtx.gxSubResult.earned}} / {{appCtx.gxSubResult.points}} 分）</template>
+            <span class="gx-bad" v-if="appCtx.gxSubResult.in_wrong_book">（低于 {{appCtx.gxSubResult.pass_score}}，已入错题本）</span>
+            <span class="gx-ok" v-else>（已达标）</span>
+          </div>
+          <pre class="gx-case-fb">{{appCtx.gxSubResult.feedback}}</pre>
+          <div class="gx-actions">
+            <button class="btn gx-mini-btn" v-if="appCtx.gxSubIdx < appCtx.gxSubList.length - 1" @click="appCtx.gxSubNext()">下一问 →</button>
+          </div>
+        </div>
+      </template>
+    </template>
   </div>
 
   <!-- ───────── 论文练习 ───────── -->
@@ -680,6 +762,16 @@ export default {
 .gx-case-q-label{font-size:12px;opacity:.6;margin-bottom:4px}
 .gx-case-q{line-height:1.7;font-size:14px}
 .gx-case-pt{font-size:12px;opacity:.6}
+/* 按小问刷：进度条 / 背景头 / 小问标签 */
+.gx-sub-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin:10px 0 6px;flex-wrap:wrap}
+.gx-sub-nav{display:flex;gap:8px;flex:0 0 auto}
+.gx-sub-meta{margin-bottom:6px}
+.gx-sub-bg-head{display:flex;align-items:center;gap:8px;margin-top:10px}
+.gx-sub-bg .gx-case-bg{margin-top:6px;max-height:220px;overflow:auto}
+.gx-sub-q{margin:12px 0 6px}
+.gx-sub-no{display:inline-block;margin-right:6px;font-size:12px;font-weight:600;
+  padding:2px 8px;border-radius:999px;background:#e0f2fe;color:#0369a1}
 .gx-textarea{width:100%;min-height:140px;margin-top:10px;padding:10px;border-radius:10px;
   border:1px solid var(--line,#e5e7eb);background:transparent;color:inherit;
   font-size:14px;line-height:1.6;resize:vertical;box-sizing:border-box}

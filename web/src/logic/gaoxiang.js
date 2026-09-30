@@ -11,6 +11,8 @@
 //                                           -> {count,ai_added,questions:[{id,qtype,question,options,chapter,source_kind,deck}]}
 //   POST /api/gx/quiz/submit                {user_id,answers:[{question_id,answer,duration_ms}]}
 //                                           -> {wrong_count, results:[{question_id,judged,is_correct,correct,analysis}]}
+//   GET  /api/gx/case/sub/list          ?user_id&domain&limit -> 按小问展开（不新增题目行）
+//   POST /api/gx/case/sub/grade         {user_id,question_id,sub_index,user_answer}
 //   GET  /api/gx/case/list|/essay/list      ?user_id&domain&chapter&source_kind
 //                                           -> {items:[{id,title,domain,chapter,source_kind,sub_count,background}]}
 //   GET  /api/gx/case/{qid} | /essay/{qid}  -> {background, sub_questions:[{q,answer,points}], ...}
@@ -287,6 +289,25 @@ export function gaoxiangData() {
     gxCaseGrading: false,
     gxCaseGenning: false,
     gxCaseShowAnswer: false,// 是否展开参考答案要点（批改后才建议看）
+    // ── 案例「按小问刷」：展示层把一道大题的 3~4 个小问展开成一问一练 ──
+    // 后端不新增题目行（`key = 题目id#小问下标` 只用于前端定位），批改时只把该小问
+    // 交给 AI —— prompt 短、反馈聚焦、单次消耗低；错题本仍按整道大题归集。
+    gxCaseModes: [          // 案例页两种练习方式
+      { k: 'whole', label: '整卷练习' },
+      { k: 'sub', label: '按小问刷' },
+    ],
+    gxCaseMode: 'whole',    // 'whole' | 'sub'
+    gxSubList: [],          // [{key,question_id,sub_index,title,domain,chapter,points,q,has_answer}]
+    gxSubLoading: false,
+    gxSubIdx: 0,            // 当前小问在列表里的下标（不是小问序号，序号是 sub_index）
+    gxSubDetail: null,      // 当前小问所属大题详情（背景与参考答案要点）
+    gxS_answer: '',
+    gxSubGrading: false,
+    gxSubResult: null,      // {score,earned,points,feedback,pass_score,in_wrong_book}
+    gxSubAnswers: {},       // key -> 上次作答（来回切不丢草稿）
+    gxSubScores: {},        // key -> 历史得分（localStorage 持久化，刷新后仍在）
+    gxSubShowBg: true,      // 案例背景默认展开（小问依赖情境，必须先读背景）
+    gxSubShowAnswer: false,
     // ── 论文练习 ──
     gxEssayDomain: '',
     gxEssayList: [],
@@ -338,6 +359,30 @@ export const gaoxiangComputed = {
   // 案例作答是否可提交（至少 20 字，避免空跑一次 AI）
   gxC_canSubmit() {
     return (this.gxC_answer || '').trim().length >= 20 && !this.gxCaseGrading;
+  },
+  // ── 按小问刷（展示层展开，不新增题目行）──
+  gxSubCur() {
+    return this.gxSubList[this.gxSubIdx] || null;
+  },
+  // 已练小问数：只统计当前列表里的 key（换知识域筛选后不串数）
+  gxSubDoneCount() {
+    const s = this.gxSubScores || {};
+    return (this.gxSubList || []).filter(it => s[it.key] !== undefined).length;
+  },
+  gxSubCanSubmit() {
+    return (this.gxS_answer || '').trim().length >= 5 && !this.gxSubGrading && !!this.gxSubCur;
+  },
+  // 背景：小问依赖情境，必须能读到；详情是异步拉的，未到位时给占位
+  gxSubBgText() {
+    const cur = this.gxSubCur, d = this.gxSubDetail;
+    if (!cur || !d || d.id !== cur.question_id) return '背景加载中…';
+    return d.background || '（这道案例没有背景材料）';
+  },
+  // 当前小问的参考答案要点（详情到位后才有；资料没给就是空串）
+  gxSubRefAnswer() {
+    const cur = this.gxSubCur, d = this.gxSubDetail;
+    if (!cur || !d || d.id !== cur.question_id) return '';
+    return (((d.sub_questions || [])[cur.sub_index] || {}).answer) || '';
   },
   // 论文正文是否可提交（服务端要求 ≥100 字；2000 字才是考试要求，前端只做提示）
   gxE_canSubmit() {
@@ -663,7 +708,14 @@ export const gaoxiangMethods = {
   /* ─────────── 案例分析（资料真题 + AI 现场出题） ─────────── */
   gxCaseDomainPick(d) {
     this.gxCaseDomain = (this.gxCaseDomain === d ? '' : d);
-    this.gxLoadCaseList();
+    // 知识域对两种模式都生效，只刷新当前模式的列表
+    if (this.gxCaseMode === 'sub') {
+      this.gxSubIdx = 0;
+      this.gxSubDetail = null;
+      this.gxLoadCaseSubs();
+    } else {
+      this.gxLoadCaseList();
+    }
   },
   gxLoadCaseList() {
     this.gxCaseListLoading = true;
@@ -727,6 +779,96 @@ export const gaoxiangMethods = {
       .finally(() => { this.gxCaseGrading = false; });
   },
   gxToggleCaseAnswer() { this.gxCaseShowAnswer = !this.gxCaseShowAnswer; },
+
+  /* ─────────── 案例「按小问刷」：一问一练，只批改当前小问 ─────────── */
+  gxPickCaseMode(m) {
+    if (!m || this.gxCaseMode === m) return;
+    this.gxCaseMode = m;
+    if (m === 'sub') this.gxLoadCaseSubs();
+  },
+  gxLoadCaseSubs() {
+    this.gxSubLoading = true;
+    this._gxSubLoadScores();     // 历史得分从 localStorage 恢复（刷新不丢「已练几问」）
+    const p = new URLSearchParams({ user_id: this.user, limit: '200' });
+    if (this.gxCaseDomain) p.set('domain', this.gxCaseDomain);
+    this.api('/api/gx/case/sub/list?' + p.toString())
+      .then(d => {
+        this.gxSubList = (d && d.items) || [];
+        if (this.gxSubIdx >= this.gxSubList.length) this.gxSubIdx = 0;
+        this.gxS_answer = ''; this.gxSubResult = null; this.gxSubShowAnswer = false;
+        this.gxSubGo(this.gxSubIdx);   // 顺带把当前小问的草稿与大题详情带上
+      })
+      .catch(() => { this.gxSubList = []; })
+      .finally(() => { this.gxSubLoading = false; });
+  },
+  // 切到第 i 个小问：先存当前草稿，再载入目标小问的草稿 + 所属大题详情
+  gxSubGo(i) {
+    const n = (this.gxSubList || []).length;
+    if (!n) return;
+    const cur = this.gxSubCur;
+    if (cur) {
+      this.gxSubAnswers = Object.assign({}, this.gxSubAnswers, { [cur.key]: this.gxS_answer });
+    }
+    this.gxSubIdx = Math.max(0, Math.min(n - 1, i));
+    const nx = this.gxSubCur;
+    this.gxS_answer = (nx && this.gxSubAnswers[nx.key]) || '';
+    this.gxSubResult = null; this.gxSubShowAnswer = false;
+    this.gxSubEnsureDetail();
+  },
+  gxSubNext() { this.gxSubGo(this.gxSubIdx + 1); },
+  gxSubPrev() { this.gxSubGo(this.gxSubIdx - 1); },
+  // 背景与参考答案要点都在大题详情里，按当前小问所属题目懒加载一次
+  gxSubEnsureDetail() {
+    const cur = this.gxSubCur;
+    if (!cur) return;
+    if (this.gxSubDetail && this.gxSubDetail.id === cur.question_id) return;
+    this.gxSubDetail = null;
+    this.api(`/api/gx/case/${cur.question_id}?user_id=${encodeURIComponent(this.user)}`)
+      .then(d => { this.gxSubDetail = d || null; })
+      .catch(() => {});
+  },
+  gxSubGrade() {
+    const cur = this.gxSubCur;
+    if (!cur || !this.gxSubCanSubmit) return;
+    this.gxSubGrading = true;
+    this.api('/api/gx/case/sub/grade', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: this.user, question_id: cur.question_id,
+                             sub_index: cur.sub_index, user_answer: this.gxS_answer }),
+    }).then(d => {
+      this.gxSubResult = d || null;
+      this.gxSubScores = Object.assign({}, this.gxSubScores,
+        { [cur.key]: (d && d.score) || 0 });
+      this._gxSubSaveScores();
+      this.gxLoadProgress();
+      this.gxSubShowAnswer = true;   // 批改后对照参考答案要点看
+      this.gxSubEnsureDetail();
+      if (d && d.in_wrong_book) {
+        this.showToast(`得分低于 ${this.gxPassScore}，已入错题本，正在分析错因…`);
+        this.gxAutoAnalyze([cur.question_id]);
+      }
+      this.gxLoadWrong();
+    }).catch(() => this.showToast('批改失败，稍后再试'))
+      .finally(() => { this.gxSubGrading = false; });
+  },
+  gxToggleSubBg() { this.gxSubShowBg = !this.gxSubShowBg; },
+  gxToggleSubAnswer() {
+    this.gxSubShowAnswer = !this.gxSubShowAnswer;
+    if (this.gxSubShowAnswer) this.gxSubEnsureDetail();
+  },
+  // 历史得分存本地：后端没有「小问」这一层，不值得为此加一张表
+  _gxSubStoreKey() { return 'gx_case_sub_scores_' + (this.user || ''); },
+  _gxSubLoadScores() {
+    try {
+      const raw = localStorage.getItem(this._gxSubStoreKey());
+      this.gxSubScores = raw ? (JSON.parse(raw) || {}) : {};
+    } catch (e) { this.gxSubScores = {}; }
+  },
+  _gxSubSaveScores() {
+    try {
+      localStorage.setItem(this._gxSubStoreKey(), JSON.stringify(this.gxSubScores || {}));
+    } catch (e) { /* 隐私模式下 localStorage 不可写，忽略即可 */ }
+  },
 
   /* ─────────── 论文练习 ─────────── */
   gxEssayDomainPick(d) {
@@ -868,7 +1010,13 @@ export const gaoxiangMethods = {
     if (sub === 'wrong') this.gxLoadWrong();
     if (sub === 'progress') this.gxLoadProgress();
     if (sub === 'knowledge' && !this.gxKList.length) this.gxLoadKnowledge();
-    if (sub === 'case' && !this.gxCaseList.length) this.gxLoadCaseList();
+    if (sub === 'case') {
+      if (this.gxCaseMode === 'sub') {
+        if (!this.gxSubList.length) this.gxLoadCaseSubs();
+      } else if (!this.gxCaseList.length) {
+        this.gxLoadCaseList();
+      }
+    }
     if (sub === 'essay' && !this.gxEssayList.length) this.gxLoadEssay();
   },
 };
