@@ -154,3 +154,13 @@ GET  /api/blog/latest          轻量聚合（供 Workspace「最新内容」）
 4. **前端 Blog**：`logic/blog.js` + `BlogView.vue` + 组件（列表/详情/编辑/搜索/分类/标签）
 5. **前端 Workspace + 应用中心**：`apps.js` + `AppsView.vue` + `WorkspaceView.vue` + `logic/workspace.js`
 6. **导航接入 + 全量回归**：`nav.js` / `App.vue` / router redirect → 七项自检 + pytest + 构建 + 提交
+
+### 实施状态（六批全部完成）
+
+| 批 | 内容 | 提交 |
+|---|---|---|
+| 1–2 | 模型/schema/迁移 089 + blog 域 + articles/taxonomy/workspace API + `tests/test_blog_web.py` | `6661e42` |
+| 4–6 | 前端 `apps.js` / `logic/blog.js` / `logic/workspace.js` / `utils/markdown.js` + 三个视图 + 落地页改 `/workspace` | `251bea6` |
+| 3+ | 后台 `admin/src/views/BlogAdmin.vue`（文章/分类/标签 + `/blog` 路由与菜单） | `2907d1a` |
+
+落地页默认为 `/workspace`（D1 决策）；分类与标签的写操作只在后台，前台 `/api/blog` 下只读。
